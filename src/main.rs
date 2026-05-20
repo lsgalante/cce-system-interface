@@ -6,6 +6,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowAttributes};
 
 use clear_ui::color;
+use clear_ui::widget::Widget;
 use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
@@ -80,6 +81,11 @@ struct TextItem {
     color: glyphon::Color,
 }
 
+enum ColorPickerAction {
+    Background([u8; 3]),
+    Border([u8; 3]),
+}
+
 struct SystemInterface {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -118,6 +124,8 @@ struct SystemInterface {
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
+    tx_color_picker: std::sync::mpsc::Sender<ColorPickerAction>,
+    rx_color_picker: std::sync::mpsc::Receiver<ColorPickerAction>,
 
     scale_factor: f64,
     width: u32,
@@ -209,17 +217,26 @@ impl SystemInterface {
             mapped_at_creation: false,
         });
 
-        // ── Initial state ──
+        // ── Initial state (fetch all concurrently) ──
+        let (power, audio, display, network, system_info, status, storage) = tokio::join!(
+            pages::power::fetch_power_state(),
+            pages::audio::fetch_audio_state(),
+            pages::display::fetch_display_state(),
+            pages::network::fetch_network_state(),
+            pages::system_info::fetch_system_state(),
+            pages::status::fetch_status_state(),
+            pages::storage::fetch_storage_state(),
+        );
         let app = AppState {
-            power: pages::power::fetch_power_state().await,
-            audio: pages::audio::fetch_audio_state().await,
-            display: pages::display::fetch_display_state().await,
-            network: pages::network::fetch_network_state().await,
+            power,
+            audio,
+            display,
+            network,
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
-            system_info: pages::system_info::fetch_system_state().await,
-            status: pages::status::fetch_status_state().await,
-            storage: pages::storage::fetch_storage_state().await,
+            system_info,
+            status,
+            storage,
             current_page: Page::ALL[0],
         };
 
@@ -270,6 +287,7 @@ impl SystemInterface {
         let rx_status = spawn_bg(10, || pages::status::fetch_status_state());
         let rx_storage = spawn_bg(10, || pages::storage::fetch_storage_state());
 
+        let (tx_color_picker, rx_color_picker) = std::sync::mpsc::channel();
         let scale_factor = (window.scale_factor() as f32).max(2.0) as f64;
         let mut this = Self {
             window, surface, device, queue, config, render_pipeline,
@@ -282,6 +300,7 @@ impl SystemInterface {
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
             rx_system, rx_status, rx_storage,
+            tx_color_picker, rx_color_picker,
             width: size.width, height: size.height,
             needs_rebuild: true,
         };
@@ -341,7 +360,7 @@ impl SystemInterface {
             text_items.push(TextItem {
                 buffer: make_text_buffer(&mut self.font_system, page.label(), 12.0 * s),
                 x: 16.0 * s, y: y + 9.0 * s,
-                color: glyphon::Color::rgb(0x99, 0x99, 0xaa),
+                color: glyphon::Color::rgb(0x55, 0x55, 0x77),
             });
         }
 
@@ -413,14 +432,14 @@ impl SystemInterface {
         self.needs_rebuild = false;
     }
 
-    fn render_page_content(&self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
+    fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use pages::*;
         match self.app.current_page {
             Page::Power => power::view(&self.app.power, cx, cy, cw, ch),
             Page::Audio => audio::view(&self.app.audio, cx, cy, cw, ch),
             Page::Display => display::view(&self.app.display, cx, cy, cw, ch),
             Page::Radios => network::view(&self.app.network, cx, cy, cw, ch),
-            Page::Layout => layout::view(&self.app.layout, cx, cy, cw, ch),
+            Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch),
             Page::Input => input::view(&self.app.input, cx, cy, cw, ch),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
             Page::Status => status::view(&self.app.status, cx, cy, cw, ch),
@@ -523,16 +542,61 @@ impl SystemInterface {
             storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(action) = self.rx_color_picker.try_recv() {
+            match action {
+                ColorPickerAction::Background(rgb) => {
+                    layout::update(&mut self.app.layout, layout::LayoutMessage::SetBackground(rgb));
+                }
+                ColorPickerAction::Border(rgb) => {
+                    layout::update(&mut self.app.layout, layout::LayoutMessage::SetBorderColor(rgb));
+                }
+            }
+            self.needs_rebuild = true;
+        }
     }
 
     fn handle_action(&mut self, action: &AppAction) {
         use pages::*;
         match action {
+            AppAction::Layout(m) => match m {
+                layout::LayoutMessage::PickBackgroundColor => {
+                    let color = self.app.layout.background_color;
+                    let tx = self.tx_color_picker.clone();
+                    tokio::spawn(async move {
+                        let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
+                        if let Ok(output) = tokio::process::Command::new("clear-colors").arg(&hex).output().await {
+                            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                            if s.starts_with('#') && s.len() >= 7 {
+                                let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(color[0]);
+                                let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(color[1]);
+                                let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(color[2]);
+                                let _ = tx.send(ColorPickerAction::Background([r, g, b]));
+                            }
+                        }
+                    });
+                }
+                layout::LayoutMessage::PickBorderColor => {
+                    let color = self.app.layout.border_color;
+                    let tx = self.tx_color_picker.clone();
+                    tokio::spawn(async move {
+                        let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
+                        if let Ok(output) = tokio::process::Command::new("clear-colors").arg(&hex).output().await {
+                            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                            if s.starts_with('#') && s.len() >= 7 {
+                                let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(color[0]);
+                                let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(color[1]);
+                                let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(color[2]);
+                                let _ = tx.send(ColorPickerAction::Border([r, g, b]));
+                            }
+                        }
+                    });
+                }
+                _ => layout::update(&mut self.app.layout, m.clone()),
+            },
             AppAction::Power(m) => power::update(&mut self.app.power, m.clone()),
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Display(m) => display::update(&mut self.app.display, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
-            AppAction::Layout(m) => layout::update(&mut self.app.layout, m.clone()),
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
             AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
@@ -555,8 +619,52 @@ impl SystemInterface {
                         changed = true;
                     }
                 }
+                if self.app.current_page == Page::Layout {
+                    let s = self.scale_factor as f32;
+                    for sb in &mut self.app.layout.spinboxes {
+                        if sb.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                            changed = true;
+                        }
+                    }
+                    for cp in &mut self.app.layout.color_pickers {
+                        if cp.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                            changed = true;
+                        }
+                    }
+                }
                 if changed { self.needs_rebuild = true; }
                 changed
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if self.app.current_page == Page::Layout {
+                    let mut changed = false;
+                    let mut actions = Vec::new();
+                    for sb in &mut self.app.layout.spinboxes {
+                        if sb.keyboard_input(event) {
+                            changed = true;
+                        }
+                    }
+                    for (i, cp) in self.app.layout.color_pickers.iter_mut().enumerate() {
+                        let old = cp.color;
+                        if cp.keyboard_input(event) {
+                            if cp.color != old {
+                                actions.push(AppAction::Layout(match i {
+                                    0 => pages::layout::LayoutMessage::SetBackground(cp.color),
+                                    _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
+                                }));
+                            }
+                            changed = true;
+                        }
+                    }
+                    for a in &actions {
+                        self.handle_action(a);
+                    }
+                    if changed {
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+                false
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if *button != MouseButton::Left { return false; }
@@ -579,6 +687,48 @@ impl SystemInterface {
                                 }
                             }
                         }
+                    }
+                }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Layout {
+                    let s = self.scale_factor as f32;
+                    let lx = self.cursor_x / s;
+                    let ly = self.cursor_y / s;
+                    let mut actions = Vec::new();
+                    for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
+                        if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                        let old = sb.value;
+                        if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                            actions.push(AppAction::Layout(
+                                pages::layout::LayoutMessage::SetWidth(
+                                    pages::layout::WidthParam::ALL[i],
+                                    sb.value as u16,
+                                )
+                            ));
+                        }
+                    }
+                    for (i, cp) in self.app.layout.color_pickers.iter_mut().enumerate() {
+                        let old = cp.color;
+                        if !cp.hit_test(lx, ly) { cp.unfocus(); }
+                        cp.mouse_input(*button, *state, lx, ly);
+                        if cp.take_click() {
+                            actions.push(AppAction::Layout(match i {
+                                0 => pages::layout::LayoutMessage::PickBackgroundColor,
+                                _ => pages::layout::LayoutMessage::PickBorderColor,
+                            }));
+                        }
+                        if cp.color != old {
+                            actions.push(AppAction::Layout(match i {
+                                0 => pages::layout::LayoutMessage::SetBackground(cp.color),
+                                _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
+                            }));
+                        }
+                    }
+                    for a in &actions {
+                        self.handle_action(a);
+                    }
+                    if !actions.is_empty() {
+                        self.needs_rebuild = true;
+                        return true;
                     }
                 }
                 self.needs_rebuild = true;

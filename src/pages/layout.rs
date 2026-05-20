@@ -1,10 +1,55 @@
 use std::fs;
 use std::io::Write;
 
-use crate::app::{AppAction, PageContent};
+use crate::app::PageContent;
+use clear_ui::layout::Column;
+use clear_ui::widget::{ColorPicker, Spinbox};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WidthParam {
+    Fullscreen, Cascade, Grid, Vsplit, Hsplit, Floating,
+}
+
+impl WidthParam {
+    pub const ALL: [WidthParam; 6] = [
+        WidthParam::Fullscreen, WidthParam::Cascade, WidthParam::Grid,
+        WidthParam::Vsplit, WidthParam::Hsplit, WidthParam::Floating,
+    ];
+    pub fn key(self) -> &'static str {
+        match self {
+            WidthParam::Fullscreen => "fullscreen_border_width",
+            WidthParam::Cascade => "cascade_border_width",
+            WidthParam::Grid => "grid_border_width",
+            WidthParam::Vsplit => "vsplit_border_width",
+            WidthParam::Hsplit => "hsplit_border_width",
+            WidthParam::Floating => "floating_border_width",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            WidthParam::Fullscreen => "Fullscreen",
+            WidthParam::Cascade => "Cascade",
+            WidthParam::Grid => "Grid",
+            WidthParam::Vsplit => "Vsplit",
+            WidthParam::Hsplit => "Hsplit",
+            WidthParam::Floating => "Floating",
+        }
+    }
+}
+
+fn make_spinboxes(fs: u16, ca: u16, g: u16, v: u16, h: u16, fl: u16) -> Vec<Spinbox> {
+    vec![
+        Spinbox::new(fs as i32, 0, 100, 1),
+        Spinbox::new(ca as i32, 0, 100, 1),
+        Spinbox::new(g as i32, 0, 100, 1),
+        Spinbox::new(v as i32, 0, 100, 1),
+        Spinbox::new(h as i32, 0, 100, 1),
+        Spinbox::new(fl as i32, 0, 100, 1),
+    ]
+}
 
 #[derive(Debug, Clone)]
 pub struct LayoutState {
@@ -17,6 +62,8 @@ pub struct LayoutState {
     pub hsplit_border_width: u16,
     pub floating_border_width: u16,
     pub color_options: Vec<(&'static str, [u8; 3])>,
+    pub spinboxes: Vec<Spinbox>,
+    pub color_pickers: Vec<ColorPicker>,
 }
 
 impl Default for LayoutState {
@@ -31,6 +78,11 @@ impl Default for LayoutState {
             hsplit_border_width: 6,
             floating_border_width: 6,
             color_options: preset_colors(),
+            spinboxes: make_spinboxes(0, 6, 6, 6, 6, 6),
+            color_pickers: vec![
+                ColorPicker::new([0x0a, 0x1a, 0x0e]).with_label("Desktop Background"),
+                ColorPicker::new([0x3e, 0x3e, 0x3e]).with_label("Border Color"),
+            ],
         }
     }
 }
@@ -39,12 +91,9 @@ impl Default for LayoutState {
 pub enum LayoutMessage {
     SetBackground([u8; 3]),
     SetBorderColor([u8; 3]),
-    FullscreenDown, FullscreenUp,
-    CascadeDown, CascadeUp,
-    GridDown, GridUp,
-    VsplitDown, VsplitUp,
-    HsplitDown, HsplitUp,
-    FloatingDown, FloatingUp,
+    PickBackgroundColor,
+    PickBorderColor,
+    SetWidth(WidthParam, u16),
     Refreshed(LayoutState),
 }
 
@@ -67,16 +116,29 @@ fn preset_colors() -> Vec<(&'static str, [u8; 3])> {
 
 pub fn read_layout_config() -> LayoutState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let fs = parse_u16_from(&content, "fullscreen_border_width", 0);
+    let ca = parse_u16_from(&content, "cascade_border_width", 6);
+    let g = parse_u16_from(&content, "grid_border_width", 6);
+    let v = parse_u16_from(&content, "vsplit_border_width", 6);
+    let h = parse_u16_from(&content, "hsplit_border_width", 6);
+    let fl = parse_u16_from(&content, "floating_border_width", 6);
     LayoutState {
         background_color: parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e]),
         border_color: parse_color_from_key(&content, "border_color", [0x3e, 0x3e, 0x3e]),
-        fullscreen_border_width: parse_u16_from(&content, "fullscreen_border_width", 0),
-        cascade_border_width: parse_u16_from(&content, "cascade_border_width", 6),
-        grid_border_width: parse_u16_from(&content, "grid_border_width", 6),
-        vsplit_border_width: parse_u16_from(&content, "vsplit_border_width", 6),
-        hsplit_border_width: parse_u16_from(&content, "hsplit_border_width", 6),
-        floating_border_width: parse_u16_from(&content, "floating_border_width", 6),
+        fullscreen_border_width: fs,
+        cascade_border_width: ca,
+        grid_border_width: g,
+        vsplit_border_width: v,
+        hsplit_border_width: h,
+        floating_border_width: fl,
         color_options: preset_colors(),
+        spinboxes: make_spinboxes(fs, ca, g, v, h, fl),
+        color_pickers: vec![
+            ColorPicker::new(parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e]))
+                .with_label("Desktop Background"),
+            ColorPicker::new(parse_color_from_key(&content, "border_color", [0x3e, 0x3e, 0x3e]))
+                .with_label("Border Color"),
+        ],
     }
 }
 
@@ -170,122 +232,57 @@ fn apply_all_widths(s: &LayoutState) {
     w("floating_border_width", s.floating_border_width);
 }
 
-fn rgb_float(c: [u8; 3]) -> [f32; 4] {
-    [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, 1.0]
-}
-
-const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const BTN_ACTIVE: [f32; 4] = [0.20, 0.40, 0.22, 1.0];
-const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
-const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
-const SECTION_BORDER: [f32; 4] = [0.18, 0.18, 0.27, 1.0];
-const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &LayoutState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+    let mut col = Column::new(&mut pc, cx, cy, 0.0, 28.0, cw);
 
-    // ── Background Color ──
-    pc.text("Desktop Background", cx + 12.0, y, 14.0, TEXT_FG);
-    y += 22.0;
-
-    let hex = format!("#{:02x}{:02x}{:02x}", state.background_color[0], state.background_color[1], state.background_color[2]);
-    pc.text(&format!("Current: {}", hex), cx + 14.0, y, 12.0, ACCENT);
-    y += 18.0;
-
-    // Color swatch grid
-    let swatch_w = 48.0;
-    let swatch_h = 24.0;
-    let gap = 6.0;
-    let cols = 4usize;
-    let total_w = cols as f32 * (swatch_w + gap);
-    let start_x = cx + (cw - total_w) / 2.0;
-
-    for (i, (name, rgb)) in state.color_options.iter().enumerate() {
-        let col = i % cols;
-        let row = i / cols;
-        let sx = start_x + col as f32 * (swatch_w + gap);
-        let sy = y + row as f32 * (swatch_h + 16.0);
-        let is_selected = *rgb == state.background_color;
-        let border = if is_selected { ACCENT } else { [0.24, 0.24, 0.24, 1.0] };
-
-        pc.rect(rgb_float(*rgb), sx, sy, swatch_w, swatch_h);
-        if is_selected {
-            pc.rect(border, sx - 1.0, sy - 1.0, swatch_w + 2.0, swatch_h + 2.0);
-        }
-        pc.text(name, sx + swatch_w / 2.0 - name.len() as f32 * 2.5, sy + swatch_h + 2.0, 8.0, TEXT_DIM);
-        // Clickable over the swatch
-        let action = AppAction::Layout(LayoutMessage::SetBackground(*rgb));
-        pc.button("", sx, sy, swatch_w, swatch_h,
-            [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], action);
-    }
-    let swatch_rows = (state.color_options.len() + cols - 1) / cols;
-    y += swatch_rows as f32 * (swatch_h + 16.0) + 8.0;
-
-    // ── Border Color ──
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("Border Color", cx + 12.0, y, 14.0, TEXT_FG);
-    y += 22.0;
-
-    for (i, (name, rgb)) in state.color_options.iter().enumerate() {
-        let col = i % cols;
-        let row = i / cols;
-        let sx = start_x + col as f32 * (swatch_w + gap);
-        let sy = y + row as f32 * (swatch_h + 16.0);
-        let is_selected = *rgb == state.border_color;
-        let border = if is_selected { ACCENT } else { [0.24, 0.24, 0.24, 1.0] };
-
-        pc.rect(rgb_float(*rgb), sx, sy, swatch_w, swatch_h);
-        if is_selected {
-            pc.rect(border, sx - 1.0, sy - 1.0, swatch_w + 2.0, swatch_h + 2.0);
-        }
-        pc.text(name, sx + swatch_w / 2.0 - name.len() as f32 * 2.5, sy + swatch_h + 2.0, 8.0, TEXT_DIM);
-        let action = AppAction::Layout(LayoutMessage::SetBorderColor(*rgb));
-        pc.button("", sx, sy, swatch_w, swatch_h,
-            [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], action);
-    }
-    y += swatch_rows as f32 * (swatch_h + 16.0) + 8.0;
-
-    // ── Border Widths ──
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("Border Width", cx + 12.0, y, 14.0, TEXT_FG);
-    y += 22.0;
-
-    let widths: [(&str, u16, AppAction, AppAction); 6] = [
-        ("Fullscreen", state.fullscreen_border_width,
-         AppAction::Layout(LayoutMessage::FullscreenDown), AppAction::Layout(LayoutMessage::FullscreenUp)),
-        ("Cascade", state.cascade_border_width,
-         AppAction::Layout(LayoutMessage::CascadeDown), AppAction::Layout(LayoutMessage::CascadeUp)),
-        ("Grid", state.grid_border_width,
-         AppAction::Layout(LayoutMessage::GridDown), AppAction::Layout(LayoutMessage::GridUp)),
-        ("Vsplit", state.vsplit_border_width,
-         AppAction::Layout(LayoutMessage::VsplitDown), AppAction::Layout(LayoutMessage::VsplitUp)),
-        ("Hsplit", state.hsplit_border_width,
-         AppAction::Layout(LayoutMessage::HsplitDown), AppAction::Layout(LayoutMessage::HsplitUp)),
-        ("Floating", state.floating_border_width,
-         AppAction::Layout(LayoutMessage::FloatingDown), AppAction::Layout(LayoutMessage::FloatingUp)),
-    ];
-
-    for (name, val, down, up) in &widths {
-        pc.text(name, cx + 14.0, y + 6.0, 12.0, TEXT_DIM);
-        pc.button("-1", cx + cw - 100.0, y, 30.0, 26.0,
-            BTN_INACTIVE, BTN_HOVER, WHITE, down.clone());
-        pc.text(&format!(" {}px ", val), cx + cw - 66.0, y + 6.0, 13.0, TEXT_FG);
-        pc.button("+1", cx + cw - 38.0, y, 30.0, 26.0,
-            BTN_ACTIVE, BTN_HOVER, WHITE, up.clone());
-        y += 30.0;
+    state.color_pickers[0].color = state.background_color;
+    col.widget(&mut state.color_pickers[0], 12.0, 220.0, 22.0);
+    col.spacing(16.0);
+    col.separator();
+    col.spacing(12.0);
+    state.color_pickers[1].color = state.border_color;
+    col.widget(&mut state.color_pickers[1], 12.0, 220.0, 22.0);
+    col.separator();
+    col.header("Border Width", 12.0);
+    for (i, param) in WidthParam::ALL.iter().enumerate() {
+        col.row(30.0, |row| {
+            row.text(param.label(), 14.0, 6.0, 12.0, TEXT_DIM);
+            row.widget(&mut state.spinboxes[i], 110.0, 90.0, 26.0);
+        });
     }
 
     pc
 }
 
+fn set_width(state: &mut LayoutState, param: WidthParam, val: u16) {
+    let val = val.min(100);
+    match param {
+        WidthParam::Fullscreen => state.fullscreen_border_width = val,
+        WidthParam::Cascade => state.cascade_border_width = val,
+        WidthParam::Grid => state.grid_border_width = val,
+        WidthParam::Vsplit => state.vsplit_border_width = val,
+        WidthParam::Hsplit => state.hsplit_border_width = val,
+        WidthParam::Floating => state.floating_border_width = val,
+    }
+    state.spinboxes[param_idx(param)].value = val as i32;
+    apply_all_widths(state);
+}
+
+fn param_idx(p: WidthParam) -> usize {
+    match p {
+        WidthParam::Fullscreen => 0,
+        WidthParam::Cascade => 1,
+        WidthParam::Grid => 2,
+        WidthParam::Vsplit => 3,
+        WidthParam::Hsplit => 4,
+        WidthParam::Floating => 5,
+    }
+}
+
 pub fn update(state: &mut LayoutState, msg: LayoutMessage) {
-    let dec = |v: &mut u16| { if *v > 0 { *v -= 1; } };
-    let inc = |v: &mut u16| { if *v < 100 { *v += 1; } };
     match msg {
         LayoutMessage::SetBackground(rgb) => {
             state.background_color = rgb;
@@ -295,18 +292,8 @@ pub fn update(state: &mut LayoutState, msg: LayoutMessage) {
             state.border_color = rgb;
             apply_border_color(rgb);
         }
-        LayoutMessage::FullscreenDown => { dec(&mut state.fullscreen_border_width); apply_all_widths(state); }
-        LayoutMessage::FullscreenUp => { inc(&mut state.fullscreen_border_width); apply_all_widths(state); }
-        LayoutMessage::CascadeDown => { dec(&mut state.cascade_border_width); apply_all_widths(state); }
-        LayoutMessage::CascadeUp => { inc(&mut state.cascade_border_width); apply_all_widths(state); }
-        LayoutMessage::GridDown => { dec(&mut state.grid_border_width); apply_all_widths(state); }
-        LayoutMessage::GridUp => { inc(&mut state.grid_border_width); apply_all_widths(state); }
-        LayoutMessage::VsplitDown => { dec(&mut state.vsplit_border_width); apply_all_widths(state); }
-        LayoutMessage::VsplitUp => { inc(&mut state.vsplit_border_width); apply_all_widths(state); }
-        LayoutMessage::HsplitDown => { dec(&mut state.hsplit_border_width); apply_all_widths(state); }
-        LayoutMessage::HsplitUp => { inc(&mut state.hsplit_border_width); apply_all_widths(state); }
-        LayoutMessage::FloatingDown => { dec(&mut state.floating_border_width); apply_all_widths(state); }
-        LayoutMessage::FloatingUp => { inc(&mut state.floating_border_width); apply_all_widths(state); }
+        LayoutMessage::PickBackgroundColor | LayoutMessage::PickBorderColor => {}
+        LayoutMessage::SetWidth(p, v) => set_width(state, p, v),
         LayoutMessage::Refreshed(new) => { *state = new; }
     }
 }

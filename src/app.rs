@@ -1,3 +1,5 @@
+use clear_ui::layout::RenderTarget;
+
 use crate::pages::audio;
 use crate::pages::display;
 use crate::pages::input;
@@ -90,5 +92,15 @@ impl PageContent {
             label: label.to_string(), label_size: 12.0, label_color,
             action,
         });
+    }
+}
+
+impl RenderTarget for PageContent {
+    fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
+        self.rects.push((color, x, y, w, h));
+    }
+
+    fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
+        self.texts.push((content.to_string(), size, x, y, color));
     }
 }
