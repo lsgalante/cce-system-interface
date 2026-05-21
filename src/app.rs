@@ -6,6 +6,7 @@ use crate::pages::input;
 use crate::pages::layout;
 use crate::pages::network;
 use crate::pages::power;
+use crate::pages::processors;
 use crate::pages::status;
 use crate::pages::storage;
 use crate::pages::system_info;
@@ -19,6 +20,7 @@ pub struct AppState {
     pub network: network::NetworkState,
     pub layout: layout::LayoutState,
     pub input: input::InputState,
+    pub processors: processors::ProcessorsState,
     pub system_info: system_info::SystemState,
     pub status: status::StatusState,
     pub storage: storage::StorageState,
@@ -34,6 +36,7 @@ impl Default for AppState {
             network: network::NetworkState::default(),
             layout: layout::LayoutState::default(),
             input: input::InputState::default(),
+            processors: processors::ProcessorsState::default(),
             system_info: system_info::SystemState::default(),
             status: status::StatusState::default(),
             storage: storage::StorageState::default(),
@@ -49,6 +52,7 @@ pub enum AppAction {
     Radios(network::NetworkMessage),
     Layout(layout::LayoutMessage),
     Input(input::InputMessage),
+    Processors(processors::ProcessorsMessage),
     SystemInfo(system_info::SystemMessage),
     Status(status::StatusMessage),
     Storage(storage::StorageMessage),

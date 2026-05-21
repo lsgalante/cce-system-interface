@@ -2,8 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::PageContent;
-use clear_ui::layout::Column;
-use clear_ui::widget::{ColorPicker, Spinbox};
+use clear_ui::layout::Section;
+use clear_ui::widget::{ColorSelector, Spinbox};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -63,7 +63,7 @@ pub struct LayoutState {
     pub floating_border_width: u16,
     pub color_options: Vec<(&'static str, [u8; 3])>,
     pub spinboxes: Vec<Spinbox>,
-    pub color_pickers: Vec<ColorPicker>,
+    pub color_selectors: Vec<ColorSelector>,
 }
 
 impl Default for LayoutState {
@@ -79,9 +79,9 @@ impl Default for LayoutState {
             floating_border_width: 6,
             color_options: preset_colors(),
             spinboxes: make_spinboxes(0, 6, 6, 6, 6, 6),
-            color_pickers: vec![
-                ColorPicker::new([0x0a, 0x1a, 0x0e]).with_label("Desktop Background"),
-                ColorPicker::new([0x3e, 0x3e, 0x3e]).with_label("Border Color"),
+            color_selectors: vec![
+                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Desktop Background"),
+                ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("Border Color"),
             ],
         }
     }
@@ -133,10 +133,10 @@ pub fn read_layout_config() -> LayoutState {
         floating_border_width: fl,
         color_options: preset_colors(),
         spinboxes: make_spinboxes(fs, ca, g, v, h, fl),
-        color_pickers: vec![
-            ColorPicker::new(parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e]))
+        color_selectors: vec![
+            ColorSelector::new(parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e]))
                 .with_label("Desktop Background"),
-            ColorPicker::new(parse_color_from_key(&content, "border_color", [0x3e, 0x3e, 0x3e]))
+            ColorSelector::new(parse_color_from_key(&content, "border_color", [0x3e, 0x3e, 0x3e]))
                 .with_label("Border Color"),
         ],
     }
@@ -232,27 +232,28 @@ fn apply_all_widths(s: &LayoutState) {
     w("floating_border_width", s.floating_border_width);
 }
 
-const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-
 pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
-    let mut col = Column::new(&mut pc, cx, cy, 0.0, 28.0, cw);
+    let mut y = cy + 12.0;
 
-    state.color_pickers[0].color = state.background_color;
-    col.widget(&mut state.color_pickers[0], 12.0, 220.0, 22.0);
-    col.spacing(16.0);
-    col.separator();
-    col.spacing(12.0);
-    state.color_pickers[1].color = state.border_color;
-    col.widget(&mut state.color_pickers[1], 12.0, 220.0, 22.0);
-    col.separator();
-    col.header("Border Width", 12.0);
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Desktop Background");
+    state.color_selectors[0].color = state.background_color;
+    sec.widget(&mut pc, &mut state.color_selectors[0], 12.0, 220.0, 22.0);
+    y = sec.finish(&mut pc);
+
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Border Color");
+    state.color_selectors[1].color = state.border_color;
+    sec.widget(&mut pc, &mut state.color_selectors[1], 12.0, 220.0, 22.0);
+    y = sec.finish(&mut pc);
+
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Border Width");
+    sec.spacing(8.0);
     for (i, param) in WidthParam::ALL.iter().enumerate() {
-        col.row(30.0, |row| {
-            row.text(param.label(), 14.0, 6.0, 12.0, TEXT_DIM);
-            row.widget(&mut state.spinboxes[i], 110.0, 90.0, 26.0);
-        });
+        state.spinboxes[i].set_label(param.label());
+        sec.widget(&mut pc, &mut state.spinboxes[i], 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
     }
+    sec.finish(&mut pc);
 
     pc
 }

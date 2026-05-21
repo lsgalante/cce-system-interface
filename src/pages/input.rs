@@ -2,6 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::{AppAction, PageContent};
+use clear_ui::layout::{render_widget, Section};
+use clear_ui::widget::{Spinbox, Toggle};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -19,31 +21,45 @@ pub struct InputState {
     pub tap_to_click: bool,
     pub repeat_rate: u16,
     pub repeat_delay: u16,
+    pub rate_spinbox: Spinbox,
+    pub delay_spinbox: Spinbox,
+    pub tap_toggle: Toggle,
     pub keybinds: Vec<Keybind>,
 }
 
 impl Default for InputState {
     fn default() -> Self {
-        Self { tap_to_click: false, repeat_rate: 50, repeat_delay: 300, keybinds: Vec::new() }
+        Self {
+            tap_to_click: false,
+            repeat_rate: 50,
+            repeat_delay: 300,
+            rate_spinbox: Spinbox::new(50, 1, 100, 1).with_label("Repeat Rate"),
+            delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay"),
+        tap_toggle: Toggle::new().with_label("Tap to Click"),
+            keybinds: Vec::new(),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum InputMessage {
     ToggleTapToClick,
-    RepeatRateDown,
-    RepeatRateUp,
-    RepeatDelayDown,
-    RepeatDelayUp,
+    ApplyRepeat,
     Refreshed(InputState),
 }
 
 pub fn read_input_config() -> InputState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let rate = parse_u16_key(&content, "rate", 50);
+    let delay = parse_u16_key(&content, "delay", 300);
+    let tap = parse_bool_from(&content, "tap_to_click");
     InputState {
-        tap_to_click: parse_bool_from(&content, "tap_to_click"),
-        repeat_rate: parse_u16_key(&content, "rate", 50),
-        repeat_delay: parse_u16_key(&content, "delay", 300),
+        tap_to_click: tap,
+        repeat_rate: rate,
+        repeat_delay: delay,
+        rate_spinbox: Spinbox::new(rate as i32, 1, 100, 1).with_label("Repeat Rate"),
+        delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay"),
+        tap_toggle: Toggle::new().with_label("Tap to Click"),
         keybinds: parse_keybinds(&content),
     }
 }
@@ -147,62 +163,38 @@ fn apply_repeat_config(rate: u16, delay: u16) {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const BTN_ACTIVE: [f32; 4] = [0.20, 0.40, 0.22, 1.0];
-const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const TOGGLE_ON: [f32; 4] = [0.16, 0.41, 0.18, 1.0];
 const TOGGLE_OFF: [f32; 4] = [0.16, 0.16, 0.24, 1.0];
-const SECTION_BORDER: [f32; 4] = [0.18, 0.18, 0.27, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
     // ── Touchpad ──
-    pc.text("Touchpad", cx + 12.0, y, 14.0, TEXT_FG);
-    y += 22.0;
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Touchpad");
 
-    let tap_bg = if state.tap_to_click { TOGGLE_ON } else { TOGGLE_OFF };
-    let tap_label = if state.tap_to_click { "Tap to Click: ON" } else { "Tap to Click: OFF" };
-    pc.text(tap_label, cx + 14.0, y + 6.0, 13.0, if state.tap_to_click { ACCENT } else { TEXT_DIM });
-    let btn_w = (cw - 32.0).min(100.0);
-    pc.button(if state.tap_to_click { "ON" } else { "OFF" }, cx + cw - btn_w - 14.0, y, btn_w, 28.0,
-        tap_bg, BTN_HOVER, WHITE,
-        AppAction::Input(InputMessage::ToggleTapToClick));
-    y += 36.0;
+    let yt = sec.ay();
+    let toggle_w = 48.0;
+    let toggle_h = 24.0;
+    state.tap_toggle.set_toggled(state.tap_to_click);
+    render_widget(&mut pc, &mut state.tap_toggle, sec.ax(100.0), yt, toggle_w, toggle_h);
+    sec.content_y += toggle_h + 12.0;
+    y = sec.finish(&mut pc);
 
     // ── Keyboard ──
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("Keyboard", cx + 12.0, y, 14.0, TEXT_FG);
-    y += 22.0;
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard");
 
-    // Repeat Rate
-    pc.text(&format!("Repeat Rate: {} /sec", state.repeat_rate), cx + 14.0, y, 12.0, TEXT_DIM);
-    y += 18.0;
-    pc.button("-1", cx + 14.0, y, 36.0, 28.0, BTN_INACTIVE, BTN_HOVER, WHITE,
-        AppAction::Input(InputMessage::RepeatRateDown));
-    pc.text(&format!(" {} ", state.repeat_rate), cx + 58.0, y + 7.0, 13.0, TEXT_FG);
-    pc.button("+1", cx + 14.0 + 36.0 + 8.0, y, 36.0, 28.0, BTN_ACTIVE, BTN_HOVER, WHITE,
-        AppAction::Input(InputMessage::RepeatRateUp));
-    y += 34.0;
+    sec.widget(&mut pc, &mut state.rate_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(8.0);
 
-    // Repeat Delay
-    pc.text(&format!("Repeat Delay: {}ms", state.repeat_delay), cx + 14.0, y, 12.0, TEXT_DIM);
-    y += 18.0;
-    pc.button("-10", cx + 14.0, y, 36.0, 28.0, BTN_INACTIVE, BTN_HOVER, WHITE,
-        AppAction::Input(InputMessage::RepeatDelayDown));
-    pc.text(&format!(" {}ms ", state.repeat_delay), cx + 58.0, y + 7.0, 13.0, TEXT_FG);
-    pc.button("+10", cx + 14.0 + 36.0 + 8.0, y, 36.0, 28.0, BTN_ACTIVE, BTN_HOVER, WHITE,
-        AppAction::Input(InputMessage::RepeatDelayUp));
-    y += 40.0;
+    sec.widget(&mut pc, &mut state.delay_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(8.0);
+    y = sec.finish(&mut pc);
 
     // ── Keybindings ──
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("Keyboard Bindings", cx + 12.0, y, 14.0, TEXT_FG);
-    y += 22.0;
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard Bindings");
 
     for kb in &state.keybinds {
         let binding = if kb.mods.is_empty() {
@@ -215,11 +207,12 @@ pub fn view(state: &InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         } else {
             format!("{}: {}", kb.action, kb.command)
         };
-        pc.text(&binding, cx + 14.0, y, 12.0, TEXT_FG);
+        sec.text(&mut pc, &binding, 14.0, 0.0, 12.0, TEXT_FG);
         let label_w = cw - 200.0;
-        pc.text(&action_label, cx + 14.0 + label_w.min(180.0), y, 12.0, TEXT_DIM);
-        y += 18.0;
+        sec.text(&mut pc, &action_label, 14.0 + label_w.min(180.0), 0.0, 12.0, TEXT_DIM);
+        sec.spacing(18.0);
     }
+    sec.finish(&mut pc);
 
     pc
 }
@@ -230,21 +223,12 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             state.tap_to_click = !state.tap_to_click;
             write_tap_to_click(state.tap_to_click);
         }
-        InputMessage::RepeatRateDown => {
-            if state.repeat_rate > 1 { state.repeat_rate -= 1; }
-            apply_repeat_config(state.repeat_rate, state.repeat_delay);
-        }
-        InputMessage::RepeatRateUp => {
-            if state.repeat_rate < 100 { state.repeat_rate += 1; }
-            apply_repeat_config(state.repeat_rate, state.repeat_delay);
-        }
-        InputMessage::RepeatDelayDown => {
-            if state.repeat_delay > 100 { state.repeat_delay -= 10; }
-            apply_repeat_config(state.repeat_rate, state.repeat_delay);
-        }
-        InputMessage::RepeatDelayUp => {
-            if state.repeat_delay < 2000 { state.repeat_delay += 10; }
-            apply_repeat_config(state.repeat_rate, state.repeat_delay);
+        InputMessage::ApplyRepeat => {
+            let rate = state.rate_spinbox.value.max(1).min(100) as u16;
+            let delay = state.delay_spinbox.value.max(100).min(2000) as u16;
+            state.repeat_rate = rate;
+            state.repeat_delay = delay;
+            apply_repeat_config(rate, delay);
         }
         InputMessage::Refreshed(new) => { *state = new; }
     }

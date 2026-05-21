@@ -6,7 +6,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowAttributes};
 
 use clear_ui::color;
-use clear_ui::widget::Widget;
+use clear_ui::widget::{Spinbox, Widget};
 use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
@@ -81,7 +81,7 @@ struct TextItem {
     color: glyphon::Color,
 }
 
-enum ColorPickerAction {
+enum ColorSelectorAction {
     Background([u8; 3]),
     Border([u8; 3]),
 }
@@ -121,11 +121,12 @@ struct SystemInterface {
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     rx_layout: std::sync::mpsc::Receiver<pages::layout::LayoutState>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
+    rx_processors: std::sync::mpsc::Receiver<pages::processors::ProcessorsState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
-    tx_color_picker: std::sync::mpsc::Sender<ColorPickerAction>,
-    rx_color_picker: std::sync::mpsc::Receiver<ColorPickerAction>,
+    tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
+    rx_color_selector: std::sync::mpsc::Receiver<ColorSelectorAction>,
 
     scale_factor: f64,
     width: u32,
@@ -218,7 +219,7 @@ impl SystemInterface {
         });
 
         // ── Initial state (fetch all concurrently) ──
-        let (power, audio, display, network, system_info, status, storage) = tokio::join!(
+        let (power, audio, display, network, system_info, status, storage, processors) = tokio::join!(
             pages::power::fetch_power_state(),
             pages::audio::fetch_audio_state(),
             pages::display::fetch_display_state(),
@@ -226,19 +227,24 @@ impl SystemInterface {
             pages::system_info::fetch_system_state(),
             pages::status::fetch_status_state(),
             pages::storage::fetch_storage_state(),
+            pages::processors::fetch_processors_state(),
         );
-        let app = AppState {
+        let mut app = AppState {
             power,
             audio,
             display,
             network,
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
+            processors,
             system_info,
             status,
             storage,
             current_page: Page::ALL[0],
         };
+        // Init spinbox vectors to match fetched sinks/sources
+        app.audio.sink_spinboxes.resize_with(app.audio.sinks.len(), || Spinbox::new(50, 0, 100, 1));
+        app.audio.source_spinboxes.resize_with(app.audio.sources.len(), || Spinbox::new(50, 0, 100, 1));
 
         // ── Background refresh channels ──
         fn spawn_bg<T, F>(period_secs: u64, f: fn() -> F) -> std::sync::mpsc::Receiver<T>
@@ -284,10 +290,11 @@ impl SystemInterface {
             rx
         };
         let rx_system = spawn_bg(5, || pages::system_info::fetch_system_state());
+        let rx_processors = spawn_bg(3, || pages::processors::fetch_processors_state());
         let rx_status = spawn_bg(10, || pages::status::fetch_status_state());
         let rx_storage = spawn_bg(10, || pages::storage::fetch_storage_state());
 
-        let (tx_color_picker, rx_color_picker) = std::sync::mpsc::channel();
+        let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
         let scale_factor = (window.scale_factor() as f32).max(2.0) as f64;
         let mut this = Self {
             window, surface, device, queue, config, render_pipeline,
@@ -299,8 +306,8 @@ impl SystemInterface {
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
-            rx_system, rx_status, rx_storage,
-            tx_color_picker, rx_color_picker,
+            rx_processors, rx_system, rx_status, rx_storage,
+            tx_color_selector, rx_color_selector,
             width: size.width, height: size.height,
             needs_rebuild: true,
         };
@@ -405,9 +412,12 @@ impl SystemInterface {
                 hovering: false,
                 kind: WidgetKind::ActionButton(btn.action.clone()),
             });
+            let buf = make_text_buffer(&mut self.font_system, &btn.label, btn.label_size * s);
+            let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0);
+            let lh = btn.label_size * s * 1.4;
             text_items.push(TextItem {
-                buffer: make_text_buffer(&mut self.font_system, &btn.label, btn.label_size * s),
-                x: btn.x * s + 10.0 * s, y: btn.y * s + 8.0 * s,
+                buffer: buf,
+                x: btn.x * s + (btn.w * s - tw) / 2.0, y: btn.y * s + (btn.h * s - lh) / 2.0,
                 color: glyphon::Color::rgb(
                     (btn.label_color[0] * 255.0) as u8,
                     (btn.label_color[1] * 255.0) as u8,
@@ -436,11 +446,12 @@ impl SystemInterface {
         use pages::*;
         match self.app.current_page {
             Page::Power => power::view(&self.app.power, cx, cy, cw, ch),
-            Page::Audio => audio::view(&self.app.audio, cx, cy, cw, ch),
-            Page::Display => display::view(&self.app.display, cx, cy, cw, ch),
+            Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch),
+            Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
             Page::Radios => network::view(&self.app.network, cx, cy, cw, ch),
             Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch),
-            Page::Input => input::view(&self.app.input, cx, cy, cw, ch),
+            Page::Processors => processors::view(&self.app.processors, cx, cy, cw, ch),
+            Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
             Page::Status => status::view(&self.app.status, cx, cy, cw, ch),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
@@ -534,6 +545,10 @@ impl SystemInterface {
             system_info::update(&mut self.app.system_info, system_info::SystemMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_processors.try_recv() {
+            processors::update(&mut self.app.processors, processors::ProcessorsMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
         while let Ok(s) = self.rx_status.try_recv() {
             status::update(&mut self.app.status, status::StatusMessage::Refreshed(s));
             self.needs_rebuild = true;
@@ -542,12 +557,12 @@ impl SystemInterface {
             storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
-        while let Ok(action) = self.rx_color_picker.try_recv() {
+        while let Ok(action) = self.rx_color_selector.try_recv() {
             match action {
-                ColorPickerAction::Background(rgb) => {
+                ColorSelectorAction::Background(rgb) => {
                     layout::update(&mut self.app.layout, layout::LayoutMessage::SetBackground(rgb));
                 }
-                ColorPickerAction::Border(rgb) => {
+                ColorSelectorAction::Border(rgb) => {
                     layout::update(&mut self.app.layout, layout::LayoutMessage::SetBorderColor(rgb));
                 }
             }
@@ -561,7 +576,7 @@ impl SystemInterface {
             AppAction::Layout(m) => match m {
                 layout::LayoutMessage::PickBackgroundColor => {
                     let color = self.app.layout.background_color;
-                    let tx = self.tx_color_picker.clone();
+                    let tx = self.tx_color_selector.clone();
                     tokio::spawn(async move {
                         let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
                         if let Ok(output) = tokio::process::Command::new("clear-colors").arg(&hex).output().await {
@@ -570,14 +585,14 @@ impl SystemInterface {
                                 let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(color[0]);
                                 let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(color[1]);
                                 let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(color[2]);
-                                let _ = tx.send(ColorPickerAction::Background([r, g, b]));
+                                let _ = tx.send(ColorSelectorAction::Background([r, g, b]));
                             }
                         }
                     });
                 }
                 layout::LayoutMessage::PickBorderColor => {
                     let color = self.app.layout.border_color;
-                    let tx = self.tx_color_picker.clone();
+                    let tx = self.tx_color_selector.clone();
                     tokio::spawn(async move {
                         let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
                         if let Ok(output) = tokio::process::Command::new("clear-colors").arg(&hex).output().await {
@@ -586,7 +601,7 @@ impl SystemInterface {
                                 let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(color[0]);
                                 let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(color[1]);
                                 let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(color[2]);
-                                let _ = tx.send(ColorPickerAction::Border([r, g, b]));
+                                let _ = tx.send(ColorSelectorAction::Border([r, g, b]));
                             }
                         }
                     });
@@ -599,6 +614,7 @@ impl SystemInterface {
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
+            AppAction::Processors(m) => processors::update(&mut self.app.processors, m.clone()),
             AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
             AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
         }
@@ -626,10 +642,41 @@ impl SystemInterface {
                             changed = true;
                         }
                     }
-                    for cp in &mut self.app.layout.color_pickers {
+                    for cp in &mut self.app.layout.color_selectors {
                         if cp.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
                             changed = true;
                         }
+                    }
+                }
+                if self.app.current_page == Page::Input {
+                    let s = self.scale_factor as f32;
+                    if self.app.input.rate_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                    if self.app.input.delay_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                    if self.app.input.tap_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                }
+                if self.app.current_page == Page::Audio {
+                    let s = self.scale_factor as f32;
+                    for sb in &mut self.app.audio.sink_spinboxes {
+                        if sb.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                            changed = true;
+                        }
+                    }
+                    for sb in &mut self.app.audio.source_spinboxes {
+                        if sb.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                            changed = true;
+                        }
+                    }
+                }
+                if self.app.current_page == Page::Display {
+                    let s = self.scale_factor as f32;
+                    if self.app.display.brightness_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
                     }
                 }
                 if changed { self.needs_rebuild = true; }
@@ -644,7 +691,7 @@ impl SystemInterface {
                             changed = true;
                         }
                     }
-                    for (i, cp) in self.app.layout.color_pickers.iter_mut().enumerate() {
+                    for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
                         let old = cp.color;
                         if cp.keyboard_input(event) {
                             if cp.color != old {
@@ -660,6 +707,59 @@ impl SystemInterface {
                         self.handle_action(a);
                     }
                     if changed {
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+                if self.app.current_page == Page::Input {
+                    if self.app.input.rate_spinbox.keyboard_input(event) {
+                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                    if self.app.input.delay_spinbox.keyboard_input(event) {
+                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+                if self.app.current_page == Page::Audio {
+                    let mut actions = Vec::new();
+                    for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
+                        let old = sb.value;
+                        if sb.keyboard_input(event) {
+                            if sb.value != old {
+                                let id = self.app.audio.sinks[i].id;
+                                actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
+                            }
+                        }
+                    }
+                    for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
+                        let old = sb.value;
+                        if sb.keyboard_input(event) {
+                            if sb.value != old {
+                                let id = self.app.audio.sources[i].id;
+                                actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
+                            }
+                        }
+                    }
+                    for a in &actions {
+                        self.handle_action(a);
+                    }
+                    if !actions.is_empty() {
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+                if self.app.current_page == Page::Display {
+                    let sb = &mut self.app.display.brightness_spinbox;
+                    let old = sb.value;
+                    if sb.keyboard_input(event) {
+                        let new_val = sb.value;
+                        drop(sb);
+                        if new_val != old {
+                            self.handle_action(&AppAction::Display(pages::display::DisplayMessage::BrightnessSet(new_val as u32)));
+                        }
                         self.needs_rebuild = true;
                         return true;
                     }
@@ -689,11 +789,11 @@ impl SystemInterface {
                         }
                     }
                 }
+                let s = self.scale_factor as f32;
+                let lx = self.cursor_x / s;
+                let ly = self.cursor_y / s;
+                let mut actions = Vec::new();
                 if *state == ElementState::Pressed && self.app.current_page == Page::Layout {
-                    let s = self.scale_factor as f32;
-                    let lx = self.cursor_x / s;
-                    let ly = self.cursor_y / s;
-                    let mut actions = Vec::new();
                     for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
                         if !sb.hit_test(lx, ly) { sb.unfocus(); }
                         let old = sb.value;
@@ -706,7 +806,7 @@ impl SystemInterface {
                             ));
                         }
                     }
-                    for (i, cp) in self.app.layout.color_pickers.iter_mut().enumerate() {
+                    for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
                         let old = cp.color;
                         if !cp.hit_test(lx, ly) { cp.unfocus(); }
                         cp.mouse_input(*button, *state, lx, ly);
@@ -723,14 +823,62 @@ impl SystemInterface {
                             }));
                         }
                     }
-                    for a in &actions {
-                        self.handle_action(a);
+                }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Input {
+                    let sb = &mut self.app.input.rate_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
                     }
-                    if !actions.is_empty() {
-                        self.needs_rebuild = true;
-                        return true;
+                    let sb = &mut self.app.input.delay_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
                     }
                 }
+                if self.app.current_page == Page::Input {
+                    let toggle = &mut self.app.input.tap_toggle;
+                    toggle.mouse_input(*button, *state, lx, ly);
+                    if toggle.take_click() {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleTapToClick));
+                    }
+                }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Audio {
+                    for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
+                        if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                        let old = sb.value;
+                        if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                            let id = self.app.audio.sinks[i].id;
+                            actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
+                        }
+                    }
+                    for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
+                        if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                        let old = sb.value;
+                        if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                            let id = self.app.audio.sources[i].id;
+                            actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
+                        }
+                    }
+                }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Display {
+                    let sb = &mut self.app.display.brightness_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet(sb.value as u32)));
+                    }
+                }
+                for a in &actions {
+                    self.handle_action(a);
+                }
+                if !actions.is_empty() {
+                    self.needs_rebuild = true;
+                    return true;
+                }
+                self.needs_rebuild = true;
                 self.needs_rebuild = true;
                 true
             }

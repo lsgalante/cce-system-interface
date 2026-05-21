@@ -8,6 +8,7 @@ pub mod system_info;
 pub mod keybindings;
 pub mod input;
 pub mod status;
+pub mod processors;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -18,16 +19,18 @@ pub enum Page {
     Display,
     Layout,
     System,
+    Processors,
     Input,
     Status,
 }
 
 impl Page {
-    pub const ALL: [Page; 9] = [
+    pub const ALL: [Page; 10] = [
         Page::Audio,
         Page::Display,
         Page::Input,
         Page::Layout,
+        Page::Processors,
         Page::Power,
         Page::Radios,
         Page::Status,
@@ -44,6 +47,7 @@ impl Page {
             Page::Display => "Display",
             Page::Layout => "Layout",
             Page::System => "System",
+            Page::Processors => "Processors",
             Page::Input => "Input",
             Page::Status => "Status",
         }

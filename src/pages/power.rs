@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent};
+use clear_ui::layout::Section;
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -159,7 +160,6 @@ const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
-const SECTION_BORDER: [f32; 4] = [0.18, 0.18, 0.27, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 const ORANGE: [f32; 4] = [1.0, 0.73, 0.20, 1.0];
@@ -169,6 +169,8 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
     let mut y = cy + 12.0;
 
     // ── Battery section ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Battery");
+
     let bat = &state.battery;
     let bat_icon = match bat.state.as_str() {
         "charging" => "+",
@@ -181,13 +183,13 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         else { ACCENT };
 
     let pct_str = format!("{} {:.0}%", bat_icon, bat.percentage);
-    pc.text(&pct_str, cx + 12.0, y, 24.0, pct_color);
-    y += 30.0;
+    sec.text(&mut pc, &pct_str, 12.0, 0.0, 24.0, pct_color);
+    sec.spacing(30.0);
 
     let state_str = format!("{}  •  {:.1}W  •  {:.1}/{:.1} Wh",
         bat.state, bat.energy_rate, bat.energy, bat.energy_full);
-    pc.text(&state_str, cx + 12.0, y, 12.0, TEXT_DIM);
-    y += 18.0;
+    sec.text(&mut pc, &state_str, 12.0, 0.0, 12.0, TEXT_DIM);
+    sec.spacing(18.0);
 
     let time_str = if bat.time_to_empty > 0 {
         format!("Time remaining: {}", format_duration(bat.time_to_empty))
@@ -195,27 +197,25 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         format!("Time to full: {}", format_duration(bat.time_to_full))
     } else { String::new() };
     if !time_str.is_empty() {
-        pc.text(&time_str, cx + 12.0, y, 12.0, TEXT_DIM);
-        y += 18.0;
+        sec.text(&mut pc, &time_str, 12.0, 0.0, 12.0, TEXT_DIM);
+        sec.spacing(18.0);
     }
 
     let detail_str = format!("{}  {}", bat.vendor, bat.model);
-    pc.text(&detail_str, cx + 12.0, y, 11.0, TEXT_DIM);
-    y += 20.0;
+    sec.text(&mut pc, &detail_str, 12.0, 0.0, 11.0, TEXT_DIM);
+    sec.spacing(20.0);
 
     let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
-    pc.text(ac_str, cx + 12.0, y, 14.0, TEXT_FG);
-    y += 24.0;
+    sec.text(&mut pc, ac_str, 12.0, 0.0, 14.0, TEXT_FG);
+
+    y = sec.finish(&mut pc);
 
     // ── CPU Governor section ──
-    y += 8.0;
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("CPU Governor", cx + 12.0, y, 12.0, TEXT_DIM);
-    y += 18.0;
+    let mut sec = Section::new(&mut pc, cx, y, cw, "CPU Governor");
 
     let btn_w = (cw - 40.0) / 2.0;
     let btn_h = 44.0;
+    let yt = sec.ay();
 
     let perf_active = !state.cpu_powersave;
     let (perf_bg, perf_desc, perf_desc_color) = if perf_active {
@@ -224,10 +224,10 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         (BTN_INACTIVE, "Switch to performance governor", TEXT_DIM)
     };
 
-    pc.button("Performance", cx + 12.0, y, btn_w, btn_h,
+    pc.button("Performance", sec.ax(12.0), yt, btn_w, btn_h,
         perf_bg, BTN_HOVER, WHITE,
         AppAction::Power(PowerMessage::SetCpuPerformance));
-    pc.text(perf_desc, cx + 16.0, y + 26.0, 10.0, perf_desc_color);
+    sec.text(&mut pc, perf_desc, 16.0, 26.0, 10.0, perf_desc_color);
 
     let (save_bg, save_desc, save_desc_color) = if state.cpu_powersave {
         (BTN_ACTIVE, "Governor set to powersave — lower power, slower burst", ACCENT)
@@ -235,19 +235,18 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         (BTN_INACTIVE, "Switch to powersave governor (requires auth)", TEXT_DIM)
     };
 
-    let save_x = cx + 16.0 + btn_w;
-    pc.button("Powersave", save_x, y, btn_w, btn_h,
+    let save_x = 16.0 + btn_w;
+    pc.button("Powersave", sec.ax(save_x), yt, btn_w, btn_h,
         save_bg, BTN_HOVER, WHITE,
         AppAction::Power(PowerMessage::SetCpuPowersave));
-    pc.text(save_desc, save_x + 4.0, y + 26.0, 10.0, save_desc_color);
-    y += btn_h + 12.0;
+    sec.text(&mut pc, save_desc, save_x + 4.0, 26.0, 10.0, save_desc_color);
+    sec.content_y += btn_h + 12.0;
+    y = sec.finish(&mut pc);
 
     // ── GPU Power section ──
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("GPU Power", cx + 12.0, y, 12.0, TEXT_DIM);
-    y += 18.0;
+    let mut sec = Section::new(&mut pc, cx, y, cw, "GPU Power");
 
+    let yt = sec.ay();
     let gpu_def_active = !state.gpu_powersave;
     let (gpu_def_bg, gpu_def_desc, gpu_def_desc_c) = if gpu_def_active {
         (BTN_ACTIVE, "NVIDIA running at default power limit", ACCENT)
@@ -255,10 +254,10 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         (BTN_INACTIVE, "Restore default power limit (requires auth)", TEXT_DIM)
     };
 
-    pc.button("80W Default", cx + 12.0, y, btn_w, btn_h,
+    pc.button("80W Default", sec.ax(12.0), yt, btn_w, btn_h,
         gpu_def_bg, BTN_HOVER, WHITE,
         AppAction::Power(PowerMessage::SetGpuDefault));
-    pc.text(gpu_def_desc, cx + 16.0, y + 26.0, 10.0, gpu_def_desc_c);
+    sec.text(&mut pc, gpu_def_desc, 16.0, 26.0, 10.0, gpu_def_desc_c);
 
     let (gpu_cap_bg, gpu_cap_desc, gpu_cap_desc_c) = if state.gpu_powersave {
         (BTN_ACTIVE, "NVIDIA power limit capped at 5W — minimal draw", ACCENT)
@@ -266,29 +265,29 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         (BTN_INACTIVE, "Cap NVIDIA to 5W power limit (requires auth)", TEXT_DIM)
     };
 
-    pc.button("5W Cap", save_x, y, btn_w, btn_h,
+    pc.button("5W Cap", sec.ax(save_x), yt, btn_w, btn_h,
         gpu_cap_bg, BTN_HOVER, WHITE,
         AppAction::Power(PowerMessage::SetGpuPowersave));
-    pc.text(gpu_cap_desc, save_x + 4.0, y + 26.0, 10.0, gpu_cap_desc_c);
-    y += btn_h + 12.0;
+    sec.text(&mut pc, gpu_cap_desc, save_x + 4.0, 26.0, 10.0, gpu_cap_desc_c);
+    sec.content_y += btn_h + 12.0;
+    y = sec.finish(&mut pc);
 
     // ── System Actions section ──
-    pc.rect(SECTION_BORDER, cx + 8.0, y, cw - 16.0, 1.0);
-    y += 8.0;
-    pc.text("System Actions", cx + 12.0, y, 12.0, TEXT_DIM);
-    y += 18.0;
+    let mut sec = Section::new(&mut pc, cx, y, cw, "System Actions");
 
+    let yt = sec.ay();
     let act_btn_w = (cw - 48.0) / 4.0;
     let act_btn_h = 32.0;
 
-    pc.button("Suspend", cx + 12.0, y, act_btn_w, act_btn_h,
+    pc.button("Suspend", sec.ax(12.0), yt, act_btn_w, act_btn_h,
         SAFE_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Suspend));
-    pc.button("Hibernate", cx + 16.0 + act_btn_w, y, act_btn_w, act_btn_h,
+    pc.button("Hibernate", sec.ax(16.0 + act_btn_w), yt, act_btn_w, act_btn_h,
         SAFE_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Hibernate));
-    pc.button("Reboot", cx + 20.0 + 2.0 * act_btn_w, y, act_btn_w, act_btn_h,
+    pc.button("Reboot", sec.ax(20.0 + 2.0 * act_btn_w), yt, act_btn_w, act_btn_h,
         DANGER_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Reboot));
-    pc.button("Power Off", cx + 24.0 + 3.0 * act_btn_w, y, act_btn_w, act_btn_h,
+    pc.button("Power Off", sec.ax(24.0 + 3.0 * act_btn_w), yt, act_btn_w, act_btn_h,
         DANGER_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::PowerOff));
+    sec.finish(&mut pc);
 
     pc
 }

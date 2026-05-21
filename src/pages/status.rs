@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent};
+use clear_ui::layout::Section;
 
 #[derive(Debug, Clone, Default)]
 pub struct StatusState {
@@ -69,34 +70,39 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 pub fn view(state: &StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+    let y = cy + 12.0;
 
-    // Waybar status header
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Waybar");
+
+    // Status
     let status_color = if state.running { ACCENT } else { [0.67, 0.20, 0.20, 1.0] };
     let status_text = if state.running { "Running" } else { "Stopped" };
-    pc.text("Waybar", cx + 12.0, y, 14.0, TEXT_FG);
-    pc.text(status_text, cx + 80.0, y, 14.0, status_color);
-    y += 22.0;
+    sec.text(&mut pc, "Waybar", 12.0, 0.0, 14.0, TEXT_FG);
+    sec.text(&mut pc, status_text, 80.0, 0.0, 14.0, status_color);
+    sec.spacing(22.0);
 
     // Font size
-    pc.text(&format!("Font size: {}px", state.font_size), cx + 12.0, y, 13.0, TEXT_FG);
-    y += 20.0;
+    sec.text(&mut pc, &format!("Font size: {}px", state.font_size), 12.0, 0.0, 13.0, TEXT_FG);
+    sec.spacing(20.0);
 
     let btn_h = 28.0;
-    pc.button("-1", cx + 12.0, y, 36.0, btn_h,
+    let yt = sec.ay();
+    pc.button("-1", sec.ax(12.0), yt, 36.0, btn_h,
         BTN_INACTIVE, BTN_HOVER, WHITE,
         AppAction::Status(StatusMessage::FontSizeDown));
-    pc.text(&format!(" {}px ", state.font_size), cx + 56.0, y + 7.0, 13.0, TEXT_FG);
-    pc.button("+1", cx + 12.0 + 36.0 + 8.0, y, 36.0, btn_h,
+    pc.text(&format!(" {}px ", state.font_size), sec.ax(56.0), yt + 7.0, 13.0, TEXT_FG);
+    pc.button("+1", sec.ax(12.0 + 36.0 + 8.0), yt, 36.0, btn_h,
         BTN_ACTIVE, BTN_HOVER, WHITE,
         AppAction::Status(StatusMessage::FontSizeUp));
-    y += btn_h + 12.0;
+    sec.content_y += btn_h + 12.0;
 
     // Reload button
+    let yt = sec.ay();
     let btn_w = (cw - 24.0).min(200.0);
-    pc.button("Reload Waybar", cx + cw / 2.0 - btn_w / 2.0, y, btn_w, 32.0,
+    pc.button("Reload Waybar", cx + cw / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
         BTN_INACTIVE, BTN_HOVER, WHITE,
         AppAction::Status(StatusMessage::ReloadWaybar));
+    sec.finish(&mut pc);
 
     pc
 }
