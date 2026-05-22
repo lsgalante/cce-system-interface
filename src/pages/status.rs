@@ -5,6 +5,7 @@ use clear_ui::layout::Section;
 pub struct StatusState {
     pub font_size: u16,
     pub running: bool,
+    pub loaded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +23,7 @@ pub async fn fetch_status_state() -> StatusState {
         .unwrap_or(false);
 
     let font_size = read_waybar_font_size().unwrap_or(13);
-    StatusState { font_size, running }
+    StatusState { font_size, running, loaded: true }
 }
 
 fn read_waybar_font_size() -> Option<u16> {
@@ -74,34 +75,39 @@ pub fn view(state: &StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
 
     let mut sec = Section::new(&mut pc, cx, y, cw, "Waybar");
 
-    // Status
-    let status_color = if state.running { ACCENT } else { [0.67, 0.20, 0.20, 1.0] };
-    let status_text = if state.running { "Running" } else { "Stopped" };
-    sec.text(&mut pc, "Waybar", 12.0, 0.0, 14.0, TEXT_FG);
-    sec.text(&mut pc, status_text, 80.0, 0.0, 14.0, status_color);
-    sec.spacing(22.0);
+    if !state.loaded {
+        sec.text(&mut pc, "Loading Waybar status...", 12.0, 0.0, 12.0, TEXT_FG);
+        sec.spacing(18.0);
+    } else {
+        // Status
+        let status_color = if state.running { ACCENT } else { [0.67, 0.20, 0.20, 1.0] };
+        let status_text = if state.running { "Running" } else { "Stopped" };
+        sec.text(&mut pc, "Waybar", 12.0, 0.0, 14.0, TEXT_FG);
+        sec.text(&mut pc, status_text, 80.0, 0.0, 14.0, status_color);
+        sec.spacing(22.0);
 
-    // Font size
-    sec.text(&mut pc, &format!("Font size: {}px", state.font_size), 12.0, 0.0, 13.0, TEXT_FG);
-    sec.spacing(20.0);
+        // Font size
+        sec.text(&mut pc, &format!("Font size: {}px", state.font_size), 12.0, 0.0, 13.0, TEXT_FG);
+        sec.spacing(20.0);
 
-    let btn_h = 28.0;
-    let yt = sec.ay();
-    pc.button("-1", sec.ax(12.0), yt, 36.0, btn_h,
-        BTN_INACTIVE, BTN_HOVER, WHITE,
-        AppAction::Status(StatusMessage::FontSizeDown));
-    pc.text(&format!(" {}px ", state.font_size), sec.ax(56.0), yt + 7.0, 13.0, TEXT_FG);
-    pc.button("+1", sec.ax(12.0 + 36.0 + 8.0), yt, 36.0, btn_h,
-        BTN_ACTIVE, BTN_HOVER, WHITE,
-        AppAction::Status(StatusMessage::FontSizeUp));
-    sec.content_y += btn_h + 12.0;
+        let btn_h = 28.0;
+        let yt = sec.ay();
+        pc.button("-1", sec.ax(12.0), yt, 36.0, btn_h,
+            BTN_INACTIVE, BTN_HOVER, WHITE,
+            AppAction::Status(StatusMessage::FontSizeDown));
+        pc.text(&format!(" {}px ", state.font_size), sec.ax(56.0), yt + 7.0, 13.0, TEXT_FG);
+        pc.button("+1", sec.ax(12.0 + 36.0 + 8.0), yt, 36.0, btn_h,
+            BTN_ACTIVE, BTN_HOVER, WHITE,
+            AppAction::Status(StatusMessage::FontSizeUp));
+        sec.content_y += btn_h + 12.0;
 
-    // Reload button
-    let yt = sec.ay();
-    let btn_w = (cw - 24.0).min(200.0);
-    pc.button("Reload Waybar", cx + cw / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
-        BTN_INACTIVE, BTN_HOVER, WHITE,
-        AppAction::Status(StatusMessage::ReloadWaybar));
+        // Reload button
+        let yt = sec.ay();
+        let btn_w = (cw - 24.0).min(200.0);
+        pc.button("Reload Waybar", cx + cw / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
+            BTN_INACTIVE, BTN_HOVER, WHITE,
+            AppAction::Status(StatusMessage::ReloadWaybar));
+    }
     sec.finish(&mut pc);
 
     pc

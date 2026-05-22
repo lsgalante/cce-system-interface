@@ -61,8 +61,14 @@ pub struct LayoutState {
     pub vsplit_border_width: u16,
     pub hsplit_border_width: u16,
     pub floating_border_width: u16,
+    pub cascade_offset: u16,
+    pub edge_gap: u16,
+    pub top_gap: u16,
     pub color_options: Vec<(&'static str, [u8; 3])>,
     pub spinboxes: Vec<Spinbox>,
+    pub cascade_offset_spinbox: Spinbox,
+    pub edge_gap_spinbox: Spinbox,
+    pub top_gap_spinbox: Spinbox,
     pub color_selectors: Vec<ColorSelector>,
 }
 
@@ -77,8 +83,14 @@ impl Default for LayoutState {
             vsplit_border_width: 6,
             hsplit_border_width: 6,
             floating_border_width: 6,
+            cascade_offset: 20,
+            edge_gap: 48,
+            top_gap: 48,
             color_options: preset_colors(),
             spinboxes: make_spinboxes(0, 6, 6, 6, 6, 6),
+            cascade_offset_spinbox: Spinbox::new(20, 0, 200, 1),
+            edge_gap_spinbox: Spinbox::new(48, 0, 200, 1),
+            top_gap_spinbox: Spinbox::new(48, 0, 200, 1),
             color_selectors: vec![
                 ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Desktop Background"),
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("Border Color"),
@@ -94,6 +106,9 @@ pub enum LayoutMessage {
     PickBackgroundColor,
     PickBorderColor,
     SetWidth(WidthParam, u16),
+    SetCascadeOffset(u16),
+    SetEdgeGap(u16),
+    SetTopGap(u16),
     Refreshed(LayoutState),
 }
 
@@ -122,6 +137,9 @@ pub fn read_layout_config() -> LayoutState {
     let v = parse_u16_from(&content, "vsplit_border_width", 6);
     let h = parse_u16_from(&content, "hsplit_border_width", 6);
     let fl = parse_u16_from(&content, "floating_border_width", 6);
+    let co = parse_u16_from(&content, "cascade_offset", 20);
+    let gl = parse_u16_from(&content, "gap_left", 48);
+    let gt = parse_u16_from(&content, "gap_top", 48);
     LayoutState {
         background_color: parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e]),
         border_color: parse_color_from_key(&content, "border_color", [0x3e, 0x3e, 0x3e]),
@@ -131,8 +149,14 @@ pub fn read_layout_config() -> LayoutState {
         vsplit_border_width: v,
         hsplit_border_width: h,
         floating_border_width: fl,
+        cascade_offset: co,
+        edge_gap: gl,
+        top_gap: gt,
         color_options: preset_colors(),
         spinboxes: make_spinboxes(fs, ca, g, v, h, fl),
+        cascade_offset_spinbox: Spinbox::new(co as i32, 0, 200, 1),
+        edge_gap_spinbox: Spinbox::new(gl as i32, 0, 200, 1),
+        top_gap_spinbox: Spinbox::new(gt as i32, 0, 200, 1),
         color_selectors: vec![
             ColorSelector::new(parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e]))
                 .with_label("Desktop Background"),
@@ -230,6 +254,11 @@ fn apply_all_widths(s: &LayoutState) {
     w("vsplit_border_width", s.vsplit_border_width);
     w("hsplit_border_width", s.hsplit_border_width);
     w("floating_border_width", s.floating_border_width);
+    w("cascade_offset", s.cascade_offset);
+    w("gap_left", s.edge_gap);
+    w("gap_right", s.edge_gap);
+    w("gap_bottom", s.edge_gap);
+    w("gap_top", s.top_gap);
 }
 
 pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
@@ -246,14 +275,25 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
     sec.widget(&mut pc, &mut state.color_selectors[1], 12.0, 220.0, 22.0);
     y = sec.finish(&mut pc);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Border Width");
-    sec.spacing(8.0);
     for (i, param) in WidthParam::ALL.iter().enumerate() {
-        state.spinboxes[i].set_label(param.label());
-        sec.widget(&mut pc, &mut state.spinboxes[i], 14.0, 200.0, 26.0);
+        let mut sec = Section::new(&mut pc, cx, y, cw, param.label());
         sec.spacing(8.0);
+        state.spinboxes[i].set_label("Border Width");
+        sec.widget(&mut pc, &mut state.spinboxes[i], 14.0, 200.0, 26.0);
+        if *param == WidthParam::Cascade {
+            sec.spacing(8.0);
+            state.cascade_offset_spinbox.set_label("Offset");
+            sec.widget(&mut pc, &mut state.cascade_offset_spinbox, 14.0, 200.0, 26.0);
+            sec.spacing(8.0);
+            state.edge_gap_spinbox.set_label("Edge Gap");
+            sec.widget(&mut pc, &mut state.edge_gap_spinbox, 14.0, 200.0, 26.0);
+            sec.spacing(8.0);
+            state.top_gap_spinbox.set_label("Top Gap");
+            sec.widget(&mut pc, &mut state.top_gap_spinbox, 14.0, 200.0, 26.0);
+        }
+        sec.spacing(8.0);
+        y = sec.finish(&mut pc);
     }
-    sec.finish(&mut pc);
 
     pc
 }
@@ -295,6 +335,24 @@ pub fn update(state: &mut LayoutState, msg: LayoutMessage) {
         }
         LayoutMessage::PickBackgroundColor | LayoutMessage::PickBorderColor => {}
         LayoutMessage::SetWidth(p, v) => set_width(state, p, v),
+        LayoutMessage::SetCascadeOffset(v) => {
+            let val = v.min(200);
+            state.cascade_offset = val;
+            state.cascade_offset_spinbox.value = val as i32;
+            apply_all_widths(state);
+        }
+        LayoutMessage::SetEdgeGap(v) => {
+            let val = v.min(200);
+            state.edge_gap = val;
+            state.edge_gap_spinbox.value = val as i32;
+            apply_all_widths(state);
+        }
+        LayoutMessage::SetTopGap(v) => {
+            let val = v.min(200);
+            state.top_gap = val;
+            state.top_gap_spinbox.value = val as i32;
+            apply_all_widths(state);
+        }
         LayoutMessage::Refreshed(new) => { *state = new; }
     }
 }

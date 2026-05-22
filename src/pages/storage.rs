@@ -7,6 +7,7 @@ pub struct StorageState {
     pub disk_used: f64,
     pub ram_total: f64,
     pub ram_used: f64,
+    pub loaded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +30,7 @@ pub async fn fetch_storage_state() -> StorageState {
         .unwrap_or_default();
     let (ram_total, ram_used) = parse_mem(&mem_output);
 
-    StorageState { disk_total, disk_used, ram_total, ram_used }
+    StorageState { disk_total, disk_used, ram_total, ram_used, loaded: true }
 }
 
 fn parse_disk(info: &str) -> (f64, f64) {
@@ -67,48 +68,57 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCo
 
     let mut sec = Section::new(&mut pc, cx, y, cw, "Local Storage");
 
-    let disk_pct = if state.disk_total > 0.0 {
-        state.disk_used / state.disk_total * 100.0
+    if !state.loaded {
+        sec.text(&mut pc, "Loading storage and memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
+        sec.spacing(18.0);
     } else {
-        0.0
-    };
+        let disk_pct = if state.disk_total > 0.0 {
+            state.disk_used / state.disk_total * 100.0
+        } else {
+            0.0
+        };
 
-    sec.text(&mut pc, "Disk", 12.0, 0.0, 12.0, LABEL_FG);
-    sec.text(&mut pc,
-        &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
-        100.0, 0.0, 12.0, TEXT_FG,
-    );
-    sec.spacing(18.0);
+        sec.text(&mut pc, "Disk", 12.0, 0.0, 12.0, LABEL_FG);
+        sec.text(&mut pc,
+            &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
+            100.0, 0.0, 12.0, TEXT_FG,
+        );
+        sec.spacing(18.0);
 
-    let bar_w = cw - 24.0;
-    let yt = sec.ay();
-    pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
-    if disk_pct > 0.0 {
-        pc.rect([0.36, 0.60, 0.36, 1.0], sec.ax(12.0), yt, bar_w * (disk_pct as f32 / 100.0).min(1.0), 8.0);
-    }
-    sec.content_y += 20.0;
+        let bar_w = cw - 24.0;
+        let yt = sec.ay();
+        pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
+        if disk_pct > 0.0 {
+            pc.rect([0.36, 0.60, 0.36, 1.0], sec.ax(12.0), yt, bar_w * (disk_pct as f32 / 100.0).min(1.0), 8.0);
+        }
+        sec.content_y += 20.0;
 
-    let ram_pct = if state.ram_total > 0.0 {
-        state.ram_used / state.ram_total * 100.0
-    } else {
-        0.0
-    };
+        let ram_pct = if state.ram_total > 0.0 {
+            state.ram_used / state.ram_total * 100.0
+        } else {
+            0.0
+        };
 
-    sec.text(&mut pc, "RAM", 12.0, 0.0, 12.0, LABEL_FG);
-    sec.text(&mut pc,
-        &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
-        100.0, 0.0, 12.0, TEXT_FG,
-    );
-    sec.spacing(18.0);
+        sec.text(&mut pc, "RAM", 12.0, 0.0, 12.0, LABEL_FG);
+        sec.text(&mut pc,
+            &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
+            100.0, 0.0, 12.0, TEXT_FG,
+        );
+        sec.spacing(18.0);
 
-    let yt = sec.ay();
-    pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
-    if ram_pct > 0.0 {
-        pc.rect([0.50, 0.50, 0.65, 1.0], sec.ax(12.0), yt, bar_w * (ram_pct as f32 / 100.0).min(1.0), 8.0);
+        let yt = sec.ay();
+        pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
+        if ram_pct > 0.0 {
+            pc.rect([0.50, 0.50, 0.65, 1.0], sec.ax(12.0), yt, bar_w * (ram_pct as f32 / 100.0).min(1.0), 8.0);
+        }
     }
     sec.finish(&mut pc);
 
     pc
 }
 
-pub fn update(_state: &mut StorageState, _msg: StorageMessage) {}
+pub fn update(state: &mut StorageState, msg: StorageMessage) {
+    match msg {
+        StorageMessage::Refreshed(new) => { *state = new; }
+    }
+}

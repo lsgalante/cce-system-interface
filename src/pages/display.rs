@@ -13,6 +13,7 @@ pub struct DisplayOutput {
 
 #[derive(Debug, Clone)]
 pub struct DisplayState {
+    pub loaded: bool,
     pub brightness: f32,
     pub max_brightness: f32,
     pub outputs: Vec<DisplayOutput>,
@@ -23,6 +24,7 @@ pub struct DisplayState {
 impl Default for DisplayState {
     fn default() -> Self {
         Self {
+            loaded: false,
             brightness: 0.0,
             max_brightness: 0.0,
             outputs: Vec::new(),
@@ -46,6 +48,7 @@ pub async fn fetch_display_state() -> DisplayState {
         (brightness / max_brightness * 100.0).round() as i32
     } else { 50 };
     DisplayState {
+        loaded: true,
         brightness, max_brightness, outputs, night_light,
         brightness_spinbox: Spinbox::new(pct, 0, 100, 5),
     }
@@ -128,49 +131,63 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pa
     // ── Brightness ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Brightness");
 
-    let bright_pct = if state.max_brightness > 0.0 {
-        (state.brightness / state.max_brightness * 100.0).round() as i32
-    } else { 0 };
+    if !state.loaded {
+        sec.text(&mut pc, "Loading display settings...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec.spacing(18.0);
+    } else {
+        let bright_pct = if state.max_brightness > 0.0 {
+            (state.brightness / state.max_brightness * 100.0).round() as i32
+        } else { 0 };
 
-    let bar_w = cw - 100.0;
-    let yt = sec.ay();
-    pc.rect(BLANK_BAR, sec.ax(12.0), yt, bar_w, 8.0);
-    pc.rect(FILL_BAR, sec.ax(12.0), yt, bar_w * bright_pct as f32 / 100.0, 8.0);
-    pc.text(&format!("{}%", bright_pct), sec.ax(16.0 + bar_w), yt - 2.0, 11.0, TEXT_DIM);
-    sec.content_y += 14.0;
+        let bar_w = cw - 100.0;
+        let yt = sec.ay();
+        pc.rect(BLANK_BAR, sec.ax(12.0), yt, bar_w, 8.0);
+        pc.rect(FILL_BAR, sec.ax(12.0), yt, bar_w * bright_pct as f32 / 100.0, 8.0);
+        pc.text(&format!("{}%", bright_pct), sec.ax(16.0 + bar_w), yt - 2.0, 11.0, TEXT_DIM);
+        sec.content_y += 14.0;
 
-    let yt = sec.ay();
-    let sb_w = 100.0;
-    let sb_h = 26.0;
-    state.brightness_spinbox.value = bright_pct;
-    render_widget(&mut pc, &mut state.brightness_spinbox, sec.ax(12.0), yt, sb_w, sb_h);
-    sec.content_y += sb_h + 12.0;
+        let yt = sec.ay();
+        let sb_w = 100.0;
+        let sb_h = 26.0;
+        state.brightness_spinbox.value = bright_pct;
+        render_widget(&mut pc, &mut state.brightness_spinbox, sec.ax(12.0), yt, sb_w, sb_h);
+        sec.content_y += sb_h + 12.0;
+    }
     y = sec.finish(&mut pc);
 
     // ── Night Light ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Night Light");
-    let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
-    sec.text(&mut pc, nl_label, 12.0, 0.0, 13.0, TEXT_FG);
+    if !state.loaded {
+        sec.text(&mut pc, "Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
+    } else {
+        let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
+        sec.text(&mut pc, nl_label, 12.0, 0.0, 13.0, TEXT_FG);
+    }
     y = sec.finish(&mut pc);
 
     // ── Outputs ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Outputs");
 
-    for out in &state.outputs {
-        if out.connected {
-            let scale_info = if out.scale > 1.0 {
-                if let Some((w_str, h_str)) = out.resolution.rsplit_once('x') {
-                    if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
-                        format!("  logical {:.0}x{:.0} | scale {:.0}x", w as f32 / out.scale, h as f32 / out.scale, out.scale)
-                    } else { format!("  scale {:.0}x", out.scale) }
-                } else { String::new() }
-            } else { String::new() };
-            sec.text(&mut pc, &format!("{}  {} @ {}Hz{}", out.name, out.resolution, out.refresh, scale_info),
-                14.0, 0.0, 12.0, TEXT_FG);
-        } else {
-            sec.text(&mut pc, &format!("{}  (disconnected)", out.name), 14.0, 0.0, 12.0, TEXT_DIM);
-        }
+    if !state.loaded {
+        sec.text(&mut pc, "Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(18.0);
+    } else {
+        for out in &state.outputs {
+            if out.connected {
+                let scale_info = if out.scale > 1.0 {
+                    if let Some((w_str, h_str)) = out.resolution.rsplit_once('x') {
+                        if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                            format!("  logical {:.0}x{:.0} | scale {:.0}x", w as f32 / out.scale, h as f32 / out.scale, out.scale)
+                        } else { format!("  scale {:.0}x", out.scale) }
+                    } else { String::new() }
+                } else { String::new() };
+                sec.text(&mut pc, &format!("{}  {} @ {}Hz{}", out.name, out.resolution, out.refresh, scale_info),
+                    14.0, 0.0, 12.0, TEXT_FG);
+            } else {
+                sec.text(&mut pc, &format!("{}  (disconnected)", out.name), 14.0, 0.0, 12.0, TEXT_DIM);
+            }
+            sec.spacing(18.0);
+        }
     }
     sec.finish(&mut pc);
 

@@ -19,6 +19,7 @@ pub struct BluetoothDevice {
 
 #[derive(Debug, Clone, Default)]
 pub struct NetworkState {
+    pub loaded: bool,
     pub wifi_enabled: bool,
     pub connected_ssid: String,
     pub signal_strength: u8,
@@ -85,6 +86,7 @@ pub async fn fetch_network_state() -> NetworkState {
     let (bt_enabled, bt_devices) = fetch_bluetooth_state().await;
 
     NetworkState {
+        loaded: true,
         wifi_enabled, connected_ssid, signal_strength: signal,
         ip_address, device, available,
         bt_enabled, bt_devices, bt_scanning: false,
@@ -210,35 +212,40 @@ pub fn view(state: &NetworkState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCo
     // ── WiFi ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "WiFi");
 
-    let yt = sec.ay();
-    pc.button(if state.wifi_enabled { "ON" } else { "OFF" },
-        sec.ax(cw - 80.0), yt, 60.0, 28.0,
-        if state.wifi_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
-        AppAction::Radios(NetworkMessage::ToggleWifi));
-    sec.content_y += 34.0;
-
-    if !state.connected_ssid.is_empty() {
-        sec.text(&mut pc, &format!("Connected: {}", state.connected_ssid), 14.0, 0.0, 13.0, ACCENT);
+    if !state.loaded {
+        sec.text(&mut pc, "Loading WiFi interfaces...", 12.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(18.0);
-        sec.text(&mut pc, &format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
-            14.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(16.0);
-    } else if state.wifi_enabled {
-        sec.text(&mut pc, "Not connected", 14.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(16.0);
-    }
+    } else {
+        let yt = sec.ay();
+        pc.button(if state.wifi_enabled { "ON" } else { "OFF" },
+            sec.ax(cw - 80.0), yt, 60.0, 28.0,
+            if state.wifi_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
+            AppAction::Radios(NetworkMessage::ToggleWifi));
+        sec.content_y += 34.0;
 
-    if state.wifi_enabled && !state.available.is_empty() {
-        for net in &state.available {
-            let prefix = if net.in_use { ">" } else { " " };
-            let label = format!("{}  {}  ({}%)", prefix, net.ssid, net.signal);
-            let active = net.in_use;
-            let yt = sec.ay();
-            pc.button(&label, sec.ax(14.0), yt, cw - 28.0, 26.0,
-                if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
-                if active { ACCENT } else { TEXT_FG },
-                AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
-            sec.content_y += 30.0;
+        if !state.connected_ssid.is_empty() {
+            sec.text(&mut pc, &format!("Connected: {}", state.connected_ssid), 14.0, 0.0, 13.0, ACCENT);
+            sec.spacing(18.0);
+            sec.text(&mut pc, &format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
+                14.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(16.0);
+        } else if state.wifi_enabled {
+            sec.text(&mut pc, "Not connected", 14.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(16.0);
+        }
+
+        if state.wifi_enabled && !state.available.is_empty() {
+            for net in &state.available {
+                let prefix = if net.in_use { ">" } else { " " };
+                let label = format!("{}  {}  ({}%)", prefix, net.ssid, net.signal);
+                let active = net.in_use;
+                let yt = sec.ay();
+                pc.button(&label, sec.ax(14.0), yt, cw - 28.0, 26.0,
+                    if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
+                    if active { ACCENT } else { TEXT_FG },
+                    AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
+                sec.content_y += 30.0;
+            }
         }
     }
 
@@ -247,35 +254,40 @@ pub fn view(state: &NetworkState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCo
     // ── Bluetooth ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Bluetooth");
 
-    let yt = sec.ay();
-    pc.button(if state.bt_enabled { "ON" } else { "OFF" },
-        sec.ax(cw - 140.0), yt, 60.0, 28.0,
-        if state.bt_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
-        AppAction::Radios(NetworkMessage::ToggleBluetooth));
-    pc.button("Scan", sec.ax(cw - 72.0), yt, 52.0, 28.0,
-        TOGGLE_OFF, BTN_HOVER, WHITE,
-        AppAction::Radios(NetworkMessage::BtScan));
-    sec.content_y += 34.0;
-
-    if state.bt_devices.is_empty() {
-        if state.bt_enabled {
-            sec.text(&mut pc, "No paired devices found", 14.0, 0.0, 12.0, TEXT_DIM);
-        }
+    if !state.loaded {
+        sec.text(&mut pc, "Loading Bluetooth status...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec.spacing(18.0);
     } else {
-        for dev in &state.bt_devices {
-            let status = if dev.connected { ">" } else { " " };
-            let label = format!("{} {} ({})", status, dev.name, dev.mac);
-            let action_label = if dev.connected { "Disconnect" } else { "Connect" };
-            let yt = sec.ay();
-            sec.text(&mut pc, &label, 14.0, 0.0, 12.0, if dev.connected { ACCENT } else { TEXT_FG });
-            pc.button(action_label, sec.ax(cw - 90.0), yt - 2.0, 70.0, 22.0,
-                if dev.connected { TOGGLE_OFF } else { TOGGLE_ON }, BTN_HOVER, WHITE,
-                if dev.connected {
-                    AppAction::Radios(NetworkMessage::BtDisconnect(dev.mac.clone()))
-                } else {
-                    AppAction::Radios(NetworkMessage::BtConnect(dev.mac.clone()))
-                });
-            sec.content_y += 24.0;
+        let yt = sec.ay();
+        pc.button(if state.bt_enabled { "ON" } else { "OFF" },
+            sec.ax(cw - 140.0), yt, 60.0, 28.0,
+            if state.bt_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
+            AppAction::Radios(NetworkMessage::ToggleBluetooth));
+        pc.button("Scan", sec.ax(cw - 72.0), yt, 52.0, 28.0,
+            TOGGLE_OFF, BTN_HOVER, WHITE,
+            AppAction::Radios(NetworkMessage::BtScan));
+        sec.content_y += 34.0;
+
+        if state.bt_devices.is_empty() {
+            if state.bt_enabled {
+                sec.text(&mut pc, "No paired devices found", 14.0, 0.0, 12.0, TEXT_DIM);
+            }
+        } else {
+            for dev in &state.bt_devices {
+                let status = if dev.connected { ">" } else { " " };
+                let label = format!("{} {} ({})", status, dev.name, dev.mac);
+                let action_label = if dev.connected { "Disconnect" } else { "Connect" };
+                let yt = sec.ay();
+                sec.text(&mut pc, &label, 14.0, 0.0, 12.0, if dev.connected { ACCENT } else { TEXT_FG });
+                pc.button(action_label, sec.ax(cw - 90.0), yt - 2.0, 70.0, 22.0,
+                    if dev.connected { TOGGLE_OFF } else { TOGGLE_ON }, BTN_HOVER, WHITE,
+                    if dev.connected {
+                        AppAction::Radios(NetworkMessage::BtDisconnect(dev.mac.clone()))
+                    } else {
+                        AppAction::Radios(NetworkMessage::BtConnect(dev.mac.clone()))
+                    });
+                sec.content_y += 24.0;
+            }
         }
     }
     sec.finish(&mut pc);

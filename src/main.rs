@@ -218,33 +218,11 @@ impl SystemInterface {
             mapped_at_creation: false,
         });
 
-        // ── Initial state (fetch all concurrently) ──
-        let (power, audio, display, network, system_info, status, storage, processors) = tokio::join!(
-            pages::power::fetch_power_state(),
-            pages::audio::fetch_audio_state(),
-            pages::display::fetch_display_state(),
-            pages::network::fetch_network_state(),
-            pages::system_info::fetch_system_state(),
-            pages::status::fetch_status_state(),
-            pages::storage::fetch_storage_state(),
-            pages::processors::fetch_processors_state(),
-        );
-        let mut app = AppState {
-            power,
-            audio,
-            display,
-            network,
+        let app = AppState {
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
-            processors,
-            system_info,
-            status,
-            storage,
-            current_page: Page::ALL[0],
+            ..Default::default()
         };
-        // Init spinbox vectors to match fetched sinks/sources
-        app.audio.sink_spinboxes.resize_with(app.audio.sinks.len(), || Spinbox::new(50, 0, 100, 1));
-        app.audio.source_spinboxes.resize_with(app.audio.sources.len(), || Spinbox::new(50, 0, 100, 1));
 
         // ── Background refresh channels ──
         fn spawn_bg<T, F>(period_secs: u64, f: fn() -> F) -> std::sync::mpsc::Receiver<T>
@@ -255,9 +233,9 @@ impl SystemInterface {
             let (tx, rx) = std::sync::mpsc::channel::<T>();
             tokio::spawn(async move {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(period_secs)).await;
                     let val = f().await;
                     if tx.send(val).is_err() { break; }
+                    tokio::time::sleep(std::time::Duration::from_secs(period_secs)).await;
                 }
             });
             rx
@@ -271,9 +249,9 @@ impl SystemInterface {
             let (tx, rx) = std::sync::mpsc::channel::<pages::layout::LayoutState>();
             tokio::spawn(async move {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                     let val = tokio::task::spawn_blocking(|| pages::layout::read_layout_config()).await;
                     if let Ok(val) = val { if tx.send(val).is_err() { break; } }
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 }
             });
             rx
@@ -282,9 +260,9 @@ impl SystemInterface {
             let (tx, rx) = std::sync::mpsc::channel::<pages::input::InputState>();
             tokio::spawn(async move {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                     let val = tokio::task::spawn_blocking(|| pages::input::read_input_config()).await;
                     if let Ok(val) = val { if tx.send(val).is_err() { break; } }
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 }
             });
             rx
@@ -642,6 +620,15 @@ impl SystemInterface {
                             changed = true;
                         }
                     }
+                    if self.app.layout.cascade_offset_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                    if self.app.layout.edge_gap_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                    if self.app.layout.top_gap_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
                     for cp in &mut self.app.layout.color_selectors {
                         if cp.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
                             changed = true;
@@ -686,10 +673,49 @@ impl SystemInterface {
                 if self.app.current_page == Page::Layout {
                     let mut changed = false;
                     let mut actions = Vec::new();
-                    for sb in &mut self.app.layout.spinboxes {
+                    for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
+                        let old = sb.value;
                         if sb.keyboard_input(event) {
+                            if sb.value != old {
+                                actions.push(AppAction::Layout(
+                                    pages::layout::LayoutMessage::SetWidth(
+                                        pages::layout::WidthParam::ALL[i],
+                                        sb.value as u16,
+                                    )
+                                ));
+                            }
                             changed = true;
                         }
+                    }
+                    let sb = &mut self.app.layout.cascade_offset_spinbox;
+                    let old = sb.value;
+                    if sb.keyboard_input(event) {
+                        if sb.value != old {
+                            actions.push(AppAction::Layout(
+                                pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
+                            ));
+                        }
+                        changed = true;
+                    }
+                    let sb = &mut self.app.layout.edge_gap_spinbox;
+                    let old = sb.value;
+                    if sb.keyboard_input(event) {
+                        if sb.value != old {
+                            actions.push(AppAction::Layout(
+                                pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
+                            ));
+                        }
+                        changed = true;
+                    }
+                    let sb = &mut self.app.layout.top_gap_spinbox;
+                    let old = sb.value;
+                    if sb.keyboard_input(event) {
+                        if sb.value != old {
+                            actions.push(AppAction::Layout(
+                                pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
+                            ));
+                        }
+                        changed = true;
                     }
                     for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
                         let old = cp.color;
@@ -805,6 +831,30 @@ impl SystemInterface {
                                 )
                             ));
                         }
+                    }
+                    let sb = &mut self.app.layout.cascade_offset_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Layout(
+                            pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
+                        ));
+                    }
+                    let sb = &mut self.app.layout.edge_gap_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Layout(
+                            pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
+                        ));
+                    }
+                    let sb = &mut self.app.layout.top_gap_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Layout(
+                            pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
+                        ));
                     }
                     for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
                         let old = cp.color;

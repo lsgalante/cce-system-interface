@@ -7,6 +7,7 @@ pub struct ProcessorsState {
     pub cpu_usage: f32,
     pub cpu_cores: u32,
     pub gpu: String,
+    pub loaded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +66,7 @@ pub async fn fetch_processors_state() -> ProcessorsState {
         })
         .unwrap_or_default();
 
-    ProcessorsState { cpu_model, cpu_usage, cpu_cores, gpu }
+    ProcessorsState { cpu_model, cpu_usage, cpu_cores, gpu, loaded: true }
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
@@ -75,15 +76,24 @@ pub fn view(state: &ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
     let y = cy + 12.0;
 
     let mut sec = Section::new(&mut pc, cx, y, cw, "Processors");
-    sec.text(&mut pc,
-        &format!("CPU  {}  ({} cores)  —  {:.0}%", state.cpu_model, state.cpu_cores, state.cpu_usage),
-        12.0, 0.0, 12.0, TEXT_FG,
-    );
-    sec.spacing(10.0);
-    sec.text(&mut pc, &format!("GPU  {}", state.gpu), 12.0, 0.0, 12.0, TEXT_FG);
+    if !state.loaded {
+        sec.text(&mut pc, "Loading processor models and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
+        sec.spacing(10.0);
+    } else {
+        sec.text(&mut pc,
+            &format!("CPU  {}  ({} cores)  —  {:.0}%", state.cpu_model, state.cpu_cores, state.cpu_usage),
+            12.0, 0.0, 12.0, TEXT_FG,
+        );
+        sec.spacing(10.0);
+        sec.text(&mut pc, &format!("GPU  {}", state.gpu), 12.0, 0.0, 12.0, TEXT_FG);
+    }
     sec.finish(&mut pc);
 
     pc
 }
 
-pub fn update(_state: &mut ProcessorsState, _msg: ProcessorsMessage) {}
+pub fn update(state: &mut ProcessorsState, msg: ProcessorsMessage) {
+    match msg {
+        ProcessorsMessage::Refreshed(new) => { *state = new; }
+    }
+}

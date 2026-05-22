@@ -6,6 +6,7 @@ pub struct SystemState {
     pub hostname: String,
     pub kernel: String,
     pub uptime: String,
+    pub loaded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +30,7 @@ pub async fn fetch_system_state() -> SystemState {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_start_matches("up ").to_string())
         .unwrap_or_default();
 
-    SystemState { hostname, kernel, uptime }
+    SystemState { hostname, kernel, uptime, loaded: true }
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
@@ -40,12 +41,21 @@ pub fn view(state: &SystemState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
     let y = cy + 12.0;
 
     let mut sec = Section::new(&mut pc, cx, y, cw, "System");
-    sec.text(&mut pc, &format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
-    sec.spacing(10.0);
-    sec.text(&mut pc, &format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
+    if !state.loaded {
+        sec.text(&mut pc, "Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
+        sec.spacing(10.0);
+    } else {
+        sec.text(&mut pc, &format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
+        sec.spacing(10.0);
+        sec.text(&mut pc, &format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
+    }
     sec.finish(&mut pc);
 
     pc
 }
 
-pub fn update(_state: &mut SystemState, _msg: SystemMessage) {}
+pub fn update(state: &mut SystemState, msg: SystemMessage) {
+    match msg {
+        SystemMessage::Refreshed(new) => { *state = new; }
+    }
+}
