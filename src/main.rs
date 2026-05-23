@@ -125,6 +125,7 @@ struct SystemInterface {
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
+    rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsState>,
     tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
     rx_color_selector: std::sync::mpsc::Receiver<ColorSelectorAction>,
 
@@ -271,6 +272,17 @@ impl SystemInterface {
         let rx_processors = spawn_bg(3, || pages::processors::fetch_processors_state());
         let rx_status = spawn_bg(10, || pages::status::fetch_status_state());
         let rx_storage = spawn_bg(10, || pages::storage::fetch_storage_state());
+        let rx_notifications = {
+            let (tx, rx) = std::sync::mpsc::channel::<pages::notifications::NotificationsState>();
+            tokio::spawn(async move {
+                loop {
+                    let val = tokio::task::spawn_blocking(|| pages::notifications::read_notifications_config()).await;
+                    if let Ok(val) = val { if tx.send(val).is_err() { break; } }
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                }
+            });
+            rx
+        };
 
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
         let scale_factor = (window.scale_factor() as f32).max(2.0) as f64;
@@ -284,7 +296,7 @@ impl SystemInterface {
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
-            rx_processors, rx_system, rx_status, rx_storage,
+            rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
             tx_color_selector, rx_color_selector,
             width: size.width, height: size.height,
             needs_rebuild: true,
@@ -433,6 +445,7 @@ impl SystemInterface {
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
             Page::Status => status::view(&self.app.status, cx, cy, cw, ch),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
+            Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
         }
     }
 
@@ -535,6 +548,10 @@ impl SystemInterface {
             storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_notifications.try_recv() {
+            notifications::update(&mut self.app.notifications, notifications::NotificationsMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
         while let Ok(action) = self.rx_color_selector.try_recv() {
             match action {
                 ColorSelectorAction::Background(rgb) => {
@@ -595,6 +612,7 @@ impl SystemInterface {
             AppAction::Processors(m) => processors::update(&mut self.app.processors, m.clone()),
             AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
             AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
+            AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
         }
     }
 
@@ -663,6 +681,12 @@ impl SystemInterface {
                 if self.app.current_page == Page::Display {
                     let s = self.scale_factor as f32;
                     if self.app.display.brightness_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                }
+                if self.app.current_page == Page::Notifications {
+                    let s = self.scale_factor as f32;
+                    if self.app.notifications.enable_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
                         changed = true;
                     }
                 }
@@ -893,6 +917,13 @@ impl SystemInterface {
                     toggle.mouse_input(*button, *state, lx, ly);
                     if toggle.take_click() {
                         actions.push(AppAction::Input(pages::input::InputMessage::ToggleTapToClick));
+                    }
+                }
+                if self.app.current_page == Page::Notifications {
+                    let toggle = &mut self.app.notifications.enable_toggle;
+                    toggle.mouse_input(*button, *state, lx, ly);
+                    if toggle.take_click() {
+                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleEnable));
                     }
                 }
                 if *state == ElementState::Pressed && self.app.current_page == Page::Audio {

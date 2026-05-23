@@ -5,6 +5,7 @@ use crate::pages::display;
 use crate::pages::input;
 use crate::pages::layout;
 use crate::pages::network;
+use crate::pages::notifications;
 use crate::pages::power;
 use crate::pages::processors;
 use crate::pages::status;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub system_info: system_info::SystemState,
     pub status: status::StatusState,
     pub storage: storage::StorageState,
+    pub notifications: notifications::NotificationsState,
 }
 
 impl Default for AppState {
@@ -40,6 +42,7 @@ impl Default for AppState {
             system_info: system_info::SystemState::default(),
             status: status::StatusState::default(),
             storage: storage::StorageState::default(),
+            notifications: notifications::read_notifications_config(),
         }
     }
 }
@@ -56,6 +59,7 @@ pub enum AppAction {
     SystemInfo(system_info::SystemMessage),
     Status(status::StatusMessage),
     Storage(storage::StorageMessage),
+    Notifications(notifications::NotificationsMessage),
 }
 
 pub struct PageContent {
