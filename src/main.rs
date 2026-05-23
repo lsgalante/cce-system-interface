@@ -363,7 +363,7 @@ impl SystemInterface {
             text_items.push(TextItem {
                 buffer: make_text_buffer(&mut self.font_system, page.label(), 12.0 * s),
                 x: 16.0 * s, y: y + 9.0 * s,
-                color: glyphon::Color::rgb(0x55, 0x55, 0x77),
+                color: glyphon::Color::rgb(0x33, 0x33, 0x4a),
             });
         }
 
