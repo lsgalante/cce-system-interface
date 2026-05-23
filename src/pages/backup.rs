@@ -1,7 +1,6 @@
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::Section;
 use std::fs;
-use std::path::Path;
 
 #[derive(Debug, Clone, Default)]
 pub struct BackupState {
@@ -23,12 +22,13 @@ fn status_path() -> String {
     format!("{}/.config/clear-system-interface/backup_status.txt", std::env::var("HOME").unwrap_or_default())
 }
 
-pub fn read_backup_status() -> (String, String) {
+pub fn read_backup_status() -> (String, String, Option<String>) {
     let path_str = status_path();
     let content = fs::read_to_string(path_str).unwrap_or_default();
     
     let mut last_backup = "Never".to_string();
     let mut size = "0 B".to_string();
+    let mut err_msg = None;
     
     for line in content.lines() {
         let trimmed = line.trim();
@@ -40,93 +40,50 @@ pub fn read_backup_status() -> (String, String) {
             if let Some(val) = trimmed.split('=').nth(1) {
                 size = val.trim().to_string();
             }
+        } else if trimmed.starts_with("error_message") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                let v = val.trim().to_string();
+                if !v.is_empty() {
+                    err_msg = Some(v);
+                }
+            }
         }
     }
     
-    (last_backup, size)
-}
-
-fn write_backup_status(last_backup: &str, size: &str) {
-    let path_str = status_path();
-    let path = Path::new(&path_str);
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let content = format!("last_backup_time = {}\nbackup_size = {}\n", last_backup, size);
-    let _ = fs::write(path, content);
+    (last_backup, size, err_msg)
 }
 
 pub async fn fetch_backup_state() -> BackupState {
-    let (last_backup, size) = read_backup_status();
+    let (last_backup, size, err) = read_backup_status();
     BackupState {
         loaded: true,
         in_progress: false,
         last_backup_time: last_backup,
         backup_size: size,
-        error_message: None,
+        error_message: err,
     }
 }
 
 pub async fn run_backup() -> Result<(String, String), String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME env var not set".to_string())?;
-    
-    // 1. Ensure target backups directory exists
-    let backup_dir = format!("{}/Dropbox/Backups", home);
-    tokio::fs::create_dir_all(&backup_dir).await
-        .map_err(|e| format!("Failed to create backup dir: {}", e))?;
-        
-    let archive_path = format!("{}/clear-backup.tar.gz", backup_dir);
-    
-    // 2. Execute tar command to compress clearwm config and clear projects
-    let output = tokio::process::Command::new("tar")
-        .args([
-            "-czf",
-            &archive_path,
-            "-C",
-            &home,
-            ".config/clearwm",
-            "Dropbox/Clear",
-        ])
+    // Run the backup system helper script via pkexec (graphical auth prompt)
+    let output = tokio::process::Command::new("pkexec")
+        .arg("/home/lsgalante/.local/share/clear-system-interface/helpers/backup-system.sh")
         .output()
         .await
-        .map_err(|e| format!("Failed to execute tar: {}", e))?;
+        .map_err(|e| format!("Failed to run backup script: {}", e))?;
         
     if !output.status.success() {
-        let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!("tar error: {}", err_msg));
+        // Retrieve any specific error message written to the status file by the script
+        let (_, _, err_msg) = read_backup_status();
+        if let Some(msg) = err_msg {
+            return Err(msg);
+        }
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!("Backup process failed: {}", err));
     }
     
-    // 3. Get archive file size
-    let size_output = tokio::process::Command::new("du")
-        .args(["-sh", &archive_path])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to get archive size: {}", e))?;
-        
-    let size_str = if size_output.status.success() {
-        let stdout = String::from_utf8_lossy(&size_output.stdout);
-        stdout.split_whitespace().next().unwrap_or("Unknown").to_string()
-    } else {
-        "Unknown".to_string()
-    };
-    
-    // 4. Get current formatted time
-    let date_output = tokio::process::Command::new("date")
-        .arg("+%Y-%m-%d %H:%M:%S")
-        .output()
-        .await
-        .map_err(|e| format!("Failed to get current date: {}", e))?;
-        
-    let date_str = if date_output.status.success() {
-        String::from_utf8_lossy(&date_output.stdout).trim().to_string()
-    } else {
-        "Unknown Date".to_string()
-    };
-    
-    // 5. Write status back to config file
-    write_backup_status(&date_str, &size_str);
-        
-    Ok((date_str, size_str))
+    let (last_backup, size, _) = read_backup_status();
+    Ok((last_backup, size))
 }
 
 const LABEL_FG: [f32; 4] = [0.56, 0.83, 0.56, 1.0];
@@ -143,7 +100,7 @@ pub fn view(state: &BackupState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
     let mut pc = PageContent::new();
     let y = cy + 12.0;
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "System Backup");
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Full System Backup");
 
     if !state.loaded {
         sec.text(&mut pc, "Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -168,12 +125,12 @@ pub fn view(state: &BackupState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
 
         // Target Directories Row
         sec.text(&mut pc, "Backup Targets", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc, "~/.config/clearwm/  •  ~/Dropbox/Clear/", 120.0, 0.0, 12.0, TEXT_DIM);
+        sec.text(&mut pc, "Entire Filesystem (/)  [Preserving attributes]", 120.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(18.0);
 
         // Destination Archive Row
         sec.text(&mut pc, "Destination", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc, "~/Dropbox/Backups/clear-backup.tar.gz", 120.0, 0.0, 12.0, TEXT_DIM);
+        sec.text(&mut pc, "USB Drive (/mnt/usb or /run/media/...)", 120.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(24.0);
 
         // Error message if present
@@ -189,7 +146,7 @@ pub fn view(state: &BackupState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
         let yt = sec.ay();
         
         let (btn_label, bg, hover, action) = if state.in_progress {
-            ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Backup(BackupMessage::StartBackup)) // no-op when in progress
+            ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Backup(BackupMessage::StartBackup))
         } else {
             ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Backup(BackupMessage::StartBackup))
         };
