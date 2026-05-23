@@ -126,6 +126,9 @@ struct SystemInterface {
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsState>,
+    rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
+    tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
+    rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
     tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
     rx_color_selector: std::sync::mpsc::Receiver<ColorSelectorAction>,
 
@@ -283,6 +286,8 @@ impl SystemInterface {
             });
             rx
         };
+        let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
+        let (tx_backup, rx_backup) = std::sync::mpsc::channel();
 
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
         let scale_factor = (window.scale_factor() as f32).max(2.0) as f64;
@@ -297,6 +302,7 @@ impl SystemInterface {
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
             rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
+            rx_backup_state, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
             width: size.width, height: size.height,
             needs_rebuild: true,
@@ -446,6 +452,7 @@ impl SystemInterface {
             Page::Status => status::view(&self.app.status, cx, cy, cw, ch),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
             Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
+            Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
         }
     }
 
@@ -552,6 +559,14 @@ impl SystemInterface {
             notifications::update(&mut self.app.notifications, notifications::NotificationsMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_backup_state.try_recv() {
+            pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
+        while let Ok(m) = self.rx_backup.try_recv() {
+            self.handle_action(&AppAction::Backup(m));
+            self.needs_rebuild = true;
+        }
         while let Ok(action) = self.rx_color_selector.try_recv() {
             match action {
                 ColorSelectorAction::Background(rgb) => {
@@ -613,6 +628,17 @@ impl SystemInterface {
             AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
             AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
+            AppAction::Backup(m) => match m {
+                pages::backup::BackupMessage::StartBackup => {
+                    pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::StartBackup);
+                    let tx = self.tx_backup.clone();
+                    tokio::spawn(async move {
+                        let res = pages::backup::run_backup().await;
+                        let _ = tx.send(pages::backup::BackupMessage::BackupFinished(res));
+                    });
+                }
+                _ => pages::backup::update(&mut self.app.backup, m.clone()),
+            },
         }
     }
 

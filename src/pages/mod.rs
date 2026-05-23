@@ -10,6 +10,7 @@ pub mod input;
 pub mod status;
 pub mod processors;
 pub mod notifications;
+pub mod backup;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -24,11 +25,13 @@ pub enum Page {
     Input,
     Status,
     Notifications,
+    Backup,
 }
 
 impl Page {
-    pub const ALL: [Page; 11] = [
+    pub const ALL: [Page; 12] = [
         Page::Audio,
+        Page::Backup,
         Page::Display,
         Page::Input,
         Page::Layout,
@@ -54,6 +57,7 @@ impl Page {
             Page::Input => "Input",
             Page::Status => "Status",
             Page::Notifications => "Notifications",
+            Page::Backup => "Backup",
         }
     }
 
