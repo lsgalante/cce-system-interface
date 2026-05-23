@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::{Spinbox, Toggle};
+use clear_ui::widget::{Spinbox, Toggle, Widget};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -33,8 +33,8 @@ impl Default for InputState {
             tap_to_click: false,
             repeat_rate: 50,
             repeat_delay: 300,
-            rate_spinbox: Spinbox::new(50, 1, 100, 1).with_label("Repeat Rate"),
-            delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay"),
+            rate_spinbox: Spinbox::new(50, 1, 100, 1).with_label("Repeat Rate").with_unit("ms"),
+            delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms"),
         tap_toggle: Toggle::new().with_label("Tap to Click"),
             keybinds: Vec::new(),
         }
@@ -57,8 +57,8 @@ pub fn read_input_config() -> InputState {
         tap_to_click: tap,
         repeat_rate: rate,
         repeat_delay: delay,
-        rate_spinbox: Spinbox::new(rate as i32, 1, 100, 1).with_label("Repeat Rate"),
-        delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay"),
+        rate_spinbox: Spinbox::new(rate as i32, 1, 100, 1).with_label("Repeat Rate").with_unit("ms"),
+        delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms"),
         tap_toggle: Toggle::new().with_label("Tap to Click"),
         keybinds: parse_keybinds(&content),
     }
@@ -179,6 +179,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
     let toggle_w = 48.0;
     let toggle_h = 24.0;
     state.tap_toggle.set_toggled(state.tap_to_click);
+    state.tap_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
     render_widget(&mut pc, &mut state.tap_toggle, sec.ax(100.0), yt, toggle_w, toggle_h);
     sec.content_y += toggle_h + 12.0;
     y = sec.finish(&mut pc);

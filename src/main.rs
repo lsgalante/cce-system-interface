@@ -4,6 +4,8 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowAttributes};
+#[cfg(target_os = "linux")]
+use winit::platform::wayland::WindowAttributesExtWayland;
 
 use clear_ui::color;
 use clear_ui::widget::{Spinbox, Widget};
@@ -127,6 +129,7 @@ struct SystemInterface {
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsState>,
     rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
+    rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
     tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
     tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
@@ -287,6 +290,7 @@ impl SystemInterface {
             rx
         };
         let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
+        let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
 
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
@@ -297,12 +301,12 @@ impl SystemInterface {
             app,
             font_system, swash_cache, text_atlas, text_renderer, text_viewport,
             widgets: Vec::new(), text_items: Vec::new(), page_buttons: Vec::new(),
-            sidebar_width: 140.0, header_height: 40.0, status_height: 28.0,
+            sidebar_width: 140.0, header_height: 0.0, status_height: 28.0,
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
             rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
-            rx_backup_state, tx_backup, rx_backup,
+            rx_backup_state, rx_typeface, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
             width: size.width, height: size.height,
             needs_rebuild: true,
@@ -321,17 +325,7 @@ impl SystemInterface {
         let hdr_h = self.header_height * s;
         let st_h = self.status_height * s;
 
-        // Header
-        widgets.push(AppWidget {
-            x: 0.0, y: 0.0, w: sw, h: hdr_h,
-            color: color::HEADER_BG, hover_color: color::HEADER_BG,
-            hovering: false, kind: WidgetKind::Static,
-        });
-        text_items.push(TextItem {
-            buffer: make_text_buffer(&mut self.font_system, "Clear System Interface", 14.0 * s),
-            x: 12.0 * s, y: 12.0 * s,
-            color: glyphon::Color::rgb(0xcc, 0xcc, 0xd4),
-        });
+
 
         // Sidebar bg
         widgets.push(AppWidget {
@@ -453,6 +447,7 @@ impl SystemInterface {
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
             Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
             Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
+            Page::Typeface => typeface::view(&mut self.app.typeface, cx, cy, cw, ch),
         }
     }
 
@@ -563,6 +558,10 @@ impl SystemInterface {
             pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_typeface.try_recv() {
+            typeface::update(&mut self.app.typeface, typeface::TypefaceMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
         while let Ok(m) = self.rx_backup.try_recv() {
             self.handle_action(&AppAction::Backup(m));
             self.needs_rebuild = true;
@@ -628,6 +627,7 @@ impl SystemInterface {
             AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
             AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
+            AppAction::Typeface(m) => typeface::update(&mut self.app.typeface, m.clone()),
             AppAction::Backup(m) => match m {
                 pages::backup::BackupMessage::StartBackup => {
                     pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::StartBackup);
@@ -713,6 +713,18 @@ impl SystemInterface {
                 if self.app.current_page == Page::Notifications {
                     let s = self.scale_factor as f32;
                     if self.app.notifications.enable_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                }
+                if self.app.current_page == Page::Typeface {
+                    let s = self.scale_factor as f32;
+                    if self.app.typeface.sans_box.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                    if self.app.typeface.serif_box.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
+                    if self.app.typeface.mono_box.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
                         changed = true;
                     }
                 }
@@ -836,6 +848,42 @@ impl SystemInterface {
                         if new_val != old {
                             self.handle_action(&AppAction::Display(pages::display::DisplayMessage::BrightnessSet(new_val as u32)));
                         }
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+                if self.app.current_page == Page::Typeface {
+                    let mut actions = Vec::new();
+                    let mut consumed = false;
+                    
+                    let tb = &mut self.app.typeface.sans_box;
+                    if tb.keyboard_input(event) {
+                        if tb.take_change() {
+                            actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
+                        }
+                        consumed = true;
+                    }
+
+                    let tb = &mut self.app.typeface.serif_box;
+                    if tb.keyboard_input(event) {
+                        if tb.take_change() {
+                            actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
+                        }
+                        consumed = true;
+                    }
+
+                    let tb = &mut self.app.typeface.mono_box;
+                    if tb.keyboard_input(event) {
+                        if tb.take_change() {
+                            actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
+                        }
+                        consumed = true;
+                    }
+                    
+                    for a in &actions {
+                        self.handle_action(a);
+                    }
+                    if consumed {
                         self.needs_rebuild = true;
                         return true;
                     }
@@ -978,6 +1026,34 @@ impl SystemInterface {
                         actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet(sb.value as u32)));
                     }
                 }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Typeface {
+                    let tb = &mut self.app.typeface.sans_box;
+                    if !tb.hit_test(lx, ly) { tb.unfocus(); }
+                    if tb.mouse_input(*button, *state, lx, ly) {
+                        self.needs_rebuild = true;
+                    }
+                    if tb.take_change() {
+                        actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
+                    }
+
+                    let tb = &mut self.app.typeface.serif_box;
+                    if !tb.hit_test(lx, ly) { tb.unfocus(); }
+                    if tb.mouse_input(*button, *state, lx, ly) {
+                        self.needs_rebuild = true;
+                    }
+                    if tb.take_change() {
+                        actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
+                    }
+
+                    let tb = &mut self.app.typeface.mono_box;
+                    if !tb.hit_test(lx, ly) { tb.unfocus(); }
+                    if tb.mouse_input(*button, *state, lx, ly) {
+                        self.needs_rebuild = true;
+                    }
+                    if tb.take_change() {
+                        actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
+                    }
+                }
                 for a in &actions {
                     self.handle_action(a);
                 }
@@ -1050,20 +1126,29 @@ impl SystemInterface {
     }
 }
 
-struct App { state: Option<SystemInterface> }
+struct App {
+    state: Option<SystemInterface>,
+    initial_page: Page,
+}
 impl App {
-    fn new() -> Self { Self { state: None } }
+    fn new(initial_page: Page) -> Self { Self { state: None, initial_page } }
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() { return; }
-        let window = Arc::new(event_loop.create_window(
-            WindowAttributes::default()
-                .with_title("Clear System Interface")
-                .with_inner_size(winit::dpi::LogicalSize::new(820, 680)),
-        ).unwrap());
-        let state = pollster::block_on(SystemInterface::new(window));
+        let mut attributes = WindowAttributes::default()
+            .with_title("Clear System Interface")
+            .with_decorations(false)
+            .with_inner_size(winit::dpi::LogicalSize::new(820, 680));
+        #[cfg(target_os = "linux")]
+        {
+            attributes = attributes.with_name("clear-system-interface", "clear-system-interface");
+        }
+        let window = Arc::new(event_loop.create_window(attributes).unwrap());
+        let mut state = pollster::block_on(SystemInterface::new(window));
+        state.app.current_page = self.initial_page;
+        state.needs_rebuild = true;
         self.state = Some(state);
         self.state.as_ref().unwrap().window.request_redraw();
     }
@@ -1087,5 +1172,18 @@ fn main() {
     let _guard = rt.enter();
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-    event_loop.run_app(&mut App::new()).unwrap();
+
+    let mut initial_page = Page::ALL[0];
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        let arg = args.last().unwrap().to_lowercase();
+        for page in Page::ALL {
+            if page.label().to_lowercase() == arg {
+                initial_page = page;
+                break;
+            }
+        }
+    }
+
+    event_loop.run_app(&mut App::new(initial_page)).unwrap();
 }

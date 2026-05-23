@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::Toggle;
+use clear_ui::widget::{Toggle, Widget};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -150,6 +150,7 @@ pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32)
     let toggle_w = 48.0;
     let toggle_h = 24.0;
     state.enable_toggle.set_toggled(state.enable);
+    state.enable_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
     render_widget(&mut pc, &mut state.enable_toggle, sec.ax(100.0), yt, toggle_w, toggle_h);
     sec.content_y += toggle_h + 24.0;
 

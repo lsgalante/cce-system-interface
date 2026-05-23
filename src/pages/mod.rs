@@ -11,6 +11,7 @@ pub mod status;
 pub mod processors;
 pub mod notifications;
 pub mod backup;
+pub mod typeface;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -26,10 +27,11 @@ pub enum Page {
     Status,
     Notifications,
     Backup,
+    Typeface,
 }
 
 impl Page {
-    pub const ALL: [Page; 12] = [
+    pub const ALL: [Page; 13] = [
         Page::Audio,
         Page::Backup,
         Page::Display,
@@ -42,6 +44,7 @@ impl Page {
         Page::Status,
         Page::Storage,
         Page::System,
+        Page::Typeface,
     ];
 
     pub fn label(self) -> &'static str {
@@ -58,6 +61,7 @@ impl Page {
             Page::Status => "Status",
             Page::Notifications => "Notifications",
             Page::Backup => "Backup",
+            Page::Typeface => "Typeface",
         }
     }
 

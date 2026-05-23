@@ -1,6 +1,6 @@
 use crate::app::PageContent;
 use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::Spinbox;
+use clear_ui::widget::{Spinbox, Widget};
 
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -150,6 +150,7 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pa
         let sb_w = 100.0;
         let sb_h = 26.0;
         state.brightness_spinbox.value = bright_pct;
+        state.brightness_spinbox.set_row_rect(sec.ax(8.0), cw - 16.0);
         render_widget(&mut pc, &mut state.brightness_spinbox, sec.ax(12.0), yt, sb_w, sb_h);
         sec.content_y += sb_h + 12.0;
     }

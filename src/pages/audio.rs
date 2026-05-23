@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::Spinbox;
+use clear_ui::widget::{Spinbox, Widget};
 
 #[derive(Debug, Clone)]
 pub struct AudioSink {
@@ -250,6 +250,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
                 let gap = 8.0;
 
                 state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
+                state.sink_spinboxes[idx].set_row_rect(sec.ax(8.0), cw - 16.0);
                 render_widget(&mut pc, &mut state.sink_spinboxes[idx], sec.ax(bar_x), row_y, sb_w, sb_h);
 
                 let mute_label = if sink.muted { "Unmute" } else { "Mute" };
@@ -306,6 +307,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
                 let gap = 8.0;
 
                 state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
+                state.source_spinboxes[idx].set_row_rect(sec.ax(8.0), cw - 16.0);
                 render_widget(&mut pc, &mut state.source_spinboxes[idx], sec.ax(bar_x), row_y, sb_w, sb_h);
 
                 let mute_label = if src.muted { "Unmute" } else { "Mute" };

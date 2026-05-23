@@ -12,6 +12,7 @@ use crate::pages::status;
 use crate::pages::storage;
 use crate::pages::system_info;
 use crate::pages::backup;
+use crate::pages::typeface;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -28,6 +29,7 @@ pub struct AppState {
     pub storage: storage::StorageState,
     pub notifications: notifications::NotificationsState,
     pub backup: backup::BackupState,
+    pub typeface: typeface::TypefaceState,
 }
 
 impl Default for AppState {
@@ -46,6 +48,7 @@ impl Default for AppState {
             storage: storage::StorageState::default(),
             notifications: notifications::read_notifications_config(),
             backup: backup::BackupState::default(),
+            typeface: typeface::TypefaceState::default(),
         }
     }
 }
@@ -64,6 +67,7 @@ pub enum AppAction {
     Storage(storage::StorageMessage),
     Notifications(notifications::NotificationsMessage),
     Backup(backup::BackupMessage),
+    Typeface(typeface::TypefaceMessage),
 }
 
 pub struct PageContent {
