@@ -1,9 +1,9 @@
 use std::fs;
 use std::io::Write;
 
-use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::{Spinbox, Toggle, Widget};
+use crate::app::PageContent;
+use clear_ui::layout::Section;
+use clear_ui::widget::{Spinbox, Toggle};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -25,6 +25,21 @@ pub struct InputState {
     pub delay_spinbox: Spinbox,
     pub tap_toggle: Toggle,
     pub keybinds: Vec<Keybind>,
+
+    // Inertial settings
+    pub inertial_scroll: bool,
+    pub scroll_friction: u16,
+    pub inertial_pointer: bool,
+    pub pointer_friction: u16,
+    pub inertial_trackpad: bool,
+    pub trackpad_friction: u16,
+
+    pub scroll_toggle: Toggle,
+    pub scroll_friction_spinbox: Spinbox,
+    pub pointer_toggle: Toggle,
+    pub pointer_friction_spinbox: Spinbox,
+    pub trackpad_toggle: Toggle,
+    pub trackpad_friction_spinbox: Spinbox,
 }
 
 impl Default for InputState {
@@ -35,8 +50,22 @@ impl Default for InputState {
             repeat_delay: 300,
             rate_spinbox: Spinbox::new(50, 1, 100, 1).with_label("Repeat Rate").with_unit("ms"),
             delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms"),
-        tap_toggle: Toggle::new().with_label("Tap to Click"),
+            tap_toggle: Toggle::new().with_label("Tap to Click"),
             keybinds: Vec::new(),
+
+            inertial_scroll: true,
+            scroll_friction: 90,
+            inertial_pointer: false,
+            pointer_friction: 95,
+            inertial_trackpad: false,
+            trackpad_friction: 95,
+
+            scroll_toggle: Toggle::new().with_label("Inertial Scroll"),
+            scroll_friction_spinbox: Spinbox::new(90, 50, 99, 1).with_label("Scroll Friction").with_unit("%"),
+            pointer_toggle: Toggle::new().with_label("Inertial Pointer (Trackpoint)"),
+            pointer_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Pointer Friction").with_unit("%"),
+            trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)"),
+            trackpad_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Trackpad Friction").with_unit("%"),
         }
     }
 }
@@ -46,6 +75,13 @@ pub enum InputMessage {
     ToggleTapToClick,
     ApplyRepeat,
     Refreshed(InputState),
+
+    ToggleInertialScroll,
+    ApplyScrollFriction,
+    ToggleInertialPointer,
+    ApplyPointerFriction,
+    ToggleInertialTrackpad,
+    ApplyTrackpadFriction,
 }
 
 pub fn read_input_config() -> InputState {
@@ -53,6 +89,14 @@ pub fn read_input_config() -> InputState {
     let rate = parse_u16_key(&content, "rate", 50);
     let delay = parse_u16_key(&content, "delay", 300);
     let tap = parse_bool_from(&content, "tap_to_click");
+
+    let inertial_scroll = parse_bool_from_default(&content, "inertial_scroll", true);
+    let scroll_friction = parse_u16_key(&content, "scroll_friction", 90);
+    let inertial_pointer = parse_bool_from_default(&content, "inertial_pointer", false);
+    let pointer_friction = parse_u16_key(&content, "pointer_friction", 95);
+    let inertial_trackpad = parse_bool_from_default(&content, "inertial_trackpad", false);
+    let trackpad_friction = parse_u16_key(&content, "trackpad_friction", 95);
+
     InputState {
         tap_to_click: tap,
         repeat_rate: rate,
@@ -61,6 +105,20 @@ pub fn read_input_config() -> InputState {
         delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms"),
         tap_toggle: Toggle::new().with_label("Tap to Click"),
         keybinds: parse_keybinds(&content),
+
+        inertial_scroll,
+        scroll_friction,
+        inertial_pointer,
+        pointer_friction,
+        inertial_trackpad,
+        trackpad_friction,
+
+        scroll_toggle: Toggle::new().with_label("Inertial Scroll"),
+        scroll_friction_spinbox: Spinbox::new(scroll_friction as i32, 50, 99, 1).with_label("Scroll Friction").with_unit("%"),
+        pointer_toggle: Toggle::new().with_label("Inertial Pointer (Trackpoint)"),
+        pointer_friction_spinbox: Spinbox::new(pointer_friction as i32, 50, 99, 1).with_label("Pointer Friction").with_unit("%"),
+        trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)"),
+        trackpad_friction_spinbox: Spinbox::new(trackpad_friction as i32, 50, 99, 1).with_label("Trackpad Friction").with_unit("%"),
     }
 }
 
@@ -69,6 +127,13 @@ fn parse_bool_from(content: &str, key: &str) -> bool {
         .and_then(|l| l.split('=').nth(1))
         .map(|v| v.trim() == "true")
         .unwrap_or(false)
+}
+
+fn parse_bool_from_default(content: &str, key: &str, default: bool) -> bool {
+    content.lines().find(|l| l.trim().starts_with(key))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|v| v.trim() == "true")
+        .unwrap_or(default)
 }
 
 fn parse_u16_key(content: &str, key: &str, default: u16) -> u16 {
@@ -124,7 +189,16 @@ fn write_config_value(key: &str, value: &str) {
         .join("\n");
 
     if !found {
-        let section = if key == "tap_to_click" { "[input]" } else { "[repeat]" };
+        let section = if key == "tap_to_click" {
+            "[input]"
+        } else if key == "inertial_scroll" || key == "scroll_friction"
+               || key == "inertial_pointer" || key == "pointer_friction"
+               || key == "inertial_trackpad" || key == "trackpad_friction" {
+            "[inertial]"
+        } else {
+            "[repeat]"
+        };
+
         let mut result = String::new();
         let mut in_section = false;
         let mut inserted = false;
@@ -162,11 +236,6 @@ fn apply_repeat_config(rate: u16, delay: u16) {
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
-const TOGGLE_ON: [f32; 4] = [0.16, 0.41, 0.18, 1.0];
-const TOGGLE_OFF: [f32; 4] = [0.16, 0.16, 0.24, 1.0];
-const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
@@ -175,13 +244,11 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
     // ── Touchpad ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Touchpad");
 
-    let yt = sec.ay();
     let toggle_w = 48.0;
     let toggle_h = 24.0;
     state.tap_toggle.set_toggled(state.tap_to_click);
-    state.tap_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
-    render_widget(&mut pc, &mut state.tap_toggle, sec.ax(100.0), yt, toggle_w, toggle_h);
-    sec.content_y += toggle_h + 12.0;
+    sec.widget(&mut pc, &mut state.tap_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(4.0);
     y = sec.finish(&mut pc);
 
     // ── Keyboard ──
@@ -192,6 +259,32 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
 
     sec.widget(&mut pc, &mut state.delay_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
+    y = sec.finish(&mut pc);
+
+    // ── Inertial Input ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
+
+    state.scroll_toggle.set_toggled(state.inertial_scroll);
+    sec.widget(&mut pc, &mut state.scroll_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.scroll_friction_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(16.0);
+
+    state.pointer_toggle.set_toggled(state.inertial_pointer);
+    sec.widget(&mut pc, &mut state.pointer_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.pointer_friction_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(16.0);
+
+    state.trackpad_toggle.set_toggled(state.inertial_trackpad);
+    sec.widget(&mut pc, &mut state.trackpad_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(8.0);
+
     y = sec.finish(&mut pc);
 
     // ── Keybindings ──
@@ -231,6 +324,35 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             state.repeat_delay = delay;
             apply_repeat_config(rate, delay);
         }
-        InputMessage::Refreshed(new) => { *state = new; }
+        InputMessage::ToggleInertialScroll => {
+            state.inertial_scroll = !state.inertial_scroll;
+            write_config_value("inertial_scroll", &state.inertial_scroll.to_string());
+        }
+        InputMessage::ApplyScrollFriction => {
+            let friction = state.scroll_friction_spinbox.value.max(50).min(99) as u16;
+            state.scroll_friction = friction;
+            write_config_value("scroll_friction", &friction.to_string());
+        }
+        InputMessage::ToggleInertialPointer => {
+            state.inertial_pointer = !state.inertial_pointer;
+            write_config_value("inertial_pointer", &state.inertial_pointer.to_string());
+        }
+        InputMessage::ApplyPointerFriction => {
+            let friction = state.pointer_friction_spinbox.value.max(50).min(99) as u16;
+            state.pointer_friction = friction;
+            write_config_value("pointer_friction", &friction.to_string());
+        }
+        InputMessage::ToggleInertialTrackpad => {
+            state.inertial_trackpad = !state.inertial_trackpad;
+            write_config_value("inertial_trackpad", &state.inertial_trackpad.to_string());
+        }
+        InputMessage::ApplyTrackpadFriction => {
+            let friction = state.trackpad_friction_spinbox.value.max(50).min(99) as u16;
+            state.trackpad_friction = friction;
+            write_config_value("trackpad_friction", &friction.to_string());
+        }
+        InputMessage::Refreshed(new) => {
+            *state = new;
+        }
     }
 }

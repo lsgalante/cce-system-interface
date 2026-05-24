@@ -139,6 +139,8 @@ struct SystemInterface {
     width: u32,
     height: u32,
     needs_rebuild: bool,
+    scroll_y: f32,
+    max_scroll_y: f32,
 }
 
 impl SystemInterface {
@@ -301,7 +303,7 @@ impl SystemInterface {
             app,
             font_system, swash_cache, text_atlas, text_renderer, text_viewport,
             widgets: Vec::new(), text_items: Vec::new(), page_buttons: Vec::new(),
-            sidebar_width: 140.0, header_height: 0.0, status_height: 28.0,
+            sidebar_width: 140.0, header_height: 0.0, status_height: 0.0,
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
@@ -310,6 +312,8 @@ impl SystemInterface {
             tx_color_selector, rx_color_selector,
             width: size.width, height: size.height,
             needs_rebuild: true,
+            scroll_y: 0.0,
+            max_scroll_y: 0.0,
         };
         this.rebuild_layout(sw, sh);
         this
@@ -379,9 +383,24 @@ impl SystemInterface {
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
 
+        let mut max_y = 0.0f32;
+        for (_, _, y, _, h) in &pc.rects {
+            max_y = max_y.max(y + h);
+        }
+        for (_, size, _, y, _) in &pc.texts {
+            max_y = max_y.max(y + size);
+        }
+        for btn in &pc.buttons {
+            max_y = max_y.max(btn.y + btn.h);
+        }
+        self.max_scroll_y = (max_y - lch).max(0.0);
+        self.scroll_y = self.scroll_y.min(self.max_scroll_y);
+
+        let scroll_offset_y = self.scroll_y;
+
         for (c, x, y, w, h) in &pc.rects {
             widgets.push(AppWidget {
-                x: *x * s, y: *y * s, w: *w * s, h: *h * s,
+                x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
                 color: *c, hover_color: *c,
                 hovering: false, kind: WidgetKind::Static,
             });
@@ -389,7 +408,7 @@ impl SystemInterface {
         for (t, size, x, y, tc) in &pc.texts {
             text_items.push(TextItem {
                 buffer: make_text_buffer(&mut self.font_system, t, *size * s),
-                x: *x * s, y: *y * s,
+                x: *x * s, y: (*y - scroll_offset_y) * s,
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
                 ),
@@ -397,7 +416,7 @@ impl SystemInterface {
         }
         for btn in &pc.buttons {
             widgets.push(AppWidget {
-                x: btn.x * s, y: btn.y * s, w: btn.w * s, h: btn.h * s,
+                x: btn.x * s, y: (btn.y - scroll_offset_y) * s, w: btn.w * s, h: btn.h * s,
                 color: btn.bg, hover_color: btn.hover_bg,
                 hovering: false,
                 kind: WidgetKind::ActionButton(btn.action.clone()),
@@ -407,7 +426,7 @@ impl SystemInterface {
             let lh = btn.label_size * s * 1.4;
             text_items.push(TextItem {
                 buffer: buf,
-                x: btn.x * s + (btn.w * s - tw) / 2.0, y: btn.y * s + (btn.h * s - lh) / 2.0,
+                x: btn.x * s + (btn.w * s - tw) / 2.0, y: (btn.y - scroll_offset_y) * s + (btn.h * s - lh) / 2.0,
                 color: glyphon::Color::rgb(
                     (btn.label_color[0] * 255.0) as u8,
                     (btn.label_color[1] * 255.0) as u8,
@@ -415,16 +434,11 @@ impl SystemInterface {
                 ),
             });
             let mut cb = btn.clone();
-            cb.x *= s; cb.y *= s; cb.w *= s; cb.h *= s;
+            cb.x *= s; cb.y = (cb.y - scroll_offset_y) * s; cb.w *= s; cb.h *= s;
             page_buttons.push(cb);
         }
 
-        // Status bar
-        widgets.push(AppWidget {
-            x: 0.0, y: sh - st_h, w: sw, h: st_h,
-            color: color::STATUS_BG, hover_color: color::STATUS_BG,
-            hovering: false, kind: WidgetKind::Static,
-        });
+
 
         self.widgets = widgets;
         self.text_items = text_items;
@@ -443,7 +457,7 @@ impl SystemInterface {
             Page::Processors => processors::view(&self.app.processors, cx, cy, cw, ch),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
-            Page::Status => status::view(&self.app.status, cx, cy, cw, ch),
+            Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
             Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
             Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
@@ -644,9 +658,29 @@ impl SystemInterface {
 
     fn handle_event(&mut self, event: &WindowEvent) -> bool {
         match event {
+            WindowEvent::MouseWheel { delta, .. } => {
+                let s = self.scale_factor as f32;
+                if self.cursor_x >= self.sidebar_width * s {
+                    let scroll_speed = 24.0;
+                    let dy = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => -y * scroll_speed,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
+                    };
+                    let old_scroll = self.scroll_y;
+                    self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
+                    if (self.scroll_y - old_scroll).abs() > 0.01 {
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+                false
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_x = position.x as f32;
                 self.cursor_y = position.y as f32;
+                let s = self.scale_factor as f32;
+                let lx = self.cursor_x / s;
+                let ly = self.cursor_y / s + self.scroll_y;
                 let mut changed = false;
                 for w in &mut self.widgets {
                     let was = w.hovering;
@@ -658,76 +692,115 @@ impl SystemInterface {
                     }
                 }
                 if self.app.current_page == Page::Layout {
-                    let s = self.scale_factor as f32;
                     for sb in &mut self.app.layout.spinboxes {
-                        if sb.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        if sb.cursor_moved(lx, ly) {
                             changed = true;
                         }
                     }
-                    if self.app.layout.cascade_offset_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.layout.cascade_offset_spinbox.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.layout.edge_gap_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.layout.edge_gap_spinbox.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.layout.top_gap_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly) {
                         changed = true;
                     }
                     for cp in &mut self.app.layout.color_selectors {
-                        if cp.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        if cp.cursor_moved(lx, ly) {
                             changed = true;
                         }
                     }
                 }
                 if self.app.current_page == Page::Input {
-                    let s = self.scale_factor as f32;
-                    if self.app.input.rate_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.input.rate_spinbox.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.input.delay_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.input.delay_spinbox.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.input.tap_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.input.tap_toggle.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.input.scroll_toggle.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.input.scroll_friction_spinbox.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.input.pointer_toggle.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.input.pointer_friction_spinbox.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.input.trackpad_toggle.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.input.trackpad_friction_spinbox.cursor_moved(lx, ly) {
                         changed = true;
                     }
                 }
                 if self.app.current_page == Page::Audio {
-                    let s = self.scale_factor as f32;
                     for sb in &mut self.app.audio.sink_spinboxes {
-                        if sb.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        if sb.cursor_moved(lx, ly) {
                             changed = true;
                         }
                     }
                     for sb in &mut self.app.audio.source_spinboxes {
-                        if sb.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        if sb.cursor_moved(lx, ly) {
                             changed = true;
                         }
                     }
                 }
                 if self.app.current_page == Page::Display {
-                    let s = self.scale_factor as f32;
-                    if self.app.display.brightness_spinbox.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.display.brightness_spinbox.cursor_moved(lx, ly) {
                         changed = true;
+                    }
+                    if self.app.display.night_light_label.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    for out in &mut self.app.display.outputs {
+                        if out.name_label.cursor_moved(lx, ly) {
+                            changed = true;
+                        }
+                        if out.resolution_label.cursor_moved(lx, ly) {
+                            changed = true;
+                        }
+                        if let Some(ref mut scale_lbl) = out.scale_label {
+                            if scale_lbl.cursor_moved(lx, ly) {
+                                changed = true;
+                            }
+                        }
                     }
                 }
                 if self.app.current_page == Page::Notifications {
-                    let s = self.scale_factor as f32;
-                    if self.app.notifications.enable_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.notifications.enable_toggle.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.notifications.bell_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.notifications.bell_toggle.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.notifications.duration_spinbox.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                }
+                if self.app.current_page == Page::Status {
+                    if self.app.status.status_label.cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                    if self.app.status.size_label.cursor_moved(lx, ly) {
                         changed = true;
                     }
                 }
                 if self.app.current_page == Page::Typeface {
-                    let s = self.scale_factor as f32;
-                    if self.app.typeface.sans_box.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.typeface.sans_box.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.typeface.serif_box.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.typeface.serif_box.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    if self.app.typeface.mono_box.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                    if self.app.typeface.mono_box.cursor_moved(lx, ly) {
                         changed = true;
                     }
                 }
@@ -802,6 +875,19 @@ impl SystemInterface {
                         return true;
                     }
                 }
+                if self.app.current_page == Page::Notifications {
+                    let sb = &mut self.app.notifications.duration_spinbox;
+                    let old = sb.value;
+                    if sb.keyboard_input(event) {
+                        let new_val = sb.value;
+                        drop(sb);
+                        if new_val != old {
+                            self.handle_action(&AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(new_val)));
+                        }
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
                 if self.app.current_page == Page::Input {
                     if self.app.input.rate_spinbox.keyboard_input(event) {
                         self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
@@ -810,6 +896,21 @@ impl SystemInterface {
                     }
                     if self.app.input.delay_spinbox.keyboard_input(event) {
                         self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                    if self.app.input.scroll_friction_spinbox.keyboard_input(event) {
+                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                    if self.app.input.pointer_friction_spinbox.keyboard_input(event) {
+                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                    if self.app.input.trackpad_friction_spinbox.keyboard_input(event) {
+                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
                         self.needs_rebuild = true;
                         return true;
                     }
@@ -909,6 +1010,7 @@ impl SystemInterface {
                             if let WidgetKind::PageButton(p) = &w.kind {
                                 if self.app.current_page != *p {
                                     self.app.current_page = *p;
+                                    self.scroll_y = 0.0;
                                     self.needs_rebuild = true;
                                     return true;
                                 }
@@ -918,7 +1020,7 @@ impl SystemInterface {
                 }
                 let s = self.scale_factor as f32;
                 let lx = self.cursor_x / s;
-                let ly = self.cursor_y / s;
+                let ly = self.cursor_y / s + self.scroll_y;
                 let mut actions = Vec::new();
                 if *state == ElementState::Pressed && self.app.current_page == Page::Layout {
                     for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
@@ -988,12 +1090,53 @@ impl SystemInterface {
                     if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
                         actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
                     }
+                    let sb = &mut self.app.input.scroll_friction_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+                    }
+                    let sb = &mut self.app.input.pointer_friction_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
+                    }
+                    let sb = &mut self.app.input.trackpad_friction_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
+                    }
+                }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Notifications {
+                    let sb = &mut self.app.notifications.duration_spinbox;
+                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                    let old = sb.value;
+                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
+                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(sb.value)));
+                    }
                 }
                 if self.app.current_page == Page::Input {
                     let toggle = &mut self.app.input.tap_toggle;
                     toggle.mouse_input(*button, *state, lx, ly);
                     if toggle.take_click() {
                         actions.push(AppAction::Input(pages::input::InputMessage::ToggleTapToClick));
+                    }
+                    let toggle = &mut self.app.input.scroll_toggle;
+                    toggle.mouse_input(*button, *state, lx, ly);
+                    if toggle.take_click() {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialScroll));
+                    }
+                    let toggle = &mut self.app.input.pointer_toggle;
+                    toggle.mouse_input(*button, *state, lx, ly);
+                    if toggle.take_click() {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialPointer));
+                    }
+                    let toggle = &mut self.app.input.trackpad_toggle;
+                    toggle.mouse_input(*button, *state, lx, ly);
+                    if toggle.take_click() {
+                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialTrackpad));
                     }
                 }
                 if self.app.current_page == Page::Notifications {
@@ -1033,6 +1176,33 @@ impl SystemInterface {
                     if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
                         actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet(sb.value as u32)));
                     }
+                    let lbl = &mut self.app.display.night_light_label;
+                    if !lbl.hit_test(lx, ly) { lbl.unfocus(); }
+                    lbl.mouse_input(*button, *state, lx, ly);
+
+                    for out in &mut self.app.display.outputs {
+                        let lbl = &mut out.name_label;
+                        if !lbl.hit_test(lx, ly) { lbl.unfocus(); }
+                        lbl.mouse_input(*button, *state, lx, ly);
+
+                        let lbl2 = &mut out.resolution_label;
+                        if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
+                        lbl2.mouse_input(*button, *state, lx, ly);
+
+                        if let Some(ref mut scale_lbl) = out.scale_label {
+                            if !scale_lbl.hit_test(lx, ly) { scale_lbl.unfocus(); }
+                            scale_lbl.mouse_input(*button, *state, lx, ly);
+                        }
+                    }
+                }
+                if *state == ElementState::Pressed && self.app.current_page == Page::Status {
+                    let lbl1 = &mut self.app.status.status_label;
+                    if !lbl1.hit_test(lx, ly) { lbl1.unfocus(); }
+                    lbl1.mouse_input(*button, *state, lx, ly);
+
+                    let lbl2 = &mut self.app.status.size_label;
+                    if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
+                    lbl2.mouse_input(*button, *state, lx, ly);
                 }
                 if *state == ElementState::Pressed && self.app.current_page == Page::Typeface {
                     let tb = &mut self.app.typeface.sans_box;

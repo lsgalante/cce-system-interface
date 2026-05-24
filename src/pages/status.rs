@@ -1,11 +1,26 @@
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::Section;
+use clear_ui::widget::{Label, Widget};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct StatusState {
     pub font_size: u16,
     pub running: bool,
     pub loaded: bool,
+    pub status_label: Label,
+    pub size_label: Label,
+}
+
+impl Default for StatusState {
+    fn default() -> Self {
+        Self {
+            font_size: 13,
+            running: false,
+            loaded: false,
+            status_label: Label::new("Waybar: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
+            size_label: Label::new("Font size: 13px").with_font_size(13.0).with_color([212, 212, 212]),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -23,7 +38,18 @@ pub async fn fetch_status_state() -> StatusState {
         .unwrap_or(false);
 
     let font_size = read_waybar_font_size().unwrap_or(13);
-    StatusState { font_size, running, loaded: true }
+    let status_color = if running { [92, 143, 97] } else { [170, 51, 51] };
+    StatusState {
+        font_size,
+        running,
+        loaded: true,
+        status_label: Label::new(&format!("Waybar: {}", if running { "Running" } else { "Stopped" }))
+            .with_font_size(14.0)
+            .with_color(status_color),
+        size_label: Label::new(&format!("Font size: {}px", font_size))
+            .with_font_size(13.0)
+            .with_color([212, 212, 212]),
+    }
 }
 
 fn read_waybar_font_size() -> Option<u16> {
@@ -66,10 +92,9 @@ const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const BTN_ACTIVE: [f32; 4] = [0.20, 0.40, 0.22, 1.0];
 const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
-const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
     let y = cy + 12.0;
 
@@ -80,15 +105,15 @@ pub fn view(state: &StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
         sec.spacing(18.0);
     } else {
         // Status
-        let status_color = if state.running { ACCENT } else { [0.67, 0.20, 0.20, 1.0] };
-        let status_text = if state.running { "Running" } else { "Stopped" };
-        sec.text(&mut pc, "Waybar", 12.0, 0.0, 14.0, TEXT_FG);
-        sec.text(&mut pc, status_text, 80.0, 0.0, 14.0, status_color);
-        sec.spacing(22.0);
+        let status_text = if state.running { "Waybar: Running" } else { "Waybar: Stopped" };
+        state.status_label.set_text(status_text);
+        sec.widget(&mut pc, &mut state.status_label, 12.0, cw - 24.0, 20.0);
+        sec.spacing(12.0);
 
         // Font size
-        sec.text(&mut pc, &format!("Font size: {}px", state.font_size), 12.0, 0.0, 13.0, TEXT_FG);
-        sec.spacing(20.0);
+        state.size_label.set_text(&format!("Font size: {}px", state.font_size));
+        sec.widget(&mut pc, &mut state.size_label, 12.0, cw - 24.0, 20.0);
+        sec.spacing(12.0);
 
         let btn_h = 28.0;
         let yt = sec.ay();
@@ -115,7 +140,13 @@ pub fn view(state: &StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
 
 pub fn update(state: &mut StatusState, msg: StatusMessage) {
     match msg {
-        StatusMessage::Refreshed(new) => { *state = new; }
+        StatusMessage::Refreshed(new) => {
+            let was_status_hovered = state.status_label.hovered();
+            let was_size_hovered = state.size_label.hovered();
+            *state = new;
+            state.status_label.set_hovered(was_status_hovered);
+            state.size_label.set_hovered(was_size_hovered);
+        }
         StatusMessage::FontSizeUp => {
             if state.font_size < 28 {
                 state.font_size += 1;

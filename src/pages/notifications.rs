@@ -2,8 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::{Toggle, Widget};
+use clear_ui::layout::Section;
+use clear_ui::widget::{Toggle, Spinbox};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -14,6 +14,8 @@ pub struct NotificationsState {
     pub enable_toggle: Toggle,
     pub bell: bool,
     pub bell_toggle: Toggle,
+    pub duration: i32,
+    pub duration_spinbox: Spinbox,
 }
 
 impl Default for NotificationsState {
@@ -23,6 +25,10 @@ impl Default for NotificationsState {
             enable_toggle: Toggle::new().with_label("Enable Notifications"),
             bell: false,
             bell_toggle: Toggle::new().with_label("Play Bell Sound"),
+            duration: 5,
+            duration_spinbox: Spinbox::new(5, 1, 60, 1)
+                .with_label("Notification Duration")
+                .with_unit("s"),
         }
     }
 }
@@ -31,6 +37,7 @@ impl Default for NotificationsState {
 pub enum NotificationsMessage {
     ToggleEnable,
     ToggleBell,
+    SetDuration(i32),
     SendTestNotification,
     Refreshed(NotificationsState),
 }
@@ -39,11 +46,16 @@ pub fn read_notifications_config() -> NotificationsState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
     let enable = parse_notifications_enable(&content);
     let bell = parse_notifications_bell(&content);
+    let duration = parse_notifications_duration(&content);
     NotificationsState {
         enable,
         enable_toggle: Toggle::new().with_label("Enable Notifications"),
         bell,
         bell_toggle: Toggle::new().with_label("Play Bell Sound"),
+        duration,
+        duration_spinbox: Spinbox::new(duration, 1, 60, 1)
+            .with_label("Notification Duration")
+            .with_unit("s"),
     }
 }
 
@@ -85,6 +97,28 @@ fn parse_notifications_bell(content: &str) -> bool {
         }
     }
     false // default to false
+}
+
+fn parse_notifications_duration(content: &str) -> i32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("duration") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(d) = val.trim().parse::<i32>() {
+                    return d;
+                }
+            }
+        }
+    }
+    5 // default to 5 seconds
 }
 
 fn send_ipc_command(cmd: &str) {
@@ -164,9 +198,9 @@ fn write_enable_notifications(enabled: bool) {
     send_ipc_command("reload");
 }
 
-const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
-const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
+const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
+const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
@@ -174,19 +208,20 @@ pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32)
 
     let mut sec = Section::new(&mut pc, cx, y, cw, "System Notifications");
 
-    let yt = sec.ay();
     let toggle_w = 48.0;
     let toggle_h = 24.0;
     state.enable_toggle.set_toggled(state.enable);
-    state.enable_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
-    render_widget(&mut pc, &mut state.enable_toggle, sec.ax(100.0), yt, toggle_w, toggle_h);
-    sec.content_y += toggle_h + 12.0;
+    sec.widget(&mut pc, &mut state.enable_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(8.0);
 
-    let yt2 = sec.ay();
     state.bell_toggle.set_toggled(state.bell);
-    state.bell_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
-    render_widget(&mut pc, &mut state.bell_toggle, sec.ax(100.0), yt2, toggle_w, toggle_h);
-    sec.content_y += toggle_h + 24.0;
+    sec.widget(&mut pc, &mut state.bell_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(16.0);
+
+    state.duration_spinbox.value = state.duration;
+    state.duration_spinbox.set_label("Notification Duration");
+    sec.widget(&mut pc, &mut state.duration_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(16.0);
 
     let btn_w = 160.0;
     let btn_h = 32.0;
@@ -198,9 +233,9 @@ pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32)
             btn_y,
             btn_w,
             btn_h,
-            ACCENT,
+            BTN_BG,
             BTN_HOVER,
-            TEXT_FG,
+            WHITE,
             AppAction::Notifications(NotificationsMessage::SendTestNotification),
         );
     });
@@ -219,6 +254,10 @@ pub fn update(state: &mut NotificationsState, msg: NotificationsMessage) {
         NotificationsMessage::ToggleBell => {
             state.bell = !state.bell;
             write_config_value("bell", &state.bell.to_string());
+        }
+        NotificationsMessage::SetDuration(d) => {
+            state.duration = d;
+            write_config_value("duration", &state.duration.to_string());
         }
         NotificationsMessage::SendTestNotification => {
             send_ipc_command("notify \"clearwm\" \"System notifications are working correctly!\"");
@@ -279,5 +318,20 @@ enable = false
 enable = true
 ";
         assert!(!parse_notifications_enable(content));
+    }
+
+    #[test]
+    fn test_parse_notifications_duration_default() {
+        assert_eq!(parse_notifications_duration(""), 5);
+        assert_eq!(parse_notifications_duration("[notifications]\n"), 5);
+    }
+
+    #[test]
+    fn test_parse_notifications_duration_explicit() {
+        let content = "\
+[notifications]
+duration = 10
+";
+        assert_eq!(parse_notifications_duration(content), 10);
     }
 }

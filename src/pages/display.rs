@@ -1,6 +1,6 @@
 use crate::app::PageContent;
 use clear_ui::layout::{render_widget, Section};
-use clear_ui::widget::{Spinbox, Widget};
+use clear_ui::widget::{Spinbox, Label, Widget};
 
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -9,6 +9,37 @@ pub struct DisplayOutput {
     pub refresh: String,
     pub scale: f32,
     pub connected: bool,
+    pub name_label: Label,
+    pub resolution_label: Label,
+    pub scale_label: Option<Label>,
+}
+
+impl DisplayOutput {
+    pub fn update_labels(&mut self) {
+        if self.connected {
+            self.name_label.set_text(&self.name);
+            self.resolution_label.set_text(&format!("{} @ {}Hz", self.resolution, self.refresh));
+            if self.scale > 1.0 {
+                let scale_str = if let Some((w_str, h_str)) = self.resolution.rsplit_once('x') {
+                    if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                        format!("logical {:.0}x{:.0} | scale {:.0}x", w as f32 / self.scale, h as f32 / self.scale, self.scale)
+                    } else { format!("scale {:.0}x", self.scale) }
+                } else { format!("scale {:.0}x", self.scale) };
+                
+                self.scale_label = Some(Label::new(&scale_str)
+                    .with_font_size(11.0)
+                    .with_color([135, 135, 150]));
+            } else {
+                self.scale_label = None;
+            }
+        } else {
+            self.name_label.set_text(&self.name);
+            self.name_label.set_color([135, 135, 150]);
+            self.resolution_label.set_text("(disconnected)");
+            self.resolution_label.set_color([135, 135, 150]);
+            self.scale_label = None;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +50,7 @@ pub struct DisplayState {
     pub outputs: Vec<DisplayOutput>,
     pub night_light: bool,
     pub brightness_spinbox: Spinbox,
+    pub night_light_label: Label,
 }
 
 impl Default for DisplayState {
@@ -30,6 +62,7 @@ impl Default for DisplayState {
             outputs: Vec::new(),
             night_light: false,
             brightness_spinbox: Spinbox::new(50, 0, 100, 5),
+            night_light_label: Label::new("Night Light: OFF").with_font_size(13.0).with_color([0xd4, 0xd4, 0xd4]),
         }
     }
 }
@@ -51,6 +84,9 @@ pub async fn fetch_display_state() -> DisplayState {
         loaded: true,
         brightness, max_brightness, outputs, night_light,
         brightness_spinbox: Spinbox::new(pct, 0, 100, 5),
+        night_light_label: Label::new(if night_light { "Night Light: ON" } else { "Night Light: OFF" })
+            .with_font_size(13.0)
+            .with_color([0xd4, 0xd4, 0xd4]),
     }
 }
 
@@ -78,11 +114,19 @@ async fn fetch_outputs() -> Vec<DisplayOutput> {
     for line in output.lines() {
         let trimmed = line.trim();
         if !trimmed.starts_with(' ') && trimmed.contains('"') {
-            if let Some(prev) = current.take() { displays.push(prev); }
+            if let Some(mut prev) = current.take() {
+                prev.update_labels();
+                displays.push(prev);
+            }
             let name = trimmed.split_whitespace().next().unwrap_or("").to_string();
+            let name_label = Label::new(&name).with_font_size(12.0).with_color([212, 212, 212]);
+            let resolution_label = Label::new("").with_font_size(12.0).with_color([212, 212, 212]);
             current = Some(DisplayOutput {
                 name, resolution: String::new(), refresh: String::new(),
                 scale: 1.0, connected: true,
+                name_label,
+                resolution_label,
+                scale_label: None,
             });
             continue;
         }
@@ -100,7 +144,10 @@ async fn fetch_outputs() -> Vec<DisplayOutput> {
             }
         }
     }
-    if let Some(prev) = current.take() { displays.push(prev); }
+    if let Some(mut prev) = current.take() {
+        prev.update_labels();
+        displays.push(prev);
+    }
     displays
 }
 
@@ -160,9 +207,12 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pa
     let mut sec = Section::new(&mut pc, cx, y, cw, "Night Light");
     if !state.loaded {
         sec.text(&mut pc, "Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec.spacing(18.0);
     } else {
         let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
-        sec.text(&mut pc, nl_label, 12.0, 0.0, 13.0, TEXT_FG);
+        state.night_light_label.set_text(nl_label);
+        sec.widget(&mut pc, &mut state.night_light_label, 12.0, cw - 24.0, 20.0);
+        sec.spacing(8.0);
     }
     y = sec.finish(&mut pc);
 
@@ -173,21 +223,22 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pa
         sec.text(&mut pc, "Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(18.0);
     } else {
-        for out in &state.outputs {
-            if out.connected {
-                let scale_info = if out.scale > 1.0 {
-                    if let Some((w_str, h_str)) = out.resolution.rsplit_once('x') {
-                        if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
-                            format!("  logical {:.0}x{:.0} | scale {:.0}x", w as f32 / out.scale, h as f32 / out.scale, out.scale)
-                        } else { format!("  scale {:.0}x", out.scale) }
-                    } else { String::new() }
-                } else { String::new() };
-                sec.text(&mut pc, &format!("{}  {} @ {}Hz{}", out.name, out.resolution, out.refresh, scale_info),
-                    14.0, 0.0, 12.0, TEXT_FG);
-            } else {
-                sec.text(&mut pc, &format!("{}  (disconnected)", out.name), 14.0, 0.0, 12.0, TEXT_DIM);
+        for out in &mut state.outputs {
+            let yt = sec.ay();
+            
+            // Name label at x = 14.0
+            render_widget(&mut pc, &mut out.name_label, sec.ax(14.0), yt, 100.0, 20.0);
+            
+            // Resolution label at x = 120.0
+            render_widget(&mut pc, &mut out.resolution_label, sec.ax(120.0), yt, 160.0, 20.0);
+            
+            // Scale label at x = 290.0 if present
+            if let Some(ref mut scale_lbl) = out.scale_label {
+                render_widget(&mut pc, scale_lbl, sec.ax(290.0), yt, cw - 304.0, 20.0);
             }
-            sec.spacing(18.0);
+            
+            sec.content_y += 20.0;
+            sec.spacing(12.0);
         }
     }
     sec.finish(&mut pc);
@@ -197,7 +248,31 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pa
 
 pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
     match msg {
-        DisplayMessage::Refreshed(new) => { *state = new; }
+        DisplayMessage::Refreshed(new) => {
+            let was_nl_hovered = state.night_light_label.hovered();
+            
+            let mut hovers = std::collections::HashMap::new();
+            for out in &state.outputs {
+                hovers.insert(out.name.clone(), (
+                    out.name_label.hovered(),
+                    out.resolution_label.hovered(),
+                    out.scale_label.as_ref().map(|l| l.hovered()).unwrap_or(false)
+                ));
+            }
+            
+            *state = new;
+            state.night_light_label.set_hovered(was_nl_hovered);
+            
+            for out in &mut state.outputs {
+                if let Some(&(name_h, res_h, scale_h)) = hovers.get(&out.name) {
+                    out.name_label.set_hovered(name_h);
+                    out.resolution_label.set_hovered(res_h);
+                    if let Some(ref mut scale_lbl) = out.scale_label {
+                        scale_lbl.set_hovered(scale_h);
+                    }
+                }
+            }
+        }
         DisplayMessage::BrightnessSet(pct) => {
             let pct = pct.clamp(0, 100);
             state.brightness = pct as f32 / 100.0 * state.max_brightness;
