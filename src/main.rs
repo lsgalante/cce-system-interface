@@ -715,6 +715,9 @@ impl SystemInterface {
                     if self.app.notifications.enable_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
                         changed = true;
                     }
+                    if self.app.notifications.bell_toggle.cursor_moved(self.cursor_x / s, self.cursor_y / s) {
+                        changed = true;
+                    }
                 }
                 if self.app.current_page == Page::Typeface {
                     let s = self.scale_factor as f32;
@@ -998,6 +1001,11 @@ impl SystemInterface {
                     toggle.mouse_input(*button, *state, lx, ly);
                     if toggle.take_click() {
                         actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleEnable));
+                    }
+                    let toggle = &mut self.app.notifications.bell_toggle;
+                    toggle.mouse_input(*button, *state, lx, ly);
+                    if toggle.take_click() {
+                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleBell));
                     }
                 }
                 if *state == ElementState::Pressed && self.app.current_page == Page::Audio {

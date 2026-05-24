@@ -12,6 +12,8 @@ const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
 pub struct NotificationsState {
     pub enable: bool,
     pub enable_toggle: Toggle,
+    pub bell: bool,
+    pub bell_toggle: Toggle,
 }
 
 impl Default for NotificationsState {
@@ -19,6 +21,8 @@ impl Default for NotificationsState {
         Self {
             enable: true,
             enable_toggle: Toggle::new().with_label("Enable Notifications"),
+            bell: false,
+            bell_toggle: Toggle::new().with_label("Play Bell Sound"),
         }
     }
 }
@@ -26,6 +30,7 @@ impl Default for NotificationsState {
 #[derive(Debug, Clone)]
 pub enum NotificationsMessage {
     ToggleEnable,
+    ToggleBell,
     SendTestNotification,
     Refreshed(NotificationsState),
 }
@@ -33,9 +38,12 @@ pub enum NotificationsMessage {
 pub fn read_notifications_config() -> NotificationsState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
     let enable = parse_notifications_enable(&content);
+    let bell = parse_notifications_bell(&content);
     NotificationsState {
         enable,
         enable_toggle: Toggle::new().with_label("Enable Notifications"),
+        bell,
+        bell_toggle: Toggle::new().with_label("Play Bell Sound"),
     }
 }
 
@@ -57,6 +65,26 @@ fn parse_notifications_enable(content: &str) -> bool {
         }
     }
     true // default to true
+}
+
+fn parse_notifications_bell(content: &str) -> bool {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("bell") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                return val.trim() == "true";
+            }
+        }
+    }
+    false // default to false
 }
 
 fn send_ipc_command(cmd: &str) {
@@ -152,6 +180,12 @@ pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32)
     state.enable_toggle.set_toggled(state.enable);
     state.enable_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
     render_widget(&mut pc, &mut state.enable_toggle, sec.ax(100.0), yt, toggle_w, toggle_h);
+    sec.content_y += toggle_h + 12.0;
+
+    let yt2 = sec.ay();
+    state.bell_toggle.set_toggled(state.bell);
+    state.bell_toggle.set_row_rect(sec.ax(8.0), cw - 16.0);
+    render_widget(&mut pc, &mut state.bell_toggle, sec.ax(100.0), yt2, toggle_w, toggle_h);
     sec.content_y += toggle_h + 24.0;
 
     let btn_w = 160.0;
@@ -181,6 +215,10 @@ pub fn update(state: &mut NotificationsState, msg: NotificationsMessage) {
         NotificationsMessage::ToggleEnable => {
             state.enable = !state.enable;
             write_enable_notifications(state.enable);
+        }
+        NotificationsMessage::ToggleBell => {
+            state.bell = !state.bell;
+            write_config_value("bell", &state.bell.to_string());
         }
         NotificationsMessage::SendTestNotification => {
             send_ipc_command("notify \"clearwm\" \"System notifications are working correctly!\"");
