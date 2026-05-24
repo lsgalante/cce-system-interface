@@ -151,8 +151,10 @@ pub fn view(state: &BackupState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCon
             ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Backup(BackupMessage::StartBackup))
         };
         
-        pc.button(btn_label, sec.ax(12.0), yt, btn_w, btn_h, bg, hover, WHITE, action);
-        sec.content_y += btn_h + 12.0;
+        sec.row(1, 0.0, btn_h, |_, x, _| {
+            pc.button(btn_label, x, yt, btn_w, btn_h, bg, hover, WHITE, action.clone());
+        });
+        sec.spacing(12.0);
     }
     sec.finish(&mut pc);
 

@@ -156,20 +156,21 @@ pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32)
 
     let btn_w = 160.0;
     let btn_h = 32.0;
-    let btn_x = sec.ax(0.0);
     let btn_y = sec.ay();
-    pc.button(
-        "Send Test Notification",
-        btn_x,
-        btn_y,
-        btn_w,
-        btn_h,
-        ACCENT,
-        BTN_HOVER,
-        TEXT_FG,
-        AppAction::Notifications(NotificationsMessage::SendTestNotification),
-    );
-    sec.content_y += btn_h + 12.0;
+    sec.row(1, 0.0, btn_h, |_, x, _| {
+        pc.button(
+            "Send Test Notification",
+            x,
+            btn_y,
+            btn_w,
+            btn_h,
+            ACCENT,
+            BTN_HOVER,
+            TEXT_FG,
+            AppAction::Notifications(NotificationsMessage::SendTestNotification),
+        );
+    });
+    sec.spacing(12.0);
 
     sec.finish(&mut pc);
     pc

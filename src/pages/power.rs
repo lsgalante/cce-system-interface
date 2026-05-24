@@ -223,34 +223,36 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         sec.text(&mut pc, "Loading CPU governor...", 12.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(18.0);
     } else {
-        let btn_w = (cw - 40.0) / 2.0;
         let btn_h = 44.0;
         let yt = sec.ay();
 
-        let perf_active = !state.cpu_powersave;
-        let (perf_bg, perf_desc, perf_desc_color) = if perf_active {
-            (BTN_ACTIVE, "Governor set to performance", ACCENT)
-        } else {
-            (BTN_INACTIVE, "Switch to performance governor", TEXT_DIM)
-        };
+        sec.row(2, 8.0, btn_h, |i, x, w| {
+            if i == 0 {
+                let perf_active = !state.cpu_powersave;
+                let (perf_bg, perf_desc, perf_desc_color) = if perf_active {
+                    (BTN_ACTIVE, "Governor set to performance", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Switch to performance governor", TEXT_DIM)
+                };
 
-        pc.button("Performance", sec.ax(12.0), yt, btn_w, btn_h,
-            perf_bg, BTN_HOVER, WHITE,
-            AppAction::Power(PowerMessage::SetCpuPerformance));
-        sec.text(&mut pc, perf_desc, 16.0, 26.0, 10.0, perf_desc_color);
+                pc.button("Performance", x, yt, w, btn_h,
+                    perf_bg, BTN_HOVER, WHITE,
+                    AppAction::Power(PowerMessage::SetCpuPerformance));
+                pc.text(perf_desc, x + 4.0, yt + 26.0, 10.0, perf_desc_color);
+            } else {
+                let (save_bg, save_desc, save_desc_color) = if state.cpu_powersave {
+                    (BTN_ACTIVE, "Governor set to powersave — lower power, slower burst", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Switch to powersave governor (requires auth)", TEXT_DIM)
+                };
 
-        let (save_bg, save_desc, save_desc_color) = if state.cpu_powersave {
-            (BTN_ACTIVE, "Governor set to powersave — lower power, slower burst", ACCENT)
-        } else {
-            (BTN_INACTIVE, "Switch to powersave governor (requires auth)", TEXT_DIM)
-        };
-
-        let save_x = 16.0 + btn_w;
-        pc.button("Powersave", sec.ax(save_x), yt, btn_w, btn_h,
-            save_bg, BTN_HOVER, WHITE,
-            AppAction::Power(PowerMessage::SetCpuPowersave));
-        sec.text(&mut pc, save_desc, save_x + 4.0, 26.0, 10.0, save_desc_color);
-        sec.content_y += btn_h + 12.0;
+                pc.button("Powersave", x, yt, w, btn_h,
+                    save_bg, BTN_HOVER, WHITE,
+                    AppAction::Power(PowerMessage::SetCpuPowersave));
+                pc.text(save_desc, x + 4.0, yt + 26.0, 10.0, save_desc_color);
+            }
+        });
+        sec.spacing(12.0);
     }
     y = sec.finish(&mut pc);
 
@@ -261,34 +263,36 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
         sec.text(&mut pc, "Loading GPU power status...", 12.0, 0.0, 12.0, TEXT_DIM);
         sec.spacing(18.0);
     } else {
-        let btn_w = (cw - 40.0) / 2.0;
         let btn_h = 44.0;
         let yt = sec.ay();
-        let save_x = 16.0 + btn_w;
 
-        let gpu_def_active = !state.gpu_powersave;
-        let (gpu_def_bg, gpu_def_desc, gpu_def_desc_c) = if gpu_def_active {
-            (BTN_ACTIVE, "NVIDIA running at default power limit", ACCENT)
-        } else {
-            (BTN_INACTIVE, "Restore default power limit (requires auth)", TEXT_DIM)
-        };
+        sec.row(2, 8.0, btn_h, |i, x, w| {
+            if i == 0 {
+                let gpu_def_active = !state.gpu_powersave;
+                let (gpu_def_bg, gpu_def_desc, gpu_def_desc_c) = if gpu_def_active {
+                    (BTN_ACTIVE, "NVIDIA running at default power limit", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Restore default power limit (requires auth)", TEXT_DIM)
+                };
 
-        pc.button("80W Default", sec.ax(12.0), yt, btn_w, btn_h,
-            gpu_def_bg, BTN_HOVER, WHITE,
-            AppAction::Power(PowerMessage::SetGpuDefault));
-        sec.text(&mut pc, gpu_def_desc, 16.0, 26.0, 10.0, gpu_def_desc_c);
+                pc.button("80W Default", x, yt, w, btn_h,
+                    gpu_def_bg, BTN_HOVER, WHITE,
+                    AppAction::Power(PowerMessage::SetGpuDefault));
+                pc.text(gpu_def_desc, x + 4.0, yt + 26.0, 10.0, gpu_def_desc_c);
+            } else {
+                let (gpu_cap_bg, gpu_cap_desc, gpu_cap_desc_c) = if state.gpu_powersave {
+                    (BTN_ACTIVE, "NVIDIA power limit capped at 5W — minimal draw", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Cap NVIDIA to 5W power limit (requires auth)", TEXT_DIM)
+                };
 
-        let (gpu_cap_bg, gpu_cap_desc, gpu_cap_desc_c) = if state.gpu_powersave {
-            (BTN_ACTIVE, "NVIDIA power limit capped at 5W — minimal draw", ACCENT)
-        } else {
-            (BTN_INACTIVE, "Cap NVIDIA to 5W power limit (requires auth)", TEXT_DIM)
-        };
-
-        pc.button("5W Cap", sec.ax(save_x), yt, btn_w, btn_h,
-            gpu_cap_bg, BTN_HOVER, WHITE,
-            AppAction::Power(PowerMessage::SetGpuPowersave));
-        sec.text(&mut pc, gpu_cap_desc, save_x + 4.0, 26.0, 10.0, gpu_cap_desc_c);
-        sec.content_y += btn_h + 12.0;
+                pc.button("5W Cap", x, yt, w, btn_h,
+                    gpu_cap_bg, BTN_HOVER, WHITE,
+                    AppAction::Power(PowerMessage::SetGpuPowersave));
+                pc.text(gpu_cap_desc, x + 4.0, yt + 26.0, 10.0, gpu_cap_desc_c);
+            }
+        });
+        sec.spacing(12.0);
     }
     y = sec.finish(&mut pc);
 
@@ -296,17 +300,30 @@ pub fn view(state: &PowerState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCont
     let mut sec = Section::new(&mut pc, cx, y, cw, "System Actions");
 
     let yt = sec.ay();
-    let act_btn_w = (cw - 48.0) / 4.0;
     let act_btn_h = 32.0;
 
-    pc.button("Suspend", sec.ax(12.0), yt, act_btn_w, act_btn_h,
-        SAFE_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Suspend));
-    pc.button("Hibernate", sec.ax(16.0 + act_btn_w), yt, act_btn_w, act_btn_h,
-        SAFE_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Hibernate));
-    pc.button("Reboot", sec.ax(20.0 + 2.0 * act_btn_w), yt, act_btn_w, act_btn_h,
-        DANGER_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Reboot));
-    pc.button("Power Off", sec.ax(24.0 + 3.0 * act_btn_w), yt, act_btn_w, act_btn_h,
-        DANGER_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::PowerOff));
+    sec.row(4, 8.0, act_btn_h, |i, x, w| {
+        match i {
+            0 => {
+                pc.button("Suspend", x, yt, w, act_btn_h,
+                    SAFE_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Suspend));
+            }
+            1 => {
+                pc.button("Hibernate", x, yt, w, act_btn_h,
+                    SAFE_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Hibernate));
+            }
+            2 => {
+                pc.button("Reboot", x, yt, w, act_btn_h,
+                    DANGER_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::Reboot));
+            }
+            3 => {
+                pc.button("Power Off", x, yt, w, act_btn_h,
+                    DANGER_BG, BTN_HOVER, WHITE, AppAction::Power(PowerMessage::PowerOff));
+            }
+            _ => {}
+        }
+    });
+    sec.spacing(12.0);
     sec.finish(&mut pc);
 
     pc
