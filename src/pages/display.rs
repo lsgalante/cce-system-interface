@@ -61,7 +61,7 @@ impl Default for DisplayState {
             max_brightness: 0.0,
             outputs: Vec::new(),
             night_light: false,
-            brightness_spinbox: Spinbox::new(50, 0, 100, 5),
+            brightness_spinbox: Spinbox::new(50, 0, 100, 5).with_unit("%"),
             night_light_label: Label::new("Night Light: OFF").with_font_size(13.0).with_color([0xd4, 0xd4, 0xd4]),
         }
     }
@@ -83,7 +83,7 @@ pub async fn fetch_display_state() -> DisplayState {
     DisplayState {
         loaded: true,
         brightness, max_brightness, outputs, night_light,
-        brightness_spinbox: Spinbox::new(pct, 0, 100, 5),
+        brightness_spinbox: Spinbox::new(pct, 0, 100, 5).with_unit("%"),
         night_light_label: Label::new(if night_light { "Night Light: ON" } else { "Night Light: OFF" })
             .with_font_size(13.0)
             .with_color([0xd4, 0xd4, 0xd4]),

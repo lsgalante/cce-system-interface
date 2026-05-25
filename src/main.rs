@@ -1,12 +1,5 @@
 use std::sync::Arc;
 
-use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowAttributes};
-#[cfg(target_os = "linux")]
-use winit::platform::wayland::WindowAttributesExtWayland;
-
 use clear_ui::color;
 use clear_ui::widget::{Spinbox, Widget};
 use glyphon::{
@@ -16,6 +9,34 @@ use glyphon::{
 
 use clear_system_interface::app::{AppAction, AppState, ContentButton, PageContent};
 use clear_system_interface::pages::{self, Page};
+
+use smithay_client_toolkit::{
+    compositor::{CompositorHandler, CompositorState},
+    delegate_compositor, delegate_keyboard, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window, delegate_output,
+    registry::{ProvidesRegistryState, RegistryState},
+    output::{OutputHandler, OutputState},
+    seat::{
+        keyboard::KeyboardHandler,
+        pointer::PointerHandler,
+        Capability, SeatHandler, SeatState,
+    },
+    shell::{
+        xdg::{
+            window::{Window as XdgWindow, WindowConfigure, WindowHandler, WindowDecorations},
+            XdgShell,
+        },
+        WaylandSurface,
+    },
+    shm::{Shm, ShmHandler},
+};
+use wayland_client::{
+    globals::registry_queue_init,
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
+    Connection, QueueHandle, Proxy,
+};
+use calloop::EventLoop;
+use calloop_wayland_source::WaylandSource;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -62,6 +83,18 @@ fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
     buf
 }
 
+fn make_text_buffer_with_font(fs: &mut FontSystem, text: &str, size: f32, font: Option<&str>) -> Buffer {
+    let metrics = Metrics::new(size, size * 1.4);
+    let mut buf = Buffer::new(fs, metrics);
+    let mut attrs = Attrs::new();
+    if let Some(font_name) = font {
+        attrs = attrs.family(glyphon::Family::Name(font_name));
+    }
+    buf.set_text(fs, text, attrs, glyphon::Shaping::Advanced);
+    buf.shape_until_scroll(fs, true);
+    buf
+}
+
 struct AppWidget {
     x: f32, y: f32, w: f32, h: f32,
     color: [f32; 4],
@@ -89,8 +122,9 @@ enum ColorSelectorAction {
 }
 
 struct SystemInterface {
-    window: Arc<Window>,
-    surface: wgpu::Surface<'static>,
+    window: XdgWindow,
+    surface: wl_surface::WlSurface,
+    wgpu_surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -144,19 +178,34 @@ struct SystemInterface {
 }
 
 impl SystemInterface {
-    async fn new(window: Arc<Window>) -> Self {
-        let size = window.inner_size();
-        let sw = size.width as f32;
-        let sh = size.height as f32;
+    async fn new(
+        conn: &Connection,
+        qh: &QueueHandle<App>,
+        compositor_state: &CompositorState,
+        xdg_shell_state: &XdgShell,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let surface = compositor_state.create_surface(qh);
+        let window = xdg_shell_state.create_window(surface.clone(), WindowDecorations::None, qh);
+        window.set_title("Clear System Interface");
+        window.set_app_id("clear-system-interface");
+        window.set_min_size(Some((820, 680)));
+        window.commit();
+
+        let wayland_handle = Box::leak(Box::new(clear_ui::wayland::WaylandSurfaceHandle {
+            display_ptr: conn.backend().display_id().as_ptr() as *mut std::ffi::c_void,
+            surface_ptr: surface.id().as_ptr() as *mut std::ffi::c_void,
+        }));
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..Default::default()
         });
-        let surface = instance.create_surface(window.clone()).expect("surface");
+        let wgpu_surface = instance.create_surface(wayland_handle).expect("surface");
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
+            compatible_surface: Some(&wgpu_surface),
             force_fallback_adapter: false,
         }).await.expect("adapter");
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
@@ -165,8 +214,8 @@ impl SystemInterface {
             required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
         }, None).await.expect("device");
-        let config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).expect("config");
-        surface.configure(&device, &config);
+        let config = wgpu_surface.get_default_config(&adapter, width.max(1), height.max(1)).expect("config");
+        wgpu_surface.configure(&device, &config);
 
         let shader_code = clear_ui::SHADER;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -218,7 +267,7 @@ impl SystemInterface {
         let mut text_atlas = TextAtlas::new(&device, &queue, &cache, config.format);
         let text_renderer = TextRenderer::new(&mut text_atlas, &device, wgpu::MultisampleState::default(), None);
         let mut text_viewport = Viewport::new(&device, &cache);
-        text_viewport.update(&queue, Resolution { width: size.width, height: size.height });
+        text_viewport.update(&queue, Resolution { width, height });
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
@@ -296,9 +345,10 @@ impl SystemInterface {
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
 
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
-        let scale_factor = (window.scale_factor() as f32).max(2.0) as f64;
+        let scale_factor = 2.0;
+
         let mut this = Self {
-            window, surface, device, queue, config, render_pipeline,
+            window, surface, wgpu_surface, device, queue, config, render_pipeline,
             vertex_buffer, vertex_count: 0,
             app,
             font_system, swash_cache, text_atlas, text_renderer, text_viewport,
@@ -310,12 +360,12 @@ impl SystemInterface {
             rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
             rx_backup_state, rx_typeface, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
-            width: size.width, height: size.height,
+            width, height,
             needs_rebuild: true,
             scroll_y: 0.0,
             max_scroll_y: 0.0,
         };
-        this.rebuild_layout(sw, sh);
+        this.rebuild_layout(width as f32, height as f32);
         this
     }
 
@@ -328,8 +378,6 @@ impl SystemInterface {
         let sb_w = self.sidebar_width * s;
         let hdr_h = self.header_height * s;
         let st_h = self.status_height * s;
-
-
 
         // Sidebar bg
         widgets.push(AppWidget {
@@ -365,7 +413,7 @@ impl SystemInterface {
             });
         }
 
-        // Content area (logical coords, scaled to physical later)
+        // Content area
         let lcx = self.sidebar_width;
         let lcy = self.header_height;
         let lcw = sw / s - self.sidebar_width;
@@ -387,7 +435,7 @@ impl SystemInterface {
         for (_, _, y, _, h) in &pc.rects {
             max_y = max_y.max(y + h);
         }
-        for (_, size, _, y, _) in &pc.texts {
+        for (_, size, _, y, _, _) in &pc.texts {
             max_y = max_y.max(y + size);
         }
         for btn in &pc.buttons {
@@ -405,9 +453,9 @@ impl SystemInterface {
                 hovering: false, kind: WidgetKind::Static,
             });
         }
-        for (t, size, x, y, tc) in &pc.texts {
+        for (t, size, x, y, tc, font_opt) in &pc.texts {
             text_items.push(TextItem {
-                buffer: make_text_buffer(&mut self.font_system, t, *size * s),
+                buffer: make_text_buffer_with_font(&mut self.font_system, t, *size * s, font_opt.as_deref()),
                 x: *x * s, y: (*y - scroll_offset_y) * s,
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
@@ -438,8 +486,6 @@ impl SystemInterface {
             page_buttons.push(cb);
         }
 
-
-
         self.widgets = widgets;
         self.text_items = text_items;
         self.page_buttons = page_buttons;
@@ -454,7 +500,7 @@ impl SystemInterface {
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
             Page::Radios => network::view(&self.app.network, cx, cy, cw, ch),
             Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch),
-            Page::Processors => processors::view(&self.app.processors, cx, cy, cw, ch),
+            Page::Processors => processors::view(&mut self.app.processors, cx, cy, cw, ch),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
             Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch),
@@ -513,11 +559,11 @@ impl SystemInterface {
         text_renderer.prepare(device, queue, font_system, text_atlas, text_viewport, areas, swash_cache).unwrap();
     }
 
-    fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        if size.width > 0 && size.height > 0 {
-            self.width = size.width; self.height = size.height;
-            self.config.width = size.width; self.config.height = size.height;
-            self.surface.configure(&self.device, &self.config);
+    fn resize(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.width = width; self.height = height;
+            self.config.width = width; self.config.height = height;
+            self.wgpu_surface.configure(&self.device, &self.config);
             self.needs_rebuild = true;
         }
     }
@@ -596,45 +642,11 @@ impl SystemInterface {
     fn handle_action(&mut self, action: &AppAction) {
         use pages::*;
         match action {
-            AppAction::Layout(m) => match m {
-                layout::LayoutMessage::PickBackgroundColor => {
-                    let color = self.app.layout.background_color;
-                    let tx = self.tx_color_selector.clone();
-                    tokio::spawn(async move {
-                        let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
-                        if let Ok(output) = tokio::process::Command::new("clear-colors").arg(&hex).output().await {
-                            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                            if s.starts_with('#') && s.len() >= 7 {
-                                let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(color[0]);
-                                let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(color[1]);
-                                let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(color[2]);
-                                let _ = tx.send(ColorSelectorAction::Background([r, g, b]));
-                            }
-                        }
-                    });
-                }
-                layout::LayoutMessage::PickBorderColor => {
-                    let color = self.app.layout.border_color;
-                    let tx = self.tx_color_selector.clone();
-                    tokio::spawn(async move {
-                        let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
-                        if let Ok(output) = tokio::process::Command::new("clear-colors").arg(&hex).output().await {
-                            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                            if s.starts_with('#') && s.len() >= 7 {
-                                let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(color[0]);
-                                let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(color[1]);
-                                let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(color[2]);
-                                let _ = tx.send(ColorSelectorAction::Border([r, g, b]));
-                            }
-                        }
-                    });
-                }
-                _ => layout::update(&mut self.app.layout, m.clone()),
-            },
             AppAction::Power(m) => power::update(&mut self.app.power, m.clone()),
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Display(m) => display::update(&mut self.app.display, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
+            AppAction::Layout(m) => layout::update(&mut self.app.layout, m.clone()),
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
             AppAction::Processors(m) => processors::update(&mut self.app.processors, m.clone()),
@@ -656,595 +668,726 @@ impl SystemInterface {
         }
     }
 
-    fn handle_event(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::MouseWheel { delta, .. } => {
-                let s = self.scale_factor as f32;
-                if self.cursor_x >= self.sidebar_width * s {
-                    let scroll_speed = 24.0;
-                    let dy = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(_, y) => -y * scroll_speed,
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
-                    };
-                    let old_scroll = self.scroll_y;
-                    self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
-                    if (self.scroll_y - old_scroll).abs() > 0.01 {
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                }
-                false
+    fn handle_cursor_moved(&mut self, x: f32, y: f32) -> bool {
+        self.cursor_x = x;
+        self.cursor_y = y;
+        let s = self.scale_factor as f32;
+        let lx = self.cursor_x / s;
+        let ly = self.cursor_y / s + self.scroll_y;
+        let mut changed = false;
+        for w in &mut self.widgets {
+            let was = w.hovering;
+            w.hovering = self.cursor_x >= w.x && self.cursor_x <= w.x + w.w
+                && self.cursor_y >= w.y && self.cursor_y <= w.y + w.h;
+            if w.hovering != was {
+                w.color = if w.hovering { w.hover_color } else { w.color };
+                changed = true;
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_x = position.x as f32;
-                self.cursor_y = position.y as f32;
-                let s = self.scale_factor as f32;
-                let lx = self.cursor_x / s;
-                let ly = self.cursor_y / s + self.scroll_y;
-                let mut changed = false;
-                for w in &mut self.widgets {
-                    let was = w.hovering;
-                    w.hovering = self.cursor_x >= w.x && self.cursor_x <= w.x + w.w
-                        && self.cursor_y >= w.y && self.cursor_y <= w.y + w.h;
-                    if w.hovering != was {
-                        w.color = if w.hovering { w.hover_color } else { w.color };
-                        changed = true;
-                    }
+        }
+        if self.app.current_page == Page::Layout {
+            for sb in &mut self.app.layout.spinboxes {
+                if sb.cursor_moved(lx, ly) {
+                    changed = true;
                 }
-                if self.app.current_page == Page::Layout {
-                    for sb in &mut self.app.layout.spinboxes {
-                        if sb.cursor_moved(lx, ly) {
-                            changed = true;
-                        }
-                    }
-                    if self.app.layout.cascade_offset_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.layout.edge_gap_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    for cp in &mut self.app.layout.color_selectors {
-                        if cp.cursor_moved(lx, ly) {
-                            changed = true;
-                        }
-                    }
-                }
-                if self.app.current_page == Page::Input {
-                    if self.app.input.rate_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.delay_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.tap_toggle.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.scroll_toggle.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.scroll_friction_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.pointer_toggle.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.pointer_friction_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.trackpad_toggle.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.input.trackpad_friction_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                }
-                if self.app.current_page == Page::Audio {
-                    for sb in &mut self.app.audio.sink_spinboxes {
-                        if sb.cursor_moved(lx, ly) {
-                            changed = true;
-                        }
-                    }
-                    for sb in &mut self.app.audio.source_spinboxes {
-                        if sb.cursor_moved(lx, ly) {
-                            changed = true;
-                        }
-                    }
-                }
-                if self.app.current_page == Page::Display {
-                    if self.app.display.brightness_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.display.night_light_label.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    for out in &mut self.app.display.outputs {
-                        if out.name_label.cursor_moved(lx, ly) {
-                            changed = true;
-                        }
-                        if out.resolution_label.cursor_moved(lx, ly) {
-                            changed = true;
-                        }
-                        if let Some(ref mut scale_lbl) = out.scale_label {
-                            if scale_lbl.cursor_moved(lx, ly) {
-                                changed = true;
-                            }
-                        }
-                    }
-                }
-                if self.app.current_page == Page::Notifications {
-                    if self.app.notifications.enable_toggle.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.notifications.bell_toggle.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.notifications.duration_spinbox.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                }
-                if self.app.current_page == Page::Status {
-                    if self.app.status.status_label.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.status.size_label.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                }
-                if self.app.current_page == Page::Typeface {
-                    if self.app.typeface.sans_box.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.typeface.serif_box.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                    if self.app.typeface.mono_box.cursor_moved(lx, ly) {
-                        changed = true;
-                    }
-                }
-                if changed { self.needs_rebuild = true; }
-                changed
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if self.app.current_page == Page::Layout {
-                    let mut changed = false;
-                    let mut actions = Vec::new();
-                    for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
-                        let old = sb.value;
-                        if sb.keyboard_input(event) {
-                            if sb.value != old {
-                                actions.push(AppAction::Layout(
-                                    pages::layout::LayoutMessage::SetWidth(
-                                        pages::layout::WidthParam::ALL[i],
-                                        sb.value as u16,
-                                    )
-                                ));
-                            }
-                            changed = true;
-                        }
-                    }
-                    let sb = &mut self.app.layout.cascade_offset_spinbox;
-                    let old = sb.value;
-                    if sb.keyboard_input(event) {
-                        if sb.value != old {
-                            actions.push(AppAction::Layout(
-                                pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
-                            ));
-                        }
+            if self.app.layout.cascade_offset_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.layout.edge_gap_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            for cp in &mut self.app.layout.color_selectors {
+                if cp.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+            }
+        }
+        if self.app.current_page == Page::Input {
+            if self.app.input.rate_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.delay_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.tap_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.scroll_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.scroll_friction_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.pointer_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.pointer_friction_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.trackpad_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.trackpad_friction_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
+        if self.app.current_page == Page::Audio {
+            for sb in &mut self.app.audio.sink_spinboxes {
+                if sb.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+            }
+            for sb in &mut self.app.audio.source_spinboxes {
+                if sb.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+            }
+        }
+        if self.app.current_page == Page::Display {
+            if self.app.display.brightness_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.display.night_light_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            for out in &mut self.app.display.outputs {
+                if out.name_label.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if out.resolution_label.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if let Some(ref mut scale_lbl) = out.scale_label {
+                    if scale_lbl.cursor_moved(lx, ly) {
                         changed = true;
                     }
-                    let sb = &mut self.app.layout.edge_gap_spinbox;
-                    let old = sb.value;
-                    if sb.keyboard_input(event) {
-                        if sb.value != old {
-                            actions.push(AppAction::Layout(
-                                pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
-                            ));
-                        }
-                        changed = true;
-                    }
-                    let sb = &mut self.app.layout.top_gap_spinbox;
-                    let old = sb.value;
-                    if sb.keyboard_input(event) {
-                        if sb.value != old {
-                            actions.push(AppAction::Layout(
-                                pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
-                            ));
-                        }
-                        changed = true;
-                    }
-                    for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
-                        let old = cp.color;
-                        if cp.keyboard_input(event) {
-                            if cp.color != old {
-                                actions.push(AppAction::Layout(match i {
-                                    0 => pages::layout::LayoutMessage::SetBackground(cp.color),
-                                    _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
-                                }));
-                            }
-                            changed = true;
-                        }
-                    }
-                    for a in &actions {
-                        self.handle_action(a);
-                    }
-                    if changed {
-                        self.needs_rebuild = true;
-                        return true;
-                    }
                 }
-                if self.app.current_page == Page::Notifications {
-                    let sb = &mut self.app.notifications.duration_spinbox;
-                    let old = sb.value;
-                    if sb.keyboard_input(event) {
-                        let new_val = sb.value;
-                        drop(sb);
-                        if new_val != old {
-                            self.handle_action(&AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(new_val)));
-                        }
-                        self.needs_rebuild = true;
-                        return true;
-                    }
+            }
+        }
+        if self.app.current_page == Page::Notifications {
+            if self.app.notifications.enable_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.notifications.bell_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.notifications.duration_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
+        if self.app.current_page == Page::Processors {
+            if self.app.processors.cpu_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            for gpu_lbl in &mut self.app.processors.gpu_labels {
+                if gpu_lbl.cursor_moved(lx, ly) {
+                    changed = true;
                 }
-                if self.app.current_page == Page::Input {
-                    if self.app.input.rate_spinbox.keyboard_input(event) {
-                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                    if self.app.input.delay_spinbox.keyboard_input(event) {
-                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                    if self.app.input.scroll_friction_spinbox.keyboard_input(event) {
-                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                    if self.app.input.pointer_friction_spinbox.keyboard_input(event) {
-                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                    if self.app.input.trackpad_friction_spinbox.keyboard_input(event) {
-                        self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                }
-                if self.app.current_page == Page::Audio {
-                    let mut actions = Vec::new();
-                    for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
-                        let old = sb.value;
-                        if sb.keyboard_input(event) {
-                            if sb.value != old {
-                                let id = self.app.audio.sinks[i].id;
-                                actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
-                            }
-                        }
-                    }
-                    for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
-                        let old = sb.value;
-                        if sb.keyboard_input(event) {
-                            if sb.value != old {
-                                let id = self.app.audio.sources[i].id;
-                                actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
-                            }
-                        }
-                    }
-                    for a in &actions {
-                        self.handle_action(a);
-                    }
-                    if !actions.is_empty() {
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                }
-                if self.app.current_page == Page::Display {
-                    let sb = &mut self.app.display.brightness_spinbox;
-                    let old = sb.value;
-                    if sb.keyboard_input(event) {
-                        let new_val = sb.value;
-                        drop(sb);
-                        if new_val != old {
-                            self.handle_action(&AppAction::Display(pages::display::DisplayMessage::BrightnessSet(new_val as u32)));
-                        }
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                }
-                if self.app.current_page == Page::Typeface {
-                    let mut actions = Vec::new();
-                    let mut consumed = false;
-                    
-                    let tb = &mut self.app.typeface.sans_box;
-                    if tb.keyboard_input(event) {
-                        if tb.take_change() {
-                            actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
-                        }
-                        consumed = true;
-                    }
+            }
+            if self.app.processors.cpu_list_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
+        if self.app.current_page == Page::Status {
+            if self.app.status.status_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.status.size_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
+        if self.app.current_page == Page::Typeface {
+            if self.app.typeface.sans_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.serif_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.mono_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.borders_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.status_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.fuzzel_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.terminal_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.search_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.list_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
+        if changed { self.needs_rebuild = true; }
+        changed
+    }
 
-                    let tb = &mut self.app.typeface.serif_box;
-                    if tb.keyboard_input(event) {
-                        if tb.take_change() {
-                            actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
-                        }
-                        consumed = true;
-                    }
-
-                    let tb = &mut self.app.typeface.mono_box;
-                    if tb.keyboard_input(event) {
-                        if tb.take_change() {
-                            actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
-                        }
-                        consumed = true;
-                    }
-                    
-                    for a in &actions {
-                        self.handle_action(a);
-                    }
-                    if consumed {
-                        self.needs_rebuild = true;
-                        return true;
-                    }
+    fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState) -> bool {
+        if button != clear_ui::widget::MouseButton::Left { return false; }
+        if state == clear_ui::widget::ElementState::Released {
+            let (px, py) = (self.cursor_x, self.cursor_y);
+            for btn in &self.page_buttons.clone() {
+                if px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h {
+                    self.handle_action(&btn.action);
+                    self.needs_rebuild = true;
+                    return true;
                 }
-                false
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if *button != MouseButton::Left { return false; }
-                if *state == ElementState::Released {
-                    let (px, py) = (self.cursor_x, self.cursor_y);
-                    for btn in &self.page_buttons.clone() {
-                        if px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h {
-                            self.handle_action(&btn.action);
+            for w in &self.widgets {
+                if px >= w.x && px <= w.x + w.w && py >= w.y && py <= w.y + w.h {
+                    if let WidgetKind::PageButton(p) = &w.kind {
+                        if self.app.current_page != *p {
+                            self.app.current_page = *p;
+                            self.scroll_y = 0.0;
                             self.needs_rebuild = true;
                             return true;
                         }
                     }
-                    for w in &self.widgets {
-                        if px >= w.x && px <= w.x + w.w && py >= w.y && py <= w.y + w.h {
-                            if let WidgetKind::PageButton(p) = &w.kind {
-                                if self.app.current_page != *p {
-                                    self.app.current_page = *p;
-                                    self.scroll_y = 0.0;
-                                    self.needs_rebuild = true;
-                                    return true;
-                                }
-                            }
-                        }
-                    }
                 }
-                let s = self.scale_factor as f32;
-                let lx = self.cursor_x / s;
-                let ly = self.cursor_y / s + self.scroll_y;
-                let mut actions = Vec::new();
-                if *state == ElementState::Pressed && self.app.current_page == Page::Layout {
-                    for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
-                        if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                        let old = sb.value;
-                        if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                            actions.push(AppAction::Layout(
-                                pages::layout::LayoutMessage::SetWidth(
-                                    pages::layout::WidthParam::ALL[i],
-                                    sb.value as u16,
-                                )
-                            ));
-                        }
-                    }
-                    let sb = &mut self.app.layout.cascade_offset_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Layout(
-                            pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
-                        ));
-                    }
-                    let sb = &mut self.app.layout.edge_gap_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Layout(
-                            pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
-                        ));
-                    }
-                    let sb = &mut self.app.layout.top_gap_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Layout(
-                            pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
-                        ));
-                    }
-                    for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
-                        let old = cp.color;
-                        if !cp.hit_test(lx, ly) { cp.unfocus(); }
-                        cp.mouse_input(*button, *state, lx, ly);
-                        if cp.take_click() {
-                            actions.push(AppAction::Layout(match i {
-                                0 => pages::layout::LayoutMessage::PickBackgroundColor,
-                                _ => pages::layout::LayoutMessage::PickBorderColor,
-                            }));
-                        }
-                        if cp.color != old {
-                            actions.push(AppAction::Layout(match i {
-                                0 => pages::layout::LayoutMessage::SetBackground(cp.color),
-                                _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
-                            }));
-                        }
-                    }
+            }
+        }
+        let s = self.scale_factor as f32;
+        let lx = self.cursor_x / s;
+        let ly = self.cursor_y / s + self.scroll_y;
+        let mut actions = Vec::new();
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Layout {
+            for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
+                if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                let old = sb.value;
+                if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetWidth(
+                            pages::layout::WidthParam::ALL[i],
+                            sb.value as u16,
+                        )
+                    ));
                 }
-                if *state == ElementState::Pressed && self.app.current_page == Page::Input {
-                    let sb = &mut self.app.input.rate_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
-                    }
-                    let sb = &mut self.app.input.delay_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
-                    }
-                    let sb = &mut self.app.input.scroll_friction_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
-                    }
-                    let sb = &mut self.app.input.pointer_friction_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
-                    }
-                    let sb = &mut self.app.input.trackpad_friction_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
-                    }
+            }
+            let sb = &mut self.app.layout.cascade_offset_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
+                ));
+            }
+            let sb = &mut self.app.layout.edge_gap_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
+                ));
+            }
+            let sb = &mut self.app.layout.top_gap_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
+                ));
+            }
+            for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
+                let old = cp.color;
+                if !cp.hit_test(lx, ly) { cp.unfocus(); }
+                cp.mouse_input(button, state, lx, ly);
+                if cp.take_click() {
+                    actions.push(AppAction::Layout(match i {
+                        0 => pages::layout::LayoutMessage::PickBackgroundColor,
+                        _ => pages::layout::LayoutMessage::PickBorderColor,
+                    }));
                 }
-                if *state == ElementState::Pressed && self.app.current_page == Page::Notifications {
-                    let sb = &mut self.app.notifications.duration_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(sb.value)));
-                    }
+                if cp.color != old {
+                    actions.push(AppAction::Layout(match i {
+                        0 => pages::layout::LayoutMessage::SetBackground(cp.color),
+                        _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
+                    }));
                 }
-                if self.app.current_page == Page::Input {
-                    let toggle = &mut self.app.input.tap_toggle;
-                    toggle.mouse_input(*button, *state, lx, ly);
-                    if toggle.take_click() {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleTapToClick));
-                    }
-                    let toggle = &mut self.app.input.scroll_toggle;
-                    toggle.mouse_input(*button, *state, lx, ly);
-                    if toggle.take_click() {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialScroll));
-                    }
-                    let toggle = &mut self.app.input.pointer_toggle;
-                    toggle.mouse_input(*button, *state, lx, ly);
-                    if toggle.take_click() {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialPointer));
-                    }
-                    let toggle = &mut self.app.input.trackpad_toggle;
-                    toggle.mouse_input(*button, *state, lx, ly);
-                    if toggle.take_click() {
-                        actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialTrackpad));
-                    }
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Input {
+            let sb = &mut self.app.input.rate_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+            }
+            let sb = &mut self.app.input.delay_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+            }
+            let sb = &mut self.app.input.scroll_friction_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+            }
+            let sb = &mut self.app.input.pointer_friction_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
+            }
+            let sb = &mut self.app.input.trackpad_friction_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Notifications {
+            let sb = &mut self.app.notifications.duration_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(sb.value)));
+            }
+        }
+        if self.app.current_page == Page::Input {
+            let toggle = &mut self.app.input.tap_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ToggleTapToClick));
+            }
+            let toggle = &mut self.app.input.scroll_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialScroll));
+            }
+            let toggle = &mut self.app.input.pointer_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialPointer));
+            }
+            let toggle = &mut self.app.input.trackpad_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialTrackpad));
+            }
+        }
+        if self.app.current_page == Page::Notifications {
+            let toggle = &mut self.app.notifications.enable_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleEnable));
+            }
+            let toggle = &mut self.app.notifications.bell_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleBell));
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Audio {
+            for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
+                if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                let old = sb.value;
+                if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                    let id = self.app.audio.sinks[i].id;
+                    actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
                 }
-                if self.app.current_page == Page::Notifications {
-                    let toggle = &mut self.app.notifications.enable_toggle;
-                    toggle.mouse_input(*button, *state, lx, ly);
-                    if toggle.take_click() {
-                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleEnable));
-                    }
-                    let toggle = &mut self.app.notifications.bell_toggle;
-                    toggle.mouse_input(*button, *state, lx, ly);
-                    if toggle.take_click() {
-                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleBell));
-                    }
+            }
+            for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
+                if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                let old = sb.value;
+                if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                    let id = self.app.audio.sources[i].id;
+                    actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
                 }
-                if *state == ElementState::Pressed && self.app.current_page == Page::Audio {
-                    for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
-                        if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                        let old = sb.value;
-                        if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                            let id = self.app.audio.sinks[i].id;
-                            actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
-                        }
-                    }
-                    for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
-                        if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                        let old = sb.value;
-                        if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                            let id = self.app.audio.sources[i].id;
-                            actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
-                        }
-                    }
-                }
-                if *state == ElementState::Pressed && self.app.current_page == Page::Display {
-                    let sb = &mut self.app.display.brightness_spinbox;
-                    if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                    let old = sb.value;
-                    if sb.mouse_input(*button, *state, lx, ly) && sb.value != old {
-                        actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet(sb.value as u32)));
-                    }
-                    let lbl = &mut self.app.display.night_light_label;
-                    if !lbl.hit_test(lx, ly) { lbl.unfocus(); }
-                    lbl.mouse_input(*button, *state, lx, ly);
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Display {
+            let sb = &mut self.app.display.brightness_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet(sb.value as u32)));
+            }
+            let lbl = &mut self.app.display.night_light_label;
+            if !lbl.hit_test(lx, ly) { lbl.unfocus(); }
+            lbl.mouse_input(button, state, lx, ly);
 
-                    for out in &mut self.app.display.outputs {
-                        let lbl = &mut out.name_label;
-                        if !lbl.hit_test(lx, ly) { lbl.unfocus(); }
-                        lbl.mouse_input(*button, *state, lx, ly);
+            for out in &mut self.app.display.outputs {
+                let lbl = &mut out.name_label;
+                if !lbl.hit_test(lx, ly) { lbl.unfocus(); }
+                lbl.mouse_input(button, state, lx, ly);
 
-                        let lbl2 = &mut out.resolution_label;
-                        if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
-                        lbl2.mouse_input(*button, *state, lx, ly);
+                let lbl2 = &mut out.resolution_label;
+                if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
+                lbl2.mouse_input(button, state, lx, ly);
 
-                        if let Some(ref mut scale_lbl) = out.scale_label {
-                            if !scale_lbl.hit_test(lx, ly) { scale_lbl.unfocus(); }
-                            scale_lbl.mouse_input(*button, *state, lx, ly);
-                        }
-                    }
+                if let Some(ref mut scale_lbl) = out.scale_label {
+                    if !scale_lbl.hit_test(lx, ly) { scale_lbl.unfocus(); }
+                    scale_lbl.mouse_input(button, state, lx, ly);
                 }
-                if *state == ElementState::Pressed && self.app.current_page == Page::Status {
-                    let lbl1 = &mut self.app.status.status_label;
-                    if !lbl1.hit_test(lx, ly) { lbl1.unfocus(); }
-                    lbl1.mouse_input(*button, *state, lx, ly);
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Status {
+            let lbl1 = &mut self.app.status.status_label;
+            if !lbl1.hit_test(lx, ly) { lbl1.unfocus(); }
+            lbl1.mouse_input(button, state, lx, ly);
 
-                    let lbl2 = &mut self.app.status.size_label;
-                    if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
-                    lbl2.mouse_input(*button, *state, lx, ly);
-                }
-                if *state == ElementState::Pressed && self.app.current_page == Page::Typeface {
-                    let tb = &mut self.app.typeface.sans_box;
-                    if !tb.hit_test(lx, ly) { tb.unfocus(); }
-                    if tb.mouse_input(*button, *state, lx, ly) {
-                        self.needs_rebuild = true;
-                    }
-                    if tb.take_change() {
-                        actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
-                    }
+            let lbl2 = &mut self.app.status.size_label;
+            if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
+            lbl2.mouse_input(button, state, lx, ly);
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Typeface {
+            let tb = &mut self.app.typeface.sans_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
+            }
 
-                    let tb = &mut self.app.typeface.serif_box;
-                    if !tb.hit_test(lx, ly) { tb.unfocus(); }
-                    if tb.mouse_input(*button, *state, lx, ly) {
-                        self.needs_rebuild = true;
-                    }
-                    if tb.take_change() {
-                        actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
-                    }
+            let tb = &mut self.app.typeface.serif_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
+            }
 
-                    let tb = &mut self.app.typeface.mono_box;
-                    if !tb.hit_test(lx, ly) { tb.unfocus(); }
-                    if tb.mouse_input(*button, *state, lx, ly) {
-                        self.needs_rebuild = true;
-                    }
-                    if tb.take_change() {
-                        actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
-                    }
-                }
-                for a in &actions {
-                    self.handle_action(a);
-                }
-                if !actions.is_empty() {
+            let tb = &mut self.app.typeface.mono_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
+            }
+
+            let tb = &mut self.app.typeface.borders_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBorders(tb.text.clone())));
+            }
+
+            let tb = &mut self.app.typeface.status_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatus(tb.text.clone())));
+            }
+
+            let tb = &mut self.app.typeface.fuzzel_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzel(tb.text.clone())));
+            }
+
+            let tb = &mut self.app.typeface.terminal_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminal(tb.text.clone())));
+            }
+
+            let tb = &mut self.app.typeface.search_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
+            }
+        }
+        for a in &actions {
+            self.handle_action(a);
+        }
+        if !actions.is_empty() {
+            self.needs_rebuild = true;
+            return true;
+        }
+        self.needs_rebuild = true;
+        true
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: &clear_ui::widget::MouseScrollDelta) -> bool {
+        let s = self.scale_factor as f32;
+        if self.cursor_x >= self.sidebar_width * s {
+            let lx = self.cursor_x / s;
+            let ly = self.cursor_y / s + self.scroll_y;
+            
+            if self.app.current_page == Page::Typeface {
+                let tf = &mut self.app.typeface;
+                if tf.list_box.mouse_wheel(delta, lx, ly) {
                     self.needs_rebuild = true;
                     return true;
                 }
-                self.needs_rebuild = true;
-                self.needs_rebuild = true;
-                true
             }
-            _ => false,
+            if self.app.current_page == Page::Processors {
+                let proc = &mut self.app.processors;
+                if proc.cpu_list_box.mouse_wheel(delta, lx, ly) {
+                    self.needs_rebuild = true;
+                    return true;
+                }
+            }
+
+            let scroll_speed = 24.0;
+            let dy = match delta {
+                clear_ui::widget::MouseScrollDelta::LineDelta(_, y) => -y * scroll_speed,
+                clear_ui::widget::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
+            };
+            let old_scroll = self.scroll_y;
+            self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
+            if (self.scroll_y - old_scroll).abs() > 0.01 {
+                self.needs_rebuild = true;
+                return true;
+            }
         }
+        false
+    }
+
+    fn handle_key_input(&mut self, event: &clear_ui::widget::KeyEvent) -> bool {
+        if self.app.current_page == Page::Layout {
+            let mut changed = false;
+            let mut actions = Vec::new();
+            for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
+                let old = sb.value;
+                if sb.keyboard_input(event) {
+                    if sb.value != old {
+                        actions.push(AppAction::Layout(
+                            pages::layout::LayoutMessage::SetWidth(
+                                pages::layout::WidthParam::ALL[i],
+                                sb.value as u16,
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+            }
+            let sb = &mut self.app.layout.cascade_offset_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
+            let sb = &mut self.app.layout.edge_gap_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
+            let sb = &mut self.app.layout.top_gap_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
+            for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
+                let old = cp.color;
+                if cp.keyboard_input(event) {
+                    if cp.color != old {
+                        actions.push(AppAction::Layout(match i {
+                            0 => pages::layout::LayoutMessage::SetBackground(cp.color),
+                            _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
+                        }));
+                    }
+                    changed = true;
+                }
+            }
+            for a in &actions {
+                self.handle_action(a);
+            }
+            if changed {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Notifications {
+            let sb = &mut self.app.notifications.duration_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(new_val)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Input {
+            if self.app.input.rate_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.delay_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.scroll_friction_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.pointer_friction_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.trackpad_friction_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Audio {
+            let mut actions = Vec::new();
+            for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
+                let old = sb.value;
+                if sb.keyboard_input(event) {
+                    if sb.value != old {
+                        let id = self.app.audio.sinks[i].id;
+                        actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
+                    }
+                }
+            }
+            for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
+                let old = sb.value;
+                if sb.keyboard_input(event) {
+                    if sb.value != old {
+                        let id = self.app.audio.sources[i].id;
+                        actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
+                    }
+                }
+            }
+            for a in &actions {
+                self.handle_action(a);
+            }
+            if !actions.is_empty() {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Display {
+            let sb = &mut self.app.display.brightness_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Display(pages::display::DisplayMessage::BrightnessSet(new_val as u32)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Typeface {
+            let mut actions = Vec::new();
+            let mut consumed = false;
+            
+            let tb = &mut self.app.typeface.sans_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.serif_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.mono_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.borders_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBorders(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.status_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatus(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.fuzzel_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzel(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.terminal_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminal(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.typeface.search_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
+                }
+                consumed = true;
+            }
+            
+            for a in &actions {
+                self.handle_action(a);
+            }
+            if consumed {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        false
     }
 
     fn render(&mut self) {
@@ -1260,10 +1403,10 @@ impl SystemInterface {
 
         self.prepare_text();
 
-        let output = match self.surface.get_current_texture() {
+        let output = match self.wgpu_surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.config);
+                self.wgpu_surface.configure(&self.device, &self.config);
                 return;
             }
             Err(wgpu::SurfaceError::Timeout) => return,
@@ -1299,57 +1442,352 @@ impl SystemInterface {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        self.window.pre_present_notify();
         output.present();
     }
 }
 
 struct App {
+    registry_state: RegistryState,
+    compositor_state: CompositorState,
+    xdg_shell_state: XdgShell,
+    shm_state: Shm,
+    seat_state: SeatState,
+    output_state: OutputState,
+
+    seats: Vec<wl_seat::WlSeat>,
+    pointer: Option<wl_pointer::WlPointer>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+
     state: Option<SystemInterface>,
     initial_page: Page,
-}
-impl App {
-    fn new(initial_page: Page) -> Self { Self { state: None, initial_page } }
+    exit: bool,
+    redraw: bool,
 }
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() { return; }
-        let mut attributes = WindowAttributes::default()
-            .with_title("Clear System Interface")
-            .with_decorations(false)
-            .with_inner_size(winit::dpi::LogicalSize::new(820, 680));
-        #[cfg(target_os = "linux")]
-        {
-            attributes = attributes.with_name("clear-system-interface", "clear-system-interface");
+
+
+impl CompositorHandler for App {
+    fn scale_factor_changed(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wl_surface::WlSurface,
+        scale_factor: i32,
+    ) {
+        if let Some(state) = &mut self.state {
+            state.scale_factor = (scale_factor as f32).max(2.0) as f64;
+            state.resize(state.width, state.height);
         }
-        let window = Arc::new(event_loop.create_window(attributes).unwrap());
-        let mut state = pollster::block_on(SystemInterface::new(window));
-        state.app.current_page = self.initial_page;
-        state.needs_rebuild = true;
-        self.state = Some(state);
-        self.state.as_ref().unwrap().window.request_redraw();
+        self.redraw = true;
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: winit::window::WindowId, event: WindowEvent) {
-        let redraw = match &event {
-            WindowEvent::CloseRequested => { event_loop.exit(); true }
-            WindowEvent::Resized(s) => { if let Some(st) = &mut self.state { st.resize(*s); } true }
-            WindowEvent::RedrawRequested => {
-                if let Some(st) = &mut self.state { st.render(); st.window.request_redraw(); }
-                true
-            }
-            _ => self.state.as_mut().map(|st| st.handle_event(&event)).unwrap_or(false)
-        };
-        if redraw { if let Some(st) = &mut self.state { st.window.request_redraw(); } }
+    fn transform_changed(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wl_surface::WlSurface,
+        _new_transform: wl_output::Transform,
+    ) {}
+
+    fn frame(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wl_surface::WlSurface,
+        _time: u32,
+    ) {}
+
+    fn surface_enter(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wl_surface::WlSurface,
+        _output: &wl_output::WlOutput,
+    ) {}
+
+    fn surface_leave(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wl_surface::WlSurface,
+        _output: &wl_output::WlOutput,
+    ) {}
+}
+
+impl OutputHandler for App {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.output_state
+    }
+
+    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
+    fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
+    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
+}
+
+impl SeatHandler for App {
+    fn seat_state(&mut self) -> &mut SeatState {
+        &mut self.seat_state
+    }
+
+    fn new_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        self.seats.push(seat);
+    }
+
+    fn new_capability(
+        &mut self,
+        _conn: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        capability: Capability,
+    ) {
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            let pointer = self.seat_state.get_pointer(qh, &seat).unwrap();
+            self.pointer = Some(pointer);
+        }
+        if capability == Capability::Keyboard && self.keyboard.is_none() {
+            let keyboard = self.seat_state.get_keyboard(qh, &seat, None).unwrap();
+            self.keyboard = Some(keyboard);
+        }
+    }
+
+    fn remove_capability(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wl_seat::WlSeat,
+        capability: Capability,
+    ) {
+        if capability == Capability::Pointer {
+            self.pointer = None;
+        }
+        if capability == Capability::Keyboard {
+            self.keyboard = None;
+        }
+    }
+
+    fn remove_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        self.seats.retain(|s| s != &seat);
     }
 }
+
+impl ShmHandler for App {
+    fn shm_state(&mut self) -> &mut Shm {
+        &mut self.shm_state
+    }
+}
+
+impl PointerHandler for App {
+    fn pointer_frame(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _pointer: &wl_pointer::WlPointer,
+        events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
+    ) {
+        use smithay_client_toolkit::seat::pointer::PointerEventKind;
+        for event in events {
+            let (x, y) = event.position;
+            match &event.kind {
+                PointerEventKind::Motion { .. } => {
+                    if let Some(st) = &mut self.state {
+                        if st.handle_cursor_moved(x as f32, y as f32) {
+                            self.redraw = true;
+                        }
+                    }
+                }
+                PointerEventKind::Press { button, .. } => {
+                    let custom_btn = match button {
+                        272 => clear_ui::widget::MouseButton::Left,
+                        273 => clear_ui::widget::MouseButton::Right,
+                        _ => continue,
+                    };
+                    if let Some(st) = &mut self.state {
+                        if st.handle_mouse_input(custom_btn, clear_ui::widget::ElementState::Pressed) {
+                            self.redraw = true;
+                        }
+                    }
+                }
+                PointerEventKind::Release { button, .. } => {
+                    let custom_btn = match button {
+                        272 => clear_ui::widget::MouseButton::Left,
+                        273 => clear_ui::widget::MouseButton::Right,
+                        _ => continue,
+                    };
+                    if let Some(st) = &mut self.state {
+                        if st.handle_mouse_input(custom_btn, clear_ui::widget::ElementState::Released) {
+                            self.redraw = true;
+                        }
+                    }
+                }
+                PointerEventKind::Axis { horizontal, vertical, .. } => {
+                    let h_scroll = horizontal.absolute as f32;
+                    let v_scroll = vertical.absolute as f32;
+                    let delta = clear_ui::widget::MouseScrollDelta::LineDelta(-h_scroll / 10.0, -v_scroll / 10.0);
+                    if let Some(st) = &mut self.state {
+                        if st.handle_mouse_wheel(&delta) {
+                            self.redraw = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl KeyboardHandler for App {
+    fn enter(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _surface: &wl_surface::WlSurface,
+        _serial: u32,
+        _raw_modifiers: &[u32],
+        _keysyms: &[xkeysym::Keysym],
+    ) {}
+
+    fn leave(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _surface: &wl_surface::WlSurface,
+        _serial: u32,
+    ) {}
+
+    fn press_key(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _serial: u32,
+        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
+    ) {
+        self.handle_key(event, clear_ui::widget::ElementState::Pressed);
+    }
+
+    fn release_key(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _serial: u32,
+        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
+    ) {
+        self.handle_key(event, clear_ui::widget::ElementState::Released);
+    }
+
+    fn update_modifiers(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _serial: u32,
+        _modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
+        _layout: u32,
+    ) {}
+}
+
+impl App {
+    fn handle_key(&mut self, event: smithay_client_toolkit::seat::keyboard::KeyEvent, state: clear_ui::widget::ElementState) {
+        use clear_ui::widget::{Key, KeyEvent, NamedKey};
+        let logical_key = match event.keysym {
+            xkeysym::Keysym::Escape => Key::Named(NamedKey::Escape),
+            xkeysym::Keysym::Return => Key::Named(NamedKey::Enter),
+            xkeysym::Keysym::BackSpace => Key::Named(NamedKey::Backspace),
+            xkeysym::Keysym::Down => Key::Named(NamedKey::ArrowDown),
+            xkeysym::Keysym::Up => Key::Named(NamedKey::ArrowUp),
+            xkeysym::Keysym::Left => Key::Named(NamedKey::ArrowLeft),
+            xkeysym::Keysym::Right => Key::Named(NamedKey::ArrowRight),
+            xkeysym::Keysym::Tab => Key::Named(NamedKey::Tab),
+            xkeysym::Keysym::Delete => Key::Named(NamedKey::Delete),
+            xkeysym::Keysym::space => Key::Named(NamedKey::Space),
+            _ => {
+                if let Some(ref text) = event.utf8 {
+                    Key::Character(text.clone())
+                } else {
+                    return;
+                }
+            }
+        };
+
+        let custom_event = KeyEvent {
+            state,
+            logical_key,
+            text: event.utf8.clone(),
+            repeat: false,
+        };
+
+        if let Some(st) = &mut self.state {
+            if st.handle_key_input(&custom_event) {
+                self.redraw = true;
+            }
+        }
+    }
+}
+
+impl WindowHandler for App {
+    fn configure(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _window: &XdgWindow,
+        configure: WindowConfigure,
+        _serial: u32,
+    ) {
+        let (w, h) = configure.new_size;
+        if let (Some(w), Some(h)) = (w, h) {
+            let width = w.get();
+            let height = h.get();
+            if let Some(state) = &mut self.state {
+                state.resize(width, height);
+            }
+        }
+        self.redraw = true;
+    }
+
+    fn request_close(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _window: &XdgWindow) {
+        self.exit = true;
+    }
+}
+
+impl ProvidesRegistryState for App {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry_state
+    }
+    
+    fn runtime_add_global(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _name: u32,
+        _interface: &str,
+        _version: u32,
+    ) {}
+    
+    fn runtime_remove_global(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _name: u32,
+        _interface: &str,
+    ) {}
+}
+
+delegate_compositor!(App);
+delegate_xdg_shell!(App);
+delegate_xdg_window!(App);
+delegate_shm!(App);
+delegate_seat!(App);
+delegate_pointer!(App);
+delegate_keyboard!(App);
+delegate_registry!(App);
+delegate_output!(App);
 
 fn main() {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let _guard = rt.enter();
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
 
     let mut initial_page = Page::ALL[0];
     let args: Vec<String> = std::env::args().collect();
@@ -1363,5 +1801,58 @@ fn main() {
         }
     }
 
-    event_loop.run_app(&mut App::new(initial_page)).unwrap();
+    let conn = Connection::connect_to_env().unwrap();
+    let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
+    let qh = event_queue.handle();
+
+    let compositor_state = CompositorState::bind(&globals, &qh).unwrap();
+    let xdg_shell_state = XdgShell::bind(&globals, &qh).unwrap();
+    let shm_state = Shm::bind(&globals, &qh).unwrap();
+    let seat_state = SeatState::new(&globals, &qh);
+    let output_state = OutputState::new(&globals, &qh);
+
+    let mut app = App {
+        registry_state: RegistryState::new(&globals),
+        compositor_state,
+        xdg_shell_state,
+        shm_state,
+        seat_state,
+        output_state,
+        seats: Vec::new(),
+        pointer: None,
+        keyboard: None,
+        state: None,
+        initial_page,
+        exit: false,
+        redraw: true,
+    };
+
+    let state = pollster::block_on(SystemInterface::new(
+        &conn,
+        &qh,
+        &app.compositor_state,
+        &app.xdg_shell_state,
+        820,
+        680,
+    ));
+    app.state = Some(state);
+
+    let mut event_loop = EventLoop::try_new().unwrap();
+    let loop_handle = event_loop.handle();
+    WaylandSource::new(conn, event_queue).insert(loop_handle.clone()).unwrap();
+
+    loop {
+        event_loop
+            .dispatch(std::time::Duration::from_millis(16), &mut app)
+            .unwrap();
+        if app.exit {
+            break;
+        }
+        if app.redraw {
+            app.redraw = false;
+            if let Some(state) = &mut app.state {
+                state.render();
+            }
+        }
+    }
 }

@@ -72,7 +72,7 @@ pub enum AppAction {
 
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32)>,
-    pub texts: Vec<(String, f32, f32, f32, [f32; 4])>,
+    pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>)>,
     pub buttons: Vec<ContentButton>,
 }
 
@@ -97,7 +97,11 @@ impl PageContent {
     }
 
     pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.texts.push((content.to_string(), size, x, y, color));
+        self.texts.push((content.to_string(), size, x, y, color, None));
+    }
+
+    pub fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string())));
     }
 
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -117,6 +121,6 @@ impl RenderTarget for PageContent {
     }
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.texts.push((content.to_string(), size, x, y, color));
+        self.texts.push((content.to_string(), size, x, y, color, None));
     }
 }
