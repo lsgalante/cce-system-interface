@@ -8,6 +8,13 @@ use clear_ui::widget::{Spinbox, Toggle};
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Finger {
+    pub slot: usize,
+    pub x: f32,
+    pub y: f32,
+}
+
 #[derive(Debug, Clone)]
 pub struct Keybind {
     pub mods: String,
@@ -25,6 +32,7 @@ pub struct InputState {
     pub delay_spinbox: Spinbox,
     pub tap_toggle: Toggle,
     pub keybinds: Vec<Keybind>,
+    pub fingers: Vec<Finger>,
 
     // Inertial settings
     pub inertial_scroll: bool,
@@ -52,6 +60,7 @@ impl Default for InputState {
             delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms"),
             tap_toggle: Toggle::new().with_label("Tap to Click"),
             keybinds: Vec::new(),
+            fingers: Vec::new(),
 
             inertial_scroll: true,
             scroll_friction: 90,
@@ -75,6 +84,7 @@ pub enum InputMessage {
     ToggleTapToClick,
     ApplyRepeat,
     Refreshed(InputState),
+    UpdateFingers(Vec<Finger>),
 
     ToggleInertialScroll,
     ApplyScrollFriction,
@@ -105,6 +115,7 @@ pub fn read_input_config() -> InputState {
         delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms"),
         tap_toggle: Toggle::new().with_label("Tap to Click"),
         keybinds: parse_keybinds(&content),
+        fingers: Vec::new(),
 
         inertial_scroll,
         scroll_friction,
@@ -248,7 +259,42 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
     let toggle_h = 24.0;
     state.tap_toggle.set_toggled(state.tap_to_click);
     sec.widget(&mut pc, &mut state.tap_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(4.0);
+    sec.spacing(8.0);
+
+    // Centered trackpad visualizer box
+    let pad_w = 280.0;
+    let pad_h = 140.0;
+    let pad_x = sec.ax((cw - 16.0 - pad_w) / 2.0);
+    let pad_y = sec.ay();
+
+    // Background of trackpad: sleek dark translucent blue/grey
+    pc.rect([0.11, 0.11, 0.16, 0.85], pad_x, pad_y, pad_w, pad_h);
+
+    // Border: clean border
+    let border_color = [0.28, 0.28, 0.38, 1.0];
+    pc.rect(border_color, pad_x, pad_y, pad_w, 1.0);
+    pc.rect(border_color, pad_x, pad_y + pad_h - 1.0, pad_w, 1.0);
+    pc.rect(border_color, pad_x, pad_y, 1.0, pad_h);
+    pc.rect(border_color, pad_x + pad_w - 1.0, pad_y, 1.0, pad_h);
+
+    // Sleek label in the touchpad area
+    pc.text("Touchpad Area", pad_x + 12.0, pad_y + pad_h - 22.0, 11.0, [0.45, 0.45, 0.55, 1.0]);
+
+    // Active fingers visualizer
+    for finger in &state.fingers {
+        let rx = finger.x.clamp(0.0, 1.0);
+        let ry = finger.y.clamp(0.0, 1.0);
+        let fx = pad_x + rx * pad_w;
+        let fy = pad_y + ry * pad_h;
+        let dot_size = 12.0;
+
+        // Render glow (outer light blue rectangle)
+        pc.rect([0.35, 0.55, 0.95, 0.4], fx - (dot_size + 6.0) / 2.0, fy - (dot_size + 6.0) / 2.0, dot_size + 6.0, dot_size + 6.0);
+        // Render core (solid blue/purple rectangle)
+        pc.rect([0.45, 0.65, 1.0, 1.0], fx - dot_size / 2.0, fy - dot_size / 2.0, dot_size, dot_size);
+    }
+
+    sec.spacing(pad_h + 12.0);
     y = sec.finish(&mut pc);
 
     // ── Keyboard ──
@@ -352,7 +398,12 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             write_config_value("trackpad_friction", &friction.to_string());
         }
         InputMessage::Refreshed(new) => {
+            let fingers = state.fingers.clone();
             *state = new;
+            state.fingers = fingers;
+        }
+        InputMessage::UpdateFingers(fingers) => {
+            state.fingers = fingers;
         }
     }
 }

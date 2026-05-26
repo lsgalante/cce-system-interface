@@ -13,6 +13,7 @@ use crate::pages::storage;
 use crate::pages::system_info;
 use crate::pages::backup;
 use crate::pages::typeface;
+use crate::pages::services;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -30,6 +31,7 @@ pub struct AppState {
     pub notifications: notifications::NotificationsState,
     pub backup: backup::BackupState,
     pub typeface: typeface::TypefaceState,
+    pub services: services::ServicesState,
 }
 
 impl Default for AppState {
@@ -49,6 +51,7 @@ impl Default for AppState {
             notifications: notifications::read_notifications_config(),
             backup: backup::BackupState::default(),
             typeface: typeface::TypefaceState::default(),
+            services: services::ServicesState::default(),
         }
     }
 }
@@ -68,6 +71,7 @@ pub enum AppAction {
     Notifications(notifications::NotificationsMessage),
     Backup(backup::BackupMessage),
     Typeface(typeface::TypefaceMessage),
+    Services(services::ServicesMessage),
 }
 
 pub struct PageContent {
@@ -85,6 +89,7 @@ pub struct ContentButton {
     pub label_size: f32,
     pub label_color: [f32; 4],
     pub action: AppAction,
+    pub left_align: bool,
 }
 
 impl PageContent {
@@ -111,6 +116,18 @@ impl PageContent {
             x, y, w, h, bg, hover_bg,
             label: label.to_string(), label_size: 12.0, label_color,
             action,
+            left_align: false,
+        });
+    }
+
+    pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
+                       bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
+                       action: AppAction) {
+        self.buttons.push(ContentButton {
+            x, y, w, h, bg, hover_bg,
+            label: label.to_string(), label_size: 12.0, label_color,
+            action,
+            left_align: true,
         });
     }
 }

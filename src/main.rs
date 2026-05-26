@@ -157,6 +157,7 @@ struct SystemInterface {
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     rx_layout: std::sync::mpsc::Receiver<pages::layout::LayoutState>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
+    rx_fingers: std::sync::mpsc::Receiver<Vec<pages::input::Finger>>,
     rx_processors: std::sync::mpsc::Receiver<pages::processors::ProcessorsState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
@@ -164,6 +165,7 @@ struct SystemInterface {
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsState>,
     rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
     rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
+    rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
     tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
@@ -185,8 +187,10 @@ impl SystemInterface {
         xdg_shell_state: &XdgShell,
         width: u32,
         height: u32,
+        scale: f64,
     ) -> Self {
         let surface = compositor_state.create_surface(qh);
+        surface.set_buffer_scale(scale as i32);
         let window = xdg_shell_state.create_window(surface.clone(), WindowDecorations::None, qh);
         window.set_title("Clear System Interface");
         window.set_app_id("clear-system-interface");
@@ -325,6 +329,28 @@ impl SystemInterface {
             });
             rx
         };
+        let rx_fingers = {
+            let (tx, rx) = std::sync::mpsc::channel::<Vec<pages::input::Finger>>();
+            tokio::spawn(async move {
+                let socket_path = "/tmp/clear-input-coords.sock";
+                loop {
+                    if let Ok(stream) = tokio::net::UnixStream::connect(socket_path).await {
+                        use tokio::io::AsyncBufReadExt;
+                        let reader = tokio::io::BufReader::new(stream);
+                        let mut lines = reader.lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            if let Ok(fingers) = serde_json::from_str::<Vec<pages::input::Finger>>(&line) {
+                                if tx.send(fingers).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            });
+            rx
+        };
         let rx_system = spawn_bg(5, || pages::system_info::fetch_system_state());
         let rx_processors = spawn_bg(3, || pages::processors::fetch_processors_state());
         let rx_status = spawn_bg(10, || pages::status::fetch_status_state());
@@ -342,10 +368,11 @@ impl SystemInterface {
         };
         let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
         let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
+        let rx_services = spawn_bg(3, || pages::services::fetch_services());
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
 
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
-        let scale_factor = 2.0;
+        let scale_factor = scale;
 
         let mut this = Self {
             window, surface, wgpu_surface, device, queue, config, render_pipeline,
@@ -356,9 +383,9 @@ impl SystemInterface {
             sidebar_width: 140.0, header_height: 0.0, status_height: 0.0,
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
-            rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input,
+            rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input, rx_fingers,
             rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
-            rx_backup_state, rx_typeface, tx_backup, rx_backup,
+            rx_backup_state, rx_typeface, rx_services, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
             width, height,
             needs_rebuild: true,
@@ -472,9 +499,43 @@ impl SystemInterface {
             let buf = make_text_buffer(&mut self.font_system, &btn.label, btn.label_size * s);
             let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0);
             let lh = btn.label_size * s * 1.4;
+            let mut left_align = btn.left_align;
+
+            // Auto-detect if inside a ScrollBox to apply left alignment by default
+            if !left_align && btn.w >= 60.0 {
+                if self.app.current_page == Page::Typeface {
+                    let sb = &self.app.typeface.list_box;
+                    let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
+                    if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
+                       && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
+                        left_align = true;
+                    }
+                } else if self.app.current_page == Page::Processors {
+                    let sb = &self.app.processors.cpu_list_box;
+                    let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
+                    if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
+                       && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
+                        left_align = true;
+                    }
+                } else if self.app.current_page == Page::Services {
+                    let sb = &self.app.services.list_box;
+                    let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
+                    if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
+                       && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
+                        left_align = true;
+                    }
+                }
+            }
+
+            let text_x = if left_align {
+                btn.x * s + 8.0 * s
+            } else {
+                btn.x * s + (btn.w * s - tw) / 2.0
+            };
+
             text_items.push(TextItem {
                 buffer: buf,
-                x: btn.x * s + (btn.w * s - tw) / 2.0, y: (btn.y - scroll_offset_y) * s + (btn.h * s - lh) / 2.0,
+                x: text_x, y: (btn.y - scroll_offset_y) * s + (btn.h * s - lh) / 2.0,
                 color: glyphon::Color::rgb(
                     (btn.label_color[0] * 255.0) as u8,
                     (btn.label_color[1] * 255.0) as u8,
@@ -508,6 +569,7 @@ impl SystemInterface {
             Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
             Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
             Page::Typeface => typeface::view(&mut self.app.typeface, cx, cy, cw, ch),
+            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch),
         }
     }
 
@@ -594,6 +656,14 @@ impl SystemInterface {
             input::update(&mut self.app.input, input::InputMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        let mut got_fingers = None;
+        while let Ok(s) = self.rx_fingers.try_recv() {
+            got_fingers = Some(s);
+        }
+        if let Some(fingers) = got_fingers {
+            input::update(&mut self.app.input, input::InputMessage::UpdateFingers(fingers));
+            self.needs_rebuild = true;
+        }
         while let Ok(s) = self.rx_system.try_recv() {
             system_info::update(&mut self.app.system_info, system_info::SystemMessage::Refreshed(s));
             self.needs_rebuild = true;
@@ -620,6 +690,10 @@ impl SystemInterface {
         }
         while let Ok(s) = self.rx_typeface.try_recv() {
             typeface::update(&mut self.app.typeface, typeface::TypefaceMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
+        while let Ok(s) = self.rx_services.try_recv() {
+            pages::services::update(&mut self.app.services, pages::services::ServicesMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
         while let Ok(m) = self.rx_backup.try_recv() {
@@ -654,6 +728,7 @@ impl SystemInterface {
             AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
             AppAction::Typeface(m) => typeface::update(&mut self.app.typeface, m.clone()),
+            AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
             AppAction::Backup(m) => match m {
                 pages::backup::BackupMessage::StartBackup => {
                     pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::StartBackup);
@@ -828,12 +903,21 @@ impl SystemInterface {
                 changed = true;
             }
         }
+        if self.app.current_page == Page::Services {
+            if self.app.services.search_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.services.list_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
         if changed { self.needs_rebuild = true; }
         changed
     }
 
     fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState) -> bool {
         if button != clear_ui::widget::MouseButton::Left { return false; }
+        let s = self.scale_factor as f32;
         if state == clear_ui::widget::ElementState::Released {
             let (px, py) = (self.cursor_x, self.cursor_y);
             for btn in &self.page_buttons.clone() {
@@ -856,7 +940,6 @@ impl SystemInterface {
                 }
             }
         }
-        let s = self.scale_factor as f32;
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
         let mut actions = Vec::new();
@@ -1115,6 +1198,13 @@ impl SystemInterface {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
             }
         }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
+            let tb = &mut self.app.services.search_box;
+            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+        }
         for a in &actions {
             self.handle_action(a);
         }
@@ -1135,6 +1225,13 @@ impl SystemInterface {
             if self.app.current_page == Page::Typeface {
                 let tf = &mut self.app.typeface;
                 if tf.list_box.mouse_wheel(delta, lx, ly) {
+                    self.needs_rebuild = true;
+                    return true;
+                }
+            }
+            if self.app.current_page == Page::Services {
+                let srv = &mut self.app.services;
+                if srv.list_box.mouse_wheel(delta, lx, ly) {
                     self.needs_rebuild = true;
                     return true;
                 }
@@ -1387,6 +1484,14 @@ impl SystemInterface {
                 return true;
             }
         }
+        if self.app.current_page == Page::Services {
+            let tb = &mut self.app.services.search_box;
+            if tb.keyboard_input(event) {
+                tb.take_change();
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
         false
     }
 
@@ -1458,6 +1563,9 @@ struct App {
     pointer: Option<wl_pointer::WlPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
 
+    window: Option<XdgWindow>,
+    surface: Option<wl_surface::WlSurface>,
+
     state: Option<SystemInterface>,
     initial_page: Page,
     exit: bool,
@@ -1474,9 +1582,15 @@ impl CompositorHandler for App {
         _surface: &wl_surface::WlSurface,
         scale_factor: i32,
     ) {
+        _surface.set_buffer_scale(scale_factor);
         if let Some(state) = &mut self.state {
-            state.scale_factor = (scale_factor as f32).max(2.0) as f64;
-            state.resize(state.width, state.height);
+            let old_scale = state.scale_factor;
+            state.scale_factor = scale_factor as f64;
+            let logical_w = state.width as f64 / old_scale;
+            let logical_h = state.height as f64 / old_scale;
+            let pw = (logical_w * state.scale_factor) as u32;
+            let ph = (logical_h * state.scale_factor) as u32;
+            state.resize(pw, ph);
         }
         self.redraw = true;
     }
@@ -1586,11 +1700,17 @@ impl PointerHandler for App {
     ) {
         use smithay_client_toolkit::seat::pointer::PointerEventKind;
         for event in events {
-            let (x, y) = event.position;
+            if let Some(st) = &mut self.state {
+                let (cx, cy) = clear_ui::wayland::scale_pointer_pos(event.position, st.scale_factor);
+                st.cursor_x = cx;
+                st.cursor_y = cy;
+            }
             match &event.kind {
                 PointerEventKind::Motion { .. } => {
                     if let Some(st) = &mut self.state {
-                        if st.handle_cursor_moved(x as f32, y as f32) {
+                        let cx = st.cursor_x;
+                        let cy = st.cursor_y;
+                        if st.handle_cursor_moved(cx, cy) {
                             self.redraw = true;
                         }
                     }
@@ -1741,7 +1861,9 @@ impl WindowHandler for App {
             let width = w.get();
             let height = h.get();
             if let Some(state) = &mut self.state {
-                state.resize(width, height);
+                let pw = (width as f64 * state.scale_factor) as u32;
+                let ph = (height as f64 * state.scale_factor) as u32;
+                state.resize(pw, ph);
             }
         }
         self.redraw = true;
@@ -1821,20 +1943,33 @@ fn main() {
         seats: Vec::new(),
         pointer: None,
         keyboard: None,
+        window: None,
+        surface: None,
         state: None,
         initial_page,
         exit: false,
         redraw: true,
     };
 
+    // Perform a roundtrip to populate output_state with active output scales
+    event_queue.roundtrip(&mut app).unwrap();
+
+    let scale = clear_ui::wayland::detect_scale_factor(&app.output_state);
+
+    let pw = (820.0 * scale) as u32;
+    let ph = (680.0 * scale) as u32;
+
     let state = pollster::block_on(SystemInterface::new(
         &conn,
         &qh,
         &app.compositor_state,
         &app.xdg_shell_state,
-        820,
-        680,
+        pw,
+        ph,
+        scale,
     ));
+    app.window = Some(state.window.clone());
+    app.surface = Some(state.surface.clone());
     app.state = Some(state);
 
     let mut event_loop = EventLoop::try_new().unwrap();
@@ -1847,6 +1982,12 @@ fn main() {
             .unwrap();
         if app.exit {
             break;
+        }
+        if let Some(state) = &mut app.state {
+            state.poll_background_updates();
+            if state.needs_rebuild {
+                app.redraw = true;
+            }
         }
         if app.redraw {
             app.redraw = false;
