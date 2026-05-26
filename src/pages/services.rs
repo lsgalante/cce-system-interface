@@ -1,6 +1,6 @@
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Widget, TextLabel, ScrollBox};
+use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList};
 use clear_ui::widget::{ElementState, KeyEvent, MouseButton, Key, NamedKey};
 
 // ── TextBox Widget ──
@@ -16,6 +16,8 @@ pub struct TextBox {
     label: Option<String>,
     row_x: f32,
     row_w: f32,
+    pub parent: Option<*mut (dyn Widget + 'static)>,
+    pub children: Vec<*mut (dyn Widget + 'static)>,
 }
 
 impl TextBox {
@@ -30,6 +32,8 @@ impl TextBox {
             label: None,
             row_x: 0.0,
             row_w: 0.0,
+            parent: None,
+            children: Vec::new(),
         }
     }
 
@@ -89,7 +93,15 @@ impl Widget for TextBox {
     fn mouse_input(&mut self, button: MouseButton, state: ElementState, px: f32, py: f32) -> bool {
         if button != MouseButton::Left { return false; }
         if state != ElementState::Pressed { return false; }
-        if !self.hit_test(px, py) { return false; }
+        let (x, y, w, h) = self.rect();
+        let (hy, hh) = if self.label.is_some() {
+            (y - 18.0, h + 18.0)
+        } else {
+            (y, h)
+        };
+        if !(px >= x && px <= x + w && py >= hy && py <= hy + hh) {
+            return false;
+        }
         self.focus();
         true
     }
@@ -98,6 +110,7 @@ impl Widget for TextBox {
         if !self.editing {
             self.editing = true;
             self.edit_buffer = self.text.clone();
+            clear_ui::widget::focus::set_focused(self);
         }
     }
 
@@ -202,7 +215,22 @@ impl Widget for TextBox {
         });
         labels
     }
+
+    fn parent(&self) -> Option<*mut (dyn Widget + 'static)> { self.parent }
+    fn set_parent(&mut self, parent: Option<*mut (dyn Widget + 'static)>) { self.parent = parent; }
+    fn children(&self) -> Vec<*mut (dyn Widget + 'static)> { self.children.clone() }
+    fn add_child(&mut self, child: *mut (dyn Widget + 'static)) { self.children.push(child); }
+    fn clear_children(&mut self) { self.children.clear(); }
 }
+
+impl Drop for TextBox {
+    fn drop(&mut self) {
+        clear_ui::widget::focus::clear_if_matches(self);
+    }
+}
+
+unsafe impl Send for TextBox {}
+unsafe impl Sync for TextBox {}
 
 // ── Service Types and Page State ──
 
@@ -233,7 +261,7 @@ pub struct ServicesState {
     pub services: Vec<ServiceInfo>,
     pub active_tab: ServiceTab,
     pub search_box: TextBox,
-    pub list_box: ScrollBox,
+    pub list_box: ScrollingList,
 }
 
 impl Default for ServicesState {
@@ -243,7 +271,7 @@ impl Default for ServicesState {
             services: Vec::new(),
             active_tab: ServiceTab::System,
             search_box: TextBox::new(String::new()).with_label("Filter Services"),
-            list_box: ScrollBox::new(),
+            list_box: ScrollingList::new(36.0, 6.0),
         }
     }
 }
@@ -337,7 +365,7 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, _ch: f32, root_focused: bool) -> PageContent {
     let mut pc = PageContent::new();
     let y = cy + 12.0;
 
@@ -415,16 +443,13 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
             .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
             .collect();
 
-        let item_h = 36.0;
-        let item_gap = 6.0;
-        let item_height_full = item_h + item_gap;
-        let content_h = filtered_services.len() as f32 * item_height_full;
+        // Update ScrollingList bounds
+        state.list_box.update_bounds(filtered_services.len(), list_box_y, list_box_h);
 
-        state.list_box.update_bounds(content_h, list_box_y, list_box_h);
+        let item_h = state.list_box.item_height;
 
         for (idx, service) in filtered_services.iter().enumerate() {
-            let virtual_y = idx as f32 * item_height_full + 4.0;
-            if let Some(draw_y) = state.list_box.get_item_draw_y(virtual_y, item_h) {
+            if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 4.0) {
                 // Item background
                 let bg_color = [0.08, 0.08, 0.12, 0.2];
                 pc.rect(bg_color, list_box_x + 4.0, draw_y, list_box_w - 24.0, item_h);
@@ -514,7 +539,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
         sec.content_y += list_box_h;
     }
 
-    sec.finish(&mut pc);
+    sec.finish_focused(&mut pc, root_focused);
     pc
 }
 
@@ -526,7 +551,7 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
         }
         ServicesMessage::SetTab(tab) => {
             state.active_tab = tab;
-            state.list_box.scroll_y = 0.0;
+            state.list_box.set_scroll_y(0.0);
         }
         ServicesMessage::Start(name, is_system) => {
             if let Some(srv) = state.services.iter_mut().find(|s| s.name == name && s.is_system == is_system) {

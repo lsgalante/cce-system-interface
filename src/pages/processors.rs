@@ -1,6 +1,6 @@
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Label, ScrollBox};
+use clear_ui::widget::{Label, ScrollingList};
 
 #[derive(Debug, Clone)]
 pub struct ProcessorsState {
@@ -12,7 +12,7 @@ pub struct ProcessorsState {
     pub cpu_label: Label,
     pub gpu_labels: Vec<Label>,
     pub processes: Vec<(String, String, String)>, // (pid, cpu, comm)
-    pub cpu_list_box: ScrollBox,
+    pub cpu_list_box: ScrollingList,
 }
 
 impl Default for ProcessorsState {
@@ -26,7 +26,7 @@ impl Default for ProcessorsState {
             cpu_label: Label::new("CPU Info"),
             gpu_labels: Vec::new(),
             processes: Vec::new(),
-            cpu_list_box: ScrollBox::new(),
+            cpu_list_box: ScrollingList::new(24.0, 2.0),
         }
     }
 }
@@ -197,14 +197,14 @@ pub async fn fetch_processors_state() -> ProcessorsState {
         cpu_label: Label::new(&cpu_label_text).with_font_size(12.0).with_color([212, 212, 212]),
         gpu_labels,
         processes,
-        cpu_list_box: ScrollBox::new(),
+        cpu_list_box: ScrollingList::new(24.0, 2.0),
     }
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32, root_focused: bool) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
@@ -238,18 +238,13 @@ pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32) ->
 
         let row_h = 24.0;
         let row_gap = 2.0;
-        let item_height_full = row_h + row_gap;
-        let content_h = state.processes.len() as f32 * item_height_full;
-        
-        // Update ScrollBox bounds for the scrollable viewport (which starts below the header)
-        state.cpu_list_box.update_bounds(content_h, list_box_y + header_h, list_box_h - header_h - 6.0);
+        // Update ScrollingList bounds for the scrollable viewport (which starts below the header)
+        state.cpu_list_box.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - 6.0);
 
         // Visible process rows rendering (virtualized/clipped)
         
         for (idx, (pid, cpu, comm)) in state.processes.iter().enumerate() {
-            let virtual_y = idx as f32 * item_height_full + 4.0;
-            
-            if let Some(draw_y) = state.cpu_list_box.get_item_draw_y(virtual_y, row_h) {
+            if let Some(draw_y) = state.cpu_list_box.get_item_draw_y(idx, 4.0) {
                 // Standard row action button (transparent background, highlights on hover)
                 pc.button(
                     "",
@@ -275,7 +270,7 @@ pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32) ->
 
         sec.content_y += list_box_h;
     }
-    y = sec.finish(&mut pc);
+    y = sec.finish_focused(&mut pc, root_focused);
 
     // ── GPU Section ──
     let mut sec_gpu = Section::new(&mut pc, cx, y, cw, "GPU");
@@ -304,9 +299,9 @@ pub fn update(state: &mut ProcessorsState, msg: ProcessorsMessage) {
             state.cpu_label = new.cpu_label;
             state.gpu_labels = new.gpu_labels;
             state.processes = new.processes;
-            let old_scroll = state.cpu_list_box.scroll_y;
+            let old_scroll = state.cpu_list_box.scroll_y();
             state.cpu_list_box = new.cpu_list_box;
-            state.cpu_list_box.scroll_y = old_scroll;
+            state.cpu_list_box.set_scroll_y(old_scroll);
         }
         ProcessorsMessage::None => {}
     }

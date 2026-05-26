@@ -14,6 +14,7 @@ use crate::pages::system_info;
 use crate::pages::backup;
 use crate::pages::typeface;
 use crate::pages::services;
+use crate::pages::colors;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -32,6 +33,7 @@ pub struct AppState {
     pub backup: backup::BackupState,
     pub typeface: typeface::TypefaceState,
     pub services: services::ServicesState,
+    pub colors: colors::ColorsState,
 }
 
 impl Default for AppState {
@@ -52,6 +54,7 @@ impl Default for AppState {
             backup: backup::BackupState::default(),
             typeface: typeface::TypefaceState::default(),
             services: services::ServicesState::default(),
+            colors: colors::ColorsState::default(),
         }
     }
 }
@@ -72,6 +75,7 @@ pub enum AppAction {
     Backup(backup::BackupMessage),
     Typeface(typeface::TypefaceMessage),
     Services(services::ServicesMessage),
+    Colors(colors::ColorsMessage),
 }
 
 pub struct PageContent {

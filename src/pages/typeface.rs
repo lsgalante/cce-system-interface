@@ -1,7 +1,7 @@
 use std::fs;
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Widget, TextLabel, ScrollBox};
+use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, Dropdown};
 use clear_ui::widget::{ElementState, KeyEvent, MouseButton, Key, NamedKey};
 
 const FONTS_CONF_PATH: &str = "/home/lsgalante/.config/fontconfig/fonts.conf";
@@ -19,6 +19,9 @@ pub struct TextBox {
     label: Option<String>,
     row_x: f32,
     row_w: f32,
+    pub disabled: bool,
+    pub parent: Option<*mut (dyn Widget + 'static)>,
+    pub children: Vec<*mut (dyn Widget + 'static)>,
 }
 
 impl TextBox {
@@ -33,6 +36,9 @@ impl TextBox {
             label: None,
             row_x: 0.0,
             row_w: 0.0,
+            disabled: false,
+            parent: None,
+            children: Vec::new(),
         }
     }
 
@@ -84,23 +90,39 @@ impl Widget for TextBox {
     fn top_room(&self) -> f32 { if self.label.is_some() { 18.0 } else { 0.0 } }
 
     fn cursor_moved(&mut self, px: f32, py: f32) -> bool {
+        if self.disabled {
+            let was = self.hovered;
+            self.hovered = false;
+            return was;
+        }
         let was = self.hovered;
         self.hovered = self.hit_test(px, py);
         was != self.hovered
     }
 
     fn mouse_input(&mut self, button: MouseButton, state: ElementState, px: f32, py: f32) -> bool {
+        if self.disabled { return false; }
         if button != MouseButton::Left { return false; }
         if state != ElementState::Pressed { return false; }
-        if !self.hit_test(px, py) { return false; }
+        let (x, y, w, h) = self.rect();
+        let (hy, hh) = if self.label.is_some() {
+            (y - 18.0, h + 18.0)
+        } else {
+            (y, h)
+        };
+        if !(px >= x && px <= x + w && py >= hy && py <= hy + hh) {
+            return false;
+        }
         self.focus();
         true
     }
 
     fn focus(&mut self) {
+        if self.disabled { return; }
         if !self.editing {
             self.editing = true;
             self.edit_buffer = self.text.clone();
+            clear_ui::widget::focus::set_focused(self);
         }
     }
 
@@ -115,6 +137,7 @@ impl Widget for TextBox {
     }
 
     fn keyboard_input(&mut self, event: &KeyEvent) -> bool {
+        if self.disabled { return false; }
         if !self.editing { return false; }
         if event.state != ElementState::Pressed { return false; }
         match &event.logical_key {
@@ -153,6 +176,11 @@ impl Widget for TextBox {
 
     fn extra_quads(&self) -> Vec<(f32, f32, f32, f32, [f32; 4])> {
         let mut quads = Vec::new();
+        if self.disabled {
+            quads.push((self.x, self.y, self.w, self.h, [0.12, 0.12, 0.16, 1.0])); // border
+            quads.push((self.x + 1.0, self.y + 1.0, self.w - 2.0, self.h - 2.0, [0.06, 0.06, 0.08, 1.0])); // bg
+            return quads;
+        }
         if self.hovered {
             let (hy, hh) = if self.label.is_some() {
                 (self.y - 18.0, self.h + 18.0)
@@ -201,11 +229,26 @@ impl Widget for TextBox {
             x: self.x + 8.0,
             y: self.y + (self.h - 12.0) / 2.0,
             font_size: 13.0,
-            color: if self.editing { [0xee, 0xee, 0xf5] } else { [0xcc, 0xcc, 0xd4] },
+            color: if self.disabled { [0x53, 0x53, 0x5a] } else if self.editing { [0xee, 0xee, 0xf5] } else { [0xcc, 0xcc, 0xd4] },
         });
         labels
     }
+
+    fn parent(&self) -> Option<*mut (dyn Widget + 'static)> { self.parent }
+    fn set_parent(&mut self, parent: Option<*mut (dyn Widget + 'static)>) { self.parent = parent; }
+    fn children(&self) -> Vec<*mut (dyn Widget + 'static)> { self.children.clone() }
+    fn add_child(&mut self, child: *mut (dyn Widget + 'static)) { self.children.push(child); }
+    fn clear_children(&mut self) { self.children.clear(); }
 }
+
+impl Drop for TextBox {
+    fn drop(&mut self) {
+        clear_ui::widget::focus::clear_if_matches(self);
+    }
+}
+
+unsafe impl Send for TextBox {}
+unsafe impl Sync for TextBox {}
 
 // ── TypefaceState and TypefaceMessage ──
 
@@ -230,7 +273,11 @@ pub struct TypefaceState {
     pub terminal_box: TextBox,
     pub search_box: TextBox,
     pub selected_font: Option<String>,
-    pub list_box: ScrollBox,
+    pub list_box: ScrollingList,
+    pub borders_menu: Dropdown,
+    pub status_menu: Dropdown,
+    pub fuzzel_menu: Dropdown,
+    pub terminal_menu: Dropdown,
 }
 
 impl Default for TypefaceState {
@@ -255,7 +302,11 @@ impl Default for TypefaceState {
             terminal_box: TextBox::default(),
             search_box: TextBox::default(),
             selected_font: None,
-            list_box: ScrollBox::new(),
+            list_box: ScrollingList::new(24.0, 4.0),
+            borders_menu: Dropdown::default(),
+            status_menu: Dropdown::default(),
+            fuzzel_menu: Dropdown::default(),
+            terminal_menu: Dropdown::default(),
         }
     }
 }
@@ -272,6 +323,11 @@ pub enum TypefaceMessage {
     SetTerminal(String),
     SetSearch(String),
     SelectFont(String),
+    CopyFontName(String),
+    SetBordersMenu(usize),
+    SetStatusMenu(usize),
+    SetFuzzelMenu(usize),
+    SetTerminalMenu(usize),
 }
 
 fn parse_font_for_alias(content: &str, alias: &str) -> Option<String> {
@@ -445,40 +501,82 @@ pub async fn fetch_typeface_state() -> TypefaceState {
     let mono_fonts = parse_families(mono_output);
     
     let selected_font = all_fonts.first().cloned();
+
+    let determine_dropdown_index = |font: &str, sans: &str, serif: &str, mono: &str| -> usize {
+        if font == sans {
+            0
+        } else if font == serif {
+            1
+        } else if font == mono {
+            2
+        } else {
+            3
+        }
+    };
+
+    let borders_idx = determine_dropdown_index(&borders, &sans, &serif, &mono);
+    let status_idx = determine_dropdown_index(&status, &sans, &serif, &mono);
+    let fuzzel_idx = determine_dropdown_index(&fuzzel_font, &sans, &serif, &mono);
+    let terminal_idx = determine_dropdown_index(&term, &sans, &serif, &mono);
+
+    let menu_options = vec![
+        "Sans-Serif".to_string(),
+        "Serif".to_string(),
+        "Monospace".to_string(),
+        "Other".to_string(),
+    ];
+
+    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders");
+    borders_box.disabled = borders_idx != 3;
+
+    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface");
+    status_box.disabled = status_idx != 3;
+
+    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel");
+    fuzzel_box.disabled = fuzzel_idx != 3;
+
+    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal");
+    terminal_box.disabled = terminal_idx != 3;
+
     TypefaceState {
         loaded: true,
         sans_serif: sans.clone(),
         serif: serif.clone(),
         monospace: mono.clone(),
-        window_borders: borders.clone(),
-        status_interface: status.clone(),
-        fuzzel: fuzzel_font.clone(),
-        terminal: term.clone(),
+        window_borders: borders,
+        status_interface: status,
+        fuzzel: fuzzel_font,
+        terminal: term,
         all_fonts,
         mono_fonts,
         sans_box: TextBox::new(sans).with_label("Sans-Serif"),
         serif_box: TextBox::new(serif).with_label("Serif"),
         mono_box: TextBox::new(mono).with_label("Monospace"),
-        borders_box: TextBox::new(borders).with_label("Window Borders"),
-        status_box: TextBox::new(status).with_label("Status Interface"),
-        fuzzel_box: TextBox::new(fuzzel_font).with_label("Fuzzel"),
-        terminal_box: TextBox::new(term).with_label("Terminal"),
+        borders_box,
+        status_box,
+        fuzzel_box,
+        terminal_box,
         search_box: TextBox::new(String::new()).with_label("Filter Fonts"),
         selected_font,
-        list_box: ScrollBox::new(),
+        list_box: ScrollingList::new(24.0, 4.0),
+        borders_menu: Dropdown::new(menu_options.clone(), borders_idx),
+        status_menu: Dropdown::new(menu_options.clone(), status_idx),
+        fuzzel_menu: Dropdown::new(menu_options.clone(), fuzzel_idx),
+        terminal_menu: Dropdown::new(menu_options.clone(), terminal_idx),
     }
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
     let widget_w = cw - 24.0;
     let widget_h = 26.0;
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Typeface Settings");
+    // ── System Typefaces Section ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "System Typefaces");
     sec.spacing(8.0);
 
     if !state.loaded {
@@ -495,25 +593,60 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
 
         // Monospace
         sec.widget(&mut pc, &mut state.mono_box, 12.0, widget_w, widget_h);
-        sec.spacing(12.0);
-
-        // Window Borders
-        sec.widget(&mut pc, &mut state.borders_box, 12.0, widget_w, widget_h);
-        sec.spacing(12.0);
-
-        // Status Interface
-        sec.widget(&mut pc, &mut state.status_box, 12.0, widget_w, widget_h);
-        sec.spacing(12.0);
-
-        // Fuzzel
-        sec.widget(&mut pc, &mut state.fuzzel_box, 12.0, widget_w, widget_h);
-        sec.spacing(12.0);
-
-        // Terminal
-        sec.widget(&mut pc, &mut state.terminal_box, 12.0, widget_w, widget_h);
         sec.spacing(8.0);
     }
-    y = sec.finish(&mut pc);
+    let sys_focused = sec_focused.get(0).copied().unwrap_or(false);
+    y = sec.finish_focused(&mut pc, sys_focused);
+
+    // ── Program Typefaces Section ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Program Typefaces");
+    sec.spacing(8.0);
+
+    if !state.loaded {
+        sec.text(&mut pc, "Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec.spacing(18.0);
+    } else {
+        let dropdown_w = 120.0;
+        let textbox_w = widget_w - dropdown_w - 12.0;
+
+        // Window Borders
+        let start_y = sec.ay();
+        let top_room = state.borders_box.top_room();
+        state.borders_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.borders_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
+        state.borders_box.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.borders_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        sec.spacing(widget_h + top_room + 12.0);
+
+        // Status Interface
+        let start_y = sec.ay();
+        let top_room = state.status_box.top_room();
+        state.status_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.status_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
+        state.status_box.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.status_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        sec.spacing(widget_h + top_room + 12.0);
+
+        // Fuzzel
+        let start_y = sec.ay();
+        let top_room = state.fuzzel_box.top_room();
+        state.fuzzel_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
+        state.fuzzel_box.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        sec.spacing(widget_h + top_room + 12.0);
+
+        // Terminal
+        let start_y = sec.ay();
+        let top_room = state.terminal_box.top_room();
+        state.terminal_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.terminal_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
+        state.terminal_box.set_row_rect(cx + 8.0, cw - 16.0);
+        clear_ui::layout::render_widget(&mut pc, &mut state.terminal_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        sec.spacing(widget_h + top_room + 8.0);
+    }
+    let prog_focused = sec_focused.get(1).copied().unwrap_or(false);
+    y = sec.finish_focused(&mut pc, prog_focused);
 
     // ── Typefaces Section (List & Preview) ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Typefaces");
@@ -551,7 +684,7 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
         let list_box_y = left_y;
         let list_box_h = 320.0;
         
-        // Render the standardized ScrollBox widget
+        // Render the standardized ScrollingList widget
         clear_ui::layout::render_widget(&mut pc, &mut state.list_box, left_x, list_box_y, left_w, list_box_h);
 
         let query = state.search_box.text.to_lowercase();
@@ -560,22 +693,17 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
             .collect();
 
         let btn_h = 24.0;
-        let btn_gap = 4.0;
         let inner_x = left_x + 4.0;
         let inner_w = left_w - 16.0; // leave room for scrollbar
-        let item_height_full = btn_h + btn_gap;
-        let content_h = matching_fonts.len() as f32 * item_height_full;
         
-        // Update ScrollBox bounds to clamp and render correctly
-        state.list_box.update_bounds(content_h, list_box_y, list_box_h);
+        // Update ScrollingList bounds to clamp and render correctly
+        state.list_box.update_bounds(matching_fonts.len(), list_box_y, list_box_h);
 
         // Render visible buttons inside scroll region
         
         for (idx, font_name) in matching_fonts.iter().enumerate() {
-            let virtual_y = idx as f32 * item_height_full;
-            
             // Only render buttons that are completely within the visible area
-            if let Some(draw_y) = state.list_box.get_item_draw_y(virtual_y, btn_h) {
+            if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 0.0) {
                 let is_selected = state.selected_font.as_ref() == Some(*font_name);
                 
                 let (bg, hover_bg, text_color) = if is_selected {
@@ -588,12 +716,30 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
                     font_name,
                     inner_x,
                     draw_y,
-                    inner_w,
+                    inner_w - 44.0,
                     btn_h,
                     bg,
                     hover_bg,
                     text_color,
                     crate::app::AppAction::Typeface(TypefaceMessage::SelectFont((*font_name).clone())),
+                );
+
+                let (copy_bg, copy_hover_bg, copy_text_color) = if is_selected {
+                    ([0.20, 0.40, 0.65, 0.2], [0.30, 0.52, 0.78, 0.5], [0.90, 0.90, 0.95, 1.0])
+                } else {
+                    ([0.0, 0.0, 0.0, 0.0], [0.20, 0.20, 0.25, 0.25], [0.70, 0.70, 0.75, 1.0])
+                };
+
+                pc.button(
+                    "📋",
+                    inner_x + inner_w - 40.0,
+                    draw_y,
+                    40.0,
+                    btn_h,
+                    copy_bg,
+                    copy_hover_bg,
+                    copy_text_color,
+                    crate::app::AppAction::Typeface(TypefaceMessage::CopyFontName((*font_name).clone())),
                 );
             }
         }
@@ -606,6 +752,33 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
 
         // 2. Render Right Column (Live Preview)
         let mut right_y = start_y;
+        
+        // Render Info Box
+        let info_h = 96.0;
+        let info_bg = [0.12, 0.18, 0.28, 0.3]; // Sleek translucent blue-ish background
+        let info_border = [0.25, 0.40, 0.60, 0.5]; // Soft blue border
+        
+        pc.rect(info_bg, right_x, right_y, right_w, info_h);
+        pc.rect(info_border, right_x, right_y, right_w, 1.0);
+        pc.rect(info_border, right_x, right_y + info_h - 1.0, right_w, 1.0);
+        pc.rect(info_border, right_x, right_y, 1.0, info_h);
+        pc.rect(info_border, right_x + right_w - 1.0, right_y, 1.0, info_h);
+        
+        let text_padding_x = 16.0;
+        let mut text_y = right_y + 12.0;
+        
+        pc.text("Font Directories & Installation", right_x + text_padding_x, text_y, 12.0, [0.35, 0.65, 0.90, 1.0]);
+        text_y += 20.0;
+        
+        pc.text("• Active Directory: ~/Dropbox/Fonts", right_x + text_padding_x, text_y, 11.0, [0.80, 0.80, 0.85, 1.0]);
+        text_y += 16.0;
+        
+        pc.text("• Place TTF/OTF files there to install new fonts.", right_x + text_padding_x, text_y, 11.0, [0.80, 0.80, 0.85, 1.0]);
+        text_y += 16.0;
+
+        pc.text("• Changes will be cached automatically by fontconfig.", right_x + text_padding_x, text_y, 11.0, [0.55, 0.55, 0.60, 1.0]);
+        
+        right_y += info_h + 12.0;
         
         if let Some(ref font_name) = state.selected_font {
             let card_h = 240.0;
@@ -665,7 +838,7 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
             text_y += 32.0;
 
             pc.text_with_font(
-                "Pack my box with five dozen liquor jugs.",
+                "The five boxing wizards jump quickly.",
                 right_x + text_padding_x,
                 text_y,
                 24.0,
@@ -681,7 +854,45 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
 
         sec.content_y = left_y.max(right_y);
     }
-    sec.finish(&mut pc);
+    let list_focused = sec_focused.get(2).copied().unwrap_or(false);
+    sec.finish_focused(&mut pc, list_focused);
+
+    // Filter out base text items covered by any open popover to prevent showing through
+    let mut popovers = Vec::new();
+    if state.borders_menu.open {
+        let (x, y, w, h) = state.borders_menu.rect();
+        popovers.push((x, y + h, w, state.borders_menu.options.len() as f32 * 24.0));
+    }
+    if state.status_menu.open {
+        let (x, y, w, h) = state.status_menu.rect();
+        popovers.push((x, y + h, w, state.status_menu.options.len() as f32 * 24.0));
+    }
+    if state.fuzzel_menu.open {
+        let (x, y, w, h) = state.fuzzel_menu.rect();
+        popovers.push((x, y + h, w, state.fuzzel_menu.options.len() as f32 * 24.0));
+    }
+    if state.terminal_menu.open {
+        let (x, y, w, h) = state.terminal_menu.rect();
+        popovers.push((x, y + h, w, state.terminal_menu.options.len() as f32 * 24.0));
+    }
+
+    if !popovers.is_empty() {
+        pc.texts.retain(|(_, _, tx, ty, _, _)| {
+            for &(px, py, pw, ph) in &popovers {
+                if *tx >= px && *tx <= px + pw && *ty >= py && *ty <= py + ph {
+                    return false;
+                }
+            }
+            true
+        });
+    }
+
+    // Render dropdown popovers on top of all other widgets
+    state.borders_menu.render_popover(&mut pc);
+    state.status_menu.render_popover(&mut pc);
+    state.fuzzel_menu.render_popover(&mut pc);
+    state.terminal_menu.render_popover(&mut pc);
+
     pc
 }
 
@@ -709,29 +920,49 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
             if !state.borders_box.editing {
                 state.window_borders = new.window_borders.clone();
                 state.borders_box = new.borders_box;
+                state.borders_menu = new.borders_menu;
             }
             if !state.status_box.editing {
                 state.status_interface = new.status_interface.clone();
                 state.status_box = new.status_box;
+                state.status_menu = new.status_menu;
             }
             if !state.fuzzel_box.editing {
                 state.fuzzel = new.fuzzel.clone();
                 state.fuzzel_box = new.fuzzel_box;
+                state.fuzzel_menu = new.fuzzel_menu;
             }
             if !state.terminal_box.editing {
                 state.terminal = new.terminal.clone();
                 state.terminal_box = new.terminal_box;
+                state.terminal_menu = new.terminal_menu;
             }
             if !state.search_box.editing {
                 state.search_box = new.search_box;
             }
-            let old_scroll = state.list_box.scroll_y;
+            let old_scroll = state.list_box.scroll_y();
             state.list_box = new.list_box;
-            state.list_box.scroll_y = old_scroll;
+            state.list_box.set_scroll_y(old_scroll);
         }
         TypefaceMessage::SetSans(sans) => {
             state.sans_serif = sans.clone();
             state.sans_box.text = sans;
+            if state.borders_menu.selected == 0 {
+                state.window_borders = state.sans_serif.clone();
+                state.borders_box.text = state.sans_serif.clone();
+            }
+            if state.status_menu.selected == 0 {
+                state.status_interface = state.sans_serif.clone();
+                state.status_box.text = state.sans_serif.clone();
+            }
+            if state.fuzzel_menu.selected == 0 {
+                state.fuzzel = state.sans_serif.clone();
+                state.fuzzel_box.text = state.sans_serif.clone();
+            }
+            if state.terminal_menu.selected == 0 {
+                state.terminal = state.sans_serif.clone();
+                state.terminal_box.text = state.sans_serif.clone();
+            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -745,6 +976,22 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
         TypefaceMessage::SetSerif(serif) => {
             state.serif = serif.clone();
             state.serif_box.text = serif;
+            if state.borders_menu.selected == 1 {
+                state.window_borders = state.serif.clone();
+                state.borders_box.text = state.serif.clone();
+            }
+            if state.status_menu.selected == 1 {
+                state.status_interface = state.serif.clone();
+                state.status_box.text = state.serif.clone();
+            }
+            if state.fuzzel_menu.selected == 1 {
+                state.fuzzel = state.serif.clone();
+                state.fuzzel_box.text = state.serif.clone();
+            }
+            if state.terminal_menu.selected == 1 {
+                state.terminal = state.serif.clone();
+                state.terminal_box.text = state.serif.clone();
+            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -758,6 +1005,22 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
         TypefaceMessage::SetMono(mono) => {
             state.monospace = mono.clone();
             state.mono_box.text = mono;
+            if state.borders_menu.selected == 2 {
+                state.window_borders = state.monospace.clone();
+                state.borders_box.text = state.monospace.clone();
+            }
+            if state.status_menu.selected == 2 {
+                state.status_interface = state.monospace.clone();
+                state.status_box.text = state.monospace.clone();
+            }
+            if state.fuzzel_menu.selected == 2 {
+                state.fuzzel = state.monospace.clone();
+                state.fuzzel_box.text = state.monospace.clone();
+            }
+            if state.terminal_menu.selected == 2 {
+                state.terminal = state.monospace.clone();
+                state.terminal_box.text = state.monospace.clone();
+            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -825,6 +1088,131 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
         }
         TypefaceMessage::SelectFont(font) => {
             state.selected_font = Some(font);
+        }
+        TypefaceMessage::CopyFontName(font) => {
+            use std::io::Write;
+            std::thread::spawn({
+                let text = font.clone();
+                move || {
+                    let mut copied = false;
+                    if let Ok(mut child) = std::process::Command::new("wl-copy")
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                    {
+                        if let Some(mut stdin) = child.stdin.take() {
+                            if stdin.write_all(text.as_bytes()).is_ok() {
+                                copied = true;
+                            }
+                        }
+                        let _ = child.wait();
+                    }
+                    if !copied {
+                        if let Ok(mut child) = std::process::Command::new("xclip")
+                            .arg("-selection")
+                            .arg("clipboard")
+                            .stdin(std::process::Stdio::piped())
+                            .spawn()
+                        {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let _ = stdin.write_all(text.as_bytes());
+                            }
+                            let _ = child.wait();
+                        }
+                    }
+                }
+            });
+        }
+        TypefaceMessage::SetBordersMenu(idx) => {
+            state.borders_menu.selected = idx;
+            state.borders_box.disabled = idx != 3;
+            if idx == 0 {
+                state.window_borders = state.sans_serif.clone();
+                state.borders_box.text = state.sans_serif.clone();
+            } else if idx == 1 {
+                state.window_borders = state.serif.clone();
+                state.borders_box.text = state.serif.clone();
+            } else if idx == 2 {
+                state.window_borders = state.monospace.clone();
+                state.borders_box.text = state.monospace.clone();
+            }
+            save_preferred_fonts(
+                &state.sans_serif,
+                &state.serif,
+                &state.monospace,
+                &state.window_borders,
+                &state.status_interface,
+                &state.fuzzel,
+                &state.terminal,
+            );
+        }
+        TypefaceMessage::SetStatusMenu(idx) => {
+            state.status_menu.selected = idx;
+            state.status_box.disabled = idx != 3;
+            if idx == 0 {
+                state.status_interface = state.sans_serif.clone();
+                state.status_box.text = state.sans_serif.clone();
+            } else if idx == 1 {
+                state.status_interface = state.serif.clone();
+                state.status_box.text = state.serif.clone();
+            } else if idx == 2 {
+                state.status_interface = state.monospace.clone();
+                state.status_box.text = state.monospace.clone();
+            }
+            save_preferred_fonts(
+                &state.sans_serif,
+                &state.serif,
+                &state.monospace,
+                &state.window_borders,
+                &state.status_interface,
+                &state.fuzzel,
+                &state.terminal,
+            );
+        }
+        TypefaceMessage::SetFuzzelMenu(idx) => {
+            state.fuzzel_menu.selected = idx;
+            state.fuzzel_box.disabled = idx != 3;
+            if idx == 0 {
+                state.fuzzel = state.sans_serif.clone();
+                state.fuzzel_box.text = state.sans_serif.clone();
+            } else if idx == 1 {
+                state.fuzzel = state.serif.clone();
+                state.fuzzel_box.text = state.serif.clone();
+            } else if idx == 2 {
+                state.fuzzel = state.monospace.clone();
+                state.fuzzel_box.text = state.monospace.clone();
+            }
+            save_preferred_fonts(
+                &state.sans_serif,
+                &state.serif,
+                &state.monospace,
+                &state.window_borders,
+                &state.status_interface,
+                &state.fuzzel,
+                &state.terminal,
+            );
+        }
+        TypefaceMessage::SetTerminalMenu(idx) => {
+            state.terminal_menu.selected = idx;
+            state.terminal_box.disabled = idx != 3;
+            if idx == 0 {
+                state.terminal = state.sans_serif.clone();
+                state.terminal_box.text = state.sans_serif.clone();
+            } else if idx == 1 {
+                state.terminal = state.serif.clone();
+                state.terminal_box.text = state.serif.clone();
+            } else if idx == 2 {
+                state.terminal = state.monospace.clone();
+                state.terminal_box.text = state.monospace.clone();
+            }
+            save_preferred_fonts(
+                &state.sans_serif,
+                &state.serif,
+                &state.monospace,
+                &state.window_borders,
+                &state.status_interface,
+                &state.fuzzel,
+                &state.terminal,
+            );
         }
     }
 }

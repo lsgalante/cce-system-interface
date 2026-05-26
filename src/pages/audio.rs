@@ -207,7 +207,7 @@ const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 
-pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
@@ -266,7 +266,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
         }
     }
 
-    y = sec.finish(&mut pc);
+    y = sec.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
 
     // ── Input section ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Input");
@@ -323,7 +323,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
         }
     }
 
-    sec.finish(&mut pc);
+    sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
 
     pc
 }

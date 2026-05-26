@@ -166,6 +166,7 @@ struct SystemInterface {
     rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
     rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
+    rx_colors: std::sync::mpsc::Receiver<pages::colors::ColorsState>,
     tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
     tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
@@ -177,6 +178,8 @@ struct SystemInterface {
     needs_rebuild: bool,
     scroll_y: f32,
     max_scroll_y: f32,
+    page_root_container: clear_ui::widget::Container,
+    page_sec_containers: Vec<clear_ui::widget::Container>,
 }
 
 impl SystemInterface {
@@ -369,6 +372,17 @@ impl SystemInterface {
         let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
         let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
         let rx_services = spawn_bg(3, || pages::services::fetch_services());
+        let rx_colors = {
+            let (tx, rx) = std::sync::mpsc::channel::<pages::colors::ColorsState>();
+            tokio::spawn(async move {
+                loop {
+                    let val = tokio::task::spawn_blocking(|| pages::colors::read_colors_config()).await;
+                    if let Ok(val) = val { if tx.send(val).is_err() { break; } }
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                }
+            });
+            rx
+        };
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
 
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
@@ -385,12 +399,14 @@ impl SystemInterface {
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input, rx_fingers,
             rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
-            rx_backup_state, rx_typeface, rx_services, tx_backup, rx_backup,
+            rx_backup_state, rx_typeface, rx_services, rx_colors, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
             width, height,
             needs_rebuild: true,
             scroll_y: 0.0,
             max_scroll_y: 0.0,
+            page_root_container: clear_ui::widget::Container::new(),
+            page_sec_containers: Vec::new(),
         };
         this.rebuild_layout(width as f32, height as f32);
         this
@@ -503,7 +519,7 @@ impl SystemInterface {
 
             // Auto-detect if inside a ScrollBox to apply left alignment by default
             if !left_align && btn.w >= 60.0 {
-                if self.app.current_page == Page::Typeface {
+                if self.app.current_page == Page::Typefaces {
                     let sb = &self.app.typeface.list_box;
                     let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
                     if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
@@ -547,6 +563,169 @@ impl SystemInterface {
             page_buttons.push(cb);
         }
 
+        // ── Rebuild Widget Focus Hierarchy ──
+        self.page_root_container.clear_children();
+        self.page_root_container.set_parent(None);
+        self.page_sec_containers.clear();
+
+        // Clear all widgets' hierarchy links
+        self.app.typeface.sans_box.clear_children(); self.app.typeface.sans_box.set_parent(None);
+        self.app.typeface.serif_box.clear_children(); self.app.typeface.serif_box.set_parent(None);
+        self.app.typeface.mono_box.clear_children(); self.app.typeface.mono_box.set_parent(None);
+        self.app.typeface.borders_menu.clear_children(); self.app.typeface.borders_menu.set_parent(None);
+        self.app.typeface.borders_box.clear_children(); self.app.typeface.borders_box.set_parent(None);
+        self.app.typeface.status_menu.clear_children(); self.app.typeface.status_menu.set_parent(None);
+        self.app.typeface.status_box.clear_children(); self.app.typeface.status_box.set_parent(None);
+        self.app.typeface.fuzzel_menu.clear_children(); self.app.typeface.fuzzel_menu.set_parent(None);
+        self.app.typeface.fuzzel_box.clear_children(); self.app.typeface.fuzzel_box.set_parent(None);
+        self.app.typeface.terminal_menu.clear_children(); self.app.typeface.terminal_menu.set_parent(None);
+        self.app.typeface.terminal_box.clear_children(); self.app.typeface.terminal_box.set_parent(None);
+        self.app.typeface.search_box.clear_children(); self.app.typeface.search_box.set_parent(None);
+        self.app.typeface.list_box.scroll_box.clear_children(); self.app.typeface.list_box.scroll_box.set_parent(None);
+
+        self.app.services.search_box.clear_children(); self.app.services.search_box.set_parent(None);
+
+        self.app.services.list_box.scroll_box.clear_children(); self.app.services.list_box.scroll_box.set_parent(None);
+
+        self.app.processors.cpu_list_box.scroll_box.clear_children(); self.app.processors.cpu_list_box.scroll_box.set_parent(None);
+
+        self.app.network.wifi_list_box.scroll_box.clear_children(); self.app.network.wifi_list_box.scroll_box.set_parent(None);
+
+        for sb in &mut self.app.layout.spinboxes {
+            sb.clear_children();
+            sb.set_parent(None);
+        }
+        self.app.layout.cascade_offset_spinbox.clear_children(); self.app.layout.cascade_offset_spinbox.set_parent(None);
+        self.app.layout.edge_gap_spinbox.clear_children(); self.app.layout.edge_gap_spinbox.set_parent(None);
+        self.app.layout.top_gap_spinbox.clear_children(); self.app.layout.top_gap_spinbox.set_parent(None);
+
+        for cs in &mut self.app.colors.color_selectors {
+            cs.clear_children();
+            cs.set_parent(None);
+        }
+
+        self.app.notifications.duration_spinbox.clear_children(); self.app.notifications.duration_spinbox.set_parent(None);
+
+        self.app.input.rate_spinbox.clear_children(); self.app.input.rate_spinbox.set_parent(None);
+        self.app.input.delay_spinbox.clear_children(); self.app.input.delay_spinbox.set_parent(None);
+        self.app.input.scroll_friction_spinbox.clear_children(); self.app.input.scroll_friction_spinbox.set_parent(None);
+        self.app.input.pointer_friction_spinbox.clear_children(); self.app.input.pointer_friction_spinbox.set_parent(None);
+        self.app.input.trackpad_friction_spinbox.clear_children(); self.app.input.trackpad_friction_spinbox.set_parent(None);
+
+        for sb in &mut self.app.audio.sink_spinboxes {
+            sb.clear_children();
+            sb.set_parent(None);
+        }
+        for sb in &mut self.app.audio.source_spinboxes {
+            sb.clear_children();
+            sb.set_parent(None);
+        }
+
+        self.app.display.brightness_spinbox.clear_children(); self.app.display.brightness_spinbox.set_parent(None);
+
+        use clear_ui::widget::focus::link_parent_child;
+        match self.app.current_page {
+            Page::Typefaces => {
+                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
+                
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
+                
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.sans_box);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.serif_box);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.mono_box);
+                
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_box);
+                
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.search_box);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.list_box.scroll_box);
+            }
+            Page::Services => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.services.search_box);
+                link_parent_child(&mut self.page_root_container, &mut self.app.services.list_box.scroll_box);
+            }
+            Page::Processors => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.processors.cpu_list_box.scroll_box);
+            }
+            Page::Radios => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
+            }
+            Page::Layout => {
+                self.page_sec_containers.resize_with(6, clear_ui::widget::Container::new);
+                
+                for i in 0..6 {
+                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
+                }
+                
+                if !self.app.layout.spinboxes.is_empty() {
+                    link_parent_child(&mut self.page_sec_containers[0], &mut self.app.layout.spinboxes[0]);
+                }
+                if self.app.layout.spinboxes.len() > 1 {
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.spinboxes[1]);
+                }
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.cascade_offset_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.edge_gap_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox);
+                
+                if self.app.layout.spinboxes.len() > 2 {
+                    link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.spinboxes[2]);
+                }
+                if self.app.layout.spinboxes.len() > 3 {
+                    link_parent_child(&mut self.page_sec_containers[3], &mut self.app.layout.spinboxes[3]);
+                }
+                if self.app.layout.spinboxes.len() > 4 {
+                    link_parent_child(&mut self.page_sec_containers[4], &mut self.app.layout.spinboxes[4]);
+                }
+                if self.app.layout.spinboxes.len() > 5 {
+                    link_parent_child(&mut self.page_sec_containers[5], &mut self.app.layout.spinboxes[5]);
+                }
+            }
+            Page::Colors => {
+                for cs in &mut self.app.colors.color_selectors {
+                    link_parent_child(&mut self.page_root_container, cs);
+                }
+            }
+            Page::Notifications => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
+            }
+            Page::Input => {
+                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.rate_spinbox);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.delay_spinbox);
+                
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.scroll_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.pointer_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.trackpad_friction_spinbox);
+            }
+            Page::Audio => {
+                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                
+                for sb in &mut self.app.audio.sink_spinboxes {
+                    link_parent_child(&mut self.page_sec_containers[0], sb);
+                }
+                for sb in &mut self.app.audio.source_spinboxes {
+                    link_parent_child(&mut self.page_sec_containers[1], sb);
+                }
+            }
+            Page::Display => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_spinbox);
+            }
+            _ => {}
+        }
+
         self.widgets = widgets;
         self.text_items = text_items;
         self.page_buttons = page_buttons;
@@ -555,21 +734,26 @@ impl SystemInterface {
 
     fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use pages::*;
+        let root_focused = clear_ui::widget::focus::is_focused(&self.page_root_container);
+        let sec_focused: Vec<bool> = self.page_sec_containers.iter()
+            .map(|c| clear_ui::widget::focus::is_focused(c))
+            .collect();
         match self.app.current_page {
             Page::Power => power::view(&self.app.power, cx, cy, cw, ch),
-            Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch),
+            Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused),
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
-            Page::Radios => network::view(&self.app.network, cx, cy, cw, ch),
-            Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch),
-            Page::Processors => processors::view(&mut self.app.processors, cx, cy, cw, ch),
-            Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch),
+            Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused),
+            Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch, &sec_focused),
+            Page::Processors => processors::view(&mut self.app.processors, cx, cy, cw, ch, root_focused),
+            Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
             Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
             Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
             Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
-            Page::Typeface => typeface::view(&mut self.app.typeface, cx, cy, cw, ch),
-            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch),
+            Page::Typefaces => typeface::view(&mut self.app.typeface, cx, cy, cw, ch, &sec_focused),
+            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, root_focused),
+            Page::Colors => colors::view(&mut self.app.colors, cx, cy, cw, ch),
         }
     }
 
@@ -696,6 +880,10 @@ impl SystemInterface {
             pages::services::update(&mut self.app.services, pages::services::ServicesMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_colors.try_recv() {
+            colors::update(&mut self.app.colors, pages::colors::ColorsMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
         while let Ok(m) = self.rx_backup.try_recv() {
             self.handle_action(&AppAction::Backup(m));
             self.needs_rebuild = true;
@@ -703,10 +891,10 @@ impl SystemInterface {
         while let Ok(action) = self.rx_color_selector.try_recv() {
             match action {
                 ColorSelectorAction::Background(rgb) => {
-                    layout::update(&mut self.app.layout, layout::LayoutMessage::SetBackground(rgb));
+                    colors::update(&mut self.app.colors, pages::colors::ColorsMessage::SetLowColor(rgb));
                 }
                 ColorSelectorAction::Border(rgb) => {
-                    layout::update(&mut self.app.layout, layout::LayoutMessage::SetBorderColor(rgb));
+                    colors::update(&mut self.app.colors, pages::colors::ColorsMessage::SetHighColor(rgb));
                 }
             }
             self.needs_rebuild = true;
@@ -729,6 +917,7 @@ impl SystemInterface {
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
             AppAction::Typeface(m) => typeface::update(&mut self.app.typeface, m.clone()),
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
+            AppAction::Colors(m) => colors::update(&mut self.app.colors, m.clone()),
             AppAction::Backup(m) => match m {
                 pages::backup::BackupMessage::StartBackup => {
                     pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::StartBackup);
@@ -774,7 +963,9 @@ impl SystemInterface {
             if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
-            for cp in &mut self.app.layout.color_selectors {
+        }
+        if self.app.current_page == Page::Colors {
+            for cp in &mut self.app.colors.color_selectors {
                 if cp.cursor_moved(lx, ly) {
                     changed = true;
                 }
@@ -874,7 +1065,7 @@ impl SystemInterface {
                 changed = true;
             }
         }
-        if self.app.current_page == Page::Typeface {
+        if self.app.current_page == Page::Typefaces {
             if self.app.typeface.sans_box.cursor_moved(lx, ly) {
                 changed = true;
             }
@@ -884,13 +1075,25 @@ impl SystemInterface {
             if self.app.typeface.mono_box.cursor_moved(lx, ly) {
                 changed = true;
             }
+            if self.app.typeface.borders_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
             if self.app.typeface.borders_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.status_menu.cursor_moved(lx, ly) {
                 changed = true;
             }
             if self.app.typeface.status_box.cursor_moved(lx, ly) {
                 changed = true;
             }
+            if self.app.typeface.fuzzel_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
             if self.app.typeface.fuzzel_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.terminal_menu.cursor_moved(lx, ly) {
                 changed = true;
             }
             if self.app.typeface.terminal_box.cursor_moved(lx, ly) {
@@ -931,6 +1134,7 @@ impl SystemInterface {
                 if px >= w.x && px <= w.x + w.w && py >= w.y && py <= w.y + w.h {
                     if let WidgetKind::PageButton(p) = &w.kind {
                         if self.app.current_page != *p {
+                            clear_ui::widget::focus::clear_focus();
                             self.app.current_page = *p;
                             self.scroll_y = 0.0;
                             self.needs_rebuild = true;
@@ -943,6 +1147,93 @@ impl SystemInterface {
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
         let mut actions = Vec::new();
+
+        if state == clear_ui::widget::ElementState::Pressed {
+            let mut clicked_any_focusable = false;
+            match self.app.current_page {
+                Page::Layout => {
+                    for sb in &mut self.app.layout.spinboxes {
+                        if sb.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    }
+                    if self.app.layout.cascade_offset_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.layout.edge_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.layout.top_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Colors => {
+                    for cp in &mut self.app.colors.color_selectors {
+                        if cp.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    }
+                }
+                Page::Input => {
+                    if self.app.input.rate_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.input.delay_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.input.scroll_friction_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.input.pointer_friction_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.input.trackpad_friction_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Notifications => {
+                    if self.app.notifications.duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Audio => {
+                    for sb in &mut self.app.audio.sink_spinboxes {
+                        if sb.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    }
+                    for sb in &mut self.app.audio.source_spinboxes {
+                        if sb.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    }
+                }
+                Page::Display => {
+                    if self.app.display.brightness_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.display.night_light_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    for out in &mut self.app.display.outputs {
+                        if out.name_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        if out.resolution_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        if let Some(ref mut scale_lbl) = out.scale_label {
+                            if scale_lbl.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        }
+                    }
+                }
+                Page::Status => {
+                    if self.app.status.status_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.status.size_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Typefaces => {
+                    let tf = &mut self.app.typeface;
+                    if tf.sans_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.serif_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.mono_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.borders_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.borders_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.status_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.status_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.fuzzel_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.fuzzel_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.terminal_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.terminal_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Services => {
+                    let srv = &mut self.app.services;
+                    if srv.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if srv.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Processors => {
+                    let proc = &mut self.app.processors;
+                    if proc.cpu_list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Radios => {
+                    let net = &mut self.app.network;
+                    if net.wifi_list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                _ => {}
+            }
+
+            if !clicked_any_focusable {
+                clear_ui::widget::focus::clear_focus();
+            }
+        }
+
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Layout {
             for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
                 if !sb.hit_test(lx, ly) { sb.unfocus(); }
@@ -980,20 +1271,24 @@ impl SystemInterface {
                     pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
                 ));
             }
-            for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Colors {
+            for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
                 if !cp.hit_test(lx, ly) { cp.unfocus(); }
                 cp.mouse_input(button, state, lx, ly);
                 if cp.take_click() {
-                    actions.push(AppAction::Layout(match i {
-                        0 => pages::layout::LayoutMessage::PickBackgroundColor,
-                        _ => pages::layout::LayoutMessage::PickBorderColor,
+                    actions.push(AppAction::Colors(match i {
+                        0 => pages::colors::ColorsMessage::PickLowColor,
+                        1 => pages::colors::ColorsMessage::PickHighColor,
+                        _ => pages::colors::ColorsMessage::PickDisabledColor,
                     }));
                 }
                 if cp.color != old {
-                    actions.push(AppAction::Layout(match i {
-                        0 => pages::layout::LayoutMessage::SetBackground(cp.color),
-                        _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
+                    actions.push(AppAction::Colors(match i {
+                        0 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                        1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
+                        _ => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
                     }));
                 }
             }
@@ -1125,7 +1420,7 @@ impl SystemInterface {
             if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
             lbl2.mouse_input(button, state, lx, ly);
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Typeface {
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Typefaces {
             let tb = &mut self.app.typeface.sans_box;
             if !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
@@ -1153,6 +1448,15 @@ impl SystemInterface {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
             }
 
+            let menu = &mut self.app.typeface.borders_menu;
+            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if menu.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersMenu(menu.selected)));
+            }
+
             let tb = &mut self.app.typeface.borders_box;
             if !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
@@ -1160,6 +1464,15 @@ impl SystemInterface {
             }
             if tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBorders(tb.text.clone())));
+            }
+
+            let menu = &mut self.app.typeface.status_menu;
+            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if menu.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusMenu(menu.selected)));
             }
 
             let tb = &mut self.app.typeface.status_box;
@@ -1171,6 +1484,15 @@ impl SystemInterface {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatus(tb.text.clone())));
             }
 
+            let menu = &mut self.app.typeface.fuzzel_menu;
+            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if menu.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelMenu(menu.selected)));
+            }
+
             let tb = &mut self.app.typeface.fuzzel_box;
             if !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
@@ -1178,6 +1500,15 @@ impl SystemInterface {
             }
             if tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzel(tb.text.clone())));
+            }
+
+            let menu = &mut self.app.typeface.terminal_menu;
+            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if menu.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalMenu(menu.selected)));
             }
 
             let tb = &mut self.app.typeface.terminal_box;
@@ -1197,11 +1528,32 @@ impl SystemInterface {
             if tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
             }
+
+            let tf = &mut self.app.typeface;
+            if tf.list_box.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
             let tb = &mut self.app.services.search_box;
             if !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            let srv = &mut self.app.services;
+            if srv.list_box.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Processors {
+            let proc = &mut self.app.processors;
+            if proc.cpu_list_box.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+        }
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Radios {
+            let net = &mut self.app.network;
+            if net.wifi_list_box.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
         }
@@ -1222,7 +1574,7 @@ impl SystemInterface {
             let lx = self.cursor_x / s;
             let ly = self.cursor_y / s + self.scroll_y;
             
-            if self.app.current_page == Page::Typeface {
+            if self.app.current_page == Page::Typefaces {
                 let tf = &mut self.app.typeface;
                 if tf.list_box.mouse_wheel(delta, lx, ly) {
                     self.needs_rebuild = true;
@@ -1243,6 +1595,13 @@ impl SystemInterface {
                     return true;
                 }
             }
+            if self.app.current_page == Page::Radios {
+                let net = &mut self.app.network;
+                if net.wifi_list_box.mouse_wheel(delta, lx, ly) {
+                    self.needs_rebuild = true;
+                    return true;
+                }
+            }
 
             let scroll_speed = 24.0;
             let dy = match delta {
@@ -1259,7 +1618,47 @@ impl SystemInterface {
         false
     }
 
+    fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Widget + 'static)> {
+        match self.app.current_page {
+            Page::Typefaces | Page::Services | Page::Processors | Page::Radios |
+            Page::Layout | Page::Colors | Page::Notifications | Page::Input |
+            Page::Audio | Page::Display => {
+                let ptr = &mut self.page_root_container as &mut dyn clear_ui::widget::Widget as *mut dyn clear_ui::widget::Widget;
+                let static_ptr = unsafe {
+                    std::mem::transmute::<*mut dyn clear_ui::widget::Widget, *mut (dyn clear_ui::widget::Widget + 'static)>(ptr)
+                };
+                Some(static_ptr)
+            }
+            _ => None,
+        }
+    }
+
     fn handle_key_input(&mut self, event: &clear_ui::widget::KeyEvent) -> bool {
+        if event.state == clear_ui::widget::ElementState::Pressed && !event.repeat {
+            let is_nav_key = match (&event.logical_key, event.ctrl) {
+                (clear_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
+                _ => false,
+            };
+            if is_nav_key {
+                if clear_ui::widget::focus::has_focus() {
+                    if clear_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl) {
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                } else {
+                    if let Some(root_ptr) = self.get_page_root_widget() {
+                        unsafe {
+                            let root_ref = &mut *root_ptr;
+                            clear_ui::widget::focus::set_focused(root_ref);
+                            root_ref.focus();
+                            self.needs_rebuild = true;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
         if self.app.current_page == Page::Layout {
             let mut changed = false;
             let mut actions = Vec::new();
@@ -1307,13 +1706,25 @@ impl SystemInterface {
                 }
                 changed = true;
             }
-            for (i, cp) in self.app.layout.color_selectors.iter_mut().enumerate() {
+            for a in &actions {
+                self.handle_action(a);
+            }
+            if changed {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Colors {
+            let mut changed = false;
+            let mut actions = Vec::new();
+            for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
                 if cp.keyboard_input(event) {
                     if cp.color != old {
-                        actions.push(AppAction::Layout(match i {
-                            0 => pages::layout::LayoutMessage::SetBackground(cp.color),
-                            _ => pages::layout::LayoutMessage::SetBorderColor(cp.color),
+                        actions.push(AppAction::Colors(match i {
+                            0 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                            1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
+                            _ => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
                         }));
                     }
                     changed = true;
@@ -1408,11 +1819,114 @@ impl SystemInterface {
                 return true;
             }
         }
-        if self.app.current_page == Page::Typeface {
+        if self.app.current_page == Page::Typefaces {
+            if event.state == clear_ui::widget::ElementState::Pressed {
+                let is_down = match (&event.logical_key, event.ctrl) {
+                    (clear_ui::widget::Key::Character(c), true) if c == "n" || c == "N" => true,
+                    (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowDown), false) => true,
+                    _ => false,
+                };
+                let is_up = match (&event.logical_key, event.ctrl) {
+                    (clear_ui::widget::Key::Character(c), true) if c == "p" || c == "P" => true,
+                    (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowUp), false) => true,
+                    _ => false,
+                };
+                if is_down {
+                    if !clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
+                        return false;
+                    }
+                    let next_idx_font_scroll = {
+                        let tf = &self.app.typeface;
+                        let query = tf.search_box.text.to_lowercase();
+                        let matching_fonts: Vec<&String> = tf.all_fonts.iter()
+                            .filter(|font| font.to_lowercase().contains(&query))
+                            .collect();
+                        if !matching_fonts.is_empty() {
+                            let current_idx = tf.selected_font.as_ref()
+                                .and_then(|f| matching_fonts.iter().position(|&x| x == f));
+                            let next_idx = match current_idx {
+                                Some(idx) => (idx + 1).min(matching_fonts.len() - 1),
+                                None => 0,
+                            };
+                            let font = matching_fonts[next_idx].clone();
+                            
+                            // Compute scroll
+                            let btn_h = 24.0;
+                            let btn_gap = 4.0;
+                            let item_height_full = btn_h + btn_gap;
+                            let item_y = next_idx as f32 * item_height_full;
+                            let list_box_h = 320.0;
+                            
+                            let mut scroll_y = tf.list_box.scroll_y();
+                            if item_y < scroll_y {
+                                scroll_y = item_y;
+                            } else if item_y + btn_h > scroll_y + list_box_h {
+                                scroll_y = item_y + btn_h - list_box_h;
+                            }
+                            Some((font, scroll_y))
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some((font, scroll_y)) = next_idx_font_scroll {
+                        self.app.typeface.list_box.set_scroll_y(scroll_y);
+                        self.handle_action(&AppAction::Typeface(pages::typeface::TypefaceMessage::SelectFont(font)));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                } else if is_up {
+                    if !clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
+                        return false;
+                    }
+                    let next_idx_font_scroll = {
+                        let tf = &self.app.typeface;
+                        let query = tf.search_box.text.to_lowercase();
+                        let matching_fonts: Vec<&String> = tf.all_fonts.iter()
+                            .filter(|font| font.to_lowercase().contains(&query))
+                            .collect();
+                        if !matching_fonts.is_empty() {
+                            let current_idx = tf.selected_font.as_ref()
+                                .and_then(|f| matching_fonts.iter().position(|&x| x == f));
+                            let next_idx = match current_idx {
+                                Some(idx) => idx.saturating_sub(1),
+                                None => 0,
+                            };
+                            let font = matching_fonts[next_idx].clone();
+                            
+                            // Compute scroll
+                            let btn_h = 24.0;
+                            let btn_gap = 4.0;
+                            let item_height_full = btn_h + btn_gap;
+                            let item_y = next_idx as f32 * item_height_full;
+                            let list_box_h = 320.0;
+                            
+                            let mut scroll_y = tf.list_box.scroll_y();
+                            if item_y < scroll_y {
+                                scroll_y = item_y;
+                            } else if item_y + btn_h > scroll_y + list_box_h {
+                                scroll_y = item_y + btn_h - list_box_h;
+                            }
+                            Some((font, scroll_y))
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some((font, scroll_y)) = next_idx_font_scroll {
+                        self.app.typeface.list_box.set_scroll_y(scroll_y);
+                        self.handle_action(&AppAction::Typeface(pages::typeface::TypefaceMessage::SelectFont(font)));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+            }
+
             let mut actions = Vec::new();
             let mut consumed = false;
             
-            let tb = &mut self.app.typeface.sans_box;
+            let tf = &mut self.app.typeface;
+            let tb = &mut tf.sans_box;
             if tb.keyboard_input(event) {
                 if tb.take_change() {
                     actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
@@ -1485,9 +1999,28 @@ impl SystemInterface {
             }
         }
         if self.app.current_page == Page::Services {
-            let tb = &mut self.app.services.search_box;
+            let srv = &mut self.app.services;
+            if srv.list_box.keyboard_input(event) {
+                self.needs_rebuild = true;
+                return true;
+            }
+            let tb = &mut srv.search_box;
             if tb.keyboard_input(event) {
                 tb.take_change();
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Processors {
+            let proc = &mut self.app.processors;
+            if proc.cpu_list_box.keyboard_input(event) {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Radios {
+            let net = &mut self.app.network;
+            if net.wifi_list_box.keyboard_input(event) {
                 self.needs_rebuild = true;
                 return true;
             }
@@ -1570,6 +2103,7 @@ struct App {
     initial_page: Page,
     exit: bool,
     redraw: bool,
+    ctrl_pressed: bool,
 }
 
 
@@ -1804,9 +2338,11 @@ impl KeyboardHandler for App {
         _qh: &QueueHandle<Self>,
         _keyboard: &wl_keyboard::WlKeyboard,
         _serial: u32,
-        _modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
+        modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
         _layout: u32,
-    ) {}
+    ) {
+        self.ctrl_pressed = modifiers.ctrl;
+    }
 }
 
 impl App {
@@ -1823,6 +2359,12 @@ impl App {
             xkeysym::Keysym::Tab => Key::Named(NamedKey::Tab),
             xkeysym::Keysym::Delete => Key::Named(NamedKey::Delete),
             xkeysym::Keysym::space => Key::Named(NamedKey::Space),
+            xkeysym::Keysym::j | xkeysym::Keysym::J => Key::Character("j".to_string()),
+            xkeysym::Keysym::k | xkeysym::Keysym::K => Key::Character("k".to_string()),
+            xkeysym::Keysym::u | xkeysym::Keysym::U => Key::Character("u".to_string()),
+            xkeysym::Keysym::i | xkeysym::Keysym::I => Key::Character("i".to_string()),
+            xkeysym::Keysym::n | xkeysym::Keysym::N => Key::Character("n".to_string()),
+            xkeysym::Keysym::p | xkeysym::Keysym::P => Key::Character("p".to_string()),
             _ => {
                 if let Some(ref text) = event.utf8 {
                     Key::Character(text.clone())
@@ -1837,6 +2379,7 @@ impl App {
             logical_key,
             text: event.utf8.clone(),
             repeat: false,
+            ctrl: self.ctrl_pressed,
         };
 
         if let Some(st) = &mut self.state {
@@ -1949,6 +2492,7 @@ fn main() {
         initial_page,
         exit: false,
         redraw: true,
+        ctrl_pressed: false,
     };
 
     // Perform a roundtrip to populate output_state with active output scales

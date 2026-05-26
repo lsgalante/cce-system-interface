@@ -1,5 +1,6 @@
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::Section;
+use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -29,6 +30,7 @@ pub struct NetworkState {
     pub bt_enabled: bool,
     pub bt_devices: Vec<BluetoothDevice>,
     pub bt_scanning: bool,
+    pub wifi_list_box: ScrollingList,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +92,7 @@ pub async fn fetch_network_state() -> NetworkState {
         wifi_enabled, connected_ssid, signal_strength: signal,
         ip_address, device, available,
         bt_enabled, bt_devices, bt_scanning: false,
+        wifi_list_box: ScrollingList::new(26.0, 4.0),
     }
 }
 
@@ -205,7 +208,7 @@ const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
 const ACT_BTN: [f32; 4] = [0.16, 0.29, 0.18, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &NetworkState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, _ch: f32, root_focused: bool) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
@@ -235,21 +238,31 @@ pub fn view(state: &NetworkState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCo
         }
 
         if state.wifi_enabled && !state.available.is_empty() {
-            for net in &state.available {
-                let prefix = if net.in_use { ">" } else { " " };
-                let label = format!("{}  {}  ({}%)", prefix, net.ssid, net.signal);
-                let active = net.in_use;
-                let yt = sec.ay();
-                pc.button(&label, sec.ax(14.0), yt, cw - 28.0, 26.0,
-                    if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
-                    if active { ACCENT } else { TEXT_FG },
-                    AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
-                sec.content_y += 30.0;
+            let list_box_x = cx + 12.0;
+            let list_box_y = sec.ay();
+            let list_box_w = cw - 24.0;
+            let list_box_h = 160.0;
+
+            clear_ui::layout::render_widget(&mut pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h);
+
+            state.wifi_list_box.update_bounds(state.available.len(), list_box_y, list_box_h);
+
+            for (idx, net) in state.available.iter().enumerate() {
+                if let Some(draw_y) = state.wifi_list_box.get_item_draw_y(idx, 4.0) {
+                    let prefix = if net.in_use { ">" } else { " " };
+                    let label = format!("{}  {}  ({}%)", prefix, net.ssid, net.signal);
+                    let active = net.in_use;
+                    pc.button(&label, list_box_x + 4.0, draw_y, list_box_w - 24.0, 26.0,
+                        if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
+                        if active { ACCENT } else { TEXT_FG },
+                        AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
+                }
             }
+            sec.content_y += list_box_h + 8.0;
         }
     }
 
-    y = sec.finish(&mut pc);
+    y = sec.finish_focused(&mut pc, root_focused);
 
     // ── Bluetooth ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Bluetooth");
@@ -297,7 +310,11 @@ pub fn view(state: &NetworkState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageCo
 
 pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
     match msg {
-        NetworkMessage::Refreshed(new) => { *state = new; }
+        NetworkMessage::Refreshed(new) => {
+            let old_scroll = state.wifi_list_box.scroll_y();
+            *state = new;
+            state.wifi_list_box.set_scroll_y(old_scroll);
+        }
         NetworkMessage::ToggleWifi => {
             state.wifi_enabled = !state.wifi_enabled;
             wifi_toggle(state.wifi_enabled);

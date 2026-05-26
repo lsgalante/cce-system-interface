@@ -247,7 +247,7 @@ fn apply_repeat_config(rate: u16, delay: u16) {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
+pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
@@ -304,7 +304,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
 
     sec.widget(&mut pc, &mut state.delay_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
-    y = sec.finish(&mut pc);
+    y = sec.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
 
     // ── Inertial Input ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
@@ -330,7 +330,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Page
     sec.widget(&mut pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
 
-    y = sec.finish(&mut pc);
+    y = sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
 
     // ── Keybindings ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard Bindings");
