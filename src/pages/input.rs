@@ -235,7 +235,6 @@ fn write_config_value(key: &str, value: &str) {
 
 fn write_tap_to_click(enabled: bool) {
     write_config_value("tap_to_click", &enabled.to_string());
-    send_ipc_command(&format!("input tap-to-click {}", enabled));
 }
 
 fn apply_repeat_config(rate: u16, delay: u16) {
