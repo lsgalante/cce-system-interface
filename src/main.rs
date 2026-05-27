@@ -685,6 +685,8 @@ impl SystemInterface {
         self.app.input.scroll_friction_spinbox.clear_children(); self.app.input.scroll_friction_spinbox.set_parent(None);
         self.app.input.pointer_friction_spinbox.clear_children(); self.app.input.pointer_friction_spinbox.set_parent(None);
         self.app.input.trackpad_friction_spinbox.clear_children(); self.app.input.trackpad_friction_spinbox.set_parent(None);
+        self.app.input.trackpoint_accel_speed_spinbox.clear_children(); self.app.input.trackpoint_accel_speed_spinbox.set_parent(None);
+        self.app.input.trackpoint_accel_profile_menu.clear_children(); self.app.input.trackpoint_accel_profile_menu.set_parent(None);
 
         for sb in &mut self.app.audio.sink_spinboxes {
             sb.clear_children();
@@ -771,16 +773,20 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
             }
             Page::Input => {
-                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
                 link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
                 link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
                 
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.rate_spinbox);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.delay_spinbox);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_profile_menu);
                 
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.scroll_friction_spinbox);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.pointer_friction_spinbox);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.trackpad_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.rate_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.delay_spinbox);
+                
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.scroll_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.pointer_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.trackpad_friction_spinbox);
             }
             Page::Audio => {
                 self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
@@ -1132,6 +1138,15 @@ impl SystemInterface {
             if self.app.input.trackpad_friction_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
+            if self.app.input.dwtp_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.trackpoint_accel_speed_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.input.trackpoint_accel_profile_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
         }
         if self.app.current_page == Page::Audio {
             for sb in &mut self.app.audio.sink_spinboxes {
@@ -1325,6 +1340,8 @@ impl SystemInterface {
                     if self.app.input.scroll_friction_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.input.pointer_friction_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.input.trackpad_friction_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.input.trackpoint_accel_speed_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.input.trackpoint_accel_profile_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Notifications => {
                     if self.app.notifications.duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
@@ -1479,6 +1496,12 @@ impl SystemInterface {
             if sb.mouse_input(button, state, lx, ly) && sb.value != old {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
             }
+            let sb = &mut self.app.input.trackpoint_accel_speed_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelSpeed));
+            }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Notifications {
             let sb = &mut self.app.notifications.duration_spinbox;
@@ -1508,6 +1531,19 @@ impl SystemInterface {
             toggle.mouse_input(button, state, lx, ly);
             if toggle.take_click() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialTrackpad));
+            }
+            let toggle = &mut self.app.input.dwtp_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ToggleDwtp));
+            }
+            let menu = &mut self.app.input.trackpoint_accel_profile_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelProfile(menu.selected)));
             }
         }
         if self.app.current_page == Page::Notifications {
@@ -1769,6 +1805,15 @@ impl SystemInterface {
             let lx = self.cursor_x / s;
             let ly = self.cursor_y / s + self.scroll_y;
             
+            if self.app.current_page == Page::Input {
+                let input = &self.app.input;
+                if lx >= input.trackpad_x && lx <= input.trackpad_x + input.trackpad_w
+                    && ly >= input.trackpad_y && ly <= input.trackpad_y + input.trackpad_h
+                {
+                    return true;
+                }
+            }
+
             if self.app.current_page == Page::Typefaces {
                 let tf = &mut self.app.typeface;
                 if tf.list_box.mouse_wheel(delta, lx, ly) {
@@ -1969,6 +2014,11 @@ impl SystemInterface {
             }
             if self.app.input.trackpad_friction_spinbox.keyboard_input(event) {
                 self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.trackpoint_accel_speed_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelSpeed));
                 self.needs_rebuild = true;
                 return true;
             }

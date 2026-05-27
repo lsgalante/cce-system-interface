@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Spinbox, Toggle};
+use clear_ui::widget::{Dropdown, Spinbox, Toggle, Widget};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
@@ -33,6 +33,10 @@ pub struct InputState {
     pub tap_toggle: Toggle,
     pub keybinds: Vec<Keybind>,
     pub fingers: Vec<Finger>,
+    pub trackpad_x: f32,
+    pub trackpad_y: f32,
+    pub trackpad_w: f32,
+    pub trackpad_h: f32,
 
     // Inertial settings
     pub inertial_scroll: bool,
@@ -48,6 +52,15 @@ pub struct InputState {
     pub pointer_friction_spinbox: Spinbox,
     pub trackpad_toggle: Toggle,
     pub trackpad_friction_spinbox: Spinbox,
+
+    // Trackpoint settings
+    pub dwtp: bool,
+    pub trackpoint_accel_speed: f32,
+    pub trackpoint_accel_profile: String,
+
+    pub dwtp_toggle: Toggle,
+    pub trackpoint_accel_speed_spinbox: Spinbox,
+    pub trackpoint_accel_profile_menu: Dropdown,
 }
 
 impl Default for InputState {
@@ -61,6 +74,10 @@ impl Default for InputState {
             tap_toggle: Toggle::new().with_label("Tap to Click"),
             keybinds: Vec::new(),
             fingers: Vec::new(),
+            trackpad_x: 0.0,
+            trackpad_y: 0.0,
+            trackpad_w: 0.0,
+            trackpad_h: 0.0,
 
             inertial_scroll: true,
             scroll_friction: 90,
@@ -75,7 +92,22 @@ impl Default for InputState {
             pointer_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Pointer Friction").with_unit("%"),
             trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)"),
             trackpad_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Trackpad Friction").with_unit("%"),
+
+            dwtp: true,
+            trackpoint_accel_speed: 0.5,
+            trackpoint_accel_profile: "flat".to_string(),
+
+            dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing"),
+            trackpoint_accel_speed_spinbox: Spinbox::new(5, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1),
+            trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], 0).with_label("Acceleration Profile"),
         }
+    }
+}
+
+impl InputState {
+    pub fn is_over_trackpad(&self, lx: f32, ly: f32) -> bool {
+        lx >= self.trackpad_x && lx <= self.trackpad_x + self.trackpad_w
+            && ly >= self.trackpad_y && ly <= self.trackpad_y + self.trackpad_h
     }
 }
 
@@ -92,6 +124,10 @@ pub enum InputMessage {
     ApplyPointerFriction,
     ToggleInertialTrackpad,
     ApplyTrackpadFriction,
+
+    ToggleDwtp,
+    ApplyTrackpointAccelSpeed,
+    ApplyTrackpointAccelProfile(usize),
 }
 
 pub fn read_input_config() -> InputState {
@@ -107,6 +143,13 @@ pub fn read_input_config() -> InputState {
     let inertial_trackpad = parse_bool_from_default(&content, "inertial_trackpad", false);
     let trackpad_friction = parse_u16_key(&content, "trackpad_friction", 95);
 
+    let dwtp = parse_bool_from_default(&content, "dwtp", true);
+    let trackpoint_accel_speed = parse_f32_key(&content, "trackpoint_accel_speed", 0.5);
+    let trackpoint_accel_profile = parse_string_key(&content, "trackpoint_accel_profile", "flat");
+
+    let speed_val = (trackpoint_accel_speed * 10.0).round() as i32;
+    let profile_idx = if trackpoint_accel_profile == "adaptive" { 1 } else { 0 };
+
     InputState {
         tap_to_click: tap,
         repeat_rate: rate,
@@ -116,6 +159,10 @@ pub fn read_input_config() -> InputState {
         tap_toggle: Toggle::new().with_label("Tap to Click"),
         keybinds: parse_keybinds(&content),
         fingers: Vec::new(),
+        trackpad_x: 0.0,
+        trackpad_y: 0.0,
+        trackpad_w: 0.0,
+        trackpad_h: 0.0,
 
         inertial_scroll,
         scroll_friction,
@@ -130,6 +177,14 @@ pub fn read_input_config() -> InputState {
         pointer_friction_spinbox: Spinbox::new(pointer_friction as i32, 50, 99, 1).with_label("Pointer Friction").with_unit("%"),
         trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)"),
         trackpad_friction_spinbox: Spinbox::new(trackpad_friction as i32, 50, 99, 1).with_label("Trackpad Friction").with_unit("%"),
+
+        dwtp,
+        trackpoint_accel_speed,
+        trackpoint_accel_profile,
+
+        dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing"),
+        trackpoint_accel_speed_spinbox: Spinbox::new(speed_val, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1),
+        trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], profile_idx).with_label("Acceleration Profile"),
     }
 }
 
@@ -152,6 +207,20 @@ fn parse_u16_key(content: &str, key: &str, default: u16) -> u16 {
         .and_then(|l| l.split('=').nth(1))
         .and_then(|v| v.trim().parse::<u16>().ok())
         .unwrap_or(default)
+}
+
+fn parse_f32_key(content: &str, key: &str, default: f32) -> f32 {
+    content.lines().find(|l| l.trim().starts_with(key))
+        .and_then(|l| l.split('=').nth(1))
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .unwrap_or(default)
+}
+
+fn parse_string_key(content: &str, key: &str, default: &str) -> String {
+    content.lines().find(|l| l.trim().starts_with(key))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn parse_keybinds(content: &str) -> Vec<Keybind> {
@@ -200,7 +269,8 @@ fn write_config_value(key: &str, value: &str) {
         .join("\n");
 
     if !found {
-        let section = if key == "tap_to_click" {
+        let section = if key == "tap_to_click" || key == "dwtp"
+                || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile" {
             "[input]"
         } else if key == "inertial_scroll" || key == "scroll_friction"
                || key == "inertial_pointer" || key == "pointer_friction"
@@ -260,11 +330,16 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.widget(&mut pc, &mut state.tap_toggle, 14.0, toggle_w, toggle_h);
     sec.spacing(8.0);
 
-    // Centered trackpad visualizer box
+    // Left-aligned trackpad visualizer box
     let pad_w = 280.0;
     let pad_h = 140.0;
-    let pad_x = sec.ax((cw - 16.0 - pad_w) / 2.0);
+    let pad_x = sec.ax(14.0);
     let pad_y = sec.ay();
+
+    state.trackpad_x = pad_x;
+    state.trackpad_y = pad_y;
+    state.trackpad_w = pad_w;
+    state.trackpad_h = pad_h;
 
     // Background of trackpad: sleek dark translucent blue/grey
     pc.rect([0.11, 0.11, 0.16, 0.85], pad_x, pad_y, pad_w, pad_h);
@@ -296,6 +371,20 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.spacing(pad_h + 12.0);
     y = sec.finish(&mut pc);
 
+    // ── Trackpoint ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Trackpoint");
+
+    state.dwtp_toggle.set_toggled(state.dwtp);
+    sec.widget(&mut pc, &mut state.dwtp_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.trackpoint_accel_speed_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.trackpoint_accel_profile_menu, 14.0, 200.0, 26.0);
+    sec.spacing(8.0);
+    y = sec.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
+
     // ── Keyboard ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard");
 
@@ -304,7 +393,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
 
     sec.widget(&mut pc, &mut state.delay_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
-    y = sec.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
+    y = sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
 
     // ── Inertial Input ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
@@ -330,7 +419,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.widget(&mut pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
+    y = sec.finish_focused(&mut pc, sec_focused.get(2).copied().unwrap_or(false));
 
     // ── Keybindings ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard Bindings");
@@ -352,6 +441,26 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
         sec.spacing(18.0);
     }
     sec.finish(&mut pc);
+
+    // Filter out base text items covered by any open popover to prevent showing through
+    let mut popovers = Vec::new();
+    if state.trackpoint_accel_profile_menu.open {
+        let (x, y, w, h) = state.trackpoint_accel_profile_menu.rect();
+        popovers.push((x, y + h, w, state.trackpoint_accel_profile_menu.options.len() as f32 * 24.0));
+    }
+
+    if !popovers.is_empty() {
+        pc.texts.retain(|(_, _, tx, ty, _, _)| {
+            for &(px, py, pw, ph) in &popovers {
+                if *tx >= px && *tx <= px + pw && *ty >= py && *ty <= py + ph {
+                    return false;
+                }
+            }
+            true
+        });
+    }
+
+    state.trackpoint_accel_profile_menu.render_popover(&mut pc);
 
     pc
 }
@@ -396,6 +505,24 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             state.trackpad_friction = friction;
             write_config_value("trackpad_friction", &friction.to_string());
         }
+        InputMessage::ToggleDwtp => {
+            state.dwtp = !state.dwtp;
+            write_config_value("dwtp", &state.dwtp.to_string());
+            send_ipc_command(&format!("input dwtp {}", state.dwtp));
+        }
+        InputMessage::ApplyTrackpointAccelSpeed => {
+            let val = state.trackpoint_accel_speed_spinbox.value as f32 / 10.0;
+            state.trackpoint_accel_speed = val;
+            write_config_value("trackpoint_accel_speed", &val.to_string());
+            send_ipc_command(&format!("input trackpoint-accel-speed {}", val));
+        }
+        InputMessage::ApplyTrackpointAccelProfile(idx) => {
+            let profile = if idx == 1 { "adaptive" } else { "flat" };
+            state.trackpoint_accel_profile = profile.to_string();
+            state.trackpoint_accel_profile_menu.selected = idx;
+            write_config_value("trackpoint_accel_profile", &format!("\"{}\"", profile));
+            send_ipc_command(&format!("input trackpoint-accel-profile {}", profile));
+        }
         InputMessage::Refreshed(new) => {
             let fingers = state.fingers.clone();
             *state = new;
@@ -406,3 +533,31 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_over_trackpad() {
+        let mut state = InputState::default();
+        state.trackpad_x = 100.0;
+        state.trackpad_y = 200.0;
+        state.trackpad_w = 300.0;
+        state.trackpad_h = 150.0;
+
+        // Inside
+        assert!(state.is_over_trackpad(150.0, 250.0));
+        assert!(state.is_over_trackpad(100.0, 200.0));
+        assert!(state.is_over_trackpad(400.0, 350.0));
+
+        // Outside X
+        assert!(!state.is_over_trackpad(99.0, 250.0));
+        assert!(!state.is_over_trackpad(401.0, 250.0));
+
+        // Outside Y
+        assert!(!state.is_over_trackpad(150.0, 199.0));
+        assert!(!state.is_over_trackpad(150.0, 351.0));
+    }
+}
+
