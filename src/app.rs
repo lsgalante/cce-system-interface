@@ -6,7 +6,6 @@ use crate::pages::input;
 use crate::pages::layout;
 use crate::pages::network;
 use crate::pages::notifications;
-use crate::pages::power;
 use crate::pages::hardware;
 use crate::pages::status;
 use crate::pages::storage;
@@ -19,7 +18,6 @@ use crate::pages::Page;
 
 pub struct AppState {
     pub current_page: Page,
-    pub power: power::PowerState,
     pub audio: audio::AudioState,
     pub display: display::DisplayState,
     pub network: network::NetworkState,
@@ -40,7 +38,6 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             current_page: Page::ALL[0],
-            power: power::PowerState::default(),
             audio: audio::AudioState::default(),
             display: display::DisplayState::default(),
             network: network::NetworkState::default(),
@@ -61,7 +58,6 @@ impl Default for AppState {
 
 #[derive(Debug, Clone)]
 pub enum AppAction {
-    Power(power::PowerMessage),
     Audio(audio::AudioMessage),
     Display(display::DisplayMessage),
     Radios(network::NetworkMessage),

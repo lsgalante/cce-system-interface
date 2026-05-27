@@ -1,6 +1,19 @@
-use crate::app::PageContent;
+use crate::app::{AppAction, PageContent};
 use clear_ui::layout::Section;
 use clear_ui::widget::{Label, ScrollingList};
+
+#[derive(Debug, Clone, Default)]
+pub struct BatteryInfo {
+    pub percentage: f32,
+    pub state: String,
+    pub energy: f64,
+    pub energy_full: f64,
+    pub energy_rate: f64,
+    pub time_to_empty: i64,
+    pub time_to_full: i64,
+    pub vendor: String,
+    pub model: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct HardwareState {
@@ -13,6 +26,12 @@ pub struct HardwareState {
     pub gpu_labels: Vec<Label>,
     pub processes: Vec<(String, String, String)>, // (pid, cpu, comm)
     pub cpu_list_box: ScrollingList,
+
+    // Power-related fields
+    pub battery: BatteryInfo,
+    pub on_ac: bool,
+    pub cpu_powersave: bool,
+    pub gpu_powersave: bool,
 }
 
 impl Default for HardwareState {
@@ -27,6 +46,11 @@ impl Default for HardwareState {
             gpu_labels: Vec::new(),
             processes: Vec::new(),
             cpu_list_box: ScrollingList::new(24.0, 2.0),
+
+            battery: BatteryInfo::default(),
+            on_ac: true,
+            cpu_powersave: false,
+            gpu_powersave: false,
         }
     }
 }
@@ -34,7 +58,116 @@ impl Default for HardwareState {
 #[derive(Debug, Clone)]
 pub enum HardwareMessage {
     Refreshed(HardwareState),
+    SetCpuPerformance,
+    SetCpuPowersave,
+    SetGpuDefault,
+    SetGpuPowersave,
     None,
+}
+
+// ── zbus proxies ────────────────────────────────────────────────────
+
+#[zbus::proxy(
+    interface = "org.freedesktop.UPower.Device",
+    default_service = "org.freedesktop.UPower",
+    default_path = "/org/freedesktop/UPower/devices/battery_BAT0"
+)]
+trait UpowerBattery {
+    #[zbus(property)]
+    fn percentage(&self) -> zbus::Result<f64>;
+    #[zbus(property)]
+    fn state(&self) -> zbus::Result<u32>;
+    #[zbus(property)]
+    fn energy(&self) -> zbus::Result<f64>;
+    #[zbus(property)]
+    fn energy_full(&self) -> zbus::Result<f64>;
+    #[zbus(property)]
+    fn energy_rate(&self) -> zbus::Result<f64>;
+    #[zbus(property)]
+    fn time_to_empty(&self) -> zbus::Result<i64>;
+    #[zbus(property)]
+    fn time_to_full(&self) -> zbus::Result<i64>;
+    #[zbus(property)]
+    fn vendor(&self) -> zbus::Result<String>;
+    #[zbus(property)]
+    fn model(&self) -> zbus::Result<String>;
+}
+
+#[zbus::proxy(
+    interface = "org.freedesktop.UPower",
+    default_service = "org.freedesktop.UPower",
+    default_path = "/org/freedesktop/UPower"
+)]
+trait UpowerDaemon {
+    #[zbus(property, name = "OnBattery")]
+    fn on_battery(&self) -> zbus::Result<bool>;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+fn format_duration(secs: i64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) }
+}
+
+fn spawn_cpu_power(powersave: bool) {
+    let script = if powersave { "cpu-powersave-on" } else { "cpu-powersave-off" };
+    let _ = tokio::process::Command::new("pkexec")
+        .arg(format!("/home/lsgalante/.local/share/clear-system-interface/helpers/{}", script))
+        .spawn();
+}
+
+fn spawn_gpu_power(powersave: bool) {
+    let script = if powersave { "gpu-powersave-on" } else { "gpu-powersave-off" };
+    let _ = tokio::process::Command::new("pkexec")
+        .arg(format!("/home/lsgalante/.local/share/clear-system-interface/helpers/{}", script))
+        .spawn();
+}
+
+fn current_cpu_governor() -> String {
+    std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+        .unwrap_or_default().trim().to_string()
+}
+
+async fn current_gpu_power_cap() -> bool {
+    tokio::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=power.limit", "--format=csv,noheader,nounits"])
+        .output().await.ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<f32>().ok())
+        .map(|w| w <= 10.0).unwrap_or(false)
+}
+
+async fn fetch_upower() -> (BatteryInfo, bool) {
+    let conn = match zbus::Connection::system().await {
+        Ok(c) => c,
+        Err(_) => return (BatteryInfo::default(), true),
+    };
+
+    let battery = match UpowerBatteryProxy::new(&conn).await {
+        Ok(proxy) => BatteryInfo {
+            percentage: proxy.percentage().await.unwrap_or(0.0) as f32,
+            state: {
+                let s = proxy.state().await.unwrap_or(0);
+                match s { 1 => "charging", 2 => "discharging", 4 => "fully-charged", _ => "unknown" }.into()
+            },
+            energy: proxy.energy().await.unwrap_or(0.0),
+            energy_full: proxy.energy_full().await.unwrap_or(0.0),
+            energy_rate: proxy.energy_rate().await.unwrap_or(0.0),
+            time_to_empty: proxy.time_to_empty().await.unwrap_or(0),
+            time_to_full: proxy.time_to_full().await.unwrap_or(0),
+            vendor: proxy.vendor().await.unwrap_or_default(),
+            model: proxy.model().await.unwrap_or_default(),
+        },
+        Err(_) => BatteryInfo::default(),
+    };
+
+    let on_ac = match UpowerDaemonProxy::new(&conn).await {
+        Ok(proxy) => !proxy.on_battery().await.unwrap_or(false),
+        Err(_) => true,
+    };
+
+    (battery, on_ac)
 }
 
 fn read_cpu_temp() -> Option<f32> {
@@ -188,6 +321,10 @@ pub async fn fetch_hardware_state() -> HardwareState {
         Label::new(&text).with_font_size(12.0).with_color([212, 212, 212])
     }).collect();
 
+    let (battery, on_ac) = fetch_upower().await;
+    let cpu_powersave = current_cpu_governor() == "powersave";
+    let gpu_powersave = current_gpu_power_cap().await;
+
     HardwareState {
         cpu_model,
         cpu_usage,
@@ -198,11 +335,22 @@ pub async fn fetch_hardware_state() -> HardwareState {
         gpu_labels,
         processes,
         cpu_list_box: ScrollingList::new(24.0, 2.0),
+        battery,
+        on_ac,
+        cpu_powersave,
+        gpu_powersave,
     }
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
+const BTN_ACTIVE: [f32; 4] = [0.20, 0.40, 0.22, 1.0];
+const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
+const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
+const ORANGE: [f32; 4] = [1.0, 0.73, 0.20, 1.0];
 
 pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, _ch: f32, root_focused: bool) -> PageContent {
     let mut pc = PageContent::new();
@@ -237,12 +385,10 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, _ch: f32, root
         pc.text("CPU %", list_box_x + list_box_w - 60.0, list_box_y + 5.0, 11.0, [0.53, 0.53, 0.60, 1.0]);
 
         let row_h = 24.0;
-        let row_gap = 2.0;
         // Update ScrollingList bounds for the scrollable viewport (which starts below the header)
         state.cpu_list_box.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - 6.0);
 
         // Visible process rows rendering (virtualized/clipped)
-        
         for (idx, (pid, cpu, comm)) in state.processes.iter().enumerate() {
             if let Some(draw_y) = state.cpu_list_box.get_item_draw_y(idx, 4.0) {
                 // Standard row action button (transparent background, highlights on hover)
@@ -255,7 +401,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, _ch: f32, root
                     [0.0, 0.0, 0.0, 0.0],
                     [1.0, 1.0, 1.0, 0.06],
                     [0.0, 0.0, 0.0, 0.0],
-                    crate::app::AppAction::Hardware(HardwareMessage::None),
+                    AppAction::Hardware(HardwareMessage::None),
                 );
                 
                 pc.text(pid, list_box_x + 12.0, draw_y + 6.0, 12.0, [0.80, 0.80, 0.85, 1.0]);
@@ -283,7 +429,130 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, _ch: f32, root
             sec_gpu.widget(&mut pc, gpu_lbl, 12.0, cw - 24.0, 26.0);
         }
     }
-    sec_gpu.finish(&mut pc);
+    y = sec_gpu.finish(&mut pc);
+
+    // ── Battery Section ──
+    let mut sec_bat = Section::new(&mut pc, cx, y, cw, "Battery");
+    if !state.loaded {
+        sec_bat.text(&mut pc, "Loading battery status...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec_bat.spacing(18.0);
+    } else {
+        let bat = &state.battery;
+        let bat_icon = match bat.state.as_str() {
+            "charging" => "+",
+            "fully-charged" => "=",
+            _ => "",
+        };
+
+        let pct_color = if bat.percentage < 20.0 { RED }
+            else if bat.percentage < 50.0 { ORANGE }
+            else { ACCENT };
+
+        let pct_str = format!("{} {:.0}%", bat_icon, bat.percentage);
+        sec_bat.text(&mut pc, &pct_str, 12.0, 0.0, 24.0, pct_color);
+        sec_bat.spacing(30.0);
+
+        let state_str = format!("{}  •  {:.1}W  •  {:.1}/{:.1} Wh",
+            bat.state, bat.energy_rate, bat.energy, bat.energy_full);
+        sec_bat.text(&mut pc, &state_str, 12.0, 0.0, 12.0, TEXT_DIM);
+        sec_bat.spacing(18.0);
+
+        let time_str = if bat.time_to_empty > 0 {
+            format!("Time remaining: {}", format_duration(bat.time_to_empty))
+        } else if bat.time_to_full > 0 {
+            format!("Time to full: {}", format_duration(bat.time_to_full))
+        } else { String::new() };
+        if !time_str.is_empty() {
+            sec_bat.text(&mut pc, &time_str, 12.0, 0.0, 12.0, TEXT_DIM);
+            sec_bat.spacing(18.0);
+        }
+
+        let detail_str = format!("{}  {}", bat.vendor, bat.model);
+        sec_bat.text(&mut pc, &detail_str, 12.0, 0.0, 11.0, TEXT_DIM);
+        sec_bat.spacing(20.0);
+
+        let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
+        sec_bat.text(&mut pc, ac_str, 12.0, 0.0, 14.0, TEXT_FG);
+    }
+    y = sec_bat.finish(&mut pc);
+
+    // ── CPU Governor section ──
+    let mut sec_gov = Section::new(&mut pc, cx, y, cw, "CPU Governor");
+    if !state.loaded {
+        sec_gov.text(&mut pc, "Loading CPU governor...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec_gov.spacing(18.0);
+    } else {
+        let btn_h = 44.0;
+        let yt = sec_gov.ay();
+
+        sec_gov.row(2, 8.0, btn_h, |i, x, w| {
+            if i == 0 {
+                let perf_active = !state.cpu_powersave;
+                let (perf_bg, perf_desc, perf_desc_color) = if perf_active {
+                    (BTN_ACTIVE, "Governor set to performance", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Switch to performance governor", TEXT_DIM)
+                };
+
+                pc.button("Performance", x, yt, w, btn_h,
+                    perf_bg, BTN_HOVER, WHITE,
+                    AppAction::Hardware(HardwareMessage::SetCpuPerformance));
+                pc.text(perf_desc, x + 4.0, yt + 26.0, 10.0, perf_desc_color);
+            } else {
+                let (save_bg, save_desc, save_desc_color) = if state.cpu_powersave {
+                    (BTN_ACTIVE, "Governor set to powersave — lower power, slower burst", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Switch to powersave governor (requires auth)", TEXT_DIM)
+                };
+
+                pc.button("Powersave", x, yt, w, btn_h,
+                    save_bg, BTN_HOVER, WHITE,
+                    AppAction::Hardware(HardwareMessage::SetCpuPowersave));
+                pc.text(save_desc, x + 4.0, yt + 26.0, 10.0, save_desc_color);
+            }
+        });
+        sec_gov.spacing(12.0);
+    }
+    y = sec_gov.finish(&mut pc);
+
+    // ── GPU Power section ──
+    let mut sec_gpow = Section::new(&mut pc, cx, y, cw, "GPU Power");
+    if !state.loaded {
+        sec_gpow.text(&mut pc, "Loading GPU power status...", 12.0, 0.0, 12.0, TEXT_DIM);
+        sec_gpow.spacing(18.0);
+    } else {
+        let btn_h = 44.0;
+        let yt = sec_gpow.ay();
+
+        sec_gpow.row(2, 8.0, btn_h, |i, x, w| {
+            if i == 0 {
+                let gpu_def_active = !state.gpu_powersave;
+                let (gpu_def_bg, gpu_def_desc, gpu_def_desc_c) = if gpu_def_active {
+                    (BTN_ACTIVE, "NVIDIA running at default power limit", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Restore default power limit (requires auth)", TEXT_DIM)
+                };
+
+                pc.button("80W Default", x, yt, w, btn_h,
+                    gpu_def_bg, BTN_HOVER, WHITE,
+                    AppAction::Hardware(HardwareMessage::SetGpuDefault));
+                pc.text(gpu_def_desc, x + 4.0, yt + 26.0, 10.0, gpu_def_desc_c);
+            } else {
+                let (gpu_cap_bg, gpu_cap_desc, gpu_cap_desc_c) = if state.gpu_powersave {
+                    (BTN_ACTIVE, "NVIDIA power limit capped at 5W — minimal draw", ACCENT)
+                } else {
+                    (BTN_INACTIVE, "Cap NVIDIA to 5W power limit (requires auth)", TEXT_DIM)
+                };
+
+                pc.button("5W Cap", x, yt, w, btn_h,
+                    gpu_cap_bg, BTN_HOVER, WHITE,
+                    AppAction::Hardware(HardwareMessage::SetGpuPowersave));
+                pc.text(gpu_cap_desc, x + 4.0, yt + 26.0, 10.0, gpu_cap_desc_c);
+            }
+        });
+        sec_gpow.spacing(12.0);
+    }
+    sec_gpow.finish(&mut pc);
 
     pc
 }
@@ -302,6 +571,27 @@ pub fn update(state: &mut HardwareState, msg: HardwareMessage) {
             let old_scroll = state.cpu_list_box.scroll_y();
             state.cpu_list_box = new.cpu_list_box;
             state.cpu_list_box.set_scroll_y(old_scroll);
+
+            state.battery = new.battery;
+            state.on_ac = new.on_ac;
+            state.cpu_powersave = new.cpu_powersave;
+            state.gpu_powersave = new.gpu_powersave;
+        }
+        HardwareMessage::SetCpuPerformance => {
+            state.cpu_powersave = false;
+            spawn_cpu_power(false);
+        }
+        HardwareMessage::SetCpuPowersave => {
+            state.cpu_powersave = true;
+            spawn_cpu_power(true);
+        }
+        HardwareMessage::SetGpuDefault => {
+            state.gpu_powersave = false;
+            spawn_gpu_power(false);
+        }
+        HardwareMessage::SetGpuPowersave => {
+            state.gpu_powersave = true;
+            spawn_gpu_power(true);
         }
         HardwareMessage::None => {}
     }

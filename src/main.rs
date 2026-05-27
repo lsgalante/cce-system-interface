@@ -211,7 +211,6 @@ struct SystemInterface {
     cursor_x: f32,
     cursor_y: f32,
 
-    rx_power: std::sync::mpsc::Receiver<pages::power::PowerState>,
     rx_audio: std::sync::mpsc::Receiver<pages::audio::AudioState>,
     rx_display: std::sync::mpsc::Receiver<pages::display::DisplayState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
@@ -369,7 +368,6 @@ impl SystemInterface {
             rx
         }
 
-        let rx_power = spawn_bg(5, || pages::power::fetch_power_state());
         let rx_audio = spawn_bg(3, || pages::audio::fetch_audio_state());
         let rx_display = spawn_bg(10, || pages::display::fetch_display_state());
         let rx_network = spawn_bg(5, || pages::network::fetch_network_state());
@@ -462,7 +460,7 @@ impl SystemInterface {
             sidebar_width: 140.0, header_height: 0.0, status_height: 0.0,
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
-            rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input, rx_fingers,
+            rx_audio, rx_display, rx_network, rx_layout, rx_input, rx_fingers,
             rx_hardware, rx_system, rx_status, rx_storage, rx_notifications,
             rx_backup_state, rx_typeface, rx_services, rx_colors, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
@@ -861,7 +859,6 @@ impl SystemInterface {
             .map(|c| clear_ui::widget::focus::is_focused(c))
             .collect();
         match self.app.current_page {
-            Page::Power => power::view(&self.app.power, cx, cy, cw, ch),
             Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused),
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
             Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused),
@@ -938,10 +935,6 @@ impl SystemInterface {
 
     fn poll_background_updates(&mut self) {
         use pages::*;
-        while let Ok(s) = self.rx_power.try_recv() {
-            power::update(&mut self.app.power, power::PowerMessage::Refreshed(s));
-            self.needs_rebuild = true;
-        }
         while let Ok(s) = self.rx_audio.try_recv() {
             audio::update(&mut self.app.audio, audio::AudioMessage::Refreshed(s));
             self.needs_rebuild = true;
@@ -1029,7 +1022,6 @@ impl SystemInterface {
     fn handle_action(&mut self, action: &AppAction) {
         use pages::*;
         match action {
-            AppAction::Power(m) => power::update(&mut self.app.power, m.clone()),
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Display(m) => display::update(&mut self.app.display, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
@@ -2344,7 +2336,6 @@ struct App {
     surface: Option<wl_surface::WlSurface>,
 
     state: Option<SystemInterface>,
-    initial_page: Page,
     exit: bool,
     redraw: bool,
     ctrl_pressed: bool,
@@ -2756,7 +2747,6 @@ fn main() {
         window: None,
         surface: None,
         state: None,
-        initial_page,
         exit: false,
         redraw: true,
         ctrl_pressed: false,
@@ -2772,7 +2762,7 @@ fn main() {
     let pw = (820.0 * scale) as u32;
     let ph = (680.0 * scale) as u32;
 
-    let state = pollster::block_on(SystemInterface::new(
+    let mut state = pollster::block_on(SystemInterface::new(
         &conn,
         &qh,
         &app.compositor_state,
@@ -2781,6 +2771,7 @@ fn main() {
         ph,
         scale,
     ));
+    state.app.current_page = initial_page;
     app.window = Some(state.window.clone());
     app.surface = Some(state.surface.clone());
     app.state = Some(state);
