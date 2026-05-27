@@ -1,254 +1,10 @@
 use std::fs;
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, Dropdown};
+use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, Dropdown, TextBox, Spinbox};
 use clear_ui::widget::{ElementState, KeyEvent, MouseButton, Key, NamedKey};
 
 const FONTS_CONF_PATH: &str = "/home/lsgalante/.config/fontconfig/fonts.conf";
-
-// ── TextBox Widget ──
-
-#[derive(Debug, Clone)]
-pub struct TextBox {
-    x: f32, y: f32, w: f32, h: f32,
-    pub text: String,
-    pub editing: bool,
-    pub edit_buffer: String,
-    hovered: bool,
-    just_changed: bool,
-    label: Option<String>,
-    row_x: f32,
-    row_w: f32,
-    pub disabled: bool,
-    pub parent: Option<*mut (dyn Widget + 'static)>,
-    pub children: Vec<*mut (dyn Widget + 'static)>,
-}
-
-impl TextBox {
-    pub fn new(text: String) -> Self {
-        Self {
-            x: 0.0, y: 0.0, w: 0.0, h: 0.0,
-            text,
-            editing: false,
-            edit_buffer: String::new(),
-            hovered: false,
-            just_changed: false,
-            label: None,
-            row_x: 0.0,
-            row_w: 0.0,
-            disabled: false,
-            parent: None,
-            children: Vec::new(),
-        }
-    }
-
-    pub fn with_label(mut self, label: &str) -> Self {
-        self.label = Some(label.to_string());
-        self
-    }
-
-    pub fn set_label(&mut self, label: &str) {
-        self.label = Some(label.to_string());
-    }
-
-    pub fn take_change(&mut self) -> bool {
-        let changed = self.just_changed;
-        self.just_changed = false;
-        changed
-    }
-}
-
-impl Default for TextBox {
-    fn default() -> Self {
-        Self::new(String::new())
-    }
-}
-
-impl Widget for TextBox {
-    fn rect(&self) -> (f32, f32, f32, f32) { (self.x, self.y, self.w, self.h) }
-    fn set_rect(&mut self, x: f32, y: f32, w: f32, h: f32) { self.x = x; self.y = y; self.w = w; self.h = h; }
-    fn set_row_rect(&mut self, x: f32, w: f32) { self.row_x = x; self.row_w = w; }
-    fn set_hovered(&mut self, v: bool) { self.hovered = v; }
-    fn hovered(&self) -> bool { self.hovered }
-
-    fn color(&self) -> [f32; 4] {
-        [0.10, 0.10, 0.16, 1.0]
-    }
-
-    fn hit_test(&self, px: f32, py: f32) -> bool {
-        let (x, y, w, h) = self.rect();
-        let hx = if self.row_w > 0.0 { self.row_x } else { x };
-        let hw = if self.row_w > 0.0 { self.row_w } else { w };
-        let (hy, hh) = if self.label.is_some() {
-            (y - 18.0, h + 18.0)
-        } else {
-            (y, h)
-        };
-        px >= hx && px <= hx + hw && py >= hy && py <= hy + hh
-    }
-
-    fn top_room(&self) -> f32 { if self.label.is_some() { 18.0 } else { 0.0 } }
-
-    fn cursor_moved(&mut self, px: f32, py: f32) -> bool {
-        if self.disabled {
-            let was = self.hovered;
-            self.hovered = false;
-            return was;
-        }
-        let was = self.hovered;
-        self.hovered = self.hit_test(px, py);
-        was != self.hovered
-    }
-
-    fn mouse_input(&mut self, button: MouseButton, state: ElementState, px: f32, py: f32) -> bool {
-        if self.disabled { return false; }
-        if button != MouseButton::Left { return false; }
-        if state != ElementState::Pressed { return false; }
-        let (x, y, w, h) = self.rect();
-        let (hy, hh) = if self.label.is_some() {
-            (y - 18.0, h + 18.0)
-        } else {
-            (y, h)
-        };
-        if !(px >= x && px <= x + w && py >= hy && py <= hy + hh) {
-            return false;
-        }
-        self.focus();
-        true
-    }
-
-    fn focus(&mut self) {
-        if self.disabled { return; }
-        if !self.editing {
-            self.editing = true;
-            self.edit_buffer = self.text.clone();
-            clear_ui::widget::focus::set_focused(self);
-        }
-    }
-
-    fn unfocus(&mut self) {
-        if self.editing {
-            self.editing = false;
-            if self.text != self.edit_buffer {
-                self.text = self.edit_buffer.clone();
-                self.just_changed = true;
-            }
-        }
-    }
-
-    fn keyboard_input(&mut self, event: &KeyEvent) -> bool {
-        if self.disabled { return false; }
-        if !self.editing { return false; }
-        if event.state != ElementState::Pressed { return false; }
-        match &event.logical_key {
-            Key::Named(NamedKey::Backspace) => {
-                self.edit_buffer.pop();
-                true
-            }
-            Key::Named(NamedKey::Enter) => {
-                self.text = self.edit_buffer.clone();
-                self.editing = false;
-                self.just_changed = true;
-                true
-            }
-            Key::Named(NamedKey::Escape) => {
-                self.editing = false;
-                true
-            }
-            _ => {
-                if let Some(text) = &event.text {
-                    if !event.repeat {
-                        for ch in text.chars() {
-                            if ch.is_alphanumeric() || ch == ' ' || ch == '-' || ch == '_' || ch == '*' {
-                                self.edit_buffer.push(ch);
-                            }
-                        }
-                    }
-                }
-                true
-            }
-        }
-    }
-
-    fn hover_highlight(&self) -> Option<[f32; 4]> {
-        None
-    }
-
-    fn extra_quads(&self) -> Vec<(f32, f32, f32, f32, [f32; 4])> {
-        let mut quads = Vec::new();
-        if self.disabled {
-            quads.push((self.x, self.y, self.w, self.h, [0.12, 0.12, 0.16, 1.0])); // border
-            quads.push((self.x + 1.0, self.y + 1.0, self.w - 2.0, self.h - 2.0, [0.06, 0.06, 0.08, 1.0])); // bg
-            return quads;
-        }
-        if self.hovered {
-            let (hy, hh) = if self.label.is_some() {
-                (self.y - 18.0, self.h + 18.0)
-            } else {
-                (self.y, self.h)
-            };
-            let hx = if self.row_w > 0.0 { self.row_x } else { self.x };
-            let hw = if self.row_w > 0.0 { self.row_w } else { self.w };
-            quads.push((hx, hy, hw, hh, [1.0, 1.0, 1.0, 0.06]));
-        }
-        let bg_color = if self.editing {
-            [0.12, 0.12, 0.18, 1.0]
-        } else {
-            [0.08, 0.08, 0.12, 1.0]
-        };
-        let border_color = if self.editing {
-            [0.30, 0.50, 0.32, 1.0]
-        } else if self.hovered {
-            [0.25, 0.25, 0.35, 1.0]
-        } else {
-            [0.18, 0.18, 0.24, 1.0]
-        };
-        quads.push((self.x, self.y, self.w, self.h, border_color));
-        quads.push((self.x + 1.0, self.y + 1.0, self.w - 2.0, self.h - 2.0, bg_color));
-        quads
-    }
-
-    fn text_labels(&self) -> Vec<TextLabel> {
-        let mut labels = Vec::new();
-        if let Some(ref label) = self.label {
-            labels.push(TextLabel {
-                text: label.clone(),
-                x: self.x + 4.0,
-                y: self.y - 14.0,
-                font_size: 12.0,
-                color: [0x83, 0x83, 0x8a],
-            });
-        }
-        let val_text = if self.editing {
-            format!("{}|", self.edit_buffer)
-        } else {
-            self.text.clone()
-        };
-        labels.push(TextLabel {
-            text: val_text,
-            x: self.x + 8.0,
-            y: self.y + (self.h - 12.0) / 2.0,
-            font_size: 13.0,
-            color: if self.disabled { [0x53, 0x53, 0x5a] } else if self.editing { [0xee, 0xee, 0xf5] } else { [0xcc, 0xcc, 0xd4] },
-        });
-        labels
-    }
-
-    fn parent(&self) -> Option<*mut (dyn Widget + 'static)> { self.parent }
-    fn set_parent(&mut self, parent: Option<*mut (dyn Widget + 'static)>) { self.parent = parent; }
-    fn children(&self) -> Vec<*mut (dyn Widget + 'static)> { self.children.clone() }
-    fn add_child(&mut self, child: *mut (dyn Widget + 'static)) { self.children.push(child); }
-    fn clear_children(&mut self) { self.children.clear(); }
-}
-
-impl Drop for TextBox {
-    fn drop(&mut self) {
-        clear_ui::widget::focus::clear_if_matches(self);
-    }
-}
-
-unsafe impl Send for TextBox {}
-unsafe impl Sync for TextBox {}
 
 // ── TypefaceState and TypefaceMessage ──
 
@@ -278,6 +34,10 @@ pub struct TypefaceState {
     pub status_menu: Dropdown,
     pub fuzzel_menu: Dropdown,
     pub terminal_menu: Dropdown,
+    pub borders_size_box: Spinbox,
+    pub status_size_box: Spinbox,
+    pub fuzzel_size_box: Spinbox,
+    pub terminal_size_box: Spinbox,
 }
 
 impl Default for TypefaceState {
@@ -307,6 +67,10 @@ impl Default for TypefaceState {
             status_menu: Dropdown::default(),
             fuzzel_menu: Dropdown::default(),
             terminal_menu: Dropdown::default(),
+            borders_size_box: Spinbox::new(11, 6, 72, 1),
+            status_size_box: Spinbox::new(13, 6, 72, 1),
+            fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
+            terminal_size_box: Spinbox::new(12, 6, 72, 1),
         }
     }
 }
@@ -328,6 +92,10 @@ pub enum TypefaceMessage {
     SetStatusMenu(usize),
     SetFuzzelMenu(usize),
     SetTerminalMenu(usize),
+    SetBordersSize(i32),
+    SetStatusSize(i32),
+    SetFuzzelSize(i32),
+    SetTerminalSize(i32),
 }
 
 fn parse_font_for_alias(content: &str, alias: &str) -> Option<String> {
@@ -469,6 +237,164 @@ pub fn save_preferred_fonts(
         .spawn();
 }
 
+fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+            return rest.trim_end_matches('"').trim().parse::<u16>().unwrap_or(default);
+        }
+    }
+    default
+}
+
+fn write_config_value(key: &str, value: &str) -> bool {
+    let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+    let mut found = false;
+    let updated: String = content.lines()
+        .map(|line| {
+            if line.trim().starts_with(key) { found = true; new_line.clone() }
+            else { line.to_string() }
+        }).collect::<Vec<_>>().join("\n");
+    if !found {
+        let mut result = String::new();
+        let mut in_layout = false;
+        let mut inserted = false;
+        for line in updated.lines() {
+            if line.trim() == "[layout]" { in_layout = true; }
+            else if line.trim().starts_with('[') && in_layout {
+                if !inserted { result.push_str(&new_line); result.push('\n'); inserted = true; }
+                in_layout = false;
+            }
+            result.push_str(line); result.push('\n');
+        }
+        if in_layout && !inserted { result.push_str(&new_line); result.push('\n'); }
+        fs::write("/home/lsgalante/.config/clearwm/config.toml", result).is_ok()
+    } else { fs::write("/home/lsgalante/.config/clearwm/config.toml", updated).is_ok() }
+}
+
+fn send_ipc_command(cmd: &str) {
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect("/tmp/clearwm.sock") {
+        use std::io::Write;
+        let _ = stream.write_all(format!("{}\n", cmd).as_bytes());
+    }
+}
+
+fn read_border_font_size() -> Option<u16> {
+    let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").ok()?;
+    Some(parse_u16_from(&content, "border_font_size", 11))
+}
+
+fn read_waybar_size() -> Option<u16> {
+    let css = fs::read_to_string("/home/lsgalante/.config/waybar/style.css").ok()?;
+    for line in css.lines() {
+        if line.contains("font-size") {
+            let val = line.split(':').nth(1)?.trim().trim_end_matches(';').trim();
+            if let Some(px) = val.strip_suffix("px") {
+                return px.trim().parse::<u16>().ok();
+            }
+            return val.parse::<u16>().ok();
+        }
+    }
+    None
+}
+
+fn write_waybar_size(size: u16) {
+    let path = "/home/lsgalante/.config/waybar/style.css";
+    let css = fs::read_to_string(path).unwrap_or_default();
+    let mut new_lines = Vec::new();
+    for line in css.lines() {
+        if line.contains("font-size") {
+            new_lines.push(format!("    font-size: {}px;", size));
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+    let _ = fs::write(path, new_lines.join("\n"));
+    let _ = std::process::Command::new("pkill")
+        .args(["-x", "waybar", "-SIGUSR2"])
+        .spawn();
+}
+
+fn read_fuzzel_size() -> Option<u16> {
+    let ini = fs::read_to_string("/home/lsgalante/.config/fuzzel/fuzzel.ini").ok()?;
+    for line in ini.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("font") {
+            if let Some(pos) = trimmed.find("size=") {
+                let size_str = &trimmed[pos + 5..];
+                let end_pos = size_str.find(|c: char| !c.is_ascii_digit()).unwrap_or(size_str.len());
+                return size_str[..end_pos].parse::<u16>().ok();
+            }
+        }
+    }
+    None
+}
+
+fn write_fuzzel_size(size: u16) {
+    let path = "/home/lsgalante/.config/fuzzel/fuzzel.ini";
+    let ini = fs::read_to_string(path).unwrap_or_default();
+    let mut new_lines = Vec::new();
+    for line in ini.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("font") {
+            if let Some(pos) = line.find("size=") {
+                let mut new_line = line[..pos + 5].to_string();
+                new_line.push_str(&size.to_string());
+                let size_str = &line[pos + 5..];
+                let skip = size_str.find(|c: char| !c.is_ascii_digit()).unwrap_or(size_str.len());
+                new_line.push_str(&size_str[skip..]);
+                new_lines.push(new_line);
+            } else {
+                new_lines.push(line.to_string());
+            }
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+    let _ = fs::write(path, new_lines.join("\n"));
+}
+
+fn read_terminal_size() -> Option<u16> {
+    let ini = fs::read_to_string("/home/lsgalante/.config/foot/foot.ini").ok()?;
+    for line in ini.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("font") {
+            if let Some(pos) = trimmed.find("terminal:size=") {
+                let size_str = &trimmed[pos + 14..];
+                let end_pos = size_str.find(|c: char| !c.is_ascii_digit()).unwrap_or(size_str.len());
+                return size_str[..end_pos].parse::<u16>().ok();
+            }
+        }
+    }
+    None
+}
+
+fn write_terminal_size(size: u16) {
+    let path = "/home/lsgalante/.config/foot/foot.ini";
+    let ini = fs::read_to_string(path).unwrap_or_default();
+    let mut new_lines = Vec::new();
+    for line in ini.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("font") {
+            if let Some(pos) = line.find("terminal:size=") {
+                let mut new_line = line[..pos + 14].to_string();
+                new_line.push_str(&size.to_string());
+                let size_str = &line[pos + 14..];
+                let skip = size_str.find(|c: char| !c.is_ascii_digit()).unwrap_or(size_str.len());
+                new_line.push_str(&size_str[skip..]);
+                new_lines.push(new_line);
+            } else {
+                new_lines.push(line.to_string());
+            }
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+    let _ = fs::write(path, new_lines.join("\n"));
+}
+
 fn parse_families(output: Option<std::process::Output>) -> Vec<String> {
     let mut families = Vec::new();
     if let Some(o) = output {
@@ -526,17 +452,22 @@ pub async fn fetch_typeface_state() -> TypefaceState {
         "Other".to_string(),
     ];
 
-    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders");
+    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders").with_width(300.0);
     borders_box.disabled = borders_idx != 3;
 
-    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface");
+    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface").with_width(300.0);
     status_box.disabled = status_idx != 3;
 
-    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel");
+    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel").with_width(300.0);
     fuzzel_box.disabled = fuzzel_idx != 3;
 
-    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal");
+    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal").with_width(300.0);
     terminal_box.disabled = terminal_idx != 3;
+
+    let borders_size = read_border_font_size().unwrap_or(11);
+    let status_size = read_waybar_size().unwrap_or(13);
+    let fuzzel_size = read_fuzzel_size().unwrap_or(14);
+    let terminal_size = read_terminal_size().unwrap_or(12);
 
     TypefaceState {
         loaded: true,
@@ -563,6 +494,10 @@ pub async fn fetch_typeface_state() -> TypefaceState {
         status_menu: Dropdown::new(menu_options.clone(), status_idx),
         fuzzel_menu: Dropdown::new(menu_options.clone(), fuzzel_idx),
         terminal_menu: Dropdown::new(menu_options.clone(), terminal_idx),
+        borders_size_box: Spinbox::new(borders_size as i32, 6, 72, 1),
+        status_size_box: Spinbox::new(status_size as i32, 6, 72, 1),
+        fuzzel_size_box: Spinbox::new(fuzzel_size as i32, 6, 72, 1),
+        terminal_size_box: Spinbox::new(terminal_size as i32, 6, 72, 1),
     }
 }
 
@@ -607,42 +542,59 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
         sec.spacing(18.0);
     } else {
         let dropdown_w = 120.0;
-        let textbox_w = widget_w - dropdown_w - 12.0;
+        let textbox_w = 300.0;
+        let spinbox_w = 90.0;
+
+        let menu_row_w = dropdown_w + 10.0;
+        let box_row_w = textbox_w + 10.0;
+        let spinbox_row_w = spinbox_w + 10.0;
+
+        let box_row_x = cx + 8.0 + menu_row_w;
+        let spin_row_x = box_row_x + box_row_w;
+        let spin_x = cx + 12.0 + dropdown_w + 12.0 + textbox_w + 12.0;
 
         // Window Borders
         let start_y = sec.ay();
         let top_room = state.borders_box.top_room();
-        state.borders_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        state.borders_menu.set_row_rect(cx + 8.0, menu_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.borders_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.borders_box.set_row_rect(cx + 8.0, cw - 16.0);
+        state.borders_box.set_row_rect(box_row_x, box_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.borders_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        state.borders_size_box.set_row_rect(spin_row_x, spinbox_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.borders_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
         sec.spacing(widget_h + top_room + 12.0);
 
         // Status Interface
         let start_y = sec.ay();
         let top_room = state.status_box.top_room();
-        state.status_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        state.status_menu.set_row_rect(cx + 8.0, menu_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.status_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.status_box.set_row_rect(cx + 8.0, cw - 16.0);
+        state.status_box.set_row_rect(box_row_x, box_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.status_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        state.status_size_box.set_row_rect(spin_row_x, spinbox_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.status_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
         sec.spacing(widget_h + top_room + 12.0);
 
         // Fuzzel
         let start_y = sec.ay();
         let top_room = state.fuzzel_box.top_room();
-        state.fuzzel_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        state.fuzzel_menu.set_row_rect(cx + 8.0, menu_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.fuzzel_box.set_row_rect(cx + 8.0, cw - 16.0);
+        state.fuzzel_box.set_row_rect(box_row_x, box_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        state.fuzzel_size_box.set_row_rect(spin_row_x, spinbox_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
         sec.spacing(widget_h + top_room + 12.0);
 
         // Terminal
         let start_y = sec.ay();
         let top_room = state.terminal_box.top_room();
-        state.terminal_menu.set_row_rect(cx + 8.0, cw - 16.0);
+        state.terminal_menu.set_row_rect(cx + 8.0, menu_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.terminal_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.terminal_box.set_row_rect(cx + 8.0, cw - 16.0);
+        state.terminal_box.set_row_rect(box_row_x, box_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.terminal_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        state.terminal_size_box.set_row_rect(spin_row_x, spinbox_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.terminal_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
         sec.spacing(widget_h + top_room + 8.0);
     }
     let prog_focused = sec_focused.get(1).copied().unwrap_or(false);
@@ -940,6 +892,10 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
             if !state.search_box.editing {
                 state.search_box = new.search_box;
             }
+            state.borders_size_box = new.borders_size_box;
+            state.status_size_box = new.status_size_box;
+            state.fuzzel_size_box = new.fuzzel_size_box;
+            state.terminal_size_box = new.terminal_size_box;
             let old_scroll = state.list_box.scroll_y();
             state.list_box = new.list_box;
             state.list_box.set_scroll_y(old_scroll);
@@ -1095,16 +1051,32 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 let text = font.clone();
                 move || {
                     let mut copied = false;
-                    if let Ok(mut child) = std::process::Command::new("wl-copy")
+                    let child = std::process::Command::new("wl-copy")
                         .stdin(std::process::Stdio::piped())
-                        .spawn()
-                    {
-                        if let Some(mut stdin) = child.stdin.take() {
-                            if stdin.write_all(text.as_bytes()).is_ok() {
-                                copied = true;
+                        .stderr(std::process::Stdio::piped())
+                        .spawn();
+                    match child {
+                        Ok(mut child) => {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let _ = stdin.write_all(text.as_bytes());
+                            }
+                            match child.wait_with_output() {
+                                Ok(output) => {
+                                    if output.status.success() {
+                                        copied = true;
+                                    } else {
+                                        let err_msg = String::from_utf8_lossy(&output.stderr);
+                                        eprintln!("wl-copy exited with error status: {:?}, stderr: {}", output.status, err_msg);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("wl-copy wait failed: {:?}", e);
+                                }
                             }
                         }
-                        let _ = child.wait();
+                        Err(e) => {
+                            eprintln!("wl-copy spawn failed: {:?}", e);
+                        }
                     }
                     if !copied {
                         if let Ok(mut child) = std::process::Command::new("xclip")
@@ -1213,6 +1185,23 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.fuzzel,
                 &state.terminal,
             );
+        }
+        TypefaceMessage::SetBordersSize(val) => {
+            state.borders_size_box.value = val;
+            write_config_value("border_font_size", &val.to_string());
+            send_ipc_command(&format!("layout border_font_size {}", val));
+        }
+        TypefaceMessage::SetStatusSize(val) => {
+            state.status_size_box.value = val;
+            write_waybar_size(val as u16);
+        }
+        TypefaceMessage::SetFuzzelSize(val) => {
+            state.fuzzel_size_box.value = val;
+            write_fuzzel_size(val as u16);
+        }
+        TypefaceMessage::SetTerminalSize(val) => {
+            state.terminal_size_box.value = val;
+            write_terminal_size(val as u16);
         }
     }
 }

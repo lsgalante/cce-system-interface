@@ -3,7 +3,7 @@ use clear_ui::layout::Section;
 use clear_ui::widget::{Label, ScrollingList};
 
 #[derive(Debug, Clone)]
-pub struct ProcessorsState {
+pub struct HardwareState {
     pub cpu_model: String,
     pub cpu_usage: f32,
     pub cpu_cores: u32,
@@ -15,7 +15,7 @@ pub struct ProcessorsState {
     pub cpu_list_box: ScrollingList,
 }
 
-impl Default for ProcessorsState {
+impl Default for HardwareState {
     fn default() -> Self {
         Self {
             cpu_model: String::new(),
@@ -32,8 +32,8 @@ impl Default for ProcessorsState {
 }
 
 #[derive(Debug, Clone)]
-pub enum ProcessorsMessage {
-    Refreshed(ProcessorsState),
+pub enum HardwareMessage {
+    Refreshed(HardwareState),
     None,
 }
 
@@ -95,7 +95,7 @@ async fn read_nvidia_gpu_temp() -> Option<f32> {
     val_str.trim().parse::<f32>().ok()
 }
 
-pub async fn fetch_processors_state() -> ProcessorsState {
+pub async fn fetch_hardware_state() -> HardwareState {
     let (cpu_model, cpu_cores) = {
         let lscpu = tokio::process::Command::new("lscpu")
             .output().await.ok()
@@ -188,7 +188,7 @@ pub async fn fetch_processors_state() -> ProcessorsState {
         Label::new(&text).with_font_size(12.0).with_color([212, 212, 212])
     }).collect();
 
-    ProcessorsState {
+    HardwareState {
         cpu_model,
         cpu_usage,
         cpu_cores,
@@ -204,7 +204,7 @@ pub async fn fetch_processors_state() -> ProcessorsState {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32, root_focused: bool) -> PageContent {
+pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, _ch: f32, root_focused: bool) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
 
@@ -255,7 +255,7 @@ pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32, ro
                     [0.0, 0.0, 0.0, 0.0],
                     [1.0, 1.0, 1.0, 0.06],
                     [0.0, 0.0, 0.0, 0.0],
-                    crate::app::AppAction::Processors(ProcessorsMessage::None),
+                    crate::app::AppAction::Hardware(HardwareMessage::None),
                 );
                 
                 pc.text(pid, list_box_x + 12.0, draw_y + 6.0, 12.0, [0.80, 0.80, 0.85, 1.0]);
@@ -288,9 +288,9 @@ pub fn view(state: &mut ProcessorsState, cx: f32, cy: f32, cw: f32, _ch: f32, ro
     pc
 }
 
-pub fn update(state: &mut ProcessorsState, msg: ProcessorsMessage) {
+pub fn update(state: &mut HardwareState, msg: HardwareMessage) {
     match msg {
-        ProcessorsMessage::Refreshed(new) => {
+        HardwareMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.cpu_model = new.cpu_model;
             state.cpu_usage = new.cpu_usage;
@@ -303,6 +303,6 @@ pub fn update(state: &mut ProcessorsState, msg: ProcessorsMessage) {
             state.cpu_list_box = new.cpu_list_box;
             state.cpu_list_box.set_scroll_y(old_scroll);
         }
-        ProcessorsMessage::None => {}
+        HardwareMessage::None => {}
     }
 }

@@ -7,7 +7,7 @@ use crate::pages::layout;
 use crate::pages::network;
 use crate::pages::notifications;
 use crate::pages::power;
-use crate::pages::processors;
+use crate::pages::hardware;
 use crate::pages::status;
 use crate::pages::storage;
 use crate::pages::system_info;
@@ -25,7 +25,7 @@ pub struct AppState {
     pub network: network::NetworkState,
     pub layout: layout::LayoutState,
     pub input: input::InputState,
-    pub processors: processors::ProcessorsState,
+    pub hardware: hardware::HardwareState,
     pub system_info: system_info::SystemState,
     pub status: status::StatusState,
     pub storage: storage::StorageState,
@@ -46,7 +46,7 @@ impl Default for AppState {
             network: network::NetworkState::default(),
             layout: layout::LayoutState::default(),
             input: input::InputState::default(),
-            processors: processors::ProcessorsState::default(),
+            hardware: hardware::HardwareState::default(),
             system_info: system_info::SystemState::default(),
             status: status::StatusState::default(),
             storage: storage::StorageState::default(),
@@ -67,7 +67,7 @@ pub enum AppAction {
     Radios(network::NetworkMessage),
     Layout(layout::LayoutMessage),
     Input(input::InputMessage),
-    Processors(processors::ProcessorsMessage),
+    Hardware(hardware::HardwareMessage),
     SystemInfo(system_info::SystemMessage),
     Status(status::StatusMessage),
     Storage(storage::StorageMessage),
@@ -143,5 +143,9 @@ impl RenderTarget for PageContent {
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
         self.texts.push((content.to_string(), size, x, y, color, None));
+    }
+
+    fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string())));
     }
 }

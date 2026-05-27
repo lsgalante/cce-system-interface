@@ -83,12 +83,72 @@ fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
     buf
 }
 
-fn make_text_buffer_with_font(fs: &mut FontSystem, text: &str, size: f32, font: Option<&str>) -> Buffer {
+fn find_cased_family(fs: &FontSystem, name: &str) -> Option<String> {
+    let lower_name = name.to_lowercase();
+    for face in fs.db().faces() {
+        for (family, _) in &face.families {
+            if family.to_lowercase() == lower_name {
+                return Some(family.clone());
+            }
+        }
+    }
+    None
+}
+
+fn make_text_buffer_with_font(
+    fs: &mut FontSystem,
+    text: &str,
+    size: f32,
+    font: Option<&str>,
+    sans_fallback: &str,
+    serif_fallback: &str,
+    mono_fallback: &str,
+) -> Buffer {
     let metrics = Metrics::new(size, size * 1.4);
     let mut buf = Buffer::new(fs, metrics);
     let mut attrs = Attrs::new();
+    let mut resolved_storage = None;
     if let Some(font_name) = font {
-        attrs = attrs.family(glyphon::Family::Name(font_name));
+        let family = match font_name {
+            "monospace" => {
+                if !mono_fallback.is_empty() {
+                    resolved_storage = find_cased_family(fs, mono_fallback);
+                    if let Some(ref cased) = resolved_storage {
+                        glyphon::Family::Name(cased)
+                    } else {
+                        glyphon::Family::Name(mono_fallback)
+                    }
+                } else {
+                    glyphon::Family::Monospace
+                }
+            }
+            "sans-serif" => {
+                if !sans_fallback.is_empty() {
+                    resolved_storage = find_cased_family(fs, sans_fallback);
+                    if let Some(ref cased) = resolved_storage {
+                        glyphon::Family::Name(cased)
+                    } else {
+                        glyphon::Family::Name(sans_fallback)
+                    }
+                } else {
+                    glyphon::Family::SansSerif
+                }
+            }
+            "serif" => {
+                if !serif_fallback.is_empty() {
+                    resolved_storage = find_cased_family(fs, serif_fallback);
+                    if let Some(ref cased) = resolved_storage {
+                        glyphon::Family::Name(cased)
+                    } else {
+                        glyphon::Family::Name(serif_fallback)
+                    }
+                } else {
+                    glyphon::Family::Serif
+                }
+            }
+            _ => glyphon::Family::Name(font_name),
+        };
+        attrs = attrs.family(family);
     }
     buf.set_text(fs, text, attrs, glyphon::Shaping::Advanced);
     buf.shape_until_scroll(fs, true);
@@ -158,7 +218,7 @@ struct SystemInterface {
     rx_layout: std::sync::mpsc::Receiver<pages::layout::LayoutState>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
     rx_fingers: std::sync::mpsc::Receiver<Vec<pages::input::Finger>>,
-    rx_processors: std::sync::mpsc::Receiver<pages::processors::ProcessorsState>,
+    rx_hardware: std::sync::mpsc::Receiver<pages::hardware::HardwareState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
@@ -180,6 +240,9 @@ struct SystemInterface {
     max_scroll_y: f32,
     page_root_container: clear_ui::widget::Container,
     page_sec_containers: Vec<clear_ui::widget::Container>,
+    sans_serif_family: String,
+    serif_family: String,
+    monospace_family: String,
 }
 
 impl SystemInterface {
@@ -355,7 +418,7 @@ impl SystemInterface {
             rx
         };
         let rx_system = spawn_bg(5, || pages::system_info::fetch_system_state());
-        let rx_processors = spawn_bg(3, || pages::processors::fetch_processors_state());
+        let rx_hardware = spawn_bg(3, || pages::hardware::fetch_hardware_state());
         let rx_status = spawn_bg(10, || pages::status::fetch_status_state());
         let rx_storage = spawn_bg(10, || pages::storage::fetch_storage_state());
         let rx_notifications = {
@@ -388,6 +451,8 @@ impl SystemInterface {
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
         let scale_factor = scale;
 
+        let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::typeface::read_preferred_fonts();
+
         let mut this = Self {
             window, surface, wgpu_surface, device, queue, config, render_pipeline,
             vertex_buffer, vertex_count: 0,
@@ -398,7 +463,7 @@ impl SystemInterface {
             cursor_x: 0.0, cursor_y: 0.0,
             scale_factor,
             rx_power, rx_audio, rx_display, rx_network, rx_layout, rx_input, rx_fingers,
-            rx_processors, rx_system, rx_status, rx_storage, rx_notifications,
+            rx_hardware, rx_system, rx_status, rx_storage, rx_notifications,
             rx_backup_state, rx_typeface, rx_services, rx_colors, tx_backup, rx_backup,
             tx_color_selector, rx_color_selector,
             width, height,
@@ -407,6 +472,9 @@ impl SystemInterface {
             max_scroll_y: 0.0,
             page_root_container: clear_ui::widget::Container::new(),
             page_sec_containers: Vec::new(),
+            sans_serif_family: sans_family,
+            serif_family,
+            monospace_family,
         };
         this.rebuild_layout(width as f32, height as f32);
         this
@@ -498,7 +566,15 @@ impl SystemInterface {
         }
         for (t, size, x, y, tc, font_opt) in &pc.texts {
             text_items.push(TextItem {
-                buffer: make_text_buffer_with_font(&mut self.font_system, t, *size * s, font_opt.as_deref()),
+                buffer: make_text_buffer_with_font(
+                    &mut self.font_system,
+                    t,
+                    *size * s,
+                    font_opt.as_deref(),
+                    &self.sans_serif_family,
+                    &self.serif_family,
+                    &self.monospace_family,
+                ),
                 x: *x * s, y: (*y - scroll_offset_y) * s,
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
@@ -526,8 +602,8 @@ impl SystemInterface {
                        && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
                         left_align = true;
                     }
-                } else if self.app.current_page == Page::Processors {
-                    let sb = &self.app.processors.cpu_list_box;
+                } else if self.app.current_page == Page::Hardware {
+                    let sb = &self.app.hardware.cpu_list_box;
                     let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
                     if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
                        && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
@@ -587,7 +663,7 @@ impl SystemInterface {
 
         self.app.services.list_box.scroll_box.clear_children(); self.app.services.list_box.scroll_box.set_parent(None);
 
-        self.app.processors.cpu_list_box.scroll_box.clear_children(); self.app.processors.cpu_list_box.scroll_box.set_parent(None);
+        self.app.hardware.cpu_list_box.scroll_box.clear_children(); self.app.hardware.cpu_list_box.scroll_box.set_parent(None);
 
         self.app.network.wifi_list_box.scroll_box.clear_children(); self.app.network.wifi_list_box.scroll_box.set_parent(None);
 
@@ -652,8 +728,8 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_root_container, &mut self.app.services.search_box);
                 link_parent_child(&mut self.page_root_container, &mut self.app.services.list_box.scroll_box);
             }
-            Page::Processors => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.processors.cpu_list_box.scroll_box);
+            Page::Hardware => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_list_box.scroll_box);
             }
             Page::Radios => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
@@ -726,6 +802,52 @@ impl SystemInterface {
             _ => {}
         }
 
+        // Render context menu overlay if visible
+        if clear_ui::widget::context_menu::is_visible() {
+            let cx = clear_ui::widget::context_menu::x();
+            let cy = clear_ui::widget::context_menu::y();
+            let cw = clear_ui::widget::context_menu::w();
+            let ch = clear_ui::widget::context_menu::h();
+            
+            // Border
+            widgets.push(AppWidget {
+                x: cx * s, y: cy * s, w: cw * s, h: ch * s,
+                color: [0.22, 0.22, 0.28, 1.0], hover_color: [0.22, 0.22, 0.28, 1.0],
+                hovering: false, kind: WidgetKind::Static,
+            });
+            // Bg
+            widgets.push(AppWidget {
+                x: (cx + 1.0) * s, y: (cy + 1.0) * s, w: (cw - 2.0) * s, h: (ch - 2.0) * s,
+                color: [0.06, 0.06, 0.09, 1.0], hover_color: [0.06, 0.06, 0.09, 1.0],
+                hovering: false, kind: WidgetKind::Static,
+            });
+            
+            // Hover highlight
+            if let Some(h_idx) = clear_ui::widget::context_menu::hovered_item() {
+                let iy = cy + h_idx as f32 * 24.0;
+                widgets.push(AppWidget {
+                    x: (cx + 2.0) * s, y: (iy + 2.0) * s, w: (cw - 4.0) * s, h: 20.0 * s,
+                    color: [0.20, 0.40, 0.65, 0.6], hover_color: [0.20, 0.40, 0.65, 0.6],
+                    hovering: false, kind: WidgetKind::Static,
+                });
+            }
+            
+            // Texts
+            for (idx, opt) in clear_ui::widget::context_menu::options().iter().enumerate() {
+                let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
+                let text_color = if clear_ui::widget::context_menu::hovered_item() == Some(idx) {
+                    glyphon::Color::rgb(0xff, 0xff, 0xff)
+                } else {
+                    glyphon::Color::rgb(0xcc, 0xcc, 0xd4)
+                };
+                text_items.push(TextItem {
+                    buffer: make_text_buffer(&mut self.font_system, opt, 12.0 * s),
+                    x: (cx + 8.0) * s, y: iy * s,
+                    color: text_color,
+                });
+            }
+        }
+
         self.widgets = widgets;
         self.text_items = text_items;
         self.page_buttons = page_buttons;
@@ -744,7 +866,7 @@ impl SystemInterface {
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
             Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused),
             Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch, &sec_focused),
-            Page::Processors => processors::view(&mut self.app.processors, cx, cy, cw, ch, root_focused),
+            Page::Hardware => hardware::view(&mut self.app.hardware, cx, cy, cw, ch, root_focused),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
             Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch),
@@ -852,8 +974,8 @@ impl SystemInterface {
             system_info::update(&mut self.app.system_info, system_info::SystemMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
-        while let Ok(s) = self.rx_processors.try_recv() {
-            processors::update(&mut self.app.processors, processors::ProcessorsMessage::Refreshed(s));
+        while let Ok(s) = self.rx_hardware.try_recv() {
+            hardware::update(&mut self.app.hardware, hardware::HardwareMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_status.try_recv() {
@@ -873,6 +995,9 @@ impl SystemInterface {
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_typeface.try_recv() {
+            self.sans_serif_family = s.sans_serif.clone();
+            self.serif_family = s.serif.clone();
+            self.monospace_family = s.monospace.clone();
             typeface::update(&mut self.app.typeface, typeface::TypefaceMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
@@ -911,11 +1036,16 @@ impl SystemInterface {
             AppAction::Layout(m) => layout::update(&mut self.app.layout, m.clone()),
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
-            AppAction::Processors(m) => processors::update(&mut self.app.processors, m.clone()),
+            AppAction::Hardware(m) => hardware::update(&mut self.app.hardware, m.clone()),
             AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
             AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
-            AppAction::Typeface(m) => typeface::update(&mut self.app.typeface, m.clone()),
+            AppAction::Typeface(m) => {
+                typeface::update(&mut self.app.typeface, m.clone());
+                self.sans_serif_family = self.app.typeface.sans_serif.clone();
+                self.serif_family = self.app.typeface.serif.clone();
+                self.monospace_family = self.app.typeface.monospace.clone();
+            }
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
             AppAction::Colors(m) => colors::update(&mut self.app.colors, m.clone()),
             AppAction::Backup(m) => match m {
@@ -936,6 +1066,17 @@ impl SystemInterface {
         self.cursor_x = x;
         self.cursor_y = y;
         let s = self.scale_factor as f32;
+        
+        if clear_ui::widget::context_menu::is_visible() {
+            let lx_no_scroll = x / s;
+            let ly_no_scroll = y / s;
+            if clear_ui::widget::context_menu::cursor_moved(lx_no_scroll, ly_no_scroll) {
+                self.needs_rebuild = true;
+                return true;
+            }
+            return false;
+        }
+
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
         let mut changed = false;
@@ -1044,16 +1185,16 @@ impl SystemInterface {
                 changed = true;
             }
         }
-        if self.app.current_page == Page::Processors {
-            if self.app.processors.cpu_label.cursor_moved(lx, ly) {
+        if self.app.current_page == Page::Hardware {
+            if self.app.hardware.cpu_label.cursor_moved(lx, ly) {
                 changed = true;
             }
-            for gpu_lbl in &mut self.app.processors.gpu_labels {
+            for gpu_lbl in &mut self.app.hardware.gpu_labels {
                 if gpu_lbl.cursor_moved(lx, ly) {
                     changed = true;
                 }
             }
-            if self.app.processors.cpu_list_box.cursor_moved(lx, ly) {
+            if self.app.hardware.cpu_list_box.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
@@ -1105,6 +1246,18 @@ impl SystemInterface {
             if self.app.typeface.list_box.cursor_moved(lx, ly) {
                 changed = true;
             }
+            if self.app.typeface.borders_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.status_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.fuzzel_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.terminal_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
         }
         if self.app.current_page == Page::Services {
             if self.app.services.search_box.cursor_moved(lx, ly) {
@@ -1119,9 +1272,19 @@ impl SystemInterface {
     }
 
     fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState) -> bool {
-        if button != clear_ui::widget::MouseButton::Left { return false; }
         let s = self.scale_factor as f32;
-        if state == clear_ui::widget::ElementState::Released {
+        let lx_no_scroll = self.cursor_x / s;
+        let ly_no_scroll = self.cursor_y / s;
+
+        if clear_ui::widget::context_menu::is_visible() {
+            if clear_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+
+        if button != clear_ui::widget::MouseButton::Left && button != clear_ui::widget::MouseButton::Right { return false; }
+        if button == clear_ui::widget::MouseButton::Left && state == clear_ui::widget::ElementState::Released {
             let (px, py) = (self.cursor_x, self.cursor_y);
             for btn in &self.page_buttons.clone() {
                 if px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h {
@@ -1218,9 +1381,9 @@ impl SystemInterface {
                     if srv.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if srv.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
-                Page::Processors => {
-                    let proc = &mut self.app.processors;
-                    if proc.cpu_list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                Page::Hardware => {
+                    let hw = &mut self.app.hardware;
+                    if hw.cpu_list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Radios => {
                     let net = &mut self.app.network;
@@ -1420,113 +1583,153 @@ impl SystemInterface {
             if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
             lbl2.mouse_input(button, state, lx, ly);
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Typefaces {
+        if self.app.current_page == Page::Typefaces {
             let tb = &mut self.app.typeface.sans_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
             }
 
             let tb = &mut self.app.typeface.serif_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
             }
 
             let tb = &mut self.app.typeface.mono_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
             }
 
             let menu = &mut self.app.typeface.borders_menu;
-            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if menu.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersMenu(menu.selected)));
             }
 
             let tb = &mut self.app.typeface.borders_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBorders(tb.text.clone())));
             }
 
             let menu = &mut self.app.typeface.status_menu;
-            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if menu.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusMenu(menu.selected)));
             }
 
             let tb = &mut self.app.typeface.status_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatus(tb.text.clone())));
             }
 
             let menu = &mut self.app.typeface.fuzzel_menu;
-            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if menu.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelMenu(menu.selected)));
             }
 
             let tb = &mut self.app.typeface.fuzzel_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzel(tb.text.clone())));
             }
 
             let menu = &mut self.app.typeface.terminal_menu;
-            if !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if menu.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalMenu(menu.selected)));
             }
 
             let tb = &mut self.app.typeface.terminal_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminal(tb.text.clone())));
             }
 
             let tb = &mut self.app.typeface.search_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
-            if tb.take_change() {
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
+            }
+
+            let sb = &mut self.app.typeface.borders_size_box;
+            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old_val = sb.value;
+            if sb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if sb.value != old_val {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersSize(sb.value)));
+            }
+
+            let sb = &mut self.app.typeface.status_size_box;
+            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old_val = sb.value;
+            if sb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if sb.value != old_val {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusSize(sb.value)));
+            }
+
+            let sb = &mut self.app.typeface.fuzzel_size_box;
+            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old_val = sb.value;
+            if sb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if sb.value != old_val {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelSize(sb.value)));
+            }
+
+            let sb = &mut self.app.typeface.terminal_size_box;
+            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old_val = sb.value;
+            if sb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if sb.value != old_val {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalSize(sb.value)));
             }
 
             let tf = &mut self.app.typeface;
@@ -1534,9 +1737,9 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
+        if self.app.current_page == Page::Services {
             let tb = &mut self.app.services.search_box;
-            if !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
@@ -1545,9 +1748,9 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Processors {
-            let proc = &mut self.app.processors;
-            if proc.cpu_list_box.mouse_input(button, state, lx, ly) {
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Hardware {
+            let hw = &mut self.app.hardware;
+            if hw.cpu_list_box.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
         }
@@ -1588,9 +1791,9 @@ impl SystemInterface {
                     return true;
                 }
             }
-            if self.app.current_page == Page::Processors {
-                let proc = &mut self.app.processors;
-                if proc.cpu_list_box.mouse_wheel(delta, lx, ly) {
+            if self.app.current_page == Page::Hardware {
+                let hw = &mut self.app.hardware;
+                if hw.cpu_list_box.mouse_wheel(delta, lx, ly) {
                     self.needs_rebuild = true;
                     return true;
                 }
@@ -1620,7 +1823,7 @@ impl SystemInterface {
 
     fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Widget + 'static)> {
         match self.app.current_page {
-            Page::Typefaces | Page::Services | Page::Processors | Page::Radios |
+            Page::Typefaces | Page::Services | Page::Hardware | Page::Radios |
             Page::Layout | Page::Colors | Page::Notifications | Page::Input |
             Page::Audio | Page::Display => {
                 let ptr = &mut self.page_root_container as &mut dyn clear_ui::widget::Widget as *mut dyn clear_ui::widget::Widget;
@@ -1831,10 +2034,7 @@ impl SystemInterface {
                     (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowUp), false) => true,
                     _ => false,
                 };
-                if is_down {
-                    if !clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
-                        return false;
-                    }
+                if is_down && clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
                     let next_idx_font_scroll = {
                         let tf = &self.app.typeface;
                         let query = tf.search_box.text.to_lowercase();
@@ -1875,10 +2075,7 @@ impl SystemInterface {
                         self.needs_rebuild = true;
                         return true;
                     }
-                } else if is_up {
-                    if !clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
-                        return false;
-                    }
+                } else if is_up && clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
                     let next_idx_font_scroll = {
                         let tf = &self.app.typeface;
                         let query = tf.search_box.text.to_lowercase();
@@ -1989,6 +2186,30 @@ impl SystemInterface {
                 }
                 consumed = true;
             }
+
+            let sb = &mut self.app.typeface.borders_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.typeface.status_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.typeface.fuzzel_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.typeface.terminal_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalSize(sb.value)));
+                consumed = true;
+            }
             
             for a in &actions {
                 self.handle_action(a);
@@ -2011,9 +2232,9 @@ impl SystemInterface {
                 return true;
             }
         }
-        if self.app.current_page == Page::Processors {
-            let proc = &mut self.app.processors;
-            if proc.cpu_list_box.keyboard_input(event) {
+        if self.app.current_page == Page::Hardware {
+            let hw = &mut self.app.hardware;
+            if hw.cpu_list_box.keyboard_input(event) {
                 self.needs_rebuild = true;
                 return true;
             }
@@ -2084,6 +2305,29 @@ impl SystemInterface {
     }
 }
 
+struct PressedKey {
+    logical_key: clear_ui::widget::Key,
+    text: Option<String>,
+    first_pressed: std::time::Instant,
+    last_repeated: std::time::Instant,
+}
+
+fn is_repeatable_key(key: &clear_ui::widget::Key) -> bool {
+    use clear_ui::widget::{Key, NamedKey};
+    match key {
+        Key::Named(NamedKey::Backspace) |
+        Key::Named(NamedKey::Delete) |
+        Key::Named(NamedKey::ArrowLeft) |
+        Key::Named(NamedKey::ArrowRight) |
+        Key::Named(NamedKey::ArrowUp) |
+        Key::Named(NamedKey::ArrowDown) |
+        Key::Named(NamedKey::Home) |
+        Key::Named(NamedKey::End) |
+        Key::Character(_) => true,
+        _ => false,
+    }
+}
+
 struct App {
     registry_state: RegistryState,
     compositor_state: CompositorState,
@@ -2104,6 +2348,8 @@ struct App {
     exit: bool,
     redraw: bool,
     ctrl_pressed: bool,
+    shift_pressed: bool,
+    pressed_key: Option<PressedKey>,
 }
 
 
@@ -2342,6 +2588,7 @@ impl KeyboardHandler for App {
         _layout: u32,
     ) {
         self.ctrl_pressed = modifiers.ctrl;
+        self.shift_pressed = modifiers.shift;
     }
 }
 
@@ -2380,7 +2627,27 @@ impl App {
             text: event.utf8.clone(),
             repeat: false,
             ctrl: self.ctrl_pressed,
+            shift: self.shift_pressed,
         };
+
+        if state == clear_ui::widget::ElementState::Pressed {
+            if is_repeatable_key(&custom_event.logical_key) {
+                self.pressed_key = Some(PressedKey {
+                    logical_key: custom_event.logical_key.clone(),
+                    text: custom_event.text.clone(),
+                    first_pressed: std::time::Instant::now(),
+                    last_repeated: std::time::Instant::now(),
+                });
+            } else {
+                self.pressed_key = None;
+            }
+        } else if state == clear_ui::widget::ElementState::Released {
+            if let Some(ref pk) = self.pressed_key {
+                if pk.logical_key == custom_event.logical_key {
+                    self.pressed_key = None;
+                }
+            }
+        }
 
         if let Some(st) = &mut self.state {
             if st.handle_key_input(&custom_event) {
@@ -2493,6 +2760,8 @@ fn main() {
         exit: false,
         redraw: true,
         ctrl_pressed: false,
+        shift_pressed: false,
+        pressed_key: None,
     };
 
     // Perform a roundtrip to populate output_state with active output scales
@@ -2520,6 +2789,9 @@ fn main() {
     let loop_handle = event_loop.handle();
     WaylandSource::new(conn, event_queue).insert(loop_handle.clone()).unwrap();
 
+    const KEY_REPEAT_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+    const KEY_REPEAT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+
     loop {
         event_loop
             .dispatch(std::time::Duration::from_millis(16), &mut app)
@@ -2533,6 +2805,29 @@ fn main() {
                 app.redraw = true;
             }
         }
+
+        if let Some(ref mut pk) = app.pressed_key {
+            let now = std::time::Instant::now();
+            if now.duration_since(pk.first_pressed) >= KEY_REPEAT_DELAY {
+                if now.duration_since(pk.last_repeated) >= KEY_REPEAT_INTERVAL {
+                    pk.last_repeated = now;
+                    let custom_event = clear_ui::widget::KeyEvent {
+                        state: clear_ui::widget::ElementState::Pressed,
+                        logical_key: pk.logical_key.clone(),
+                        text: pk.text.clone(),
+                        repeat: true,
+                        ctrl: app.ctrl_pressed,
+                        shift: app.shift_pressed,
+                    };
+                    if let Some(st) = &mut app.state {
+                        if st.handle_key_input(&custom_event) {
+                            app.redraw = true;
+                        }
+                    }
+                }
+            }
+        }
+
         if app.redraw {
             app.redraw = false;
             if let Some(state) = &mut app.state {

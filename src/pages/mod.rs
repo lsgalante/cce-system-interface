@@ -8,7 +8,7 @@ pub mod system_info;
 pub mod keybindings;
 pub mod input;
 pub mod status;
-pub mod processors;
+pub mod hardware;
 pub mod notifications;
 pub mod backup;
 pub mod typeface;
@@ -25,7 +25,7 @@ pub enum Page {
     Display,
     Layout,
     System,
-    Processors,
+    Hardware,
     Input,
     Status,
     Notifications,
@@ -43,7 +43,7 @@ impl Page {
         Page::Input,
         Page::Layout,
         Page::Notifications,
-        Page::Processors,
+        Page::Hardware,
         Page::Power,
         Page::Radios,
         Page::Services,
@@ -63,7 +63,7 @@ impl Page {
             Page::Display => "Display",
             Page::Layout => "Layout",
             Page::System => "System",
-            Page::Processors => "Processors",
+            Page::Hardware => "Hardware",
             Page::Input => "Input",
             Page::Status => "Status",
             Page::Notifications => "Notifications",
