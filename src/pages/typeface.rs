@@ -1,7 +1,7 @@
 use std::fs;
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, Dropdown, TextBox, Spinbox};
+use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, Dropdown, TextBox, Spinbox, Button};
 use clear_ui::widget::{ElementState, KeyEvent, MouseButton, Key, NamedKey};
 
 const FONTS_CONF_PATH: &str = "/home/lsgalante/.config/fontconfig/fonts.conf";
@@ -38,6 +38,8 @@ pub struct TypefaceState {
     pub status_size_box: Spinbox,
     pub fuzzel_size_box: Spinbox,
     pub terminal_size_box: Spinbox,
+    pub font_buttons: Vec<Button>,
+    pub copy_buttons: Vec<Button>,
 }
 
 impl Default for TypefaceState {
@@ -68,9 +70,11 @@ impl Default for TypefaceState {
             fuzzel_menu: Dropdown::default(),
             terminal_menu: Dropdown::default(),
             borders_size_box: Spinbox::new(11, 6, 72, 1),
-            status_size_box: Spinbox::new(13, 6, 72, 1),
+            status_size_box: Spinbox::new(11, 6, 72, 1),
             fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
             terminal_size_box: Spinbox::new(12, 6, 72, 1),
+            font_buttons: Vec::new(),
+            copy_buttons: Vec::new(),
         }
     }
 }
@@ -237,7 +241,7 @@ pub fn save_preferred_fonts(
         .spawn();
 }
 
-fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
+pub fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix(key) {
@@ -248,7 +252,7 @@ fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
     default
 }
 
-fn write_config_value(key: &str, value: &str) -> bool {
+pub fn write_config_value(key: &str, value: &str) -> bool {
     let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").unwrap_or_default();
     let new_line = format!("{} = {}", key, value);
     let mut found = false;
@@ -274,8 +278,15 @@ fn write_config_value(key: &str, value: &str) -> bool {
     } else { fs::write("/home/lsgalante/.config/clearwm/config.toml", updated).is_ok() }
 }
 
+fn get_socket_path() -> String {
+    match std::env::var("WAYLAND_DISPLAY") {
+        Ok(display) => format!("/tmp/clearwm-{}.sock", display),
+        Err(_) => "/tmp/clearwm.sock".to_string(),
+    }
+}
+
 fn send_ipc_command(cmd: &str) {
-    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect("/tmp/clearwm.sock") {
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_socket_path()) {
         use std::io::Write;
         let _ = stream.write_all(format!("{}\n", cmd).as_bytes());
     }
@@ -286,34 +297,15 @@ fn read_border_font_size() -> Option<u16> {
     Some(parse_u16_from(&content, "border_font_size", 11))
 }
 
-fn read_waybar_size() -> Option<u16> {
-    let css = fs::read_to_string("/home/lsgalante/.config/waybar/style.css").ok()?;
-    for line in css.lines() {
-        if line.contains("font-size") {
-            let val = line.split(':').nth(1)?.trim().trim_end_matches(';').trim();
-            if let Some(px) = val.strip_suffix("px") {
-                return px.trim().parse::<u16>().ok();
-            }
-            return val.parse::<u16>().ok();
-        }
-    }
-    None
+fn read_status_size() -> Option<u16> {
+    let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").ok()?;
+    Some(parse_u16_from(&content, "status_font_size", 11))
 }
 
-fn write_waybar_size(size: u16) {
-    let path = "/home/lsgalante/.config/waybar/style.css";
-    let css = fs::read_to_string(path).unwrap_or_default();
-    let mut new_lines = Vec::new();
-    for line in css.lines() {
-        if line.contains("font-size") {
-            new_lines.push(format!("    font-size: {}px;", size));
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-    let _ = fs::write(path, new_lines.join("\n"));
+fn write_status_size(size: u16) {
+    write_config_value("status_font_size", &size.to_string());
     let _ = std::process::Command::new("pkill")
-        .args(["-x", "waybar", "-SIGUSR2"])
+        .args(["-f", "clear-status-interface"])
         .spawn();
 }
 
@@ -465,7 +457,7 @@ pub async fn fetch_typeface_state() -> TypefaceState {
     terminal_box.disabled = terminal_idx != 3;
 
     let borders_size = read_border_font_size().unwrap_or(11);
-    let status_size = read_waybar_size().unwrap_or(13);
+    let status_size = read_status_size().unwrap_or(11);
     let fuzzel_size = read_fuzzel_size().unwrap_or(14);
     let terminal_size = read_terminal_size().unwrap_or(12);
 
@@ -498,6 +490,8 @@ pub async fn fetch_typeface_state() -> TypefaceState {
         status_size_box: Spinbox::new(status_size as i32, 6, 72, 1),
         fuzzel_size_box: Spinbox::new(fuzzel_size as i32, 6, 72, 1),
         terminal_size_box: Spinbox::new(terminal_size as i32, 6, 72, 1),
+        font_buttons: Vec::new(),
+        copy_buttons: Vec::new(),
     }
 }
 
@@ -644,6 +638,16 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
             .filter(|font| font.to_lowercase().contains(&query))
             .collect();
 
+        // Ensure we have exactly matching_fonts.len() buttons of each type
+        if state.font_buttons.len() != matching_fonts.len() {
+            state.font_buttons.clear();
+            state.copy_buttons.clear();
+            for _ in 0..matching_fonts.len() {
+                state.font_buttons.push(Button::new_list_row(0.0, 0.0, 0.0, 0.0));
+                state.copy_buttons.push(Button::new_copy_icon(0.0, 0.0, 0.0, 0.0));
+            }
+        }
+
         let btn_h = 24.0;
         let inner_x = left_x + 4.0;
         let inner_w = left_w - 16.0; // leave room for scrollbar
@@ -658,41 +662,15 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
             if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 0.0) {
                 let is_selected = state.selected_font.as_ref() == Some(*font_name);
                 
-                let (bg, hover_bg, text_color) = if is_selected {
-                    ([0.20, 0.40, 0.65, 0.4], [0.30, 0.52, 0.78, 0.6], [0.90, 0.90, 0.95, 1.0])
-                } else {
-                    ([0.0, 0.0, 0.0, 0.0], [0.20, 0.20, 0.25, 0.15], [0.70, 0.70, 0.75, 1.0])
-                };
-                
-                pc.button(
-                    font_name,
-                    inner_x,
-                    draw_y,
-                    inner_w - 44.0,
-                    btn_h,
-                    bg,
-                    hover_bg,
-                    text_color,
-                    crate::app::AppAction::Typeface(TypefaceMessage::SelectFont((*font_name).clone())),
-                );
+                let font_btn = &mut state.font_buttons[idx];
+                font_btn.label = Some((*font_name).clone());
+                font_btn.selected = is_selected;
+                clear_ui::layout::render_widget(&mut pc, font_btn, inner_x, draw_y, inner_w - 44.0, btn_h);
 
-                let (copy_bg, copy_hover_bg, copy_text_color) = if is_selected {
-                    ([0.20, 0.40, 0.65, 0.2], [0.30, 0.52, 0.78, 0.5], [0.90, 0.90, 0.95, 1.0])
-                } else {
-                    ([0.0, 0.0, 0.0, 0.0], [0.20, 0.20, 0.25, 0.25], [0.70, 0.70, 0.75, 1.0])
-                };
-
-                pc.button(
-                    "📋",
-                    inner_x + inner_w - 40.0,
-                    draw_y,
-                    40.0,
-                    btn_h,
-                    copy_bg,
-                    copy_hover_bg,
-                    copy_text_color,
-                    crate::app::AppAction::Typeface(TypefaceMessage::CopyFontName((*font_name).clone())),
-                );
+                let copy_btn = &mut state.copy_buttons[idx];
+                copy_btn.label = Some("📋".to_string());
+                copy_btn.selected = is_selected;
+                clear_ui::layout::render_widget(&mut pc, copy_btn, inner_x + inner_w - 40.0, draw_y, 40.0, btn_h);
             }
         }
         
@@ -896,6 +874,8 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
             state.status_size_box = new.status_size_box;
             state.fuzzel_size_box = new.fuzzel_size_box;
             state.terminal_size_box = new.terminal_size_box;
+            state.font_buttons = new.font_buttons;
+            state.copy_buttons = new.copy_buttons;
             let old_scroll = state.list_box.scroll_y();
             state.list_box = new.list_box;
             state.list_box.set_scroll_y(old_scroll);
@@ -1193,7 +1173,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
         }
         TypefaceMessage::SetStatusSize(val) => {
             state.status_size_box.value = val;
-            write_waybar_size(val as u16);
+            write_status_size(val as u16);
         }
         TypefaceMessage::SetFuzzelSize(val) => {
             state.fuzzel_size_box.value = val;

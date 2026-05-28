@@ -1265,6 +1265,18 @@ impl SystemInterface {
             if self.app.typeface.terminal_size_box.cursor_moved(lx, ly) {
                 changed = true;
             }
+            let query = self.app.typeface.search_box.text.to_lowercase();
+            let matching_count = self.app.typeface.all_fonts.iter()
+                .filter(|f| f.to_lowercase().contains(&query))
+                .count();
+            for i in 0..matching_count.min(self.app.typeface.font_buttons.len()) {
+                if self.app.typeface.font_buttons[i].cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.typeface.copy_buttons[i].cursor_moved(lx, ly) {
+                    changed = true;
+                }
+            }
         }
         if self.app.current_page == Page::Services {
             if self.app.services.search_box.cursor_moved(lx, ly) {
@@ -1761,6 +1773,45 @@ impl SystemInterface {
             }
 
             let tf = &mut self.app.typeface;
+            let query = tf.search_box.text.to_lowercase();
+            let matching_fonts: Vec<String> = tf.all_fonts.iter()
+                .filter(|font| font.to_lowercase().contains(&query))
+                .cloned()
+                .collect();
+
+            let mut clicked_idx = None;
+            let mut is_copy = false;
+
+            for (i, btn) in tf.font_buttons.iter_mut().enumerate() {
+                if btn.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
+                if btn.take_click() {
+                    clicked_idx = Some(i);
+                    is_copy = false;
+                }
+            }
+            for (i, btn) in tf.copy_buttons.iter_mut().enumerate() {
+                if btn.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
+                if btn.take_click() {
+                    clicked_idx = Some(i);
+                    is_copy = true;
+                }
+            }
+
+            if let Some(idx) = clicked_idx {
+                if let Some(font_name) = matching_fonts.get(idx) {
+                    let action = if is_copy {
+                        AppAction::Typeface(pages::typeface::TypefaceMessage::CopyFontName(font_name.clone()))
+                    } else {
+                        AppAction::Typeface(pages::typeface::TypefaceMessage::SelectFont(font_name.clone()))
+                    };
+                    actions.push(action);
+                }
+            }
+
             if tf.list_box.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }

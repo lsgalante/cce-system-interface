@@ -6,7 +6,13 @@ use clear_ui::layout::Section;
 use clear_ui::widget::{Dropdown, Spinbox, Toggle, Widget};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
-const CLEARWM_SOCK: &str = "/tmp/clearwm.sock";
+
+fn get_socket_path() -> String {
+    match std::env::var("WAYLAND_DISPLAY") {
+        Ok(display) => format!("/tmp/clearwm-{}.sock", display),
+        Err(_) => "/tmp/clearwm.sock".to_string(),
+    }
+}
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Finger {
@@ -250,7 +256,7 @@ fn parse_keybinds(content: &str) -> Vec<Keybind> {
 }
 
 fn send_ipc_command(cmd: &str) {
-    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(CLEARWM_SOCK) {
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_socket_path()) {
         let _ = stream.write_all(format!("{}\n", cmd).as_bytes());
     }
 }

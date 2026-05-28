@@ -1,6 +1,7 @@
 use crate::app::{AppAction, PageContent};
 use clear_ui::layout::Section;
 use clear_ui::widget::{Label, Widget};
+use crate::pages::typeface::{parse_u16_from, write_config_value};
 
 #[derive(Debug, Clone)]
 pub struct StatusState {
@@ -14,11 +15,11 @@ pub struct StatusState {
 impl Default for StatusState {
     fn default() -> Self {
         Self {
-            font_size: 13,
+            font_size: 11,
             running: false,
             loaded: false,
-            status_label: Label::new("Waybar: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-            size_label: Label::new("Font size: 13px").with_font_size(13.0).with_color([212, 212, 212]),
+            status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
+            size_label: Label::new("Font size: 11px").with_font_size(13.0).with_color([212, 212, 212]),
         }
     }
 }
@@ -28,22 +29,22 @@ pub enum StatusMessage {
     Refreshed(StatusState),
     FontSizeUp,
     FontSizeDown,
-    ReloadWaybar,
+    ReloadStatus,
 }
 
 pub async fn fetch_status_state() -> StatusState {
     let running = tokio::process::Command::new("pgrep")
-        .args(["-x", "waybar"]).output().await.ok()
+        .args(["-f", "clear-status-interface"]).output().await.ok()
         .map(|o| !o.stdout.is_empty())
         .unwrap_or(false);
 
-    let font_size = read_waybar_font_size().unwrap_or(13);
+    let font_size = read_status_font_size().unwrap_or(11);
     let status_color = if running { [92, 143, 97] } else { [170, 51, 51] };
     StatusState {
         font_size,
         running,
         loaded: true,
-        status_label: Label::new(&format!("Waybar: {}", if running { "Running" } else { "Stopped" }))
+        status_label: Label::new(&format!("Status Interface: {}", if running { "Running" } else { "Stopped" }))
             .with_font_size(14.0)
             .with_color(status_color),
         size_label: Label::new(&format!("Font size: {}px", font_size))
@@ -52,40 +53,19 @@ pub async fn fetch_status_state() -> StatusState {
     }
 }
 
-fn read_waybar_font_size() -> Option<u16> {
-    let css = std::fs::read_to_string(
-        std::path::Path::new(&std::env::var("HOME").unwrap_or_default()).join(".config/waybar/style.css")
-    ).ok()?;
-    for line in css.lines() {
-        if line.contains("font-size") {
-            let val = line.split(':').nth(1)?.trim().trim_end_matches(';').trim();
-            if let Some(px) = val.strip_suffix("px") {
-                return px.trim().parse::<u16>().ok();
-            }
-            return val.parse::<u16>().ok();
-        }
-    }
-    None
+fn read_status_font_size() -> Option<u16> {
+    let content = std::fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").ok()?;
+    Some(parse_u16_from(&content, "status_font_size", 11))
 }
 
-fn write_waybar_font_size(size: u16) {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let path = std::path::Path::new(&home).join(".config/waybar/style.css");
-    let css = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut new_lines = Vec::new();
-    for line in css.lines() {
-        if line.contains("font-size") {
-            new_lines.push(format!("    font-size: {}px;", size));
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-    let _ = std::fs::write(&path, new_lines.join("\n"));
+fn write_status_font_size(size: u16) {
+    write_config_value("status_font_size", &size.to_string());
 }
 
-fn waybar_reload() {
-    let _ = tokio::process::Command::new("pkill")
-        .args(["-x", "waybar", "-SIGUSR2"]).spawn();
+fn status_interface_reload() {
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "clear-status-interface"])
+        .spawn();
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
@@ -98,14 +78,14 @@ pub fn view(state: &mut StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
     let mut pc = PageContent::new();
     let y = cy + 12.0;
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Waybar");
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Status Interface");
 
     if !state.loaded {
-        sec.text(&mut pc, "Loading Waybar status...", 12.0, 0.0, 12.0, TEXT_FG);
+        sec.text(&mut pc, "Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_FG);
         sec.spacing(18.0);
     } else {
         // Status
-        let status_text = if state.running { "Waybar: Running" } else { "Waybar: Stopped" };
+        let status_text = if state.running { "Status Interface: Running" } else { "Status Interface: Stopped" };
         state.status_label.set_text(status_text);
         sec.widget(&mut pc, &mut state.status_label, 12.0, cw - 24.0, 20.0);
         sec.spacing(12.0);
@@ -129,9 +109,9 @@ pub fn view(state: &mut StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
         // Reload button
         let yt = sec.ay();
         let btn_w = (cw - 24.0).min(200.0);
-        pc.button("Reload Waybar", cx + cw / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
+        pc.button("Reload Status Interface", cx + cw / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
             BTN_INACTIVE, BTN_HOVER, WHITE,
-            AppAction::Status(StatusMessage::ReloadWaybar));
+            AppAction::Status(StatusMessage::ReloadStatus));
     }
     sec.finish(&mut pc);
 
@@ -150,17 +130,19 @@ pub fn update(state: &mut StatusState, msg: StatusMessage) {
         StatusMessage::FontSizeUp => {
             if state.font_size < 28 {
                 state.font_size += 1;
-                write_waybar_font_size(state.font_size);
+                write_status_font_size(state.font_size);
+                status_interface_reload();
             }
         }
         StatusMessage::FontSizeDown => {
             if state.font_size > 8 {
                 state.font_size -= 1;
-                write_waybar_font_size(state.font_size);
+                write_status_font_size(state.font_size);
+                status_interface_reload();
             }
         }
-        StatusMessage::ReloadWaybar => {
-            waybar_reload();
+        StatusMessage::ReloadStatus => {
+            status_interface_reload();
         }
     }
 }
