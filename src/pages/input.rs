@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::app::PageContent;
 use clear_ui::layout::Section;
-use clear_ui::widget::{Dropdown, Spinbox, Toggle, Widget};
+use clear_ui::widget::{Dropdown, Spinbox, Toggle, Widget, Finger, Trackpad};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
 
@@ -12,13 +12,6 @@ fn get_socket_path() -> String {
         Ok(display) => format!("/tmp/clearwm-{}.sock", display),
         Err(_) => "/tmp/clearwm.sock".to_string(),
     }
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct Finger {
-    pub slot: usize,
-    pub x: f32,
-    pub y: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -39,10 +32,7 @@ pub struct InputState {
     pub tap_toggle: Toggle,
     pub keybinds: Vec<Keybind>,
     pub fingers: Vec<Finger>,
-    pub trackpad_x: f32,
-    pub trackpad_y: f32,
-    pub trackpad_w: f32,
-    pub trackpad_h: f32,
+    pub trackpad: Trackpad,
 
     // Inertial settings
     pub inertial_scroll: bool,
@@ -67,10 +57,48 @@ pub struct InputState {
     pub dwtp_toggle: Toggle,
     pub trackpoint_accel_speed_spinbox: Spinbox,
     pub trackpoint_accel_profile_menu: Dropdown,
+
+    // Cursor settings
+    pub cursor_theme: String,
+    pub cursor_size: u32,
+    pub cursor_theme_menu: Dropdown,
+    pub cursor_size_spinbox: Spinbox,
+    pub cursor_themes: Vec<String>,
+}
+
+fn scan_cursor_themes() -> Vec<String> {
+    let mut themes = vec!["default".to_string()];
+    let paths = [
+        "/usr/share/icons",
+        "/home/lsgalante/.icons",
+        "/home/lsgalante/.local/share/icons",
+    ];
+    for base_path in &paths {
+        if let Ok(entries) = std::fs::read_dir(base_path) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        let path = entry.path();
+                        if path.join("cursors").is_dir() {
+                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                let name_str = name.to_string();
+                                if !themes.contains(&name_str) {
+                                    themes.push(name_str);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    themes.sort();
+    themes
 }
 
 impl Default for InputState {
     fn default() -> Self {
+        let cursor_themes = vec!["default".to_string()];
         Self {
             tap_to_click: false,
             repeat_rate: 50,
@@ -80,10 +108,7 @@ impl Default for InputState {
             tap_toggle: Toggle::new().with_label("Tap to Click"),
             keybinds: Vec::new(),
             fingers: Vec::new(),
-            trackpad_x: 0.0,
-            trackpad_y: 0.0,
-            trackpad_w: 0.0,
-            trackpad_h: 0.0,
+            trackpad: Trackpad::new(),
 
             inertial_scroll: true,
             scroll_friction: 90,
@@ -106,14 +131,20 @@ impl Default for InputState {
             dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing"),
             trackpoint_accel_speed_spinbox: Spinbox::new(5, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1),
             trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], 0).with_label("Acceleration Profile"),
+
+            // Cursor settings defaults
+            cursor_theme: "default".to_string(),
+            cursor_size: 24,
+            cursor_theme_menu: Dropdown::new(cursor_themes.clone(), 0).with_label("Cursor Theme"),
+            cursor_size_spinbox: Spinbox::new(24, 16, 64, 4).with_label("Cursor Size").with_unit("px"),
+            cursor_themes,
         }
     }
 }
 
 impl InputState {
     pub fn is_over_trackpad(&self, lx: f32, ly: f32) -> bool {
-        lx >= self.trackpad_x && lx <= self.trackpad_x + self.trackpad_w
-            && ly >= self.trackpad_y && ly <= self.trackpad_y + self.trackpad_h
+        self.trackpad.hit_test(lx, ly)
     }
 }
 
@@ -134,6 +165,9 @@ pub enum InputMessage {
     ToggleDwtp,
     ApplyTrackpointAccelSpeed,
     ApplyTrackpointAccelProfile(usize),
+
+    ApplyCursorTheme(usize),
+    ApplyCursorSize,
 }
 
 pub fn read_input_config() -> InputState {
@@ -156,6 +190,11 @@ pub fn read_input_config() -> InputState {
     let speed_val = (trackpoint_accel_speed * 10.0).round() as i32;
     let profile_idx = if trackpoint_accel_profile == "adaptive" { 1 } else { 0 };
 
+    let cursor_theme = parse_string_key(&content, "cursor_theme", "default");
+    let cursor_size = parse_u16_key(&content, "cursor_size", 24);
+    let cursor_themes = scan_cursor_themes();
+    let theme_idx = cursor_themes.iter().position(|t| t == &cursor_theme).unwrap_or(0);
+
     InputState {
         tap_to_click: tap,
         repeat_rate: rate,
@@ -165,10 +204,7 @@ pub fn read_input_config() -> InputState {
         tap_toggle: Toggle::new().with_label("Tap to Click"),
         keybinds: parse_keybinds(&content),
         fingers: Vec::new(),
-        trackpad_x: 0.0,
-        trackpad_y: 0.0,
-        trackpad_w: 0.0,
-        trackpad_h: 0.0,
+        trackpad: Trackpad::new(),
 
         inertial_scroll,
         scroll_friction,
@@ -191,6 +227,13 @@ pub fn read_input_config() -> InputState {
         dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing"),
         trackpoint_accel_speed_spinbox: Spinbox::new(speed_val, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1),
         trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], profile_idx).with_label("Acceleration Profile"),
+
+        // Cursor settings
+        cursor_theme: cursor_theme.clone(),
+        cursor_size: cursor_size as u32,
+        cursor_theme_menu: Dropdown::new(cursor_themes.clone(), theme_idx).with_label("Cursor Theme"),
+        cursor_size_spinbox: Spinbox::new(cursor_size as i32, 16, 64, 4).with_label("Cursor Size").with_unit("px"),
+        cursor_themes,
     }
 }
 
@@ -276,7 +319,8 @@ fn write_config_value(key: &str, value: &str) {
 
     if !found {
         let section = if key == "tap_to_click" || key == "dwtp"
-                || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile" {
+                || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile"
+                || key == "cursor_theme" || key == "cursor_size" {
             "[input]"
         } else if key == "inertial_scroll" || key == "scroll_friction"
                || key == "inertial_pointer" || key == "pointer_friction"
@@ -336,45 +380,12 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.widget(&mut pc, &mut state.tap_toggle, 14.0, toggle_w, toggle_h);
     sec.spacing(8.0);
 
-    // Left-aligned trackpad visualizer box
+    // Built-in trackpad visualizer widget
     let pad_w = 280.0;
     let pad_h = 140.0;
-    let pad_x = sec.ax(14.0);
-    let pad_y = sec.ay();
-
-    state.trackpad_x = pad_x;
-    state.trackpad_y = pad_y;
-    state.trackpad_w = pad_w;
-    state.trackpad_h = pad_h;
-
-    // Background of trackpad: sleek dark translucent blue/grey
-    pc.rect([0.11, 0.11, 0.16, 0.85], pad_x, pad_y, pad_w, pad_h);
-
-    // Border: clean border
-    let border_color = [0.28, 0.28, 0.38, 1.0];
-    pc.rect(border_color, pad_x, pad_y, pad_w, 1.0);
-    pc.rect(border_color, pad_x, pad_y + pad_h - 1.0, pad_w, 1.0);
-    pc.rect(border_color, pad_x, pad_y, 1.0, pad_h);
-    pc.rect(border_color, pad_x + pad_w - 1.0, pad_y, 1.0, pad_h);
-
-    // Sleek label in the touchpad area
-    pc.text("Touchpad Area", pad_x + 12.0, pad_y + pad_h - 22.0, 11.0, [0.45, 0.45, 0.55, 1.0]);
-
-    // Active fingers visualizer
-    for finger in &state.fingers {
-        let rx = finger.x.clamp(0.0, 1.0);
-        let ry = finger.y.clamp(0.0, 1.0);
-        let fx = pad_x + rx * pad_w;
-        let fy = pad_y + ry * pad_h;
-        let dot_size = 12.0;
-
-        // Render glow (outer light blue rectangle)
-        pc.rect([0.35, 0.55, 0.95, 0.4], fx - (dot_size + 6.0) / 2.0, fy - (dot_size + 6.0) / 2.0, dot_size + 6.0, dot_size + 6.0);
-        // Render core (solid blue/purple rectangle)
-        pc.rect([0.45, 0.65, 1.0, 1.0], fx - dot_size / 2.0, fy - dot_size / 2.0, dot_size, dot_size);
-    }
-
-    sec.spacing(pad_h + 12.0);
+    state.trackpad.set_fingers(state.fingers.clone());
+    sec.widget(&mut pc, &mut state.trackpad, 14.0, pad_w, pad_h);
+    sec.spacing(12.0);
     y = sec.finish(&mut pc);
 
     // ── Trackpoint ──
@@ -401,6 +412,17 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.spacing(8.0);
     y = sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
 
+    // ── Cursor ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Cursor");
+
+    sec.widget(&mut pc, &mut state.cursor_theme_menu, 14.0, 200.0, 26.0);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.cursor_size_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(8.0);
+
+    y = sec.finish_focused(&mut pc, sec_focused.get(2).copied().unwrap_or(false));
+
     // ── Inertial Input ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
 
@@ -425,7 +447,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.widget(&mut pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(2).copied().unwrap_or(false));
+    y = sec.finish_focused(&mut pc, sec_focused.get(3).copied().unwrap_or(false));
 
     // ── Keybindings ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard Bindings");
@@ -448,25 +470,8 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     }
     sec.finish(&mut pc);
 
-    // Filter out base text items covered by any open popover to prevent showing through
-    let mut popovers = Vec::new();
-    if state.trackpoint_accel_profile_menu.open {
-        let (x, y, w, h) = state.trackpoint_accel_profile_menu.rect();
-        popovers.push((x, y + h, w, state.trackpoint_accel_profile_menu.options.len() as f32 * 24.0));
-    }
-
-    if !popovers.is_empty() {
-        pc.texts.retain(|(_, _, tx, ty, _, _)| {
-            for &(px, py, pw, ph) in &popovers {
-                if *tx >= px && *tx <= px + pw && *ty >= py && *ty <= py + ph {
-                    return false;
-                }
-            }
-            true
-        });
-    }
-
     state.trackpoint_accel_profile_menu.render_popover(&mut pc);
+    state.cursor_theme_menu.render_popover(&mut pc);
 
     pc
 }
@@ -529,6 +534,21 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             write_config_value("trackpoint_accel_profile", &format!("\"{}\"", profile));
             send_ipc_command(&format!("input trackpoint-accel-profile {}", profile));
         }
+        InputMessage::ApplyCursorTheme(idx) => {
+            if idx < state.cursor_themes.len() {
+                let theme = state.cursor_themes[idx].clone();
+                state.cursor_theme = theme.clone();
+                state.cursor_theme_menu.selected = idx;
+                write_config_value("cursor_theme", &format!("\"{}\"", theme));
+                send_ipc_command(&format!("input cursor-theme {}", theme));
+            }
+        }
+        InputMessage::ApplyCursorSize => {
+            let size = state.cursor_size_spinbox.value.max(16).min(64) as u32;
+            state.cursor_size = size;
+            write_config_value("cursor_size", &size.to_string());
+            send_ipc_command(&format!("input cursor-size {}", size));
+        }
         InputMessage::Refreshed(new) => {
             let fingers = state.fingers.clone();
             *state = new;
@@ -547,10 +567,7 @@ mod tests {
     #[test]
     fn test_is_over_trackpad() {
         let mut state = InputState::default();
-        state.trackpad_x = 100.0;
-        state.trackpad_y = 200.0;
-        state.trackpad_w = 300.0;
-        state.trackpad_h = 150.0;
+        state.trackpad.set_rect(100.0, 200.0, 300.0, 150.0);
 
         // Inside
         assert!(state.is_over_trackpad(150.0, 250.0));

@@ -663,12 +663,12 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
                 let is_selected = state.selected_font.as_ref() == Some(*font_name);
                 
                 let font_btn = &mut state.font_buttons[idx];
-                font_btn.label = Some((*font_name).clone());
+                font_btn.set_text(font_name);
                 font_btn.selected = is_selected;
                 clear_ui::layout::render_widget(&mut pc, font_btn, inner_x, draw_y, inner_w - 44.0, btn_h);
 
                 let copy_btn = &mut state.copy_buttons[idx];
-                copy_btn.label = Some("📋".to_string());
+                copy_btn.set_text("📋");
                 copy_btn.selected = is_selected;
                 clear_ui::layout::render_widget(&mut pc, copy_btn, inner_x + inner_w - 40.0, draw_y, 40.0, btn_h);
             }
@@ -787,35 +787,7 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
     let list_focused = sec_focused.get(2).copied().unwrap_or(false);
     sec.finish_focused(&mut pc, list_focused);
 
-    // Filter out base text items covered by any open popover to prevent showing through
-    let mut popovers = Vec::new();
-    if state.borders_menu.open {
-        let (x, y, w, h) = state.borders_menu.rect();
-        popovers.push((x, y + h, w, state.borders_menu.options.len() as f32 * 24.0));
-    }
-    if state.status_menu.open {
-        let (x, y, w, h) = state.status_menu.rect();
-        popovers.push((x, y + h, w, state.status_menu.options.len() as f32 * 24.0));
-    }
-    if state.fuzzel_menu.open {
-        let (x, y, w, h) = state.fuzzel_menu.rect();
-        popovers.push((x, y + h, w, state.fuzzel_menu.options.len() as f32 * 24.0));
-    }
-    if state.terminal_menu.open {
-        let (x, y, w, h) = state.terminal_menu.rect();
-        popovers.push((x, y + h, w, state.terminal_menu.options.len() as f32 * 24.0));
-    }
 
-    if !popovers.is_empty() {
-        pc.texts.retain(|(_, _, tx, ty, _, _)| {
-            for &(px, py, pw, ph) in &popovers {
-                if *tx >= px && *tx <= px + pw && *ty >= py && *ty <= py + ph {
-                    return false;
-                }
-            }
-            true
-        });
-    }
 
     // Render dropdown popovers on top of all other widgets
     state.borders_menu.render_popover(&mut pc);

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use clear_ui::color;
-use clear_ui::widget::{Spinbox, Widget};
+use clear_ui::widget::{Spinbox, Widget, Finger};
 use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
@@ -18,7 +18,7 @@ use smithay_client_toolkit::{
     output::{OutputHandler, OutputState},
     seat::{
         keyboard::KeyboardHandler,
-        pointer::PointerHandler,
+        pointer::{PointerHandler, ThemedPointer, ThemeSpec, CursorIcon},
         Capability, SeatHandler, SeatState,
     },
     shell::{
@@ -216,7 +216,7 @@ struct SystemInterface {
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     rx_layout: std::sync::mpsc::Receiver<pages::layout::LayoutState>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
-    rx_fingers: std::sync::mpsc::Receiver<Vec<pages::input::Finger>>,
+    rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_hardware: std::sync::mpsc::Receiver<pages::hardware::HardwareState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
@@ -394,7 +394,7 @@ impl SystemInterface {
             rx
         };
         let rx_fingers = {
-            let (tx, rx) = std::sync::mpsc::channel::<Vec<pages::input::Finger>>();
+            let (tx, rx) = std::sync::mpsc::channel::<Vec<Finger>>();
             tokio::spawn(async move {
                 let socket_path = "/tmp/clear-input-coords.sock";
                 loop {
@@ -403,7 +403,7 @@ impl SystemInterface {
                         let reader = tokio::io::BufReader::new(stream);
                         let mut lines = reader.lines();
                         while let Ok(Some(line)) = lines.next_line().await {
-                            if let Ok(fingers) = serde_json::from_str::<Vec<pages::input::Finger>>(&line) {
+                            if let Ok(fingers) = serde_json::from_str::<Vec<Finger>>(&line) {
                                 if tx.send(fingers).is_err() {
                                     return;
                                 }
@@ -478,6 +478,19 @@ impl SystemInterface {
         this
     }
 
+fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f32, f32, f32, f32)>) {
+    if let Some(rect) = w.popover_rect() {
+        popovers.push(rect);
+    }
+    for child_ptr in w.children() {
+        unsafe {
+            if let Some(child) = child_ptr.as_ref() {
+                Self::collect_popover_rects(child, popovers);
+            }
+        }
+    }
+}
+
     fn rebuild_layout(&mut self, sw: f32, sh: f32) {
         let s = self.scale_factor as f32;
         let mut widgets = Vec::new();
@@ -538,7 +551,24 @@ impl SystemInterface {
         });
 
         // Page content in LOGICAL coordinates, then scale to physical
-        let pc = self.render_page_content(lcx, lcy, lcw, lch);
+        let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
+
+        let mut popovers = Vec::new();
+        Self::collect_popover_rects(&self.page_root_container, &mut popovers);
+
+        if !popovers.is_empty() {
+            pc.texts.retain(|(text, size, tx, ty, _, _)| {
+                let text_w = text.chars().count() as f32 * *size * 0.65;
+                for &(px, py, pw, ph) in &popovers {
+                    let x_overlap = *tx <= px + pw && (*tx + text_w) >= px;
+                    let y_overlap = *ty <= py + ph && (*ty + *size) >= py;
+                    if x_overlap && y_overlap {
+                        return false;
+                    }
+                }
+                true
+            });
+        }
 
         let mut max_y = 0.0f32;
         for (_, _, y, _, h) in &pc.rects {
@@ -773,20 +803,24 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
             }
             Page::Input => {
-                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
                 link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
                 link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
                 link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[3]);
                 
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_profile_menu);
                 
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.rate_spinbox);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.delay_spinbox);
+
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_theme_menu);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_size_spinbox);
                 
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.scroll_friction_spinbox);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.pointer_friction_spinbox);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.trackpad_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.pointer_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.trackpad_friction_spinbox);
             }
             Page::Audio => {
                 self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
@@ -1514,6 +1548,12 @@ impl SystemInterface {
             if sb.mouse_input(button, state, lx, ly) && sb.value != old {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelSpeed));
             }
+            let sb = &mut self.app.input.cursor_size_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
+            }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Notifications {
             let sb = &mut self.app.notifications.duration_spinbox;
@@ -1556,6 +1596,14 @@ impl SystemInterface {
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelProfile(menu.selected)));
+            }
+            let menu = &mut self.app.input.cursor_theme_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorTheme(menu.selected)));
             }
         }
         if self.app.current_page == Page::Notifications {
@@ -1858,9 +1906,7 @@ impl SystemInterface {
             
             if self.app.current_page == Page::Input {
                 let input = &self.app.input;
-                if lx >= input.trackpad_x && lx <= input.trackpad_x + input.trackpad_w
-                    && ly >= input.trackpad_y && ly <= input.trackpad_y + input.trackpad_h
-                {
+                if input.is_over_trackpad(lx, ly) {
                     return true;
                 }
             }
@@ -2070,6 +2116,11 @@ impl SystemInterface {
             }
             if self.app.input.trackpoint_accel_speed_spinbox.keyboard_input(event) {
                 self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelSpeed));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.cursor_size_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
                 self.needs_rebuild = true;
                 return true;
             }
@@ -2430,7 +2481,7 @@ struct App {
     output_state: OutputState,
 
     seats: Vec<wl_seat::WlSeat>,
-    pointer: Option<wl_pointer::WlPointer>,
+    pointer: Option<ThemedPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
 
     window: Option<XdgWindow>,
@@ -2527,8 +2578,15 @@ impl SeatHandler for App {
         capability: Capability,
     ) {
         if capability == Capability::Pointer && self.pointer.is_none() {
-            let pointer = self.seat_state.get_pointer(qh, &seat).unwrap();
-            self.pointer = Some(pointer);
+            let surface = self.compositor_state.create_surface(qh);
+            let themed_pointer = self.seat_state.get_pointer_with_theme(
+                qh,
+                &seat,
+                self.shm_state.wl_shm(),
+                surface,
+                ThemeSpec::System,
+            ).unwrap();
+            self.pointer = Some(themed_pointer);
         }
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             let keyboard = self.seat_state.get_keyboard(qh, &seat, None).unwrap();
@@ -2619,6 +2677,11 @@ impl PointerHandler for App {
                         if st.handle_mouse_wheel(&delta) {
                             self.redraw = true;
                         }
+                    }
+                }
+                PointerEventKind::Enter { .. } => {
+                    if let Some(ref themed_pointer) = self.pointer {
+                        let _ = themed_pointer.set_cursor(_conn, CursorIcon::Default);
                     }
                 }
                 _ => {}
