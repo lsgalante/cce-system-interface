@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use clear_ui::color;
-use clear_ui::widget::{Spinbox, Widget, Finger, Slider, hover_animation};
+use clear_ui::widget::{Spinbox, Widget, Finger, Slider, hover_animation, TextItem};
 use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
@@ -169,38 +169,18 @@ enum WidgetKind {
     Static,
 }
 
-struct TextItem {
-    buffer: Buffer,
-    x: f32, y: f32,
-    color: glyphon::Color,
-}
-
 enum ColorSelectorAction {
     Background([u8; 3]),
     Border([u8; 3]),
 }
 
+static INITIAL_PAGE_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 struct SystemInterface {
-    window: XdgWindow,
-    surface: wl_surface::WlSurface,
-    wgpu_surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    vertex_count: u32,
-
     app: AppState,
-
     font_system: FontSystem,
-    swash_cache: SwashCache,
-    text_atlas: TextAtlas,
-    text_renderer: TextRenderer,
-    text_viewport: Viewport,
-
     widgets: Vec<AppWidget>,
-    text_items: Vec<TextItem>,
+    text_items: Vec<clear_ui::widget::TextItem>,
     page_buttons: Vec<ContentButton>,
 
     sidebar_width: f32,
@@ -243,109 +223,13 @@ struct SystemInterface {
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
+    sender: calloop::channel::Sender<AppAction>,
 }
 
-impl SystemInterface {
-    async fn new(
-        conn: &Connection,
-        qh: &QueueHandle<App>,
-        compositor_state: &CompositorState,
-        xdg_shell_state: &XdgShell,
-        width: u32,
-        height: u32,
-        scale: f64,
-    ) -> Self {
-        let surface = compositor_state.create_surface(qh);
-        surface.set_buffer_scale(scale as i32);
-        let window = xdg_shell_state.create_window(surface.clone(), WindowDecorations::None, qh);
-        window.set_title("Clear System Interface");
-        window.set_app_id("clear-system-interface");
-        window.set_min_size(Some((820, 680)));
-        window.commit();
+impl clear_ui::engine::Application for SystemInterface {
+    type Message = AppAction;
 
-        let wayland_handle = Box::leak(Box::new(clear_ui::wayland::WaylandSurfaceHandle {
-            display_ptr: conn.backend().display_id().as_ptr() as *mut std::ffi::c_void,
-            surface_ptr: surface.id().as_ptr() as *mut std::ffi::c_void,
-        }));
-
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
-            ..Default::default()
-        });
-        let wgpu_surface = instance.create_surface(wayland_handle).expect("surface");
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: Some(&wgpu_surface),
-            force_fallback_adapter: false,
-        }).await.expect("adapter");
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("GPU Device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
-        }, None).await.expect("device");
-        let config = wgpu_surface.get_default_config(&adapter, width.max(1), height.max(1)).expect("config");
-        wgpu_surface.configure(&device, &config);
-
-        let shader_code = clear_ui::SHADER;
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_code)),
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: &[],
-            push_constant_ranges: &[],
-        });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-                strip_index_format: None,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
-            multiview: None,
-            cache: None,
-        });
-
-        let font_system = FontSystem::new();
-        let swash_cache = SwashCache::new();
-        let cache = Cache::new(&device);
-        let mut text_atlas = TextAtlas::new(&device, &queue, &cache, config.format);
-        let text_renderer = TextRenderer::new(&mut text_atlas, &device, wgpu::MultisampleState::default(), None);
-        let mut text_viewport = Viewport::new(&device, &cache);
-        text_viewport.update(&queue, Resolution { width, height });
-
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Vertex Buffer"),
-            size: 1,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
+    fn new(_qh: &wayland_client::QueueHandle<clear_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
         let app = AppState {
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
@@ -446,29 +330,52 @@ impl SystemInterface {
             rx
         };
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
-
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
-        let scale_factor = scale;
 
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::typeface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let paginator = clear_ui::widget::Paginator::new(140.0, pages_names);
 
+        let initial_page_idx = INITIAL_PAGE_INDEX.load(std::sync::atomic::Ordering::SeqCst);
+        let mut app_state = app;
+        app_state.current_page = Page::ALL[initial_page_idx];
+
+        let font_system = FontSystem::new();
+
         let mut this = Self {
-            window, surface, wgpu_surface, device, queue, config, render_pipeline,
-            vertex_buffer, vertex_count: 0,
-            app,
-            font_system, swash_cache, text_atlas, text_renderer, text_viewport,
-            widgets: Vec::new(), text_items: Vec::new(), page_buttons: Vec::new(),
-            sidebar_width: 140.0, header_height: 0.0, status_height: 0.0,
-            cursor_x: 0.0, cursor_y: 0.0,
-            scale_factor,
-            rx_audio, rx_display, rx_network, rx_layout, rx_input, rx_fingers,
-            rx_hardware, rx_system, rx_status, rx_storage, rx_notifications,
-            rx_backup_state, rx_typeface, rx_services, rx_colors, tx_backup, rx_backup,
-            tx_color_selector, rx_color_selector,
-            width, height,
+            app: app_state,
+            font_system,
+            widgets: Vec::new(),
+            text_items: Vec::new(),
+            page_buttons: Vec::new(),
+            sidebar_width: 140.0,
+            header_height: 0.0,
+            status_height: 0.0,
+            cursor_x: 0.0,
+            cursor_y: 0.0,
+            rx_audio,
+            rx_display,
+            rx_network,
+            rx_layout,
+            rx_input,
+            rx_fingers,
+            rx_hardware,
+            rx_system,
+            rx_status,
+            rx_storage,
+            rx_notifications,
+            rx_backup_state,
+            rx_typeface,
+            rx_services,
+            rx_colors,
+            tx_backup,
+            rx_backup,
+            tx_color_selector,
+            rx_color_selector,
+            scale_factor: 1.0,
+            width: 820,
+            height: 680,
             needs_rebuild: true,
             scroll_y: 0.0,
             max_scroll_y: 0.0,
@@ -479,10 +386,94 @@ impl SystemInterface {
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
+            sender,
         };
-        this.rebuild_layout(width as f32, height as f32);
+        this.rebuild_layout(820.0, 680.0);
         this
     }
+
+    fn settings(&self) -> clear_ui::engine::WindowSettings {
+        clear_ui::engine::WindowSettings {
+            title: "Clear System Interface".to_string(),
+            app_id: "clear-system-interface".to_string(),
+            width: 820,
+            height: 680,
+            fullscreen: false,
+            min_size: Some((820, 680)),
+        }
+    }
+
+    fn update(&mut self, msg: Self::Message, needs_rebuild: &mut bool, _exit: &mut bool) {
+        self.handle_action(&msg);
+        *needs_rebuild = true;
+        self.needs_rebuild = true;
+    }
+
+    fn tick(&mut self, dt: f32, needs_rebuild: &mut bool) {
+        self.poll_background_updates();
+        if self.tick_internal(dt) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if self.needs_rebuild {
+            *needs_rebuild = true;
+        }
+    }
+
+    fn view(&mut self, quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: clear_ui::engine::LogicalSize, scale: f64) {
+        let (width, height) = (size.width, size.height);
+        if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
+            self.width = width as u32;
+            self.height = height as u32;
+            self.scale_factor = scale;
+            self.rebuild_layout(width, height);
+        }
+        for w in &self.widgets {
+            quads.push((w.x, w.y, w.w, w.h, w.color));
+        }
+    }
+
+    fn text_items(&self) -> &[clear_ui::widget::TextItem] {
+        &self.text_items
+    }
+
+    fn clear_color(&self) -> [f32; 4] {
+        [
+            self.app.colors.page_low_color[0] as f32 / 255.0,
+            self.app.colors.page_low_color[1] as f32 / 255.0,
+            self.app.colors.page_low_color[2] as f32 / 255.0,
+            1.0,
+        ]
+    }
+
+    fn handle_pointer_move(&mut self, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
+        if self.handle_cursor_moved(pos.x, pos.y) {
+            *needs_rebuild = true;
+        }
+    }
+
+    fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState, _pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) -> Option<Self::Message> {
+        if self.handle_mouse_input_internal(button, state) {
+            *needs_rebuild = true;
+        }
+        None
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: &clear_ui::widget::MouseScrollDelta, _pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
+        if self.handle_mouse_wheel_internal(delta) {
+            *needs_rebuild = true;
+        }
+    }
+
+    fn handle_key_input(&mut self, event: &clear_ui::widget::KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
+        if self.handle_key_input_internal(event) {
+            *needs_rebuild = true;
+        }
+        None
+    }
+}
+
+impl SystemInterface {
 
 fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f32, f32, f32, f32)>) {
     if let Some(rect) = w.popover_rect() {
@@ -498,7 +489,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 }
 
     fn rebuild_layout(&mut self, sw: f32, sh: f32) {
-        let s = self.scale_factor as f32;
+        let s = 1.0f32;
         let mut widgets = Vec::new();
         let mut text_items = Vec::new();
         let mut page_buttons = Vec::new();
@@ -724,6 +715,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         self.app.display.brightness_spinbox.clear_children(); self.app.display.brightness_spinbox.set_parent(None);
         self.app.status.padding_spinbox.clear_children(); self.app.status.padding_spinbox.set_parent(None);
 
+        for menu in &mut self.app.layout.tag_layout_menus {
+            menu.clear_children();
+            menu.set_parent(None);
+        }
+
         use clear_ui::widget::focus::link_parent_child;
         match self.app.current_page {
             Page::Typefaces => {
@@ -760,9 +756,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
             }
             Page::Layout => {
-                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
                 
-                for i in 0..3 {
+                for i in 0..4 {
                     link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
                 }
                 
@@ -775,6 +771,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox);
                 
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.transition_duration_spinbox);
+
+                for menu in &mut self.app.layout.tag_layout_menus {
+                    link_parent_child(&mut self.page_sec_containers[3], menu);
+                }
             }
             Page::Colors => {
                 for cs in &mut self.app.colors.color_selectors {
@@ -919,64 +919,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
     }
 
-    fn collect_vertices(&self) -> Vec<Vertex> {
-        let sw = self.width as f32;
-        let sh = self.height as f32;
-        let mut verts = Vec::new();
-        for w in &self.widgets {
-            verts.extend(quad_vertices(w.x, w.y, w.w, w.h, sw, sh, w.color));
-        }
-        verts
-    }
 
-    fn upload_vertices(&mut self) {
-        let verts = self.collect_vertices();
-        self.vertex_count = verts.len() as u32;
-        let data = bytemuck::cast_slice(&verts);
-        let needed = data.len() as wgpu::BufferAddress;
-        if needed > self.vertex_buffer.size() {
-            self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Vertex Buffer"),
-                size: needed,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-        }
-        self.queue.write_buffer(&self.vertex_buffer, 0, data);
-    }
-
-    fn prepare_text(&mut self) {
-        let Self {
-            ref mut text_renderer, ref device, ref queue,
-            ref mut font_system, ref mut text_atlas,
-            ref mut text_viewport, ref mut swash_cache,
-            ref text_items, width, height, ..
-        } = self;
-
-        let w = *width as f32;
-        let h = *height as f32;
-        let viewport = Resolution { width: w as u32, height: h as u32 };
-        text_viewport.update(queue, viewport);
-        let bounds = TextBounds { left: 0, top: 0, right: w as i32, bottom: h as i32 };
-        let areas: Vec<TextArea> = text_items.iter().map(|ti| TextArea {
-            buffer: &ti.buffer,
-            left: ti.x, top: ti.y, scale: 1.0, bounds,
-            default_color: ti.color,
-            custom_glyphs: &[],
-        }).collect();
-        text_renderer.prepare(device, queue, font_system, text_atlas, text_viewport, areas, swash_cache).unwrap();
-    }
-
-    fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.width = width; self.height = height;
-            self.config.width = width; self.config.height = height;
-            self.wgpu_surface.configure(&self.device, &self.config);
-            self.needs_rebuild = true;
-        }
-    }
-
-    fn tick(&mut self, dt: f32) -> bool {
+    fn tick_internal(&mut self, dt: f32) -> bool {
         let mut needs_redraw = false;
         if hover_animation::tick(dt) {
             needs_redraw = true;
@@ -1121,7 +1065,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
     fn handle_cursor_moved(&mut self, x: f32, y: f32) -> bool {
         self.cursor_x = x;
         self.cursor_y = y;
-        let s = self.scale_factor as f32;
+        let s = 1.0f32;
         let lx_no_scroll = x / s;
         let ly_no_scroll = y / s;
         
@@ -1166,6 +1110,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             if self.app.layout.transition_duration_spinbox.cursor_moved(lx, ly) {
                 changed = true;
+            }
+            for menu in &mut self.app.layout.tag_layout_menus {
+                if menu.cursor_moved(lx, ly) {
+                    changed = true;
+                }
             }
         }
         if self.app.current_page == Page::Colors {
@@ -1371,8 +1320,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         changed
     }
 
-    fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState) -> bool {
-        let s = self.scale_factor as f32;
+    fn handle_mouse_input_internal(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState) -> bool {
+        let s = 1.0f32;
         let lx_no_scroll = self.cursor_x / s;
         let ly_no_scroll = self.cursor_y / s;
 
@@ -1422,6 +1371,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     if self.app.layout.edge_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.top_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.transition_duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    for menu in &mut self.app.layout.tag_layout_menus {
+                        if menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    }
                 }
                 Page::Colors => {
                     for cp in &mut self.app.colors.color_selectors {
@@ -1546,6 +1498,17 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 actions.push(AppAction::Layout(
                     pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
                 ));
+            }
+        }
+        if self.app.current_page == Page::Layout {
+            for (idx, menu) in self.app.layout.tag_layout_menus.iter_mut().enumerate() {
+                if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+                if menu.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
+                if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTagLayout(idx + 1, menu.selected)));
+                }
             }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Colors {
@@ -2004,8 +1967,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         true
     }
 
-    fn handle_mouse_wheel(&mut self, delta: &clear_ui::widget::MouseScrollDelta) -> bool {
-        let s = self.scale_factor as f32;
+    fn handle_mouse_wheel_internal(&mut self, delta: &clear_ui::widget::MouseScrollDelta) -> bool {
+        let s = 1.0f32;
         if self.cursor_x >= self.sidebar_width * s {
             let lx = self.cursor_x / s;
             let ly = self.cursor_y / s + self.scroll_y;
@@ -2076,7 +2039,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
     }
 
-    fn handle_key_input(&mut self, event: &clear_ui::widget::KeyEvent) -> bool {
+    fn handle_key_input_internal(&mut self, event: &clear_ui::widget::KeyEvent) -> bool {
         if event.state == clear_ui::widget::ElementState::Pressed && !event.repeat {
             let is_nav_key = match (&event.logical_key, event.ctrl) {
                 (clear_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
@@ -2527,493 +2490,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         false
     }
 
-    fn render(&mut self) {
-        self.poll_background_updates();
-
-        let sw = self.width as f32;
-        let sh = self.height as f32;
-
-        if self.needs_rebuild {
-            self.rebuild_layout(sw, sh);
-            self.upload_vertices();
-        }
-
-        self.prepare_text();
-
-        let output = match self.wgpu_surface.get_current_texture() {
-            Ok(t) => t,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.wgpu_surface.configure(&self.device, &self.config);
-                return;
-            }
-            Err(wgpu::SurfaceError::Timeout) => return,
-            Err(e) => { eprintln!("Surface error: {e:?}"); return; }
-        };
-
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Encoder"),
-        });
-
-        {
-            let r_clear = (self.app.colors.page_low_color[0] as f64 / 255.0).powf(2.2);
-            let g_clear = (self.app.colors.page_low_color[1] as f64 / 255.0).powf(2.2);
-            let b_clear = (self.app.colors.page_low_color[2] as f64 / 255.0).powf(2.2);
-
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: r_clear,
-                            g: g_clear,
-                            b: b_clear,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            pass.set_pipeline(&self.render_pipeline);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.draw(0..self.vertex_count, 0..1);
-
-            self.text_renderer.render(&self.text_atlas, &self.text_viewport, &mut pass).unwrap();
-        }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-    }
 }
-
-struct PressedKey {
-    logical_key: clear_ui::widget::Key,
-    text: Option<String>,
-    first_pressed: std::time::Instant,
-    last_repeated: std::time::Instant,
-}
-
-fn is_repeatable_key(key: &clear_ui::widget::Key) -> bool {
-    use clear_ui::widget::{Key, NamedKey};
-    match key {
-        Key::Named(NamedKey::Backspace) |
-        Key::Named(NamedKey::Delete) |
-        Key::Named(NamedKey::ArrowLeft) |
-        Key::Named(NamedKey::ArrowRight) |
-        Key::Named(NamedKey::ArrowUp) |
-        Key::Named(NamedKey::ArrowDown) |
-        Key::Named(NamedKey::Home) |
-        Key::Named(NamedKey::End) |
-        Key::Character(_) => true,
-        _ => false,
-    }
-}
-
-struct App {
-    registry_state: RegistryState,
-    compositor_state: CompositorState,
-    xdg_shell_state: XdgShell,
-    shm_state: Shm,
-    seat_state: SeatState,
-    output_state: OutputState,
-
-    seats: Vec<wl_seat::WlSeat>,
-    pointer: Option<ThemedPointer>,
-    keyboard: Option<wl_keyboard::WlKeyboard>,
-
-    window: Option<XdgWindow>,
-    surface: Option<wl_surface::WlSurface>,
-
-    state: Option<SystemInterface>,
-    exit: bool,
-    redraw: bool,
-    ctrl_pressed: bool,
-    shift_pressed: bool,
-    pressed_key: Option<PressedKey>,
-}
-
-
-
-impl CompositorHandler for App {
-    fn scale_factor_changed(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        scale_factor: i32,
-    ) {
-        _surface.set_buffer_scale(scale_factor);
-        if let Some(state) = &mut self.state {
-            let old_scale = state.scale_factor;
-            state.scale_factor = scale_factor as f64;
-            let logical_w = state.width as f64 / old_scale;
-            let logical_h = state.height as f64 / old_scale;
-            let pw = (logical_w * state.scale_factor) as u32;
-            let ph = (logical_h * state.scale_factor) as u32;
-            state.resize(pw, ph);
-        }
-        self.redraw = true;
-    }
-
-    fn transform_changed(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _new_transform: wl_output::Transform,
-    ) {}
-
-    fn frame(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _time: u32,
-    ) {}
-
-    fn surface_enter(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _output: &wl_output::WlOutput,
-    ) {}
-
-    fn surface_leave(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _output: &wl_output::WlOutput,
-    ) {}
-}
-
-impl OutputHandler for App {
-    fn output_state(&mut self) -> &mut OutputState {
-        &mut self.output_state
-    }
-
-    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
-    fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
-    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
-}
-
-impl SeatHandler for App {
-    fn seat_state(&mut self) -> &mut SeatState {
-        &mut self.seat_state
-    }
-
-    fn new_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
-        self.seats.push(seat);
-    }
-
-    fn new_capability(
-        &mut self,
-        _conn: &Connection,
-        qh: &QueueHandle<Self>,
-        seat: wl_seat::WlSeat,
-        capability: Capability,
-    ) {
-        if capability == Capability::Pointer && self.pointer.is_none() {
-            let surface = self.compositor_state.create_surface(qh);
-            let themed_pointer = self.seat_state.get_pointer_with_theme(
-                qh,
-                &seat,
-                self.shm_state.wl_shm(),
-                surface,
-                ThemeSpec::System,
-            ).unwrap();
-            self.pointer = Some(themed_pointer);
-        }
-        if capability == Capability::Keyboard && self.keyboard.is_none() {
-            let keyboard = self.seat_state.get_keyboard(qh, &seat, None).unwrap();
-            self.keyboard = Some(keyboard);
-        }
-    }
-
-    fn remove_capability(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wl_seat::WlSeat,
-        capability: Capability,
-    ) {
-        if capability == Capability::Pointer {
-            self.pointer = None;
-        }
-        if capability == Capability::Keyboard {
-            self.keyboard = None;
-        }
-    }
-
-    fn remove_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
-        self.seats.retain(|s| s != &seat);
-    }
-}
-
-impl ShmHandler for App {
-    fn shm_state(&mut self) -> &mut Shm {
-        &mut self.shm_state
-    }
-}
-
-impl PointerHandler for App {
-    fn pointer_frame(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _pointer: &wl_pointer::WlPointer,
-        events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
-    ) {
-        use smithay_client_toolkit::seat::pointer::PointerEventKind;
-        for event in events {
-            if let Some(st) = &mut self.state {
-                let (cx, cy) = clear_ui::wayland::scale_pointer_pos(event.position, st.scale_factor);
-                st.cursor_x = cx;
-                st.cursor_y = cy;
-            }
-            match &event.kind {
-                PointerEventKind::Motion { .. } => {
-                    if let Some(st) = &mut self.state {
-                        let cx = st.cursor_x;
-                        let cy = st.cursor_y;
-                        if st.handle_cursor_moved(cx, cy) {
-                            self.redraw = true;
-                        }
-                    }
-                }
-                PointerEventKind::Press { button, .. } => {
-                    let custom_btn = match button {
-                        272 => clear_ui::widget::MouseButton::Left,
-                        273 => clear_ui::widget::MouseButton::Right,
-                        _ => continue,
-                    };
-                    if let Some(st) = &mut self.state {
-                        if st.handle_mouse_input(custom_btn, clear_ui::widget::ElementState::Pressed) {
-                            self.redraw = true;
-                        }
-                    }
-                }
-                PointerEventKind::Release { button, .. } => {
-                    let custom_btn = match button {
-                        272 => clear_ui::widget::MouseButton::Left,
-                        273 => clear_ui::widget::MouseButton::Right,
-                        _ => continue,
-                    };
-                    if let Some(st) = &mut self.state {
-                        if st.handle_mouse_input(custom_btn, clear_ui::widget::ElementState::Released) {
-                            self.redraw = true;
-                        }
-                    }
-                }
-                PointerEventKind::Axis { horizontal, vertical, .. } => {
-                    let h_scroll = horizontal.absolute as f32;
-                    let v_scroll = vertical.absolute as f32;
-                    let delta = clear_ui::widget::MouseScrollDelta::LineDelta(-h_scroll / 10.0, -v_scroll / 10.0);
-                    if let Some(st) = &mut self.state {
-                        if st.handle_mouse_wheel(&delta) {
-                            self.redraw = true;
-                        }
-                    }
-                }
-                PointerEventKind::Enter { .. } => {
-                    if let Some(ref themed_pointer) = self.pointer {
-                        let _ = themed_pointer.set_cursor(_conn, CursorIcon::Default);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl KeyboardHandler for App {
-    fn enter(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _keyboard: &wl_keyboard::WlKeyboard,
-        _surface: &wl_surface::WlSurface,
-        _serial: u32,
-        _raw_modifiers: &[u32],
-        _keysyms: &[xkeysym::Keysym],
-    ) {}
-
-    fn leave(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _keyboard: &wl_keyboard::WlKeyboard,
-        _surface: &wl_surface::WlSurface,
-        _serial: u32,
-    ) {}
-
-    fn press_key(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _keyboard: &wl_keyboard::WlKeyboard,
-        _serial: u32,
-        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
-    ) {
-        self.handle_key(event, clear_ui::widget::ElementState::Pressed);
-    }
-
-    fn release_key(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _keyboard: &wl_keyboard::WlKeyboard,
-        _serial: u32,
-        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
-    ) {
-        self.handle_key(event, clear_ui::widget::ElementState::Released);
-    }
-
-    fn update_modifiers(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _keyboard: &wl_keyboard::WlKeyboard,
-        _serial: u32,
-        modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
-        _layout: u32,
-    ) {
-        self.ctrl_pressed = modifiers.ctrl;
-        self.shift_pressed = modifiers.shift;
-    }
-}
-
-impl App {
-    fn handle_key(&mut self, event: smithay_client_toolkit::seat::keyboard::KeyEvent, state: clear_ui::widget::ElementState) {
-        use clear_ui::widget::{Key, KeyEvent, NamedKey};
-        let logical_key = match event.keysym {
-            xkeysym::Keysym::Escape => Key::Named(NamedKey::Escape),
-            xkeysym::Keysym::Return => Key::Named(NamedKey::Enter),
-            xkeysym::Keysym::BackSpace => Key::Named(NamedKey::Backspace),
-            xkeysym::Keysym::Down => Key::Named(NamedKey::ArrowDown),
-            xkeysym::Keysym::Up => Key::Named(NamedKey::ArrowUp),
-            xkeysym::Keysym::Left => Key::Named(NamedKey::ArrowLeft),
-            xkeysym::Keysym::Right => Key::Named(NamedKey::ArrowRight),
-            xkeysym::Keysym::Tab => Key::Named(NamedKey::Tab),
-            xkeysym::Keysym::Delete => Key::Named(NamedKey::Delete),
-            xkeysym::Keysym::space => Key::Named(NamedKey::Space),
-            xkeysym::Keysym::j | xkeysym::Keysym::J => Key::Character("j".to_string()),
-            xkeysym::Keysym::k | xkeysym::Keysym::K => Key::Character("k".to_string()),
-            xkeysym::Keysym::u | xkeysym::Keysym::U => Key::Character("u".to_string()),
-            xkeysym::Keysym::i | xkeysym::Keysym::I => Key::Character("i".to_string()),
-            xkeysym::Keysym::n | xkeysym::Keysym::N => Key::Character("n".to_string()),
-            xkeysym::Keysym::p | xkeysym::Keysym::P => Key::Character("p".to_string()),
-            _ => {
-                if let Some(ref text) = event.utf8 {
-                    Key::Character(text.clone())
-                } else {
-                    return;
-                }
-            }
-        };
-
-        let custom_event = KeyEvent {
-            state,
-            logical_key,
-            text: event.utf8.clone(),
-            repeat: false,
-            ctrl: self.ctrl_pressed,
-            shift: self.shift_pressed,
-        };
-
-        if state == clear_ui::widget::ElementState::Pressed {
-            if is_repeatable_key(&custom_event.logical_key) {
-                self.pressed_key = Some(PressedKey {
-                    logical_key: custom_event.logical_key.clone(),
-                    text: custom_event.text.clone(),
-                    first_pressed: std::time::Instant::now(),
-                    last_repeated: std::time::Instant::now(),
-                });
-            } else {
-                self.pressed_key = None;
-            }
-        } else if state == clear_ui::widget::ElementState::Released {
-            if let Some(ref pk) = self.pressed_key {
-                if pk.logical_key == custom_event.logical_key {
-                    self.pressed_key = None;
-                }
-            }
-        }
-
-        if let Some(st) = &mut self.state {
-            if st.handle_key_input(&custom_event) {
-                self.redraw = true;
-            }
-        }
-    }
-}
-
-impl WindowHandler for App {
-    fn configure(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _window: &XdgWindow,
-        configure: WindowConfigure,
-        _serial: u32,
-    ) {
-        let (w, h) = configure.new_size;
-        if let (Some(w), Some(h)) = (w, h) {
-            let width = w.get();
-            let height = h.get();
-            if let Some(state) = &mut self.state {
-                let pw = (width as f64 * state.scale_factor) as u32;
-                let ph = (height as f64 * state.scale_factor) as u32;
-                state.resize(pw, ph);
-            }
-        }
-        self.redraw = true;
-    }
-
-    fn request_close(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _window: &XdgWindow) {
-        self.exit = true;
-    }
-}
-
-impl ProvidesRegistryState for App {
-    fn registry(&mut self) -> &mut RegistryState {
-        &mut self.registry_state
-    }
-    
-    fn runtime_add_global(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _name: u32,
-        _interface: &str,
-        _version: u32,
-    ) {}
-    
-    fn runtime_remove_global(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _name: u32,
-        _interface: &str,
-    ) {}
-}
-
-delegate_compositor!(App);
-delegate_xdg_shell!(App);
-delegate_xdg_window!(App);
-delegate_shm!(App);
-delegate_seat!(App);
-delegate_pointer!(App);
-delegate_keyboard!(App);
-delegate_registry!(App);
-delegate_output!(App);
 
 fn main() {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -3031,116 +2508,8 @@ fn main() {
         }
     }
 
-    let conn = Connection::connect_to_env().unwrap();
-    let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
-    let qh = event_queue.handle();
+    let initial_page_idx = Page::ALL.iter().position(|&p| p == initial_page).unwrap_or(0);
+    INITIAL_PAGE_INDEX.store(initial_page_idx, std::sync::atomic::Ordering::SeqCst);
 
-    let compositor_state = CompositorState::bind(&globals, &qh).unwrap();
-    let xdg_shell_state = XdgShell::bind(&globals, &qh).unwrap();
-    let shm_state = Shm::bind(&globals, &qh).unwrap();
-    let seat_state = SeatState::new(&globals, &qh);
-    let output_state = OutputState::new(&globals, &qh);
-
-    let mut app = App {
-        registry_state: RegistryState::new(&globals),
-        compositor_state,
-        xdg_shell_state,
-        shm_state,
-        seat_state,
-        output_state,
-        seats: Vec::new(),
-        pointer: None,
-        keyboard: None,
-        window: None,
-        surface: None,
-        state: None,
-        exit: false,
-        redraw: true,
-        ctrl_pressed: false,
-        shift_pressed: false,
-        pressed_key: None,
-    };
-
-    // Perform a roundtrip to populate output_state with active output scales
-    event_queue.roundtrip(&mut app).unwrap();
-
-    let scale = clear_ui::wayland::detect_scale_factor(&app.output_state);
-
-    let pw = (820.0 * scale) as u32;
-    let ph = (680.0 * scale) as u32;
-
-    let mut state = pollster::block_on(SystemInterface::new(
-        &conn,
-        &qh,
-        &app.compositor_state,
-        &app.xdg_shell_state,
-        pw,
-        ph,
-        scale,
-    ));
-    state.app.current_page = initial_page;
-    app.window = Some(state.window.clone());
-    app.surface = Some(state.surface.clone());
-    app.state = Some(state);
-
-    let mut event_loop = EventLoop::try_new().unwrap();
-    let loop_handle = event_loop.handle();
-    WaylandSource::new(conn, event_queue).insert(loop_handle.clone()).unwrap();
-
-    const KEY_REPEAT_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
-    const KEY_REPEAT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
-
-    let mut last_tick = std::time::Instant::now();
-    loop {
-        event_loop
-            .dispatch(std::time::Duration::from_millis(16), &mut app)
-            .unwrap();
-        if app.exit {
-            break;
-        }
-
-        let now = std::time::Instant::now();
-        let mut dt = now.duration_since(last_tick).as_secs_f32();
-        last_tick = now;
-        if dt > 0.1 {
-            dt = 0.1;
-        }
-
-        if let Some(state) = &mut app.state {
-            state.tick(dt);
-            state.poll_background_updates();
-            if state.needs_rebuild {
-                app.redraw = true;
-            }
-        }
-
-        if let Some(ref mut pk) = app.pressed_key {
-            let now = std::time::Instant::now();
-            if now.duration_since(pk.first_pressed) >= KEY_REPEAT_DELAY {
-                if now.duration_since(pk.last_repeated) >= KEY_REPEAT_INTERVAL {
-                    pk.last_repeated = now;
-                    let custom_event = clear_ui::widget::KeyEvent {
-                        state: clear_ui::widget::ElementState::Pressed,
-                        logical_key: pk.logical_key.clone(),
-                        text: pk.text.clone(),
-                        repeat: true,
-                        ctrl: app.ctrl_pressed,
-                        shift: app.shift_pressed,
-                    };
-                    if let Some(st) = &mut app.state {
-                        if st.handle_key_input(&custom_event) {
-                            app.redraw = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        if app.redraw {
-            app.redraw = false;
-            if let Some(state) = &mut app.state {
-                state.render();
-            }
-        }
-    }
+    clear_ui::engine::run::<SystemInterface>();
 }

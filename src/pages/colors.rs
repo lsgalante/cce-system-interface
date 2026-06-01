@@ -309,7 +309,7 @@ pub fn view(state: &mut ColorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
     state.color_selectors[6].color = state.color_borders_color;
     sec.widget(&mut pc, &mut state.color_selectors[6], 12.0, 220.0, 22.0);
     sec.spacing(8.0);
-    y = sec.finish(&mut pc);
+    sec.finish(&mut pc);
 
     pc
 }
