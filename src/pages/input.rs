@@ -5,12 +5,12 @@ use crate::app::PageContent;
 use clear_ui::layout::Section;
 use clear_ui::widget::{Dropdown, Spinbox, Toggle, Widget, Finger, Trackpad};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/clearwm/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/clearwm-{}.sock", display),
-        Err(_) => "/tmp/clearwm.sock".to_string(),
+        Ok(display) => format!("/tmp/ccec-{}.sock", display),
+        Err(_) => "/tmp/ccec.sock".to_string(),
     }
 }
 

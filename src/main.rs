@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use clear_ui::color;
-use clear_ui::widget::{Spinbox, Widget, Finger};
+use clear_ui::widget::{Spinbox, Widget, Finger, Slider, hover_animation};
 use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
@@ -165,7 +165,6 @@ struct AppWidget {
 
 #[derive(Clone)]
 enum WidgetKind {
-    PageButton(Page),
     ActionButton(AppAction),
     Static,
 }
@@ -237,8 +236,10 @@ struct SystemInterface {
     needs_rebuild: bool,
     scroll_y: f32,
     max_scroll_y: f32,
+    opacity_dragging: bool,
     page_root_container: clear_ui::widget::Container,
     page_sec_containers: Vec<clear_ui::widget::Container>,
+    paginator: clear_ui::widget::Paginator,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -273,7 +274,7 @@ impl SystemInterface {
         });
         let wgpu_surface = instance.create_surface(wayland_handle).expect("surface");
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
+            power_preference: wgpu::PowerPreference::LowPower,
             compatible_surface: Some(&wgpu_surface),
             force_fallback_adapter: false,
         }).await.expect("adapter");
@@ -451,6 +452,9 @@ impl SystemInterface {
 
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::typeface::read_preferred_fonts();
 
+        let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
+        let paginator = clear_ui::widget::Paginator::new(140.0, pages_names);
+
         let mut this = Self {
             window, surface, wgpu_surface, device, queue, config, render_pipeline,
             vertex_buffer, vertex_count: 0,
@@ -468,8 +472,10 @@ impl SystemInterface {
             needs_rebuild: true,
             scroll_y: 0.0,
             max_scroll_y: 0.0,
+            opacity_dragging: false,
             page_root_container: clear_ui::widget::Container::new(),
             page_sec_containers: Vec::new(),
+            paginator,
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -497,58 +503,45 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         let mut text_items = Vec::new();
         let mut page_buttons = Vec::new();
 
-        let sb_w = self.sidebar_width * s;
-        let hdr_h = self.header_height * s;
-        let st_h = self.status_height * s;
+        clear_ui::widget::hover_animation::reset_frame_registration();
+        clear_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
+        clear_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
 
-        // Sidebar bg
-        widgets.push(AppWidget {
-            x: 0.0, y: hdr_h, w: sb_w, h: sh - hdr_h - st_h,
-            color: [0.16, 0.16, 0.26, 1.0],
-            hover_color: [0.16, 0.16, 0.26, 1.0],
-            hovering: false, kind: WidgetKind::Static,
-        });
-
-        // Sidebar page buttons
-        let btn_h = 32.0 * s;
-        let btn_margin = 4.0 * s;
-        let total = Page::ALL.len() as f32;
-        let sb_h = sh - hdr_h - st_h;
-        let start_y = hdr_h + (sb_h - total * (btn_h + btn_margin)) / 2.0;
-        let start_y = start_y.max(hdr_h + 8.0 * s);
-
-        for (i, page) in Page::ALL.iter().enumerate() {
-            let active = *page == self.app.current_page;
-            let y = start_y + i as f32 * (btn_h + btn_margin);
-            let bg = if active { color::BUTTON_PRESS } else { [0.18, 0.18, 0.28, 1.0] };
-            let hov = if active { color::BUTTON_IDLE } else { [0.22, 0.22, 0.34, 1.0] };
-            widgets.push(AppWidget {
-                x: 6.0 * s, y, w: sb_w - 12.0 * s, h: btn_h,
-                color: bg, hover_color: hov,
-                hovering: false,
-                kind: WidgetKind::PageButton(*page),
-            });
-            text_items.push(TextItem {
-                buffer: make_text_buffer(&mut self.font_system, page.label(), 12.0 * s),
-                x: 16.0 * s, y: y + 9.0 * s,
-                color: glyphon::Color::rgb(0x33, 0x33, 0x4a),
-            });
-        }
-
-        // Content area
         let lcx = self.sidebar_width;
         let lcy = self.header_height;
         let lcw = sw / s - self.sidebar_width;
         let lch = sh / s - self.header_height - self.status_height;
-        let p_cx = lcx * s;
-        let p_cy = lcy * s;
-        let p_cw = lcw * s;
-        let p_ch = lch * s;
-        widgets.push(AppWidget {
-            x: p_cx, y: p_cy, w: p_cw, h: p_ch,
-            color: color::CONTENT_BG, hover_color: color::CONTENT_BG,
-            hovering: false, kind: WidgetKind::Static,
-        });
+
+        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+        self.paginator.set_selected_page(page_idx);
+
+        let mut paginator_pc = PageContent::new();
+        clear_ui::layout::render_widget(&mut paginator_pc, &mut self.paginator, 0.0, 0.0, sw / s, sh / s);
+
+        for (c, x, y, w, h) in &paginator_pc.rects {
+            widgets.push(AppWidget {
+                x: *x * s, y: *y * s, w: *w * s, h: *h * s,
+                color: *c, hover_color: *c,
+                hovering: false, kind: WidgetKind::Static,
+            });
+        }
+        for (t, size, x, y, tc, font_opt) in &paginator_pc.texts {
+            text_items.push(TextItem {
+                buffer: make_text_buffer_with_font(
+                    &mut self.font_system,
+                    t,
+                    *size * s,
+                    font_opt.as_deref(),
+                    &self.sans_serif_family,
+                    &self.serif_family,
+                    &self.monospace_family,
+                ),
+                x: *x * s, y: *y * s,
+                color: glyphon::Color::rgb(
+                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
+                ),
+            });
+        }
 
         // Page content in LOGICAL coordinates, then scale to physical
         let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
@@ -709,6 +702,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
 
         self.app.notifications.duration_spinbox.clear_children(); self.app.notifications.duration_spinbox.set_parent(None);
+        self.app.notifications.opacity_slider.clear_children(); self.app.notifications.opacity_slider.set_parent(None);
 
         self.app.input.rate_spinbox.clear_children(); self.app.input.rate_spinbox.set_parent(None);
         self.app.input.delay_spinbox.clear_children(); self.app.input.delay_spinbox.set_parent(None);
@@ -728,6 +722,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
 
         self.app.display.brightness_spinbox.clear_children(); self.app.display.brightness_spinbox.set_parent(None);
+        self.app.status.padding_spinbox.clear_children(); self.app.status.padding_spinbox.set_parent(None);
 
         use clear_ui::widget::focus::link_parent_child;
         match self.app.current_page {
@@ -765,34 +760,21 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
             }
             Page::Layout => {
-                self.page_sec_containers.resize_with(6, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
                 
-                for i in 0..6 {
+                for i in 0..3 {
                     link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
                 }
                 
-                if !self.app.layout.spinboxes.is_empty() {
-                    link_parent_child(&mut self.page_sec_containers[0], &mut self.app.layout.spinboxes[0]);
+                for sb in &mut self.app.layout.spinboxes {
+                    link_parent_child(&mut self.page_sec_containers[0], sb);
                 }
-                if self.app.layout.spinboxes.len() > 1 {
-                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.spinboxes[1]);
-                }
+                
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.cascade_offset_spinbox);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.edge_gap_spinbox);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox);
                 
-                if self.app.layout.spinboxes.len() > 2 {
-                    link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.spinboxes[2]);
-                }
-                if self.app.layout.spinboxes.len() > 3 {
-                    link_parent_child(&mut self.page_sec_containers[3], &mut self.app.layout.spinboxes[3]);
-                }
-                if self.app.layout.spinboxes.len() > 4 {
-                    link_parent_child(&mut self.page_sec_containers[4], &mut self.app.layout.spinboxes[4]);
-                }
-                if self.app.layout.spinboxes.len() > 5 {
-                    link_parent_child(&mut self.page_sec_containers[5], &mut self.app.layout.spinboxes[5]);
-                }
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.transition_duration_spinbox);
             }
             Page::Colors => {
                 for cs in &mut self.app.colors.color_selectors {
@@ -801,6 +783,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             Page::Notifications => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
+                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.opacity_slider);
             }
             Page::Input => {
                 self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
@@ -837,7 +820,25 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             Page::Display => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_spinbox);
             }
+            Page::Status => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.status.padding_spinbox);
+            }
             _ => {}
+        }
+
+        // Draw global hover highlight if active
+        clear_ui::widget::hover_animation::post_render_check();
+        if let Some((qx, qy, qw, qh, qc)) = clear_ui::widget::hover_animation::get_quad() {
+            widgets.push(AppWidget {
+                x: qx * s,
+                y: (qy - self.scroll_y) * s,
+                w: qw * s,
+                h: qh * s,
+                color: qc,
+                hover_color: qc,
+                hovering: false,
+                kind: WidgetKind::Static,
+            });
         }
 
         // Render context menu overlay if visible
@@ -885,6 +886,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 });
             }
         }
+
+
 
         self.widgets = widgets;
         self.text_items = text_items;
@@ -971,6 +974,27 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             self.wgpu_surface.configure(&self.device, &self.config);
             self.needs_rebuild = true;
         }
+    }
+
+    fn tick(&mut self, dt: f32) -> bool {
+        let mut needs_redraw = false;
+        if hover_animation::tick(dt) {
+            needs_redraw = true;
+            self.needs_rebuild = true;
+        }
+        if self.paginator.tick(dt) {
+            needs_redraw = true;
+            self.needs_rebuild = true;
+        }
+        if let Some(root_ptr) = self.get_page_root_widget() {
+            unsafe {
+                if (*root_ptr).tick(dt) {
+                    needs_redraw = true;
+                    self.needs_rebuild = true;
+                }
+            }
+        }
+        needs_redraw
     }
 
     fn poll_background_updates(&mut self) {
@@ -1098,10 +1122,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         self.cursor_x = x;
         self.cursor_y = y;
         let s = self.scale_factor as f32;
+        let lx_no_scroll = x / s;
+        let ly_no_scroll = y / s;
         
         if clear_ui::widget::context_menu::is_visible() {
-            let lx_no_scroll = x / s;
-            let ly_no_scroll = y / s;
             if clear_ui::widget::context_menu::cursor_moved(lx_no_scroll, ly_no_scroll) {
                 self.needs_rebuild = true;
                 return true;
@@ -1111,7 +1135,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
+        clear_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
+        if self.paginator.cursor_moved(lx_no_scroll, ly_no_scroll) {
+            changed = true;
+        }
         for w in &mut self.widgets {
             let was = w.hovering;
             w.hovering = self.cursor_x >= w.x && self.cursor_x <= w.x + w.w
@@ -1134,6 +1162,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 changed = true;
             }
             if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.layout.transition_duration_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
@@ -1215,7 +1246,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
             }
         }
-        if self.app.current_page == Page::Notifications {
+        if self.opacity_dragging && self.app.current_page == Page::Notifications {
+            if self.app.notifications.opacity_slider.drag_update(lx, ly) {
+                changed = true;
+            }
+        } else if self.app.current_page == Page::Notifications {
             if self.app.notifications.enable_toggle.cursor_moved(lx, ly) {
                 changed = true;
             }
@@ -1223,6 +1258,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 changed = true;
             }
             if self.app.notifications.duration_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.notifications.opacity_slider.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
@@ -1244,6 +1282,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 changed = true;
             }
             if self.app.status.size_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.status.separators_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.status.underline_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.status.padding_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
@@ -1336,6 +1383,19 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
         }
 
+        if self.paginator.mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
+            if self.paginator.take_click() {
+                let idx = self.paginator.selected_page();
+                if idx < Page::ALL.len() {
+                    clear_ui::widget::focus::clear_focus();
+                    self.app.current_page = Page::ALL[idx];
+                    self.scroll_y = 0.0;
+                }
+            }
+            self.needs_rebuild = true;
+            return true;
+        }
+
         if button != clear_ui::widget::MouseButton::Left && button != clear_ui::widget::MouseButton::Right { return false; }
         if button == clear_ui::widget::MouseButton::Left && state == clear_ui::widget::ElementState::Released {
             let (px, py) = (self.cursor_x, self.cursor_y);
@@ -1344,19 +1404,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     self.handle_action(&btn.action);
                     self.needs_rebuild = true;
                     return true;
-                }
-            }
-            for w in &self.widgets {
-                if px >= w.x && px <= w.x + w.w && py >= w.y && py <= w.y + w.h {
-                    if let WidgetKind::PageButton(p) = &w.kind {
-                        if self.app.current_page != *p {
-                            clear_ui::widget::focus::clear_focus();
-                            self.app.current_page = *p;
-                            self.scroll_y = 0.0;
-                            self.needs_rebuild = true;
-                            return true;
-                        }
-                    }
                 }
             }
         }
@@ -1374,6 +1421,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     if self.app.layout.cascade_offset_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.edge_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.top_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.layout.transition_duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Colors => {
                     for cp in &mut self.app.colors.color_selectors {
@@ -1391,6 +1439,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
                 Page::Notifications => {
                     if self.app.notifications.duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.notifications.opacity_slider.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Audio => {
                     for sb in &mut self.app.audio.sink_spinboxes {
@@ -1414,6 +1463,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 Page::Status => {
                     if self.app.status.status_label.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.status.size_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.status.padding_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Typefaces => {
                     let tf = &mut self.app.typeface;
@@ -1489,6 +1539,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
                 ));
             }
+            let sb = &mut self.app.layout.transition_duration_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
+                ));
+            }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Colors {
             for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
@@ -1497,16 +1555,26 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 cp.mouse_input(button, state, lx, ly);
                 if cp.take_click() {
                     actions.push(AppAction::Colors(match i {
-                        0 => pages::colors::ColorsMessage::PickLowColor,
+                        0 => pages::colors::ColorsMessage::PickPageLowColor,
                         1 => pages::colors::ColorsMessage::PickHighColor,
-                        _ => pages::colors::ColorsMessage::PickDisabledColor,
+                        2 => pages::colors::ColorsMessage::PickVisualGuides,
+                        3 => pages::colors::ColorsMessage::PickDisabledColor,
+                        4 => pages::colors::ColorsMessage::PickSeparatorColor,
+                        5 => pages::colors::ColorsMessage::PickSliderTrackColor,
+                        6 => pages::colors::ColorsMessage::PickColorBordersColor,
+                        _ => pages::colors::ColorsMessage::PickLowColor,
                     }));
                 }
                 if cp.color != old {
                     actions.push(AppAction::Colors(match i {
-                        0 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                        0 => pages::colors::ColorsMessage::SetPageLowColor(cp.color),
                         1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
-                        _ => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
+                        2 => pages::colors::ColorsMessage::SetVisualGuidesColor(cp.color),
+                        3 => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
+                        4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
+                        5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
+                        6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
+                        _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
                     }));
                 }
             }
@@ -1617,6 +1685,24 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             if toggle.take_click() {
                 actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleBell));
             }
+            let slider = &mut self.app.notifications.opacity_slider;
+            if button == clear_ui::widget::MouseButton::Left {
+                if state == clear_ui::widget::ElementState::Pressed {
+                    if slider.hit_test(lx, ly) {
+                        slider.drag_begin(lx, ly);
+                        self.opacity_dragging = true;
+                        self.needs_rebuild = true;
+                    }
+                } else if state == clear_ui::widget::ElementState::Released {
+                    if self.opacity_dragging {
+                        self.opacity_dragging = false;
+                        slider.drag_end();
+                        let val = slider.value() as f32 / 100.0;
+                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::SetOpacity(val)));
+                        self.needs_rebuild = true;
+                    }
+                }
+            }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Audio {
             for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
@@ -1670,6 +1756,26 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let lbl2 = &mut self.app.status.size_label;
             if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
             lbl2.mouse_input(button, state, lx, ly);
+
+            let sb = &mut self.app.status.padding_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Status(pages::status::StatusMessage::SetPadding(sb.value as u16)));
+            }
+        }
+        if self.app.current_page == Page::Status {
+            let toggle = &mut self.app.status.separators_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Status(pages::status::StatusMessage::ToggleSeparators));
+            }
+
+            let toggle2 = &mut self.app.status.underline_toggle;
+            toggle2.mouse_input(button, state, lx, ly);
+            if toggle2.take_click() {
+                actions.push(AppAction::Status(pages::status::StatusMessage::ToggleUnderline));
+            }
         }
         if self.app.current_page == Page::Typefaces {
             let tb = &mut self.app.typeface.sans_box;
@@ -2043,6 +2149,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
                 changed = true;
             }
+            let sb = &mut self.app.layout.transition_duration_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
             for a in &actions {
                 self.handle_action(a);
             }
@@ -2059,9 +2175,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 if cp.keyboard_input(event) {
                     if cp.color != old {
                         actions.push(AppAction::Colors(match i {
-                            0 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                            0 => pages::colors::ColorsMessage::SetPageLowColor(cp.color),
                             1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
-                            _ => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
+                            2 => pages::colors::ColorsMessage::SetVisualGuidesColor(cp.color),
+                            3 => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
+                            4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
+                            5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
+                            6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
+                            _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
                         }));
                     }
                     changed = true;
@@ -2161,6 +2282,19 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 drop(sb);
                 if new_val != old {
                     self.handle_action(&AppAction::Display(pages::display::DisplayMessage::BrightnessSet(new_val as u32)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Status {
+            let sb = &mut self.app.status.padding_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Status(pages::status::StatusMessage::SetPadding(new_val as u16)));
                 }
                 self.needs_rebuild = true;
                 return true;
@@ -2422,13 +2556,22 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         });
 
         {
+            let r_clear = (self.app.colors.page_low_color[0] as f64 / 255.0).powf(2.2);
+            let g_clear = (self.app.colors.page_low_color[1] as f64 / 255.0).powf(2.2);
+            let b_clear = (self.app.colors.page_low_color[2] as f64 / 255.0).powf(2.2);
+
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.06, g: 0.06, b: 0.08, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: r_clear,
+                            g: g_clear,
+                            b: b_clear,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -2947,6 +3090,7 @@ fn main() {
     const KEY_REPEAT_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
     const KEY_REPEAT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 
+    let mut last_tick = std::time::Instant::now();
     loop {
         event_loop
             .dispatch(std::time::Duration::from_millis(16), &mut app)
@@ -2954,7 +3098,16 @@ fn main() {
         if app.exit {
             break;
         }
+
+        let now = std::time::Instant::now();
+        let mut dt = now.duration_since(last_tick).as_secs_f32();
+        last_tick = now;
+        if dt > 0.1 {
+            dt = 0.1;
+        }
+
         if let Some(state) = &mut app.state {
+            state.tick(dt);
             state.poll_background_updates();
             if state.needs_rebuild {
                 app.redraw = true;

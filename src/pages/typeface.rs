@@ -253,7 +253,11 @@ pub fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
 }
 
 pub fn write_config_value(key: &str, value: &str) -> bool {
-    let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").unwrap_or_default();
+    write_config_value_path("/home/lsgalante/.config/ccec/config.toml", key, value)
+}
+
+pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
+    let content = fs::read_to_string(path).unwrap_or_default();
     let new_line = format!("{} = {}", key, value);
     let mut found = false;
     let updated: String = content.lines()
@@ -274,14 +278,14 @@ pub fn write_config_value(key: &str, value: &str) -> bool {
             result.push_str(line); result.push('\n');
         }
         if in_layout && !inserted { result.push_str(&new_line); result.push('\n'); }
-        fs::write("/home/lsgalante/.config/clearwm/config.toml", result).is_ok()
-    } else { fs::write("/home/lsgalante/.config/clearwm/config.toml", updated).is_ok() }
+        fs::write(path, result).is_ok()
+    } else { fs::write(path, updated).is_ok() }
 }
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/clearwm-{}.sock", display),
-        Err(_) => "/tmp/clearwm.sock".to_string(),
+        Ok(display) => format!("/tmp/ccec-{}.sock", display),
+        Err(_) => "/tmp/ccec.sock".to_string(),
     }
 }
 
@@ -293,12 +297,12 @@ fn send_ipc_command(cmd: &str) {
 }
 
 fn read_border_font_size() -> Option<u16> {
-    let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").ok()?;
+    let content = fs::read_to_string("/home/lsgalante/.config/ccec/config.toml").ok()?;
     Some(parse_u16_from(&content, "border_font_size", 11))
 }
 
 fn read_status_size() -> Option<u16> {
-    let content = fs::read_to_string("/home/lsgalante/.config/clearwm/config.toml").ok()?;
+    let content = fs::read_to_string("/home/lsgalante/.config/ccec/config.toml").ok()?;
     Some(parse_u16_from(&content, "status_font_size", 11))
 }
 

@@ -83,7 +83,7 @@ pub async fn fetch_display_state() -> DisplayState {
     DisplayState {
         loaded: true,
         brightness, max_brightness, outputs, night_light,
-        brightness_spinbox: Spinbox::new(pct, 0, 100, 5).with_unit("%"),
+        brightness_spinbox: Spinbox::new(pct.max(1), 1, 100, 5).with_unit("%"),
         night_light_label: Label::new(if night_light { "Night Light: ON" } else { "Night Light: OFF" })
             .with_font_size(13.0)
             .with_color([0xd4, 0xd4, 0xd4]),
@@ -163,7 +163,7 @@ async fn is_night_light_on() -> bool {
 
 fn spawn_brightness(pct: u32) {
     let _ = tokio::process::Command::new("brightnessctl")
-        .args(["set", &format!("{}%", pct)]).spawn();
+        .args(["set", &format!("{}%", pct), "-n"]).spawn();
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
