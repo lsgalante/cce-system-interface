@@ -49,6 +49,12 @@ pub struct InputState {
     pub trackpad_toggle: Toggle,
     pub trackpad_friction_spinbox: Spinbox,
 
+    // Scrolling settings
+    pub natural_scroll: bool,
+    pub scroll_speed: f32,
+    pub natural_toggle: Toggle,
+    pub scroll_speed_spinbox: Spinbox,
+
     // Trackpoint settings
     pub dwtp: bool,
     pub trackpoint_accel_speed: f32,
@@ -124,6 +130,11 @@ impl Default for InputState {
             trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)"),
             trackpad_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Trackpad Friction").with_unit("%"),
 
+            natural_scroll: false,
+            scroll_speed: 1.0,
+            natural_toggle: Toggle::new().with_label("Natural Scroll"),
+            scroll_speed_spinbox: Spinbox::new(10, 1, 100, 1).with_label("Scroll Speed").with_unit("x").with_decimals(1),
+
             dwtp: true,
             trackpoint_accel_speed: 0.5,
             trackpoint_accel_profile: "flat".to_string(),
@@ -161,6 +172,8 @@ pub enum InputMessage {
     ApplyPointerFriction,
     ToggleInertialTrackpad,
     ApplyTrackpadFriction,
+    ToggleNaturalScroll,
+    ApplyScrollSpeed,
 
     ToggleDwtp,
     ApplyTrackpointAccelSpeed,
@@ -182,7 +195,11 @@ pub fn read_input_config() -> InputState {
     let pointer_friction = parse_u16_key(&content, "pointer_friction", 95);
     let inertial_trackpad = parse_bool_from_default(&content, "inertial_trackpad", false);
     let trackpad_friction = parse_u16_key(&content, "trackpad_friction", 95);
+    let natural_scroll = parse_bool_from_default(&content, "natural_scroll", false);
+    let scroll_speed = parse_f32_key(&content, "scroll_speed", 1.0);
+    let scroll_speed_val = (scroll_speed * 10.0).round() as i32;
 
+    let _dwt = parse_bool_from_default(&content, "dwt", true);
     let dwtp = parse_bool_from_default(&content, "dwtp", true);
     let trackpoint_accel_speed = parse_f32_key(&content, "trackpoint_accel_speed", 0.5);
     let trackpoint_accel_profile = parse_string_key(&content, "trackpoint_accel_profile", "flat");
@@ -219,6 +236,11 @@ pub fn read_input_config() -> InputState {
         pointer_friction_spinbox: Spinbox::new(pointer_friction as i32, 50, 99, 1).with_label("Pointer Friction").with_unit("%"),
         trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)"),
         trackpad_friction_spinbox: Spinbox::new(trackpad_friction as i32, 50, 99, 1).with_label("Trackpad Friction").with_unit("%"),
+
+        natural_scroll,
+        scroll_speed,
+        natural_toggle: Toggle::new().with_label("Natural Scroll"),
+        scroll_speed_spinbox: Spinbox::new(scroll_speed_val, 1, 100, 1).with_label("Scroll Speed").with_unit("x").with_decimals(1),
 
         dwtp,
         trackpoint_accel_speed,
@@ -320,11 +342,11 @@ fn write_config_value(key: &str, value: &str) {
     if !found {
         let section = if key == "tap_to_click" || key == "dwtp"
                 || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile"
-                || key == "cursor_theme" || key == "cursor_size" {
+                || key == "cursor_theme" || key == "cursor_size" || key == "natural_scroll" {
             "[input]"
         } else if key == "inertial_scroll" || key == "scroll_friction"
                || key == "inertial_pointer" || key == "pointer_friction"
-               || key == "inertial_trackpad" || key == "trackpad_friction" {
+               || key == "inertial_trackpad" || key == "trackpad_friction" || key == "scroll_speed" {
             "[inertial]"
         } else {
             "[repeat]"
@@ -423,15 +445,27 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
 
     y = sec.finish_focused(&mut pc, sec_focused.get(2).copied().unwrap_or(false));
 
-    // ── Inertial Input ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
+    // ── Scrolling ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Scrolling");
 
     state.scroll_toggle.set_toggled(state.inertial_scroll);
     sec.widget(&mut pc, &mut state.scroll_toggle, 14.0, toggle_w, toggle_h);
     sec.spacing(12.0);
 
     sec.widget(&mut pc, &mut state.scroll_friction_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(16.0);
+    sec.spacing(12.0);
+
+    state.natural_toggle.set_toggled(state.natural_scroll);
+    sec.widget(&mut pc, &mut state.natural_toggle, 14.0, toggle_w, toggle_h);
+    sec.spacing(12.0);
+
+    sec.widget(&mut pc, &mut state.scroll_speed_spinbox, 14.0, 200.0, 26.0);
+    sec.spacing(8.0);
+
+    y = sec.finish_focused(&mut pc, sec_focused.get(3).copied().unwrap_or(false));
+
+    // ── Inertial Input ──
+    let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
 
     state.pointer_toggle.set_toggled(state.inertial_pointer);
     sec.widget(&mut pc, &mut state.pointer_toggle, 14.0, toggle_w, toggle_h);
@@ -447,7 +481,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     sec.widget(&mut pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
     sec.spacing(8.0);
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(3).copied().unwrap_or(false));
+    y = sec.finish_focused(&mut pc, sec_focused.get(4).copied().unwrap_or(false));
 
     // ── Keybindings ──
     let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard Bindings");
@@ -470,8 +504,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_foc
     }
     sec.finish(&mut pc);
 
-    state.trackpoint_accel_profile_menu.render_popover(&mut pc);
-    state.cursor_theme_menu.render_popover(&mut pc);
+
 
     pc
 }
@@ -492,11 +525,24 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
         InputMessage::ToggleInertialScroll => {
             state.inertial_scroll = !state.inertial_scroll;
             write_config_value("inertial_scroll", &state.inertial_scroll.to_string());
+            send_ipc_command("reload");
         }
         InputMessage::ApplyScrollFriction => {
             let friction = state.scroll_friction_spinbox.value.max(50).min(99) as u16;
             state.scroll_friction = friction;
             write_config_value("scroll_friction", &friction.to_string());
+            send_ipc_command("reload");
+        }
+        InputMessage::ToggleNaturalScroll => {
+            state.natural_scroll = !state.natural_scroll;
+            write_config_value("natural_scroll", &state.natural_scroll.to_string());
+            send_ipc_command(&format!("input natural-scroll {}", state.natural_scroll));
+        }
+        InputMessage::ApplyScrollSpeed => {
+            let val = state.scroll_speed_spinbox.value as f32 / 10.0;
+            state.scroll_speed = val;
+            write_config_value("scroll_speed", &val.to_string());
+            send_ipc_command("reload");
         }
         InputMessage::ToggleInertialPointer => {
             state.inertial_pointer = !state.inertial_pointer;
@@ -581,6 +627,17 @@ mod tests {
         // Outside Y
         assert!(!state.is_over_trackpad(150.0, 199.0));
         assert!(!state.is_over_trackpad(150.0, 351.0));
+    }
+
+    #[test]
+    fn test_parse_scrolling_params() {
+        let content = "[input]\nnatural_scroll = true\n[inertial]\nscroll_speed = 2.5\n";
+        assert_eq!(parse_bool_from_default(content, "natural_scroll", false), true);
+        assert_eq!(parse_f32_key(content, "scroll_speed", 1.0), 2.5);
+
+        let empty_content = "";
+        assert_eq!(parse_bool_from_default(empty_content, "natural_scroll", false), false);
+        assert_eq!(parse_f32_key(empty_content, "scroll_speed", 1.0), 1.0);
     }
 }
 

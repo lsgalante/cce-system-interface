@@ -794,10 +794,7 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
 
 
     // Render dropdown popovers on top of all other widgets
-    state.borders_menu.render_popover(&mut pc);
-    state.status_menu.render_popover(&mut pc);
-    state.fuzzel_menu.render_popover(&mut pc);
-    state.terminal_menu.render_popover(&mut pc);
+
 
     pc
 }

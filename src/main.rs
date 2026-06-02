@@ -194,6 +194,7 @@ struct SystemInterface {
     rx_display: std::sync::mpsc::Receiver<pages::display::DisplayState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     rx_layout: std::sync::mpsc::Receiver<pages::layout::LayoutState>,
+    rx_wm_events: std::sync::mpsc::Receiver<()>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_hardware: std::sync::mpsc::Receiver<pages::hardware::HardwareState>,
@@ -263,6 +264,38 @@ impl clear_ui::engine::Application for SystemInterface {
                     let val = tokio::task::spawn_blocking(|| pages::layout::read_layout_config()).await;
                     if let Ok(val) = val { if tx.send(val).is_err() { break; } }
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                }
+            });
+            rx
+        };
+        let rx_wm_events = {
+            let (tx, rx) = std::sync::mpsc::channel::<()>();
+            tokio::spawn(async move {
+                let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
+                let windows_path = format!("/tmp/ccec-windows-{}", display);
+                let tags_path = format!("/tmp/ccec-tags-{}", display);
+                let title_path = format!("/tmp/ccec-title-{}", display);
+                
+                let mut last_mod = std::time::SystemTime::UNIX_EPOCH;
+                
+                let check_mtime = |path: &str| -> Option<std::time::SystemTime> {
+                    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+                };
+
+                loop {
+                    let mut changed = false;
+                    for p in &[&windows_path, &tags_path, &title_path] {
+                        if let Some(mtime) = check_mtime(p) {
+                            if mtime > last_mod {
+                                last_mod = mtime;
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        if tx.send(()).is_err() { break; }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
             });
             rx
@@ -358,6 +391,7 @@ impl clear_ui::engine::Application for SystemInterface {
             rx_display,
             rx_network,
             rx_layout,
+            rx_wm_events,
             rx_input,
             rx_fingers,
             rx_hardware,
@@ -495,6 +529,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         let mut page_buttons = Vec::new();
 
         clear_ui::widget::hover_animation::reset_frame_registration();
+        clear_ui::widget::popovers::clear();
         clear_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
         clear_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
 
@@ -536,6 +571,204 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 
         // Page content in LOGICAL coordinates, then scale to physical
         let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
+        clear_ui::layout::render_popovers(&mut pc);
+
+        // ── Rebuild Widget Focus Hierarchy ──
+        self.page_root_container.clear_children();
+        self.page_root_container.set_parent(None);
+        self.page_sec_containers.clear();
+
+        // Clear all widgets' hierarchy links
+        self.app.typeface.sans_box.clear_children(); self.app.typeface.sans_box.set_parent(None);
+        self.app.typeface.serif_box.clear_children(); self.app.typeface.serif_box.set_parent(None);
+        self.app.typeface.mono_box.clear_children(); self.app.typeface.mono_box.set_parent(None);
+        self.app.typeface.borders_menu.clear_children(); self.app.typeface.borders_menu.set_parent(None);
+        self.app.typeface.borders_box.clear_children(); self.app.typeface.borders_box.set_parent(None);
+        self.app.typeface.status_menu.clear_children(); self.app.typeface.status_menu.set_parent(None);
+        self.app.typeface.status_box.clear_children(); self.app.typeface.status_box.set_parent(None);
+        self.app.typeface.fuzzel_menu.clear_children(); self.app.typeface.fuzzel_menu.set_parent(None);
+        self.app.typeface.fuzzel_box.clear_children(); self.app.typeface.fuzzel_box.set_parent(None);
+        self.app.typeface.terminal_menu.clear_children(); self.app.typeface.terminal_menu.set_parent(None);
+        self.app.typeface.terminal_box.clear_children(); self.app.typeface.terminal_box.set_parent(None);
+        self.app.typeface.search_box.clear_children(); self.app.typeface.search_box.set_parent(None);
+        self.app.typeface.list_box.scroll_box.clear_children(); self.app.typeface.list_box.scroll_box.set_parent(None);
+
+        self.app.services.search_box.clear_children(); self.app.services.search_box.set_parent(None);
+
+        self.app.services.list_box.scroll_box.clear_children(); self.app.services.list_box.scroll_box.set_parent(None);
+
+        self.app.hardware.cpu_list_box.scroll_box.clear_children(); self.app.hardware.cpu_list_box.scroll_box.set_parent(None);
+
+        self.app.network.wifi_list_box.scroll_box.clear_children(); self.app.network.wifi_list_box.scroll_box.set_parent(None);
+
+        for sb in &mut self.app.layout.spinboxes {
+            sb.clear_children();
+            sb.set_parent(None);
+        }
+        self.app.layout.cascade_offset_spinbox.clear_children(); self.app.layout.cascade_offset_spinbox.set_parent(None);
+        self.app.layout.edge_gap_spinbox.clear_children(); self.app.layout.edge_gap_spinbox.set_parent(None);
+        self.app.layout.top_gap_spinbox.clear_children(); self.app.layout.top_gap_spinbox.set_parent(None);
+        self.app.layout.grid_gap_spinbox.clear_children(); self.app.layout.grid_gap_spinbox.set_parent(None);
+        self.app.layout.transition_duration_spinbox.clear_children(); self.app.layout.transition_duration_spinbox.set_parent(None);
+        self.app.layout.status_height_spinbox.clear_children(); self.app.layout.status_height_spinbox.set_parent(None);
+
+        for cs in &mut self.app.colors.color_selectors {
+            cs.clear_children();
+            cs.set_parent(None);
+        }
+
+        self.app.notifications.duration_spinbox.clear_children(); self.app.notifications.duration_spinbox.set_parent(None);
+        self.app.notifications.opacity_slider.clear_children(); self.app.notifications.opacity_slider.set_parent(None);
+
+        self.app.input.rate_spinbox.clear_children(); self.app.input.rate_spinbox.set_parent(None);
+        self.app.input.delay_spinbox.clear_children(); self.app.input.delay_spinbox.set_parent(None);
+        self.app.input.scroll_toggle.clear_children(); self.app.input.scroll_toggle.set_parent(None);
+        self.app.input.scroll_friction_spinbox.clear_children(); self.app.input.scroll_friction_spinbox.set_parent(None);
+        self.app.input.natural_toggle.clear_children(); self.app.input.natural_toggle.set_parent(None);
+        self.app.input.scroll_speed_spinbox.clear_children(); self.app.input.scroll_speed_spinbox.set_parent(None);
+        self.app.input.pointer_toggle.clear_children(); self.app.input.pointer_toggle.set_parent(None);
+        self.app.input.pointer_friction_spinbox.clear_children(); self.app.input.pointer_friction_spinbox.set_parent(None);
+        self.app.input.trackpad_toggle.clear_children(); self.app.input.trackpad_toggle.set_parent(None);
+        self.app.input.trackpad_friction_spinbox.clear_children(); self.app.input.trackpad_friction_spinbox.set_parent(None);
+        self.app.input.dwtp_toggle.clear_children(); self.app.input.dwtp_toggle.set_parent(None);
+        self.app.input.trackpoint_accel_speed_spinbox.clear_children(); self.app.input.trackpoint_accel_speed_spinbox.set_parent(None);
+        self.app.input.trackpoint_accel_profile_menu.clear_children(); self.app.input.trackpoint_accel_profile_menu.set_parent(None);
+        self.app.input.cursor_theme_menu.clear_children(); self.app.input.cursor_theme_menu.set_parent(None);
+        self.app.input.cursor_size_spinbox.clear_children(); self.app.input.cursor_size_spinbox.set_parent(None);
+
+        for sb in &mut self.app.audio.sink_spinboxes {
+            sb.clear_children();
+            sb.set_parent(None);
+        }
+        for sb in &mut self.app.audio.source_spinboxes {
+            sb.clear_children();
+            sb.set_parent(None);
+        }
+
+        self.app.display.brightness_spinbox.clear_children(); self.app.display.brightness_spinbox.set_parent(None);
+        self.app.status.padding_spinbox.clear_children(); self.app.status.padding_spinbox.set_parent(None);
+
+        for menu in &mut self.app.layout.tag_layout_menus {
+            menu.clear_children();
+            menu.set_parent(None);
+        }
+
+        use clear_ui::widget::focus::link_parent_child;
+        match self.app.current_page {
+            Page::Typefaces => {
+                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
+                
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
+                
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.sans_box);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.serif_box);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.mono_box);
+                
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_box);
+                
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.search_box);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.list_box.scroll_box);
+            }
+            Page::Services => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.services.search_box);
+                link_parent_child(&mut self.page_root_container, &mut self.app.services.list_box.scroll_box);
+            }
+            Page::Hardware => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_list_box.scroll_box);
+            }
+            Page::Radios => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
+            }
+            Page::Layout => {
+                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                
+                for i in 0..5 {
+                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
+                }
+                
+                for sb in &mut self.app.layout.spinboxes {
+                    link_parent_child(&mut self.page_sec_containers[0], sb);
+                }
+                
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.cascade_offset_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.edge_gap_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.grid_gap_spinbox);
+                
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.transition_duration_spinbox);
+                
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.layout.status_height_spinbox);
+
+                for menu in &mut self.app.layout.tag_layout_menus {
+                    link_parent_child(&mut self.page_sec_containers[4], menu);
+                }
+            }
+            Page::Colors => {
+                for cs in &mut self.app.colors.color_selectors {
+                    link_parent_child(&mut self.page_root_container, cs);
+                }
+            }
+            Page::Notifications => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
+                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.opacity_slider);
+            }
+            Page::Input => {
+                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[3]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[4]);
+                
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.dwtp_toggle);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_profile_menu);
+                
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.rate_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.delay_spinbox);
+
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_theme_menu);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_size_spinbox);
+                
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_toggle);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.natural_toggle);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_speed_spinbox);
+                
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.pointer_toggle);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.pointer_friction_spinbox);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.trackpad_toggle);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.trackpad_friction_spinbox);
+            }
+            Page::Audio => {
+                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
+                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
+                
+                for sb in &mut self.app.audio.sink_spinboxes {
+                    link_parent_child(&mut self.page_sec_containers[0], sb);
+                }
+                for sb in &mut self.app.audio.source_spinboxes {
+                    link_parent_child(&mut self.page_sec_containers[1], sb);
+                }
+            }
+            Page::Display => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_spinbox);
+            }
+            Page::Status => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.status.padding_spinbox);
+            }
+            _ => {}
+        }
 
         let mut popovers = Vec::new();
         Self::collect_popover_rects(&self.page_root_container, &mut popovers);
@@ -649,181 +882,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let mut cb = btn.clone();
             cb.x *= s; cb.y = (cb.y - scroll_offset_y) * s; cb.w *= s; cb.h *= s;
             page_buttons.push(cb);
-        }
-
-        // ── Rebuild Widget Focus Hierarchy ──
-        self.page_root_container.clear_children();
-        self.page_root_container.set_parent(None);
-        self.page_sec_containers.clear();
-
-        // Clear all widgets' hierarchy links
-        self.app.typeface.sans_box.clear_children(); self.app.typeface.sans_box.set_parent(None);
-        self.app.typeface.serif_box.clear_children(); self.app.typeface.serif_box.set_parent(None);
-        self.app.typeface.mono_box.clear_children(); self.app.typeface.mono_box.set_parent(None);
-        self.app.typeface.borders_menu.clear_children(); self.app.typeface.borders_menu.set_parent(None);
-        self.app.typeface.borders_box.clear_children(); self.app.typeface.borders_box.set_parent(None);
-        self.app.typeface.status_menu.clear_children(); self.app.typeface.status_menu.set_parent(None);
-        self.app.typeface.status_box.clear_children(); self.app.typeface.status_box.set_parent(None);
-        self.app.typeface.fuzzel_menu.clear_children(); self.app.typeface.fuzzel_menu.set_parent(None);
-        self.app.typeface.fuzzel_box.clear_children(); self.app.typeface.fuzzel_box.set_parent(None);
-        self.app.typeface.terminal_menu.clear_children(); self.app.typeface.terminal_menu.set_parent(None);
-        self.app.typeface.terminal_box.clear_children(); self.app.typeface.terminal_box.set_parent(None);
-        self.app.typeface.search_box.clear_children(); self.app.typeface.search_box.set_parent(None);
-        self.app.typeface.list_box.scroll_box.clear_children(); self.app.typeface.list_box.scroll_box.set_parent(None);
-
-        self.app.services.search_box.clear_children(); self.app.services.search_box.set_parent(None);
-
-        self.app.services.list_box.scroll_box.clear_children(); self.app.services.list_box.scroll_box.set_parent(None);
-
-        self.app.hardware.cpu_list_box.scroll_box.clear_children(); self.app.hardware.cpu_list_box.scroll_box.set_parent(None);
-
-        self.app.network.wifi_list_box.scroll_box.clear_children(); self.app.network.wifi_list_box.scroll_box.set_parent(None);
-
-        for sb in &mut self.app.layout.spinboxes {
-            sb.clear_children();
-            sb.set_parent(None);
-        }
-        self.app.layout.cascade_offset_spinbox.clear_children(); self.app.layout.cascade_offset_spinbox.set_parent(None);
-        self.app.layout.edge_gap_spinbox.clear_children(); self.app.layout.edge_gap_spinbox.set_parent(None);
-        self.app.layout.top_gap_spinbox.clear_children(); self.app.layout.top_gap_spinbox.set_parent(None);
-
-        for cs in &mut self.app.colors.color_selectors {
-            cs.clear_children();
-            cs.set_parent(None);
-        }
-
-        self.app.notifications.duration_spinbox.clear_children(); self.app.notifications.duration_spinbox.set_parent(None);
-        self.app.notifications.opacity_slider.clear_children(); self.app.notifications.opacity_slider.set_parent(None);
-
-        self.app.input.rate_spinbox.clear_children(); self.app.input.rate_spinbox.set_parent(None);
-        self.app.input.delay_spinbox.clear_children(); self.app.input.delay_spinbox.set_parent(None);
-        self.app.input.scroll_friction_spinbox.clear_children(); self.app.input.scroll_friction_spinbox.set_parent(None);
-        self.app.input.pointer_friction_spinbox.clear_children(); self.app.input.pointer_friction_spinbox.set_parent(None);
-        self.app.input.trackpad_friction_spinbox.clear_children(); self.app.input.trackpad_friction_spinbox.set_parent(None);
-        self.app.input.trackpoint_accel_speed_spinbox.clear_children(); self.app.input.trackpoint_accel_speed_spinbox.set_parent(None);
-        self.app.input.trackpoint_accel_profile_menu.clear_children(); self.app.input.trackpoint_accel_profile_menu.set_parent(None);
-
-        for sb in &mut self.app.audio.sink_spinboxes {
-            sb.clear_children();
-            sb.set_parent(None);
-        }
-        for sb in &mut self.app.audio.source_spinboxes {
-            sb.clear_children();
-            sb.set_parent(None);
-        }
-
-        self.app.display.brightness_spinbox.clear_children(); self.app.display.brightness_spinbox.set_parent(None);
-        self.app.status.padding_spinbox.clear_children(); self.app.status.padding_spinbox.set_parent(None);
-
-        for menu in &mut self.app.layout.tag_layout_menus {
-            menu.clear_children();
-            menu.set_parent(None);
-        }
-
-        use clear_ui::widget::focus::link_parent_child;
-        match self.app.current_page {
-            Page::Typefaces => {
-                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
-                
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
-                
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.sans_box);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.serif_box);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.mono_box);
-                
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_box);
-                
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.search_box);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.list_box.scroll_box);
-            }
-            Page::Services => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.services.search_box);
-                link_parent_child(&mut self.page_root_container, &mut self.app.services.list_box.scroll_box);
-            }
-            Page::Hardware => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_list_box.scroll_box);
-            }
-            Page::Radios => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
-            }
-            Page::Layout => {
-                self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
-                
-                for i in 0..4 {
-                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
-                }
-                
-                for sb in &mut self.app.layout.spinboxes {
-                    link_parent_child(&mut self.page_sec_containers[0], sb);
-                }
-                
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.cascade_offset_spinbox);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.edge_gap_spinbox);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox);
-                
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.transition_duration_spinbox);
-
-                for menu in &mut self.app.layout.tag_layout_menus {
-                    link_parent_child(&mut self.page_sec_containers[3], menu);
-                }
-            }
-            Page::Colors => {
-                for cs in &mut self.app.colors.color_selectors {
-                    link_parent_child(&mut self.page_root_container, cs);
-                }
-            }
-            Page::Notifications => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
-                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.opacity_slider);
-            }
-            Page::Input => {
-                self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[3]);
-                
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_profile_menu);
-                
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.rate_spinbox);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.delay_spinbox);
-
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_theme_menu);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_size_spinbox);
-                
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_friction_spinbox);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.pointer_friction_spinbox);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.trackpad_friction_spinbox);
-            }
-            Page::Audio => {
-                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
-                
-                for sb in &mut self.app.audio.sink_spinboxes {
-                    link_parent_child(&mut self.page_sec_containers[0], sb);
-                }
-                for sb in &mut self.app.audio.source_spinboxes {
-                    link_parent_child(&mut self.page_sec_containers[1], sb);
-                }
-            }
-            Page::Display => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_spinbox);
-            }
-            Page::Status => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.status.padding_spinbox);
-            }
-            _ => {}
         }
 
         // Draw global hover highlight if active
@@ -957,6 +1015,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
         while let Ok(s) = self.rx_layout.try_recv() {
             layout::update(&mut self.app.layout, layout::LayoutMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
+        while let Ok(_) = self.rx_wm_events.try_recv() {
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_input.try_recv() {
@@ -1108,7 +1169,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
+            if self.app.layout.grid_gap_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
             if self.app.layout.transition_duration_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.layout.status_height_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
             for menu in &mut self.app.layout.tag_layout_menus {
@@ -1370,7 +1437,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     if self.app.layout.cascade_offset_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.edge_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.top_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.layout.grid_gap_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.layout.transition_duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.layout.status_height_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     for menu in &mut self.app.layout.tag_layout_menus {
                         if menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                     }
@@ -1491,12 +1560,28 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
                 ));
             }
+            let sb = &mut self.app.layout.grid_gap_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetGridGap(sb.value as u16)
+                ));
+            }
             let sb = &mut self.app.layout.transition_duration_spinbox;
             if !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly) && sb.value != old {
                 actions.push(AppAction::Layout(
                     pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
+                ));
+            }
+            let sb = &mut self.app.layout.status_height_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetStatusHeight(sb.value as u16)
                 ));
             }
         }
@@ -1525,6 +1610,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         4 => pages::colors::ColorsMessage::PickSeparatorColor,
                         5 => pages::colors::ColorsMessage::PickSliderTrackColor,
                         6 => pages::colors::ColorsMessage::PickColorBordersColor,
+                        7 => pages::colors::ColorsMessage::PickLowColor,
+                        8 => pages::colors::ColorsMessage::PickNormalColor,
                         _ => pages::colors::ColorsMessage::PickLowColor,
                     }));
                 }
@@ -1537,6 +1624,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
                         5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
                         6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
+                        7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                        8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
                         _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -1560,6 +1649,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly) && sb.value != old {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+            }
+            let sb = &mut self.app.input.scroll_speed_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollSpeed));
             }
             let sb = &mut self.app.input.pointer_friction_spinbox;
             if !sb.hit_test(lx, ly) { sb.unfocus(); }
@@ -1604,6 +1699,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             toggle.mouse_input(button, state, lx, ly);
             if toggle.take_click() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialScroll));
+            }
+            let toggle = &mut self.app.input.natural_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ToggleNaturalScroll));
             }
             let toggle = &mut self.app.input.pointer_toggle;
             toggle.mouse_input(button, state, lx, ly);
@@ -2112,12 +2212,32 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
                 changed = true;
             }
+            let sb = &mut self.app.layout.grid_gap_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetGridGap(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
             let sb = &mut self.app.layout.transition_duration_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event) {
                 if sb.value != old {
                     actions.push(AppAction::Layout(
                         pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
+            let sb = &mut self.app.layout.status_height_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetStatusHeight(sb.value as u16)
                     ));
                 }
                 changed = true;
@@ -2145,6 +2265,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                             4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
                             5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
                             6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
+                            7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                            8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
                             _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
                         }));
                     }
@@ -2185,6 +2307,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             if self.app.input.scroll_friction_spinbox.keyboard_input(event) {
                 self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.scroll_speed_spinbox.keyboard_input(event) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyScrollSpeed));
                 self.needs_rebuild = true;
                 return true;
             }

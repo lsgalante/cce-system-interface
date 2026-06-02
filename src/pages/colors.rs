@@ -23,6 +23,7 @@ pub struct ColorsState {
     pub slider_track_color: [u8; 3],
     pub page_low_color: [u8; 3],
     pub color_borders_color: [u8; 3],
+    pub normal_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
 }
 
@@ -37,6 +38,7 @@ impl Default for ColorsState {
             slider_track_color: [116, 116, 128],
             page_low_color: [71, 71, 81],
             color_borders_color: [124, 124, 137],
+            normal_color: [0xcc, 0xcc, 0xd8],
             color_selectors: vec![
                 ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Pages - Low Color
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
@@ -46,6 +48,7 @@ impl Default for ColorsState {
                 ColorSelector::new([116, 116, 128]).with_label("Slider Track"), // 5: Controls - Slider Track
                 ColorSelector::new([124, 124, 137]).with_label("Borders"), // 6: Controls - Borders
                 ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Low Color"), // 7: Layout - Low Color
+                ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal"), // 8: Status - Normal
             ],
         }
     }
@@ -61,6 +64,7 @@ pub enum ColorsMessage {
     SetSliderTrackColor([u8; 3]),
     SetPageLowColor([u8; 3]),
     SetColorBordersColor([u8; 3]),
+    SetNormalColor([u8; 3]),
     PickLowColor,
     PickHighColor,
     PickDisabledColor,
@@ -69,6 +73,7 @@ pub enum ColorsMessage {
     PickSliderTrackColor,
     PickPageLowColor,
     PickColorBordersColor,
+    PickNormalColor,
     Refreshed(ColorsState),
 }
 
@@ -101,6 +106,8 @@ pub fn read_colors_config() -> ColorsState {
     let page_low = parse_color_from_key(&content, "page_low_color", [71, 71, 81]);
 
     let color_borders = parse_color_from_key(&content, "color_borders_color", [124, 124, 137]);
+
+    let normal = parse_color_from_key(&content, "status_normal_color", [0xcc, 0xcc, 0xd8]);
     
     ColorsState {
         low_color: bg,
@@ -111,6 +118,7 @@ pub fn read_colors_config() -> ColorsState {
         slider_track_color: slider_track,
         page_low_color: page_low,
         color_borders_color: color_borders,
+        normal_color: normal,
         color_selectors: vec![
             ColorSelector::new(page_low).with_label("Low Color"), // 0: Pages - Low Color
             ColorSelector::new(border).with_label("High Color"), // 1: Layout - High Color
@@ -120,6 +128,7 @@ pub fn read_colors_config() -> ColorsState {
             ColorSelector::new(slider_track).with_label("Slider Track"), // 5: Controls - Slider Track
             ColorSelector::new(color_borders).with_label("Borders"), // 6: Controls - Borders
             ColorSelector::new(bg).with_label("Low Color"), // 7: Layout - Low Color
+            ColorSelector::new(normal).with_label("Normal"), // 8: Status - Normal
         ],
     }
 }
@@ -263,6 +272,12 @@ fn apply_color_borders_color(rgb: [u8; 3]) {
     clear_ui::color::set_color_borders_color([r, g, b, 1.0]);
 }
 
+fn apply_normal_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("status_normal_color", &hex);
+    status_interface_reload();
+}
+
 pub fn view(state: &mut ColorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
@@ -291,6 +306,9 @@ pub fn view(state: &mut ColorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
 
     // 3. Status Section
     let mut sec = Section::new(&mut pc, cx, y, cw, "Status");
+    sec.spacing(8.0);
+    state.color_selectors[8].color = state.normal_color;
+    sec.widget(&mut pc, &mut state.color_selectors[8], 12.0, 220.0, 22.0);
     sec.spacing(8.0);
     state.color_selectors[3].color = state.disabled_color;
     sec.widget(&mut pc, &mut state.color_selectors[3], 12.0, 220.0, 22.0);
@@ -348,7 +366,11 @@ pub fn update(state: &mut ColorsState, msg: ColorsMessage) {
             state.color_borders_color = rgb;
             apply_color_borders_color(rgb);
         }
-        ColorsMessage::PickLowColor | ColorsMessage::PickHighColor | ColorsMessage::PickDisabledColor | ColorsMessage::PickSeparatorColor | ColorsMessage::PickVisualGuides | ColorsMessage::PickSliderTrackColor | ColorsMessage::PickPageLowColor | ColorsMessage::PickColorBordersColor => {}
+        ColorsMessage::SetNormalColor(rgb) => {
+            state.normal_color = rgb;
+            apply_normal_color(rgb);
+        }
+        ColorsMessage::PickLowColor | ColorsMessage::PickHighColor | ColorsMessage::PickDisabledColor | ColorsMessage::PickSeparatorColor | ColorsMessage::PickVisualGuides | ColorsMessage::PickSliderTrackColor | ColorsMessage::PickPageLowColor | ColorsMessage::PickColorBordersColor | ColorsMessage::PickNormalColor => {}
         ColorsMessage::Refreshed(new) => {
             *state = new;
         }
@@ -369,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\n";
+        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -378,6 +400,7 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "slider_track_color", [0, 0, 0]), [18, 52, 86]);
         assert_eq!(parse_color_from_key(content, "page_low_color", [0, 0, 0]), [71, 71, 81]);
         assert_eq!(parse_color_from_key(content, "color_borders_color", [0, 0, 0]), [171, 205, 239]);
+        assert_eq!(parse_color_from_key(content, "status_normal_color", [0, 0, 0]), [204, 204, 216]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
     }
 
