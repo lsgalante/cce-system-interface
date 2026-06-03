@@ -24,6 +24,9 @@ pub struct ColorsState {
     pub page_low_color: [u8; 3],
     pub color_borders_color: [u8; 3],
     pub normal_color: [u8; 3],
+    pub paginator_sidebar_color: [u8; 3],
+    pub primary_highlight_color: [u8; 3],
+    pub paginator_tab_label_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
 }
 
@@ -39,6 +42,9 @@ impl Default for ColorsState {
             page_low_color: [71, 71, 81],
             color_borders_color: [124, 124, 137],
             normal_color: [0xcc, 0xcc, 0xd8],
+            paginator_sidebar_color: [90, 90, 101],
+            primary_highlight_color: [255, 255, 255],
+            paginator_tab_label_color: [230, 230, 242],
             color_selectors: vec![
                 ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Pages - Low Color
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
@@ -49,6 +55,9 @@ impl Default for ColorsState {
                 ColorSelector::new([124, 124, 137]).with_label("Borders"), // 6: Controls - Borders
                 ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Low Color"), // 7: Layout - Low Color
                 ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal"), // 8: Status - Normal
+                ColorSelector::new([90, 90, 101]).with_label("Paginator Sidebar"), // 9: Controls - Paginator Sidebar
+                ColorSelector::new([255, 255, 255]).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
+                ColorSelector::new([230, 230, 242]).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
             ],
         }
     }
@@ -65,6 +74,9 @@ pub enum ColorsMessage {
     SetPageLowColor([u8; 3]),
     SetColorBordersColor([u8; 3]),
     SetNormalColor([u8; 3]),
+    SetPaginatorSidebarColor([u8; 3]),
+    SetPrimaryHighlightColor([u8; 3]),
+    SetPaginatorTabLabelColor([u8; 3]),
     PickLowColor,
     PickHighColor,
     PickDisabledColor,
@@ -74,6 +86,9 @@ pub enum ColorsMessage {
     PickPageLowColor,
     PickColorBordersColor,
     PickNormalColor,
+    PickPaginatorSidebarColor,
+    PickPrimaryHighlightColor,
+    PickPaginatorTabLabelColor,
     Refreshed(ColorsState),
 }
 
@@ -108,6 +123,12 @@ pub fn read_colors_config() -> ColorsState {
     let color_borders = parse_color_from_key(&content, "color_borders_color", [124, 124, 137]);
 
     let normal = parse_color_from_key(&content, "status_normal_color", [0xcc, 0xcc, 0xd8]);
+
+    let paginator_sidebar = parse_color_from_key(&content, "paginator_sidebar_color", [90, 90, 101]);
+
+    let primary_highlight = parse_color_from_key(&content, "primary_highlight_color", [255, 255, 255]);
+
+    let paginator_tab_label = parse_color_from_key(&content, "paginator_tab_label_color", [230, 230, 242]);
     
     ColorsState {
         low_color: bg,
@@ -119,6 +140,9 @@ pub fn read_colors_config() -> ColorsState {
         page_low_color: page_low,
         color_borders_color: color_borders,
         normal_color: normal,
+        paginator_sidebar_color: paginator_sidebar,
+        primary_highlight_color: primary_highlight,
+        paginator_tab_label_color: paginator_tab_label,
         color_selectors: vec![
             ColorSelector::new(page_low).with_label("Low Color"), // 0: Pages - Low Color
             ColorSelector::new(border).with_label("High Color"), // 1: Layout - High Color
@@ -129,6 +153,9 @@ pub fn read_colors_config() -> ColorsState {
             ColorSelector::new(color_borders).with_label("Borders"), // 6: Controls - Borders
             ColorSelector::new(bg).with_label("Low Color"), // 7: Layout - Low Color
             ColorSelector::new(normal).with_label("Normal"), // 8: Status - Normal
+            ColorSelector::new(paginator_sidebar).with_label("Paginator Sidebar"), // 9: Controls - Paginator Sidebar
+            ColorSelector::new(primary_highlight).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
+            ColorSelector::new(paginator_tab_label).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
         ],
     }
 }
@@ -278,6 +305,33 @@ fn apply_normal_color(rgb: [u8; 3]) {
     status_interface_reload();
 }
 
+fn apply_paginator_sidebar_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("paginator_sidebar_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_sidebar_bg_color([r, g, b, 1.0]);
+}
+
+fn apply_primary_highlight_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("primary_highlight_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_highlight_primary_color([r, g, b, 0.12]);
+}
+
+fn apply_paginator_tab_label_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("paginator_tab_label_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_paginator_tab_label_color([r, g, b, 1.0]);
+}
+
 pub fn view(state: &mut ColorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
     let mut pc = PageContent::new();
     let mut y = cy + 12.0;
@@ -327,6 +381,15 @@ pub fn view(state: &mut ColorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> Pag
     state.color_selectors[6].color = state.color_borders_color;
     sec.widget(&mut pc, &mut state.color_selectors[6], 12.0, 220.0, 22.0);
     sec.spacing(8.0);
+    state.color_selectors[9].color = state.paginator_sidebar_color;
+    sec.widget(&mut pc, &mut state.color_selectors[9], 12.0, 220.0, 22.0);
+    sec.spacing(8.0);
+    state.color_selectors[10].color = state.primary_highlight_color;
+    sec.widget(&mut pc, &mut state.color_selectors[10], 12.0, 220.0, 22.0);
+    sec.spacing(8.0);
+    state.color_selectors[11].color = state.paginator_tab_label_color;
+    sec.widget(&mut pc, &mut state.color_selectors[11], 12.0, 220.0, 22.0);
+    sec.spacing(8.0);
     sec.finish(&mut pc);
 
     pc
@@ -370,7 +433,19 @@ pub fn update(state: &mut ColorsState, msg: ColorsMessage) {
             state.normal_color = rgb;
             apply_normal_color(rgb);
         }
-        ColorsMessage::PickLowColor | ColorsMessage::PickHighColor | ColorsMessage::PickDisabledColor | ColorsMessage::PickSeparatorColor | ColorsMessage::PickVisualGuides | ColorsMessage::PickSliderTrackColor | ColorsMessage::PickPageLowColor | ColorsMessage::PickColorBordersColor | ColorsMessage::PickNormalColor => {}
+        ColorsMessage::SetPaginatorSidebarColor(rgb) => {
+            state.paginator_sidebar_color = rgb;
+            apply_paginator_sidebar_color(rgb);
+        }
+        ColorsMessage::SetPrimaryHighlightColor(rgb) => {
+            state.primary_highlight_color = rgb;
+            apply_primary_highlight_color(rgb);
+        }
+        ColorsMessage::SetPaginatorTabLabelColor(rgb) => {
+            state.paginator_tab_label_color = rgb;
+            apply_paginator_tab_label_color(rgb);
+        }
+        ColorsMessage::PickLowColor | ColorsMessage::PickHighColor | ColorsMessage::PickDisabledColor | ColorsMessage::PickSeparatorColor | ColorsMessage::PickVisualGuides | ColorsMessage::PickSliderTrackColor | ColorsMessage::PickPageLowColor | ColorsMessage::PickColorBordersColor | ColorsMessage::PickNormalColor | ColorsMessage::PickPaginatorSidebarColor | ColorsMessage::PickPrimaryHighlightColor | ColorsMessage::PickPaginatorTabLabelColor => {}
         ColorsMessage::Refreshed(new) => {
             *state = new;
         }
@@ -391,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\n";
+        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\npaginator_tab_label_color = \"#e6e6f2\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -401,6 +476,9 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "page_low_color", [0, 0, 0]), [71, 71, 81]);
         assert_eq!(parse_color_from_key(content, "color_borders_color", [0, 0, 0]), [171, 205, 239]);
         assert_eq!(parse_color_from_key(content, "status_normal_color", [0, 0, 0]), [204, 204, 216]);
+        assert_eq!(parse_color_from_key(content, "paginator_sidebar_color", [0, 0, 0]), [90, 90, 101]);
+        assert_eq!(parse_color_from_key(content, "primary_highlight_color", [0, 0, 0]), [255, 255, 255]);
+        assert_eq!(parse_color_from_key(content, "paginator_tab_label_color", [0, 0, 0]), [230, 230, 242]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
     }
 

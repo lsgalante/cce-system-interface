@@ -368,7 +368,8 @@ impl clear_ui::engine::Application for SystemInterface {
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::typeface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
-        let paginator = clear_ui::widget::Paginator::new(140.0, pages_names);
+        let paginator = clear_ui::widget::Paginator::new(56.0, pages_names)
+            .with_tabs_rotated(true);
 
         let initial_page_idx = INITIAL_PAGE_INDEX.load(std::sync::atomic::Ordering::SeqCst);
         let mut app_state = app;
@@ -382,7 +383,7 @@ impl clear_ui::engine::Application for SystemInterface {
             widgets: Vec::new(),
             text_items: Vec::new(),
             page_buttons: Vec::new(),
-            sidebar_width: 140.0,
+            sidebar_width: 56.0,
             header_height: 0.0,
             status_height: 0.0,
             cursor_x: 0.0,
@@ -493,8 +494,8 @@ impl clear_ui::engine::Application for SystemInterface {
         None
     }
 
-    fn handle_mouse_wheel(&mut self, delta: &clear_ui::widget::MouseScrollDelta, _pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
-        if self.handle_mouse_wheel_internal(delta) {
+    fn handle_mouse_wheel(&mut self, delta: &clear_ui::widget::MouseScrollDelta, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
+        if self.handle_mouse_wheel_internal(delta, pos.x, pos.y) {
             *needs_rebuild = true;
         }
     }
@@ -996,6 +997,57 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
             }
         }
+
+        // Asynchronously check color selector changes (e.g. Zenity process exit)
+        let mut color_changed = false;
+        let mut color_actions = Vec::new();
+        for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
+            if cp.tick(dt) {
+                needs_redraw = true;
+                self.needs_rebuild = true;
+            }
+            let state_color = match i {
+                0 => self.app.colors.page_low_color,
+                1 => self.app.colors.high_color,
+                2 => self.app.colors.visual_guides_color,
+                3 => self.app.colors.disabled_color,
+                4 => self.app.colors.separator_color,
+                5 => self.app.colors.slider_track_color,
+                6 => self.app.colors.color_borders_color,
+                7 => self.app.colors.low_color,
+                8 => self.app.colors.normal_color,
+                9 => self.app.colors.paginator_sidebar_color,
+                10 => self.app.colors.primary_highlight_color,
+                11 => self.app.colors.paginator_tab_label_color,
+                _ => self.app.colors.low_color,
+            };
+            if cp.color != state_color {
+                color_actions.push(AppAction::Colors(match i {
+                    0 => pages::colors::ColorsMessage::SetPageLowColor(cp.color),
+                    1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
+                    2 => pages::colors::ColorsMessage::SetVisualGuidesColor(cp.color),
+                    3 => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
+                    4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
+                    5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
+                    6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
+                    7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                    8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
+                    9 => pages::colors::ColorsMessage::SetPaginatorSidebarColor(cp.color),
+                    10 => pages::colors::ColorsMessage::SetPrimaryHighlightColor(cp.color),
+                    11 => pages::colors::ColorsMessage::SetPaginatorTabLabelColor(cp.color),
+                    _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                }));
+                color_changed = true;
+            }
+        }
+        for action in color_actions {
+            self.handle_action(&action);
+        }
+        if color_changed {
+            needs_redraw = true;
+            self.needs_rebuild = true;
+        }
+
         needs_redraw
     }
 
@@ -1612,6 +1664,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         6 => pages::colors::ColorsMessage::PickColorBordersColor,
                         7 => pages::colors::ColorsMessage::PickLowColor,
                         8 => pages::colors::ColorsMessage::PickNormalColor,
+                        9 => pages::colors::ColorsMessage::PickPaginatorSidebarColor,
+                        10 => pages::colors::ColorsMessage::PickPrimaryHighlightColor,
+                        11 => pages::colors::ColorsMessage::PickPaginatorTabLabelColor,
                         _ => pages::colors::ColorsMessage::PickLowColor,
                     }));
                 }
@@ -1626,6 +1681,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
                         7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
                         8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
+                        9 => pages::colors::ColorsMessage::SetPaginatorSidebarColor(cp.color),
+                        10 => pages::colors::ColorsMessage::SetPrimaryHighlightColor(cp.color),
+                        11 => pages::colors::ColorsMessage::SetPaginatorTabLabelColor(cp.color),
                         _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -2067,11 +2125,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         true
     }
 
-    fn handle_mouse_wheel_internal(&mut self, delta: &clear_ui::widget::MouseScrollDelta) -> bool {
+    fn handle_mouse_wheel_internal(&mut self, delta: &clear_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/clear-scroll-debug.txt") {
+            use std::io::Write;
+            let _ = writeln!(file, "handle_mouse_wheel_internal: px={}, py={}, sidebar_w={}", px, py, self.sidebar_width);
+        }
         let s = 1.0f32;
-        if self.cursor_x >= self.sidebar_width * s {
-            let lx = self.cursor_x / s;
-            let ly = self.cursor_y / s + self.scroll_y;
+        if px >= self.sidebar_width * s {
+            let lx = px / s;
+            let ly = py / s + self.scroll_y;
             
             if self.app.current_page == Page::Input {
                 let input = &self.app.input;
@@ -2117,6 +2179,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old_scroll = self.scroll_y;
             self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
             if (self.scroll_y - old_scroll).abs() > 0.01 {
+                self.needs_rebuild = true;
+                return true;
+            }
+        } else {
+            let lx = px / s;
+            let ly = py / s;
+            if self.paginator.mouse_wheel(delta, lx, ly) {
                 self.needs_rebuild = true;
                 return true;
             }
@@ -2267,6 +2336,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                             6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
                             7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
                             8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
+                            9 => pages::colors::ColorsMessage::SetPaginatorSidebarColor(cp.color),
+                            10 => pages::colors::ColorsMessage::SetPrimaryHighlightColor(cp.color),
+                            11 => pages::colors::ColorsMessage::SetPaginatorTabLabelColor(cp.color),
                             _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
                         }));
                     }
