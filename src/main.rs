@@ -207,6 +207,7 @@ struct SystemInterface {
     rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_colors: std::sync::mpsc::Receiver<pages::colors::ColorsState>,
+    rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
     tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
@@ -363,6 +364,7 @@ impl clear_ui::engine::Application for SystemInterface {
         let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
         let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
         let rx_services = spawn_bg(3, || pages::services::fetch_services());
+        let rx_accounts = spawn_bg(3, || pages::accounts::fetch_accounts());
         let rx_colors = {
             let (tx, rx) = std::sync::mpsc::channel::<pages::colors::ColorsState>();
             tokio::spawn(async move {
@@ -377,7 +379,7 @@ impl clear_ui::engine::Application for SystemInterface {
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
         let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
 
-        let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::typeface::read_preferred_fonts();
+        let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::typeface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let paginator = clear_ui::widget::Paginator::new(56.0, pages_names)
@@ -417,6 +419,7 @@ impl clear_ui::engine::Application for SystemInterface {
             rx_typeface,
             rx_services,
             rx_colors,
+            rx_accounts,
             tx_backup,
             rx_backup,
             tx_color_selector,
@@ -570,7 +573,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 hovering: false, kind: WidgetKind::Static,
             });
         }
-        for (t, size, x, y, tc, font_opt) in &paginator_pc.texts {
+        for (t, size, x, y, tc, font_opt, bounds) in &paginator_pc.texts {
             text_items.push(TextItem {
                 buffer: make_text_buffer_with_font(
                     &mut self.font_system,
@@ -585,6 +588,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
                 ),
+                bounds: *bounds,
             });
         }
 
@@ -609,10 +613,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         self.app.typeface.fuzzel_box.clear_children(); self.app.typeface.fuzzel_box.set_parent(None);
         self.app.typeface.terminal_menu.clear_children(); self.app.typeface.terminal_menu.set_parent(None);
         self.app.typeface.terminal_box.clear_children(); self.app.typeface.terminal_box.set_parent(None);
+        self.app.typeface.paginator_menu.clear_children(); self.app.typeface.paginator_menu.set_parent(None);
+        self.app.typeface.paginator_box.clear_children(); self.app.typeface.paginator_box.set_parent(None);
         self.app.typeface.search_box.clear_children(); self.app.typeface.search_box.set_parent(None);
         self.app.typeface.list_box.scroll_box.clear_children(); self.app.typeface.list_box.scroll_box.set_parent(None);
 
         self.app.services.search_box.clear_children(); self.app.services.search_box.set_parent(None);
+        self.app.accounts.email_box.clear_children(); self.app.accounts.email_box.set_parent(None);
+        self.app.accounts.password_box.clear_children(); self.app.accounts.password_box.set_parent(None);
+        self.app.accounts.imap_box.clear_children(); self.app.accounts.imap_box.set_parent(None);
+        self.app.accounts.smtp_box.clear_children(); self.app.accounts.smtp_box.set_parent(None);
 
         self.app.services.list_box.scroll_box.clear_children(); self.app.services.list_box.scroll_box.set_parent(None);
 
@@ -674,6 +684,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 
         use clear_ui::widget::focus::link_parent_child;
         match self.app.current_page {
+            Page::Accounts => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.email_box);
+                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.password_box);
+                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.imap_box);
+                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.smtp_box);
+            }
             Page::Typefaces => {
                 self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
                 
@@ -693,6 +709,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_box);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_menu);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_box);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.paginator_menu);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.paginator_box);
                 
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.search_box);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.list_box.scroll_box);
@@ -799,7 +817,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         Self::collect_popover_rects(&self.page_root_container, &mut popovers);
 
         if !popovers.is_empty() {
-            pc.texts.retain(|(text, size, tx, ty, _, _)| {
+            pc.texts.retain(|(text, size, tx, ty, _, _, _)| {
                 let text_w = text.chars().count() as f32 * *size * 0.65;
                 for &(px, py, pw, ph) in &popovers {
                     let x_overlap = *tx <= px + pw && (*tx + text_w) >= px;
@@ -816,7 +834,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         for (_, _, y, _, h) in &pc.rects {
             max_y = max_y.max(y + h);
         }
-        for (_, size, _, y, _, _) in &pc.texts {
+        for (_, size, _, y, _, _, _) in &pc.texts {
             max_y = max_y.max(y + size);
         }
         for btn in &pc.buttons {
@@ -834,7 +852,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 hovering: false, kind: WidgetKind::Static,
             });
         }
-        for (t, size, x, y, tc, font_opt) in &pc.texts {
+        for (t, size, x, y, tc, font_opt, bounds) in &pc.texts {
             text_items.push(TextItem {
                 buffer: make_text_buffer_with_font(
                     &mut self.font_system,
@@ -849,6 +867,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
                 ),
+                bounds: *bounds,
             });
         }
         for btn in &pc.buttons {
@@ -903,6 +922,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     (btn.label_color[1] * 255.0) as u8,
                     (btn.label_color[2] * 255.0) as u8,
                 ),
+                bounds: None,
             });
             let mut cb = btn.clone();
             cb.x *= s; cb.y = (cb.y - scroll_offset_y) * s; cb.w *= s; cb.h *= s;
@@ -966,6 +986,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     buffer: make_text_buffer(&mut self.font_system, opt, 12.0 * s),
                     x: (cx + 8.0) * s, y: iy * s,
                     color: text_color,
+                    bounds: None,
                 });
             }
         }
@@ -985,6 +1006,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             .map(|c| clear_ui::widget::focus::is_focused(c))
             .collect();
         match self.app.current_page {
+            Page::Accounts => accounts::view(&mut self.app.accounts, cx, cy, cw, ch),
             Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused),
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
             Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused),
@@ -1152,6 +1174,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             colors::update(&mut self.app.colors, pages::colors::ColorsMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_accounts.try_recv() {
+            accounts::update(&mut self.app.accounts, accounts::AccountsMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
         while let Ok(m) = self.rx_backup.try_recv() {
             self.handle_action(&AppAction::Backup(m));
             self.needs_rebuild = true;
@@ -1201,6 +1227,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     });
                 }
                 _ => pages::backup::update(&mut self.app.backup, m.clone()),
+            },
+            AppAction::Accounts(m) => match m {
+                pages::accounts::AccountsMessage::GoogleLoginInit => {
+                    pages::accounts::update(&mut self.app.accounts, m.clone());
+                    let sender = self.sender.clone();
+                    tokio::spawn(async move {
+                        pages::accounts::run_google_login(sender).await;
+                    });
+                }
+                _ => pages::accounts::update(&mut self.app.accounts, m.clone()),
             },
         }
     }
@@ -1440,6 +1476,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             if self.app.typeface.terminal_box.cursor_moved(lx, ly) {
                 changed = true;
             }
+            if self.app.typeface.paginator_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.paginator_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
             if self.app.typeface.search_box.cursor_moved(lx, ly) {
                 changed = true;
             }
@@ -1456,6 +1498,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 changed = true;
             }
             if self.app.typeface.terminal_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.typeface.paginator_size_box.cursor_moved(lx, ly) {
                 changed = true;
             }
             let query = self.app.typeface.search_box.text.to_lowercase();
@@ -1478,6 +1523,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             if self.app.services.list_box.cursor_moved(lx, ly) {
                 changed = true;
             }
+        }
+        if self.app.current_page == Page::Accounts {
+            if self.app.accounts.email_box.cursor_moved(lx, ly) { changed = true; }
+            if self.app.accounts.password_box.cursor_moved(lx, ly) { changed = true; }
+            if self.app.accounts.imap_box.cursor_moved(lx, ly) { changed = true; }
+            if self.app.accounts.smtp_box.cursor_moved(lx, ly) { changed = true; }
         }
         if changed { self.needs_rebuild = true; }
         changed
@@ -1526,6 +1577,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         if state == clear_ui::widget::ElementState::Pressed {
             let mut clicked_any_focusable = false;
             match self.app.current_page {
+                Page::Accounts => {
+                    let accs = &mut self.app.accounts;
+                    if accs.email_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if accs.password_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if accs.imap_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if accs.smtp_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
                 Page::Layout => {
                     for sb in &mut self.app.layout.spinboxes {
                         if sb.hit_test(lx, ly) { clicked_any_focusable = true; }
@@ -1599,6 +1657,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     if tf.fuzzel_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if tf.terminal_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if tf.terminal_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.paginator_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.paginator_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if tf.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if tf.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
@@ -1977,6 +2037,50 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 actions.push(AppAction::Status(pages::status::StatusMessage::ToggleUnderline));
             }
         }
+        if self.app.current_page == Page::Accounts {
+            let tb = &mut self.app.accounts.email_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+                let email_val = tb.text.trim().to_lowercase();
+                if email_val.ends_with("@gmail.com") {
+                    self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
+                    self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
+                    self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
+                    self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+                } else if email_val.ends_with("@icloud.com") {
+                    self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
+                    self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
+                    self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
+                    self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+                } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
+                    self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
+                    self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
+                    self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
+                    self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+                }
+            }
+
+            let tb = &mut self.app.accounts.password_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+
+            let tb = &mut self.app.accounts.imap_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+
+            let tb = &mut self.app.accounts.smtp_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+        }
         if self.app.current_page == Page::Typefaces {
             let tb = &mut self.app.typeface.sans_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
@@ -2077,6 +2181,24 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminal(tb.text.clone())));
             }
 
+            let menu = &mut self.app.typeface.paginator_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginatorMenu(menu.selected)));
+            }
+
+            let tb = &mut self.app.typeface.paginator_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginator(tb.text.clone())));
+            }
+
             let tb = &mut self.app.typeface.search_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
@@ -2124,6 +2246,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             if sb.value != old_val {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalSize(sb.value)));
+            }
+
+            let sb = &mut self.app.typeface.paginator_size_box;
+            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old_val = sb.value;
+            if sb.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if sb.value != old_val {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginatorSize(sb.value)));
             }
 
             let tf = &mut self.app.typeface;
@@ -2500,6 +2632,41 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 return true;
             }
         }
+        if self.app.current_page == Page::Accounts {
+            let mut consumed = false;
+            let tb = &mut self.app.accounts.email_box;
+            if tb.keyboard_input(event) {
+                consumed = true;
+                let email_val = tb.edit_buffer.trim().to_lowercase();
+                if email_val.ends_with("@gmail.com") {
+                    self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
+                    self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
+                    self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
+                    self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+                } else if email_val.ends_with("@icloud.com") {
+                    self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
+                    self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
+                    self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
+                    self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+                } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
+                    self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
+                    self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
+                    self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
+                    self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+                }
+            }
+            let tb = &mut self.app.accounts.password_box;
+            if tb.keyboard_input(event) { consumed = true; }
+            let tb = &mut self.app.accounts.imap_box;
+            if tb.keyboard_input(event) { consumed = true; }
+            let tb = &mut self.app.accounts.smtp_box;
+            if tb.keyboard_input(event) { consumed = true; }
+            
+            if consumed {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
         if self.app.current_page == Page::Audio {
             let mut actions = Vec::new();
             for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
@@ -2711,6 +2878,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 consumed = true;
             }
 
+            let tb = &mut self.app.typeface.paginator_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginator(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
             let tb = &mut self.app.typeface.search_box;
             if tb.keyboard_input(event) {
                 if tb.take_change() {
@@ -2740,6 +2915,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let sb = &mut self.app.typeface.terminal_size_box;
             if sb.keyboard_input(event) {
                 actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.typeface.paginator_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginatorSize(sb.value)));
                 consumed = true;
             }
             

@@ -15,6 +15,7 @@ use crate::pages::typeface;
 use crate::pages::services;
 use crate::pages::colors;
 use crate::pages::screensaver;
+use crate::pages::accounts;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -34,6 +35,7 @@ pub struct AppState {
     pub services: services::ServicesState,
     pub colors: colors::ColorsState,
     pub screensaver: screensaver::ScreensaverState,
+    pub accounts: accounts::AccountsState,
 }
 
 impl Default for AppState {
@@ -55,6 +57,7 @@ impl Default for AppState {
             services: services::ServicesState::default(),
             colors: colors::ColorsState::default(),
             screensaver: screensaver::read_screensaver_config(),
+            accounts: accounts::AccountsState::default_mock(),
         }
     }
 }
@@ -76,12 +79,13 @@ pub enum AppAction {
     Services(services::ServicesMessage),
     Colors(colors::ColorsMessage),
     Screensaver(screensaver::ScreensaverMessage),
+    Accounts(accounts::AccountsMessage),
 }
 
 
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32)>,
-    pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>)>,
+    pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     pub buttons: Vec<ContentButton>,
 }
 
@@ -107,11 +111,11 @@ impl PageContent {
     }
 
     pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.texts.push((content.to_string(), size, x, y, color, None));
+        self.texts.push((content.to_string(), size, x, y, color, None, None));
     }
 
     pub fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string())));
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), None));
     }
 
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -143,10 +147,18 @@ impl RenderTarget for PageContent {
     }
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.texts.push((content.to_string(), size, x, y, color, None));
+        self.texts.push((content.to_string(), size, x, y, color, None, None));
     }
 
     fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string())));
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), None));
+    }
+
+    fn text_with_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], bounds: Option<[f32; 4]>) {
+        self.texts.push((content.to_string(), size, x, y, color, None, bounds));
+    }
+
+    fn text_with_font_and_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str, bounds: Option<[f32; 4]>) {
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), bounds));
     }
 }

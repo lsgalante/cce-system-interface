@@ -18,6 +18,7 @@ pub struct TypefaceState {
     pub status_interface: String,
     pub fuzzel: String,
     pub terminal: String,
+    pub paginator: String,
     pub all_fonts: Vec<String>,
     pub mono_fonts: Vec<String>,
     pub sans_box: TextBox,
@@ -27,6 +28,7 @@ pub struct TypefaceState {
     pub status_box: TextBox,
     pub fuzzel_box: TextBox,
     pub terminal_box: TextBox,
+    pub paginator_box: TextBox,
     pub search_box: TextBox,
     pub selected_font: Option<String>,
     pub list_box: ScrollingList,
@@ -34,10 +36,12 @@ pub struct TypefaceState {
     pub status_menu: Dropdown,
     pub fuzzel_menu: Dropdown,
     pub terminal_menu: Dropdown,
+    pub paginator_menu: Dropdown,
     pub borders_size_box: Spinbox,
     pub status_size_box: Spinbox,
     pub fuzzel_size_box: Spinbox,
     pub terminal_size_box: Spinbox,
+    pub paginator_size_box: Spinbox,
     pub font_buttons: Vec<Button>,
     pub copy_buttons: Vec<Button>,
 }
@@ -53,6 +57,7 @@ impl Default for TypefaceState {
             status_interface: String::new(),
             fuzzel: String::new(),
             terminal: String::new(),
+            paginator: String::new(),
             all_fonts: Vec::new(),
             mono_fonts: Vec::new(),
             sans_box: TextBox::default(),
@@ -62,6 +67,7 @@ impl Default for TypefaceState {
             status_box: TextBox::default(),
             fuzzel_box: TextBox::default(),
             terminal_box: TextBox::default(),
+            paginator_box: TextBox::default(),
             search_box: TextBox::default(),
             selected_font: None,
             list_box: ScrollingList::new(24.0, 4.0),
@@ -69,10 +75,12 @@ impl Default for TypefaceState {
             status_menu: Dropdown::default(),
             fuzzel_menu: Dropdown::default(),
             terminal_menu: Dropdown::default(),
+            paginator_menu: Dropdown::default(),
             borders_size_box: Spinbox::new(11, 6, 72, 1),
             status_size_box: Spinbox::new(11, 6, 72, 1),
             fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
             terminal_size_box: Spinbox::new(12, 6, 72, 1),
+            paginator_size_box: Spinbox::new(12, 6, 72, 1),
             font_buttons: Vec::new(),
             copy_buttons: Vec::new(),
         }
@@ -89,6 +97,7 @@ pub enum TypefaceMessage {
     SetStatus(String),
     SetFuzzel(String),
     SetTerminal(String),
+    SetPaginator(String),
     SetSearch(String),
     SelectFont(String),
     CopyFontName(String),
@@ -96,10 +105,12 @@ pub enum TypefaceMessage {
     SetStatusMenu(usize),
     SetFuzzelMenu(usize),
     SetTerminalMenu(usize),
+    SetPaginatorMenu(usize),
     SetBordersSize(i32),
     SetStatusSize(i32),
     SetFuzzelSize(i32),
     SetTerminalSize(i32),
+    SetPaginatorSize(i32),
 }
 
 fn parse_font_for_alias(content: &str, alias: &str) -> Option<String> {
@@ -128,7 +139,7 @@ fn parse_font_for_alias(content: &str, alias: &str) -> Option<String> {
     None
 }
 
-pub fn read_preferred_fonts() -> (String, String, String, String, String, String, String) {
+pub fn read_preferred_fonts() -> (String, String, String, String, String, String, String, String) {
     let content = fs::read_to_string(FONTS_CONF_PATH).unwrap_or_default();
     
     let sans = parse_font_for_alias(&content, "sans-serif").unwrap_or_else(|| "Noto Sans".to_string());
@@ -138,8 +149,9 @@ pub fn read_preferred_fonts() -> (String, String, String, String, String, String
     let status = parse_font_for_alias(&content, "status-interface").unwrap_or_else(|| "Noto Sans".to_string());
     let fuzzel_font = parse_font_for_alias(&content, "fuzzel").unwrap_or_else(|| "Noto Sans".to_string());
     let term = parse_font_for_alias(&content, "terminal").unwrap_or_else(|| "Noto Sans Mono".to_string());
+    let paginator = parse_font_for_alias(&content, "paginator-tab-labels").unwrap_or_else(|| "Noto Sans".to_string());
     
-    (sans, serif, mono, borders, status, fuzzel_font, term)
+    (sans, serif, mono, borders, status, fuzzel_font, term, paginator)
 }
 
 pub fn save_preferred_fonts(
@@ -150,6 +162,7 @@ pub fn save_preferred_fonts(
     status: &str,
     fuzzel: &str,
     terminal: &str,
+    paginator: &str,
 ) {
     let content = fs::read_to_string(FONTS_CONF_PATH).unwrap_or_default();
     
@@ -226,6 +239,14 @@ pub fn save_preferred_fonts(
     new_content.push_str("        <test qual=\"any\" name=\"family\"><string>terminal</string></test>\n");
     new_content.push_str("        <edit name=\"family\" mode=\"assign\" binding=\"same\">\n");
     new_content.push_str(&format!("            <string>{}</string>\n", terminal));
+    new_content.push_str("        </edit>\n");
+    new_content.push_str("    </match>\n");
+
+    // Paginator
+    new_content.push_str("    <match target=\"pattern\">\n");
+    new_content.push_str("        <test qual=\"any\" name=\"family\"><string>paginator-tab-labels</string></test>\n");
+    new_content.push_str("        <edit name=\"family\" mode=\"assign\" binding=\"same\">\n");
+    new_content.push_str(&format!("            <string>{}</string>\n", paginator));
     new_content.push_str("        </edit>\n");
     new_content.push_str("    </match>\n");
     
@@ -391,6 +412,15 @@ fn write_terminal_size(size: u16) {
     let _ = fs::write(path, new_lines.join("\n"));
 }
 
+fn read_paginator_size() -> Option<u16> {
+    let content = fs::read_to_string("/home/lsgalante/.config/ccec/config.toml").ok()?;
+    Some(parse_u16_from(&content, "paginator_font_size", 12))
+}
+
+fn write_paginator_size(size: u16) {
+    write_config_value("paginator_font_size", &size.to_string());
+}
+
 fn parse_families(output: Option<std::process::Output>) -> Vec<String> {
     let mut families = Vec::new();
     if let Some(o) = output {
@@ -410,7 +440,7 @@ fn parse_families(output: Option<std::process::Output>) -> Vec<String> {
 }
 
 pub async fn fetch_typeface_state() -> TypefaceState {
-    let (sans, serif, mono, borders, status, fuzzel_font, term) = read_preferred_fonts();
+    let (sans, serif, mono, borders, status, fuzzel_font, term, paginator_font) = read_preferred_fonts();
     
     let all_output = tokio::process::Command::new("fc-list")
         .args([":", "family"])
@@ -440,6 +470,7 @@ pub async fn fetch_typeface_state() -> TypefaceState {
     let status_idx = determine_dropdown_index(&status, &sans, &serif, &mono);
     let fuzzel_idx = determine_dropdown_index(&fuzzel_font, &sans, &serif, &mono);
     let terminal_idx = determine_dropdown_index(&term, &sans, &serif, &mono);
+    let paginator_idx = determine_dropdown_index(&paginator_font, &sans, &serif, &mono);
 
     let menu_options = vec![
         "Sans-Serif".to_string(),
@@ -460,10 +491,14 @@ pub async fn fetch_typeface_state() -> TypefaceState {
     let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal").with_width(300.0);
     terminal_box.disabled = terminal_idx != 3;
 
+    let mut paginator_box = TextBox::new(paginator_font.clone()).with_label("Paginator Tab Labels").with_width(300.0);
+    paginator_box.disabled = paginator_idx != 3;
+
     let borders_size = read_border_font_size().unwrap_or(11);
     let status_size = read_status_size().unwrap_or(11);
     let fuzzel_size = read_fuzzel_size().unwrap_or(14);
     let terminal_size = read_terminal_size().unwrap_or(12);
+    let paginator_size = read_paginator_size().unwrap_or(12);
 
     TypefaceState {
         loaded: true,
@@ -474,6 +509,7 @@ pub async fn fetch_typeface_state() -> TypefaceState {
         status_interface: status,
         fuzzel: fuzzel_font,
         terminal: term,
+        paginator: paginator_font,
         all_fonts,
         mono_fonts,
         sans_box: TextBox::new(sans).with_label("Sans-Serif"),
@@ -483,6 +519,7 @@ pub async fn fetch_typeface_state() -> TypefaceState {
         status_box,
         fuzzel_box,
         terminal_box,
+        paginator_box,
         search_box: TextBox::new(String::new()).with_label("Filter Fonts"),
         selected_font,
         list_box: ScrollingList::new(24.0, 4.0),
@@ -490,10 +527,12 @@ pub async fn fetch_typeface_state() -> TypefaceState {
         status_menu: Dropdown::new(menu_options.clone(), status_idx),
         fuzzel_menu: Dropdown::new(menu_options.clone(), fuzzel_idx),
         terminal_menu: Dropdown::new(menu_options.clone(), terminal_idx),
+        paginator_menu: Dropdown::new(menu_options.clone(), paginator_idx),
         borders_size_box: Spinbox::new(borders_size as i32, 6, 72, 1),
         status_size_box: Spinbox::new(status_size as i32, 6, 72, 1),
         fuzzel_size_box: Spinbox::new(fuzzel_size as i32, 6, 72, 1),
         terminal_size_box: Spinbox::new(terminal_size as i32, 6, 72, 1),
+        paginator_size_box: Spinbox::new(paginator_size as i32, 6, 72, 1),
         font_buttons: Vec::new(),
         copy_buttons: Vec::new(),
     }
@@ -593,6 +632,17 @@ pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_
         clear_ui::layout::render_widget(&mut pc, &mut state.terminal_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
         state.terminal_size_box.set_row_rect(spin_row_x, spinbox_row_w);
         clear_ui::layout::render_widget(&mut pc, &mut state.terminal_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
+        sec.spacing(widget_h + top_room + 12.0);
+
+        // Paginator Tab Labels
+        let start_y = sec.ay();
+        let top_room = state.paginator_box.top_room();
+        state.paginator_menu.set_row_rect(cx + 8.0, menu_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.paginator_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
+        state.paginator_box.set_row_rect(box_row_x, box_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.paginator_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
+        state.paginator_size_box.set_row_rect(spin_row_x, spinbox_row_w);
+        clear_ui::layout::render_widget(&mut pc, &mut state.paginator_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
         sec.spacing(widget_h + top_room + 8.0);
     }
     let prog_focused = sec_focused.get(1).copied().unwrap_or(false);
@@ -840,6 +890,11 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 state.terminal_box = new.terminal_box;
                 state.terminal_menu = new.terminal_menu;
             }
+            if !state.paginator_box.editing {
+                state.paginator = new.paginator.clone();
+                state.paginator_box = new.paginator_box;
+                state.paginator_menu = new.paginator_menu;
+            }
             if !state.search_box.editing {
                 state.search_box = new.search_box;
             }
@@ -847,6 +902,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
             state.status_size_box = new.status_size_box;
             state.fuzzel_size_box = new.fuzzel_size_box;
             state.terminal_size_box = new.terminal_size_box;
+            state.paginator_size_box = new.paginator_size_box;
             state.font_buttons = new.font_buttons;
             state.copy_buttons = new.copy_buttons;
             let old_scroll = state.list_box.scroll_y();
@@ -872,6 +928,10 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 state.terminal = state.sans_serif.clone();
                 state.terminal_box.text = state.sans_serif.clone();
             }
+            if state.paginator_menu.selected == 0 {
+                state.paginator = state.sans_serif.clone();
+                state.paginator_box.text = state.sans_serif.clone();
+            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -880,6 +940,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetSerif(serif) => {
@@ -901,6 +962,10 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 state.terminal = state.serif.clone();
                 state.terminal_box.text = state.serif.clone();
             }
+            if state.paginator_menu.selected == 1 {
+                state.paginator = state.serif.clone();
+                state.paginator_box.text = state.serif.clone();
+            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -909,6 +974,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetMono(mono) => {
@@ -930,6 +996,10 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 state.terminal = state.monospace.clone();
                 state.terminal_box.text = state.monospace.clone();
             }
+            if state.paginator_menu.selected == 2 {
+                state.paginator = state.monospace.clone();
+                state.paginator_box.text = state.monospace.clone();
+            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -938,6 +1008,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetBorders(borders) => {
@@ -951,6 +1022,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetStatus(status) => {
@@ -964,6 +1036,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetFuzzel(fuzzel) => {
@@ -977,6 +1050,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetTerminal(term) => {
@@ -990,6 +1064,21 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
+            );
+        }
+        TypefaceMessage::SetPaginator(paginator) => {
+            state.paginator = paginator.clone();
+            state.paginator_box.text = paginator;
+            save_preferred_fonts(
+                &state.sans_serif,
+                &state.serif,
+                &state.monospace,
+                &state.window_borders,
+                &state.status_interface,
+                &state.fuzzel,
+                &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetSearch(search) => {
@@ -1068,6 +1157,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetStatusMenu(idx) => {
@@ -1091,6 +1181,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetFuzzelMenu(idx) => {
@@ -1114,6 +1205,7 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetTerminalMenu(idx) => {
@@ -1137,6 +1229,31 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
+                &state.paginator,
+            );
+        }
+        TypefaceMessage::SetPaginatorMenu(idx) => {
+            state.paginator_menu.selected = idx;
+            state.paginator_box.disabled = idx != 3;
+            if idx == 0 {
+                state.paginator = state.sans_serif.clone();
+                state.paginator_box.text = state.sans_serif.clone();
+            } else if idx == 1 {
+                state.paginator = state.serif.clone();
+                state.paginator_box.text = state.serif.clone();
+            } else if idx == 2 {
+                state.paginator = state.monospace.clone();
+                state.paginator_box.text = state.monospace.clone();
+            }
+            save_preferred_fonts(
+                &state.sans_serif,
+                &state.serif,
+                &state.monospace,
+                &state.window_borders,
+                &state.status_interface,
+                &state.fuzzel,
+                &state.terminal,
+                &state.paginator,
             );
         }
         TypefaceMessage::SetBordersSize(val) => {
@@ -1155,6 +1272,10 @@ pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {
         TypefaceMessage::SetTerminalSize(val) => {
             state.terminal_size_box.value = val;
             write_terminal_size(val as u16);
+        }
+        TypefaceMessage::SetPaginatorSize(val) => {
+            state.paginator_size_box.value = val;
+            write_paginator_size(val as u16);
         }
     }
 }
