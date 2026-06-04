@@ -36,6 +36,9 @@ pub struct AccountsState {
     pub status_msg: Option<String>,
     pub status_msg_timer: f32,
     pub oauth_listener_running: bool,
+    pub editing_oauth_creds: bool,
+    pub oauth_client_id_box: TextBox,
+    pub oauth_client_secret_box: TextBox,
 }
 
 impl AccountsState {
@@ -49,6 +52,14 @@ impl AccountsState {
         };
         state.imap_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server");
         state.smtp_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server");
+        
+        let client_config = load_google_client_config();
+        state.oauth_client_id_box = TextBox::new(client_config.client_id).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID");
+        state.oauth_client_secret_box = {
+            let mut tb = TextBox::new(client_config.client_secret).with_multiline(false).with_draw_bg_border(true).with_label("Google Client Secret");
+            tb.is_password = true;
+            tb
+        };
         state
     }
 }
@@ -66,6 +77,9 @@ pub enum AccountsMessage {
     GoogleLoginInit,
     GoogleLoginSuccess(AccountInfo),
     ICloudLoginHelp,
+    EditOAuthCredsStart,
+    EditOAuthCredsSave,
+    EditOAuthCredsCancel,
 }
 
 pub fn get_accounts_path() -> std::path::PathBuf {
@@ -320,7 +334,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
                 } else {
                     acc.email.clone()
                 };
-                let is_selected = state.selected_idx == Some(idx) && !state.adding_new;
+                let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
                 let bg_col = if is_selected { [0.20, 0.40, 0.65, 0.4] } else { [0.10, 0.10, 0.16, 0.3] };
                 pc.button(
                     &label,
@@ -353,8 +367,22 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
         );
         left_y += row_h + row_gap;
 
+        let oauth_bg = if state.editing_oauth_creds { [0.20, 0.40, 0.65, 0.4] } else { [0.15, 0.15, 0.20, 1.0] };
+        pc.button(
+            "Google API Settings",
+            left_x,
+            left_y,
+            left_w,
+            row_h,
+            oauth_bg,
+            [0.25, 0.25, 0.30, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
+        );
+        left_y += row_h + row_gap;
+
         if let Some(selected_idx) = state.selected_idx {
-            if selected_idx < state.accounts.len() && !state.adding_new {
+            if selected_idx < state.accounts.len() && !state.adding_new && !state.editing_oauth_creds {
                 let acc = &state.accounts[selected_idx];
                 if !acc.is_default {
                     pc.button(
@@ -469,6 +497,54 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> P
                 AppAction::Accounts(AccountsMessage::AddAccountCancel),
             );
             right_y += row_h + 12.0;
+        } else if state.editing_oauth_creds {
+            pc.text("Google OAuth Credentials", right_x, right_y, 14.0, [0.35, 0.65, 0.90, 1.0]);
+            right_y += 24.0;
+
+            pc.text("Configures client ID & secret from your Google Cloud Console.", right_x, right_y, 11.0, TEXT_DIM);
+            right_y += 18.0;
+            pc.text("Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", right_x, right_y, 11.0, TEXT_DIM);
+            right_y += 18.0;
+
+            let widget_h = 26.0;
+            let field_gap = 14.0;
+
+            // Client ID textbox
+            let client_id_top = state.oauth_client_id_box.top_room();
+            state.oauth_client_id_box.set_row_rect(right_x, right_w);
+            clear_ui::layout::render_widget(&mut pc, &mut state.oauth_client_id_box, right_x, right_y + client_id_top, right_w, widget_h);
+            right_y += widget_h + client_id_top + field_gap;
+
+            // Client Secret textbox
+            let client_secret_top = state.oauth_client_secret_box.top_room();
+            state.oauth_client_secret_box.set_row_rect(right_x, right_w);
+            clear_ui::layout::render_widget(&mut pc, &mut state.oauth_client_secret_box, right_x, right_y + client_secret_top, right_w, widget_h);
+            right_y += widget_h + client_secret_top + field_gap;
+
+            let helper_w = (right_w - 8.0) / 2.0;
+            pc.button(
+                "Save Credentials",
+                right_x,
+                right_y,
+                helper_w,
+                row_h,
+                [0.13, 0.18, 0.14, 1.0],
+                [0.25, 0.30, 0.26, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Accounts(AccountsMessage::EditOAuthCredsSave),
+            );
+            pc.button(
+                "Cancel",
+                right_x + helper_w + 8.0,
+                right_y,
+                helper_w,
+                row_h,
+                [0.33, 0.20, 0.20, 1.0],
+                [0.45, 0.25, 0.25, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
+            );
+            right_y += row_h + 12.0;
         } else if let Some(selected_idx) = state.selected_idx {
             if selected_idx < state.accounts.len() {
                 let acc = &state.accounts[selected_idx];
@@ -537,9 +613,11 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         AccountsMessage::SelectAccount(idx) => {
             state.selected_idx = Some(idx);
             state.adding_new = false;
+            state.editing_oauth_creds = false;
         }
         AccountsMessage::AddAccountStart => {
             state.adding_new = true;
+            state.editing_oauth_creds = false;
             state.email_box.text = String::new();
             state.email_box.edit_buffer = String::new();
             state.password_box.text = String::new();
@@ -630,6 +708,48 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         AccountsMessage::ICloudLoginHelp => {
             let _ = std::process::Command::new("xdg-open").arg("https://appleid.apple.com/").spawn();
             state.status_msg = Some("Generate iCloud App Password...".to_string());
+        }
+        AccountsMessage::EditOAuthCredsStart => {
+            state.editing_oauth_creds = true;
+            state.adding_new = false;
+            let config = load_google_client_config();
+            state.oauth_client_id_box.text = config.client_id.clone();
+            state.oauth_client_id_box.edit_buffer = config.client_id;
+            state.oauth_client_secret_box.text = config.client_secret.clone();
+            state.oauth_client_secret_box.edit_buffer = config.client_secret;
+        }
+        AccountsMessage::EditOAuthCredsSave => {
+            let client_id = state.oauth_client_id_box.text.trim().to_string();
+            let client_secret = state.oauth_client_secret_box.text.trim().to_string();
+            if client_id.is_empty() || client_secret.is_empty() {
+                state.status_msg = Some("Both Client ID and Client Secret are required!".to_string());
+                return;
+            }
+            let config = GoogleClientConfig {
+                client_id,
+                client_secret,
+            };
+            let p = std::path::PathBuf::from("/home/lsgalante/.config/ccec/google_client.json");
+            if let Some(parent) = p.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Ok(content) = serde_json::to_string_pretty(&config) {
+                let _ = std::fs::write(&p, content);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = std::fs::metadata(&p) {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o600);
+                        let _ = std::fs::set_permissions(&p, perms);
+                    }
+                }
+            }
+            state.editing_oauth_creds = false;
+            state.status_msg = Some("Google API credentials updated successfully!".to_string());
+        }
+        AccountsMessage::EditOAuthCredsCancel => {
+            state.editing_oauth_creds = false;
         }
     }
 }

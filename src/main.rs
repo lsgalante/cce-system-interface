@@ -623,6 +623,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         self.app.accounts.password_box.clear_children(); self.app.accounts.password_box.set_parent(None);
         self.app.accounts.imap_box.clear_children(); self.app.accounts.imap_box.set_parent(None);
         self.app.accounts.smtp_box.clear_children(); self.app.accounts.smtp_box.set_parent(None);
+        self.app.accounts.oauth_client_id_box.clear_children(); self.app.accounts.oauth_client_id_box.set_parent(None);
+        self.app.accounts.oauth_client_secret_box.clear_children(); self.app.accounts.oauth_client_secret_box.set_parent(None);
 
         self.app.services.list_box.scroll_box.clear_children(); self.app.services.list_box.scroll_box.set_parent(None);
 
@@ -685,10 +687,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         use clear_ui::widget::focus::link_parent_child;
         match self.app.current_page {
             Page::Accounts => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.email_box);
-                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.password_box);
-                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.imap_box);
-                link_parent_child(&mut self.page_root_container, &mut self.app.accounts.smtp_box);
+                if self.app.accounts.editing_oauth_creds {
+                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.oauth_client_id_box);
+                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.oauth_client_secret_box);
+                } else {
+                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.email_box);
+                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.password_box);
+                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.imap_box);
+                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.smtp_box);
+                }
             }
             Page::Typefaces => {
                 self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
@@ -1525,10 +1532,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
         }
         if self.app.current_page == Page::Accounts {
-            if self.app.accounts.email_box.cursor_moved(lx, ly) { changed = true; }
-            if self.app.accounts.password_box.cursor_moved(lx, ly) { changed = true; }
-            if self.app.accounts.imap_box.cursor_moved(lx, ly) { changed = true; }
-            if self.app.accounts.smtp_box.cursor_moved(lx, ly) { changed = true; }
+            if self.app.accounts.editing_oauth_creds {
+                if self.app.accounts.oauth_client_id_box.cursor_moved(lx, ly) { changed = true; }
+                if self.app.accounts.oauth_client_secret_box.cursor_moved(lx, ly) { changed = true; }
+            } else {
+                if self.app.accounts.email_box.cursor_moved(lx, ly) { changed = true; }
+                if self.app.accounts.password_box.cursor_moved(lx, ly) { changed = true; }
+                if self.app.accounts.imap_box.cursor_moved(lx, ly) { changed = true; }
+                if self.app.accounts.smtp_box.cursor_moved(lx, ly) { changed = true; }
+            }
         }
         if changed { self.needs_rebuild = true; }
         changed
@@ -1579,10 +1591,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             match self.app.current_page {
                 Page::Accounts => {
                     let accs = &mut self.app.accounts;
-                    if accs.email_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if accs.password_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if accs.imap_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if accs.smtp_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if accs.editing_oauth_creds {
+                        if accs.oauth_client_id_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        if accs.oauth_client_secret_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    } else {
+                        if accs.email_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        if accs.password_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        if accs.imap_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                        if accs.smtp_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    }
                 }
                 Page::Layout => {
                     for sb in &mut self.app.layout.spinboxes {
@@ -2038,47 +2055,61 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
         }
         if self.app.current_page == Page::Accounts {
-            let tb = &mut self.app.accounts.email_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
-            if tb.mouse_input(button, state, lx, ly) {
-                self.needs_rebuild = true;
-            }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                let email_val = tb.text.trim().to_lowercase();
-                if email_val.ends_with("@gmail.com") {
-                    self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
-                    self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
-                    self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
-                    self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
-                } else if email_val.ends_with("@icloud.com") {
-                    self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
-                    self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
-                    self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
-                    self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
-                } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
-                    self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
-                    self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
-                    self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
-                    self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+            if self.app.accounts.editing_oauth_creds {
+                let tb = &mut self.app.accounts.oauth_client_id_box;
+                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+                if tb.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
                 }
-            }
 
-            let tb = &mut self.app.accounts.password_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
-            if tb.mouse_input(button, state, lx, ly) {
-                self.needs_rebuild = true;
-            }
+                let tb = &mut self.app.accounts.oauth_client_secret_box;
+                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+                if tb.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
+            } else {
+                let tb = &mut self.app.accounts.email_box;
+                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+                if tb.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
+                if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+                    let email_val = tb.text.trim().to_lowercase();
+                    if email_val.ends_with("@gmail.com") {
+                        self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+                    } else if email_val.ends_with("@icloud.com") {
+                        self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+                    } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
+                        self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+                    }
+                }
 
-            let tb = &mut self.app.accounts.imap_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
-            if tb.mouse_input(button, state, lx, ly) {
-                self.needs_rebuild = true;
-            }
+                let tb = &mut self.app.accounts.password_box;
+                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+                if tb.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
 
-            let tb = &mut self.app.accounts.smtp_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
-            if tb.mouse_input(button, state, lx, ly) {
-                self.needs_rebuild = true;
+                let tb = &mut self.app.accounts.imap_box;
+                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+                if tb.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
+
+                let tb = &mut self.app.accounts.smtp_box;
+                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
+                if tb.mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
             }
         }
         if self.app.current_page == Page::Typefaces {
@@ -2634,33 +2665,40 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
         if self.app.current_page == Page::Accounts {
             let mut consumed = false;
-            let tb = &mut self.app.accounts.email_box;
-            if tb.keyboard_input(event) {
-                consumed = true;
-                let email_val = tb.edit_buffer.trim().to_lowercase();
-                if email_val.ends_with("@gmail.com") {
-                    self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
-                    self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
-                    self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
-                    self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
-                } else if email_val.ends_with("@icloud.com") {
-                    self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
-                    self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
-                    self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
-                    self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
-                } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
-                    self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
-                    self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
-                    self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
-                    self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+            if self.app.accounts.editing_oauth_creds {
+                let tb = &mut self.app.accounts.oauth_client_id_box;
+                if tb.keyboard_input(event) { consumed = true; }
+                let tb = &mut self.app.accounts.oauth_client_secret_box;
+                if tb.keyboard_input(event) { consumed = true; }
+            } else {
+                let tb = &mut self.app.accounts.email_box;
+                if tb.keyboard_input(event) {
+                    consumed = true;
+                    let email_val = tb.edit_buffer.trim().to_lowercase();
+                    if email_val.ends_with("@gmail.com") {
+                        self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+                    } else if email_val.ends_with("@icloud.com") {
+                        self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+                    } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
+                        self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+                    }
                 }
+                let tb = &mut self.app.accounts.password_box;
+                if tb.keyboard_input(event) { consumed = true; }
+                let tb = &mut self.app.accounts.imap_box;
+                if tb.keyboard_input(event) { consumed = true; }
+                let tb = &mut self.app.accounts.smtp_box;
+                if tb.keyboard_input(event) { consumed = true; }
             }
-            let tb = &mut self.app.accounts.password_box;
-            if tb.keyboard_input(event) { consumed = true; }
-            let tb = &mut self.app.accounts.imap_box;
-            if tb.keyboard_input(event) { consumed = true; }
-            let tb = &mut self.app.accounts.smtp_box;
-            if tb.keyboard_input(event) { consumed = true; }
             
             if consumed {
                 self.needs_rebuild = true;
