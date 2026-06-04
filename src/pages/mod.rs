@@ -13,6 +13,7 @@ pub mod backup;
 pub mod typeface;
 pub mod services;
 pub mod colors;
+pub mod screensaver;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -30,10 +31,11 @@ pub enum Page {
     Backup,
     Typefaces,
     Colors,
+    Screensaver,
 }
 
 impl Page {
-    pub const ALL: [Page; 14] = [
+    pub const ALL: [Page; 15] = [
         Page::Audio,
         Page::Backup,
         Page::Colors,
@@ -48,6 +50,7 @@ impl Page {
         Page::Storage,
         Page::System,
         Page::Typefaces,
+        Page::Screensaver,
     ];
 
     pub fn label(self) -> &'static str {
@@ -66,6 +69,7 @@ impl Page {
             Page::Backup => "Backup",
             Page::Typefaces => "Typefaces",
             Page::Colors => "Colors",
+            Page::Screensaver => "Screensaver",
         }
     }
 
@@ -73,3 +77,4 @@ impl Page {
         ""
     }
 }
+

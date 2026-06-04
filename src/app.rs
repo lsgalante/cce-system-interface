@@ -14,6 +14,7 @@ use crate::pages::backup;
 use crate::pages::typeface;
 use crate::pages::services;
 use crate::pages::colors;
+use crate::pages::screensaver;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -32,6 +33,7 @@ pub struct AppState {
     pub typeface: typeface::TypefaceState,
     pub services: services::ServicesState,
     pub colors: colors::ColorsState,
+    pub screensaver: screensaver::ScreensaverState,
 }
 
 impl Default for AppState {
@@ -52,6 +54,7 @@ impl Default for AppState {
             typeface: typeface::TypefaceState::default(),
             services: services::ServicesState::default(),
             colors: colors::ColorsState::default(),
+            screensaver: screensaver::read_screensaver_config(),
         }
     }
 }
@@ -72,7 +75,9 @@ pub enum AppAction {
     Typeface(typeface::TypefaceMessage),
     Services(services::ServicesMessage),
     Colors(colors::ColorsMessage),
+    Screensaver(screensaver::ScreensaverMessage),
 }
+
 
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32)>,

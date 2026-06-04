@@ -202,6 +202,7 @@ struct SystemInterface {
     rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsState>,
+    rx_screensaver: std::sync::mpsc::Receiver<pages::screensaver::ScreensaverState>,
     rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
     rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
@@ -348,6 +349,17 @@ impl clear_ui::engine::Application for SystemInterface {
             });
             rx
         };
+        let rx_screensaver = {
+            let (tx, rx) = std::sync::mpsc::channel::<pages::screensaver::ScreensaverState>();
+            tokio::spawn(async move {
+                loop {
+                    let val = tokio::task::spawn_blocking(|| pages::screensaver::read_screensaver_config()).await;
+                    if let Ok(val) = val { if tx.send(val).is_err() { break; } }
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                }
+            });
+            rx
+        };
         let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
         let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
         let rx_services = spawn_bg(3, || pages::services::fetch_services());
@@ -400,6 +412,7 @@ impl clear_ui::engine::Application for SystemInterface {
             rx_status,
             rx_storage,
             rx_notifications,
+            rx_screensaver,
             rx_backup_state,
             rx_typeface,
             rx_services,
@@ -461,6 +474,7 @@ impl clear_ui::engine::Application for SystemInterface {
             self.width = width as u32;
             self.height = height as u32;
             self.scale_factor = scale;
+            self.paginator.set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
@@ -473,12 +487,16 @@ impl clear_ui::engine::Application for SystemInterface {
     }
 
     fn clear_color(&self) -> [f32; 4] {
-        [
+        let mut color = [
             self.app.colors.page_low_color[0] as f32 / 255.0,
             self.app.colors.page_low_color[1] as f32 / 255.0,
             self.app.colors.page_low_color[2] as f32 / 255.0,
             1.0,
-        ]
+        ];
+        if let Some(opacity) = clear_ui::color::read_opacity_if_configured() {
+            color[3] = opacity;
+        }
+        color
     }
 
     fn handle_pointer_move(&mut self, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
@@ -721,6 +739,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             Page::Notifications => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
                 link_parent_child(&mut self.page_root_container, &mut self.app.notifications.opacity_slider);
+            }
+            Page::Screensaver => {
+                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.enable_toggle);
+                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.lock_screen_toggle);
+                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.timeout_spinbox);
+                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.style_menu);
             }
             Page::Input => {
                 self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
@@ -972,6 +996,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
             Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
             Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
+            Page::Screensaver => screensaver::view(&mut self.app.screensaver, cx, cy, cw, ch),
             Page::Typefaces => typeface::view(&mut self.app.typeface, cx, cy, cw, ch, &sec_focused),
             Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, root_focused),
             Page::Colors => colors::view(&mut self.app.colors, cx, cy, cw, ch),
@@ -1104,6 +1129,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             notifications::update(&mut self.app.notifications, notifications::NotificationsMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
+        while let Ok(s) = self.rx_screensaver.try_recv() {
+            screensaver::update(&mut self.app.screensaver, pages::screensaver::ScreensaverMessage::Refreshed(s));
+            self.needs_rebuild = true;
+        }
         while let Ok(s) = self.rx_backup_state.try_recv() {
             pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::Refreshed(s));
             self.needs_rebuild = true;
@@ -1161,6 +1190,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
             AppAction::Colors(m) => colors::update(&mut self.app.colors, m.clone()),
+            AppAction::Screensaver(m) => screensaver::update(&mut self.app.screensaver, m.clone()),
             AppAction::Backup(m) => match m {
                 pages::backup::BackupMessage::StartBackup => {
                     pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::StartBackup);
@@ -1329,6 +1359,20 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 changed = true;
             }
             if self.app.notifications.opacity_slider.cursor_moved(lx, ly) {
+                changed = true;
+            }
+        }
+        if self.app.current_page == Page::Screensaver {
+            if self.app.screensaver.enable_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.screensaver.lock_screen_toggle.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.screensaver.timeout_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.screensaver.style_menu.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
@@ -1513,6 +1557,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 Page::Notifications => {
                     if self.app.notifications.duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.notifications.opacity_slider.hit_test(lx, ly) { clicked_any_focusable = true; }
+                }
+                Page::Screensaver => {
+                    if self.app.screensaver.timeout_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.screensaver.style_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Audio => {
                     for sb in &mut self.app.audio.sink_spinboxes {
@@ -1823,6 +1871,37 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         self.needs_rebuild = true;
                     }
                 }
+            }
+        }
+        if self.app.current_page == Page::Screensaver {
+            let toggle = &mut self.app.screensaver.enable_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::ToggleEnable));
+            }
+
+            let toggle = &mut self.app.screensaver.lock_screen_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::ToggleLockScreen));
+            }
+
+            if state == clear_ui::widget::ElementState::Pressed {
+                let sb = &mut self.app.screensaver.timeout_spinbox;
+                if !sb.hit_test(lx, ly) { sb.unfocus(); }
+                let old = sb.value;
+                if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                    actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetTimeout(sb.value)));
+                }
+            }
+
+            let menu = &mut self.app.screensaver.style_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetStyle(menu.selected)));
             }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Audio {
@@ -2349,6 +2428,19 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 self.handle_action(a);
             }
             if changed {
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+        if self.app.current_page == Page::Screensaver {
+            let sb = &mut self.app.screensaver.timeout_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetTimeout(new_val)));
+                }
                 self.needs_rebuild = true;
                 return true;
             }
