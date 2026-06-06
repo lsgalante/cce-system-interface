@@ -1,6 +1,7 @@
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Label, Toggle, Widget, Spinbox};
+
 use crate::pages::typeface::parse_u16_from;
 
 #[derive(Debug, Clone)]
@@ -184,63 +185,65 @@ const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut StatusState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let y = cy + 12.0;
+pub fn view(state: &mut StatusState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Status Interface");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Status Interface");
+        if !state.loaded {
+            sec.text(pc, "Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
+        } else {
+            // Status
+            let status_text = if state.running { "Status Interface: Running" } else { "Status Interface: Stopped" };
+            state.status_label.set_text(status_text);
+            sec.widget(pc, &mut state.status_label, 12.0, sec_w - 24.0, 20.0);
+            sec.spacing(12.0);
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_FG);
-        sec.spacing(18.0);
-    } else {
-        // Status
-        let status_text = if state.running { "Status Interface: Running" } else { "Status Interface: Stopped" };
-        state.status_label.set_text(status_text);
-        sec.widget(&mut pc, &mut state.status_label, 12.0, cw - 24.0, 20.0);
-        sec.spacing(12.0);
+            // Font size
+            state.size_label.set_text(&format!("Font size: {}px", state.font_size));
+            sec.widget(pc, &mut state.size_label, 12.0, sec_w - 24.0, 20.0);
+            sec.spacing(12.0);
 
-        // Font size
-        state.size_label.set_text(&format!("Font size: {}px", state.font_size));
-        sec.widget(&mut pc, &mut state.size_label, 12.0, cw - 24.0, 20.0);
-        sec.spacing(12.0);
+            let btn_h = 28.0;
+            let yt = sec.ay();
+            pc.button("-1", sec.ax(12.0), yt, 36.0, btn_h,
+                BTN_INACTIVE, BTN_HOVER, WHITE,
+                AppAction::Status(StatusMessage::FontSizeDown));
+            pc.text(&format!(" {}px ", state.font_size), sec.ax(56.0), yt + 7.0, 13.0, TEXT_FG);
+            pc.button("+1", sec.ax(12.0 + 36.0 + 8.0), yt, 36.0, btn_h,
+                BTN_ACTIVE, BTN_HOVER, WHITE,
+                AppAction::Status(StatusMessage::FontSizeUp));
+            sec.content_y += btn_h + 16.0;
 
-        let btn_h = 28.0;
-        let yt = sec.ay();
-        pc.button("-1", sec.ax(12.0), yt, 36.0, btn_h,
-            BTN_INACTIVE, BTN_HOVER, WHITE,
-            AppAction::Status(StatusMessage::FontSizeDown));
-        pc.text(&format!(" {}px ", state.font_size), sec.ax(56.0), yt + 7.0, 13.0, TEXT_FG);
-        pc.button("+1", sec.ax(12.0 + 36.0 + 8.0), yt, 36.0, btn_h,
-            BTN_ACTIVE, BTN_HOVER, WHITE,
-            AppAction::Status(StatusMessage::FontSizeUp));
-        sec.content_y += btn_h + 16.0;
+            // Separators toggle
+            state.separators_toggle.set_toggled(state.separators);
+            sec.widget(pc, &mut state.separators_toggle, 12.0, 48.0, 24.0);
+            sec.spacing(16.0);
 
-        // Separators toggle
-        state.separators_toggle.set_toggled(state.separators);
-        sec.widget(&mut pc, &mut state.separators_toggle, 12.0, 48.0, 24.0);
-        sec.spacing(16.0);
+            // Underline toggle
+            state.underline_toggle.set_toggled(state.underline);
+            sec.widget(pc, &mut state.underline_toggle, 12.0, 48.0, 24.0);
+            sec.spacing(16.0);
 
-        // Underline toggle
-        state.underline_toggle.set_toggled(state.underline);
-        sec.widget(&mut pc, &mut state.underline_toggle, 12.0, 48.0, 24.0);
-        sec.spacing(16.0);
+            // Padding spinbox
+            state.padding_spinbox.value = state.padding as i32;
+            sec.widget(pc, &mut state.padding_spinbox, 12.0, 200.0, 26.0);
+            sec.spacing(16.0);
 
-        // Padding spinbox
-        state.padding_spinbox.value = state.padding as i32;
-        sec.widget(&mut pc, &mut state.padding_spinbox, 12.0, 200.0, 26.0);
-        sec.spacing(16.0);
+            // Reload button
+            let yt = sec.ay();
+            let btn_w = (sec_w - 24.0).min(200.0);
+            pc.button("Reload Status Interface", rx + sec_w / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
+                BTN_INACTIVE, BTN_HOVER, WHITE,
+                AppAction::Status(StatusMessage::ReloadStatus));
+        }
+        sec.finish(pc)
+    });
 
-        // Reload button
-        let yt = sec.ay();
-        let btn_w = (cw - 24.0).min(200.0);
-        pc.button("Reload Status Interface", cx + cw / 2.0 - btn_w / 2.0, yt, btn_w, 32.0,
-            BTN_INACTIVE, BTN_HOVER, WHITE,
-            AppAction::Status(StatusMessage::ReloadStatus));
-    }
-    sec.finish(&mut pc);
-
-    pc
+    final_pc
 }
 
 pub fn update(state: &mut StatusState, msg: StatusMessage) {
@@ -348,5 +351,13 @@ mod tests {
         assert_eq!(read_status_underline(), Some(original));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_view_layout_grid() {
+        let mut state = StatusState::default();
+        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout);
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

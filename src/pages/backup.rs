@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 use std::fs;
 
 #[derive(Debug, Clone, Default)]
@@ -96,69 +96,72 @@ const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &BackupState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let y = cy + 12.0;
+pub fn view(state: &BackupState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Full System Backup");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Full System Backup");
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        // Status Row
-        sec.text(&mut pc, "Backup Status", 12.0, 0.0, 12.0, LABEL_FG);
-        let status_text = if state.in_progress { "Backing up..." } else { "Idle" };
-        let status_color = if state.in_progress { GREEN } else { TEXT_FG };
-        sec.text(&mut pc, status_text, 120.0, 0.0, 12.0, status_color);
-        sec.spacing(18.0);
-
-        // Last Backup Row
-        sec.text(&mut pc, "Last Backup", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc, &state.last_backup_time, 120.0, 0.0, 12.0, TEXT_FG);
-        sec.spacing(18.0);
-
-        // Backup Size Row
-        sec.text(&mut pc, "Archive Size", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc, &state.backup_size, 120.0, 0.0, 12.0, TEXT_FG);
-        sec.spacing(18.0);
-
-        // Target Directories Row
-        sec.text(&mut pc, "Backup Targets", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc, "Entire Filesystem (/)  [Preserving attributes]", 120.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-
-        // Destination Archive Row
-        sec.text(&mut pc, "Destination", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc, "USB Drive (/mnt/usb or /run/media/...)", 120.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(24.0);
-
-        // Error message if present
-        if let Some(ref err) = state.error_message {
-            sec.text(&mut pc, "Error:", 12.0, 0.0, 12.0, RED);
-            sec.text(&mut pc, err, 60.0, 0.0, 11.0, RED);
+        if !state.loaded {
+            sec.text(pc, "Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
-        }
-
-        // Action Button
-        let btn_w = 120.0;
-        let btn_h = 32.0;
-        let yt = sec.ay();
-        
-        let (btn_label, bg, hover, action) = if state.in_progress {
-            ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Backup(BackupMessage::StartBackup))
         } else {
-            ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Backup(BackupMessage::StartBackup))
-        };
-        
-        sec.row(1, 0.0, btn_h, |_, x, _| {
-            pc.button(btn_label, x, yt, btn_w, btn_h, bg, hover, WHITE, action.clone());
-        });
-        sec.spacing(12.0);
-    }
-    sec.finish(&mut pc);
+            // Status Row
+            sec.text(pc, "Backup Status", 12.0, 0.0, 12.0, LABEL_FG);
+            let status_text = if state.in_progress { "Backing up..." } else { "Idle" };
+            let status_color = if state.in_progress { GREEN } else { TEXT_FG };
+            sec.text(pc, status_text, 120.0, 0.0, 12.0, status_color);
+            sec.spacing(18.0);
 
-    pc
+            // Last Backup Row
+            sec.text(pc, "Last Backup", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(pc, &state.last_backup_time, 120.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
+
+            // Backup Size Row
+            sec.text(pc, "Archive Size", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(pc, &state.backup_size, 120.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
+
+            // Target Directories Row
+            sec.text(pc, "Backup Targets", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(pc, "Entire Filesystem (/)  [Preserving attributes]", 120.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+
+            // Destination Archive Row
+            sec.text(pc, "Destination", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(pc, "USB Drive (/mnt/usb or /run/media/...)", 120.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(24.0);
+
+            // Error message if present
+            if let Some(ref err) = state.error_message {
+                sec.text(pc, "Error:", 12.0, 0.0, 12.0, RED);
+                sec.text(pc, err, 60.0, 0.0, 11.0, RED);
+                sec.spacing(18.0);
+            }
+
+            // Action Button
+            let btn_w = 120.0;
+            let btn_h = 32.0;
+            let yt = sec.ay();
+            
+            let (btn_label, bg, hover, action) = if state.in_progress {
+                ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Backup(BackupMessage::StartBackup))
+            } else {
+                ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Backup(BackupMessage::StartBackup))
+            };
+            
+            sec.row(1, 0.0, btn_h, |_, x, _| {
+                pc.button(btn_label, x, yt, btn_w, btn_h, bg, hover, WHITE, action.clone());
+            });
+            sec.spacing(12.0);
+        }
+        sec.finish(pc)
+    });
+
+    final_pc
 }
 
 pub fn update(state: &mut BackupState, msg: BackupMessage) {

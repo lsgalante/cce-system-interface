@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Toggle, Spinbox, Slider};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
@@ -308,53 +308,60 @@ fn write_transparency_config_value(key: &str, value: &str) {
     let _ = fs::write(CONFIG_PATH, updated);
 }
 
-pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let y = cy + 12.0;
+pub fn view(state: &mut NotificationsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "System Notifications");
+    // ── System Notifications ──
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "System Notifications");
 
-    let toggle_w = 48.0;
-    let toggle_h = 24.0;
-    state.enable_toggle.set_toggled(state.enable);
-    sec.widget(&mut pc, &mut state.enable_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(8.0);
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        state.enable_toggle.set_toggled(state.enable);
+        sec.widget(pc, &mut state.enable_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(8.0);
 
-    state.bell_toggle.set_toggled(state.bell);
-    sec.widget(&mut pc, &mut state.bell_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(16.0);
+        state.bell_toggle.set_toggled(state.bell);
+        sec.widget(pc, &mut state.bell_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(16.0);
 
-    state.duration_spinbox.value = state.duration;
-    state.duration_spinbox.set_label("Notification Duration");
-    sec.widget(&mut pc, &mut state.duration_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(16.0);
+        state.duration_spinbox.value = state.duration;
+        state.duration_spinbox.set_label("Notification Duration");
+        sec.widget(pc, &mut state.duration_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(16.0);
 
-    let btn_w = 160.0;
-    let btn_h = 32.0;
-    let btn_y = sec.ay();
-    sec.row(1, 0.0, btn_h, |_, x, _| {
-        pc.button(
-            "Send Test Notification",
-            x,
-            btn_y,
-            btn_w,
-            btn_h,
-            BTN_BG,
-            BTN_HOVER,
-            WHITE,
-            AppAction::Notifications(NotificationsMessage::SendTestNotification),
-        );
+        let btn_w = 160.0;
+        let btn_h = 32.0;
+        let btn_y = sec.ay();
+        sec.row(1, 0.0, btn_h, |_, x, _| {
+            pc.button(
+                "Send Test Notification",
+                x,
+                btn_y,
+                btn_w,
+                btn_h,
+                BTN_BG,
+                BTN_HOVER,
+                WHITE,
+                AppAction::Notifications(NotificationsMessage::SendTestNotification),
+            );
+        });
+        sec.spacing(12.0);
+        sec.finish(pc)
     });
-    sec.spacing(12.0);
-    sec.finish(&mut pc);
 
-    let mut sec2 = Section::new(&mut pc, cx, sec.ay() + 24.0, cw, "Transparency");
-    state.opacity_slider.set_value(state.opacity);
-    sec2.widget(&mut pc, &mut state.opacity_slider, 14.0, 300.0, 20.0);
-    sec2.spacing(12.0);
-    sec2.finish(&mut pc);
+    // ── Transparency ──
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec2 = Section::new(pc, rx, ry, sec_w, "Transparency");
+        state.opacity_slider.set_value(state.opacity);
+        sec2.widget(pc, &mut state.opacity_slider, 14.0, 300.0, 20.0);
+        sec2.spacing(12.0);
+        sec2.finish(pc)
+    });
 
-    pc
+    final_pc
 }
 
 pub fn update(state: &mut NotificationsState, msg: NotificationsMessage) {
@@ -451,4 +458,13 @@ duration = 10
 ";
         assert_eq!(parse_notifications_duration(content), 10);
     }
+
+    #[test]
+    fn test_view_layout_grid() {
+        let mut state = NotificationsState::default();
+        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout);
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
 }
+

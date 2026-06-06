@@ -1,5 +1,5 @@
 use crate::app::PageContent;
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 
 #[derive(Debug, Clone, Default)]
 pub struct StorageState {
@@ -62,59 +62,61 @@ fn parse_mem(info: &str) -> (f64, f64) {
 const LABEL_FG: [f32; 4] = [0.56, 0.83, 0.56, 1.0];
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 
-pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let y = cy + 12.0;
+pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Local Storage");
-
-    if !state.loaded {
-        sec.text(&mut pc, "Loading storage and memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
-        sec.spacing(18.0);
-    } else {
-        let disk_pct = if state.disk_total > 0.0 {
-            state.disk_used / state.disk_total * 100.0
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Local Storage");
+        if !state.loaded {
+            sec.text(pc, "Loading storage and memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
         } else {
-            0.0
-        };
+            let disk_pct = if state.disk_total > 0.0 {
+                state.disk_used / state.disk_total * 100.0
+            } else {
+                0.0
+            };
 
-        sec.text(&mut pc, "Disk", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc,
-            &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
-            100.0, 0.0, 12.0, TEXT_FG,
-        );
-        sec.spacing(18.0);
+            sec.text(pc, "Disk", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(pc,
+                &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
+                100.0, 0.0, 12.0, TEXT_FG,
+            );
+            sec.spacing(18.0);
 
-        let bar_w = cw - 24.0;
-        let yt = sec.ay();
-        pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
-        if disk_pct > 0.0 {
-            pc.rect([0.36, 0.60, 0.36, 1.0], sec.ax(12.0), yt, bar_w * (disk_pct as f32 / 100.0).min(1.0), 8.0);
+            let bar_w = sec_w - 24.0;
+            let yt = sec.ay();
+            pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
+            if disk_pct > 0.0 {
+                pc.rect([0.36, 0.60, 0.36, 1.0], sec.ax(12.0), yt, bar_w * (disk_pct as f32 / 100.0).min(1.0), 8.0);
+            }
+            sec.content_y += 20.0;
+
+            let ram_pct = if state.ram_total > 0.0 {
+                state.ram_used / state.ram_total * 100.0
+            } else {
+                0.0
+            };
+
+            sec.text(pc, "RAM", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(pc,
+                &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
+                100.0, 0.0, 12.0, TEXT_FG,
+            );
+            sec.spacing(18.0);
+
+            let yt = sec.ay();
+            pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
+            if ram_pct > 0.0 {
+                pc.rect([0.50, 0.50, 0.65, 1.0], sec.ax(12.0), yt, bar_w * (ram_pct as f32 / 100.0).min(1.0), 8.0);
+            }
         }
-        sec.content_y += 20.0;
+        sec.finish(pc)
+    });
 
-        let ram_pct = if state.ram_total > 0.0 {
-            state.ram_used / state.ram_total * 100.0
-        } else {
-            0.0
-        };
-
-        sec.text(&mut pc, "RAM", 12.0, 0.0, 12.0, LABEL_FG);
-        sec.text(&mut pc,
-            &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
-            100.0, 0.0, 12.0, TEXT_FG,
-        );
-        sec.spacing(18.0);
-
-        let yt = sec.ay();
-        pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
-        if ram_pct > 0.0 {
-            pc.rect([0.50, 0.50, 0.65, 1.0], sec.ax(12.0), yt, bar_w * (ram_pct as f32 / 100.0).min(1.0), 8.0);
-        }
-    }
-    sec.finish(&mut pc);
-
-    pc
+    final_pc
 }
 
 pub fn update(state: &mut StorageState, msg: StorageMessage) {

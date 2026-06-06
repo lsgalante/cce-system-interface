@@ -1,8 +1,9 @@
 use std::fs;
 use std::io::Write;
 use crate::app::PageContent;
-use clear_ui::layout::Section;
-use clear_ui::widget::ColorSelector;
+use crate::pages::typeface::parse_u16_from;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
+use clear_ui::widget::{ColorSelector, Spinbox, Widget};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
 
@@ -14,7 +15,7 @@ fn get_socket_path() -> String {
 }
 
 #[derive(Debug, Clone)]
-pub struct ColorsState {
+pub struct InterfaceState {
     pub low_color: [u8; 3],
     pub high_color: [u8; 3],
     pub disabled_color: [u8; 3],
@@ -27,10 +28,20 @@ pub struct ColorsState {
     pub paginator_sidebar_color: [u8; 3],
     pub primary_highlight_color: [u8; 3],
     pub paginator_tab_label_color: [u8; 3],
+    pub toggle_enabled_color: [u8; 3],
+    pub toggle_disabled_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
+    pub paginator_tab_margin_x: u16,
+    pub paginator_tab_margin_y: u16,
+    pub tab_margin_spinbox_x: Spinbox,
+    pub tab_margin_spinbox_y: Spinbox,
+    pub paginator_tab_padding_x: u16,
+    pub paginator_tab_padding_y: u16,
+    pub tab_padding_spinbox_x: Spinbox,
+    pub tab_padding_spinbox_y: Spinbox,
 }
 
-impl Default for ColorsState {
+impl Default for InterfaceState {
     fn default() -> Self {
         Self {
             low_color: [0x0a, 0x1a, 0x0e],
@@ -45,6 +56,8 @@ impl Default for ColorsState {
             paginator_sidebar_color: [90, 90, 101],
             primary_highlight_color: [255, 255, 255],
             paginator_tab_label_color: [230, 230, 242],
+            toggle_enabled_color: [104, 217, 165],
+            toggle_disabled_color: [135, 135, 148],
             color_selectors: vec![
                 ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Pages - Low Color
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
@@ -58,13 +71,23 @@ impl Default for ColorsState {
                 ColorSelector::new([90, 90, 101]).with_label("Paginator Sidebar"), // 9: Controls - Paginator Sidebar
                 ColorSelector::new([255, 255, 255]).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
                 ColorSelector::new([230, 230, 242]).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
+                ColorSelector::new([104, 217, 165]).with_label("Enabled"), // 12: Toggles - Enabled
+                ColorSelector::new([135, 135, 148]).with_label("Disabled"), // 13: Toggles - Disabled
             ],
+            paginator_tab_margin_x: 5,
+            paginator_tab_margin_y: 10,
+            tab_margin_spinbox_x: Spinbox::new(5, 0, 100, 1).with_label("Tab Margin X").with_unit("px"),
+            tab_margin_spinbox_y: Spinbox::new(10, 0, 100, 1).with_label("Tab Margin Y").with_unit("px"),
+            paginator_tab_padding_x: 10,
+            paginator_tab_padding_y: 14,
+            tab_padding_spinbox_x: Spinbox::new(10, 0, 100, 1).with_label("Tab Padding X").with_unit("px"),
+            tab_padding_spinbox_y: Spinbox::new(14, 0, 100, 1).with_label("Tab Padding Y").with_unit("px"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ColorsMessage {
+pub enum InterfaceMessage {
     SetLowColor([u8; 3]),
     SetHighColor([u8; 3]),
     SetDisabledColor([u8; 3]),
@@ -77,6 +100,12 @@ pub enum ColorsMessage {
     SetPaginatorSidebarColor([u8; 3]),
     SetPrimaryHighlightColor([u8; 3]),
     SetPaginatorTabLabelColor([u8; 3]),
+    SetToggleEnabledColor([u8; 3]),
+    SetToggleDisabledColor([u8; 3]),
+    SetTabMarginX(u16),
+    SetTabMarginY(u16),
+    SetTabPaddingX(u16),
+    SetTabPaddingY(u16),
     PickLowColor,
     PickHighColor,
     PickDisabledColor,
@@ -89,12 +118,12 @@ pub enum ColorsMessage {
     PickPaginatorSidebarColor,
     PickPrimaryHighlightColor,
     PickPaginatorTabLabelColor,
-    Refreshed(ColorsState),
+    PickToggleEnabledColor,
+    PickToggleDisabledColor,
+    Refreshed(InterfaceState),
 }
 
-
-
-pub fn read_colors_config() -> ColorsState {
+pub fn read_interface_config() -> InterfaceState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
     let has_low = content.lines().any(|l| l.trim().starts_with("low_color"));
     let bg = if has_low {
@@ -129,8 +158,18 @@ pub fn read_colors_config() -> ColorsState {
     let primary_highlight = parse_color_from_key(&content, "primary_highlight_color", [255, 255, 255]);
 
     let paginator_tab_label = parse_color_from_key(&content, "paginator_tab_label_color", [230, 230, 242]);
+
+    let toggle_enabled = parse_color_from_key(&content, "toggle_enabled_color", [104, 217, 165]);
+
+    let toggle_disabled = parse_color_from_key(&content, "toggle_disabled_color", [135, 135, 148]);
     
-    ColorsState {
+    let paginator_tab_margin_general = parse_u16_from(&content, "paginator_tab_margin", 999);
+    let paginator_tab_margin_x = parse_u16_from(&content, "paginator_tab_margin_x", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 5 });
+    let paginator_tab_margin_y = parse_u16_from(&content, "paginator_tab_margin_y", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 10 });
+    let paginator_tab_padding_x = parse_u16_from(&content, "paginator_tab_padding_x", 10);
+    let paginator_tab_padding_y = parse_u16_from(&content, "paginator_tab_padding_y", 14);
+    
+    InterfaceState {
         low_color: bg,
         high_color: border,
         disabled_color: disabled,
@@ -143,6 +182,8 @@ pub fn read_colors_config() -> ColorsState {
         paginator_sidebar_color: paginator_sidebar,
         primary_highlight_color: primary_highlight,
         paginator_tab_label_color: paginator_tab_label,
+        toggle_enabled_color: toggle_enabled,
+        toggle_disabled_color: toggle_disabled,
         color_selectors: vec![
             ColorSelector::new(page_low).with_label("Low Color"), // 0: Pages - Low Color
             ColorSelector::new(border).with_label("High Color"), // 1: Layout - High Color
@@ -156,7 +197,17 @@ pub fn read_colors_config() -> ColorsState {
             ColorSelector::new(paginator_sidebar).with_label("Paginator Sidebar"), // 9: Controls - Paginator Sidebar
             ColorSelector::new(primary_highlight).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
             ColorSelector::new(paginator_tab_label).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
+            ColorSelector::new(toggle_enabled).with_label("Enabled"), // 12: Toggles - Enabled
+            ColorSelector::new(toggle_disabled).with_label("Disabled"), // 13: Toggles - Disabled
         ],
+        paginator_tab_margin_x,
+        paginator_tab_margin_y,
+        tab_margin_spinbox_x: Spinbox::new(paginator_tab_margin_x as i32, 0, 100, 1).with_label("Tab Margin X").with_unit("px"),
+        tab_margin_spinbox_y: Spinbox::new(paginator_tab_margin_y as i32, 0, 100, 1).with_label("Tab Margin Y").with_unit("px"),
+        paginator_tab_padding_x,
+        paginator_tab_padding_y,
+        tab_padding_spinbox_x: Spinbox::new(paginator_tab_padding_x as i32, 0, 100, 1).with_label("Tab Padding X").with_unit("px"),
+        tab_padding_spinbox_y: Spinbox::new(paginator_tab_padding_y as i32, 0, 100, 1).with_label("Tab Padding Y").with_unit("px"),
     }
 }
 
@@ -165,7 +216,7 @@ fn parse_color_from_key(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix(key) {
             let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            let hex = rest.trim_end_matches('"').trim();
+            let hex = rest.trim_end_matches('"').trim().trim_start_matches('#');
             return parse_hex(hex);
         }
     }
@@ -332,122 +383,234 @@ fn apply_paginator_tab_label_color(rgb: [u8; 3]) {
     clear_ui::color::set_paginator_tab_label_color([r, g, b, 1.0]);
 }
 
-pub fn view(state: &mut ColorsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
-
-    // 1. Pages Section
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Pages");
-    sec.spacing(8.0);
-    state.color_selectors[0].color = state.page_low_color;
-    sec.widget(&mut pc, &mut state.color_selectors[0], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    y = sec.finish(&mut pc);
-
-    // 2. Layout Section
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Layout");
-    sec.spacing(8.0);
-    state.color_selectors[7].color = state.low_color;
-    sec.widget(&mut pc, &mut state.color_selectors[7], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[1].color = state.high_color;
-    sec.widget(&mut pc, &mut state.color_selectors[1], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[2].color = state.visual_guides_color;
-    sec.widget(&mut pc, &mut state.color_selectors[2], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    y = sec.finish(&mut pc);
-
-    // 3. Status Section
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Status");
-    sec.spacing(8.0);
-    state.color_selectors[8].color = state.normal_color;
-    sec.widget(&mut pc, &mut state.color_selectors[8], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[3].color = state.disabled_color;
-    sec.widget(&mut pc, &mut state.color_selectors[3], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[4].color = state.separator_color;
-    sec.widget(&mut pc, &mut state.color_selectors[4], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    y = sec.finish(&mut pc);
-
-    // 4. Controls Section
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Controls");
-    sec.spacing(8.0);
-    state.color_selectors[5].color = state.slider_track_color;
-    sec.widget(&mut pc, &mut state.color_selectors[5], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[6].color = state.color_borders_color;
-    sec.widget(&mut pc, &mut state.color_selectors[6], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[9].color = state.paginator_sidebar_color;
-    sec.widget(&mut pc, &mut state.color_selectors[9], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[10].color = state.primary_highlight_color;
-    sec.widget(&mut pc, &mut state.color_selectors[10], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    state.color_selectors[11].color = state.paginator_tab_label_color;
-    sec.widget(&mut pc, &mut state.color_selectors[11], 12.0, 220.0, 22.0);
-    sec.spacing(8.0);
-    sec.finish(&mut pc);
-
-    pc
+fn apply_toggle_enabled_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("toggle_enabled_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_toggle_on_color([r, g, b, 1.0]);
 }
 
-pub fn update(state: &mut ColorsState, msg: ColorsMessage) {
+fn apply_toggle_disabled_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("toggle_disabled_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_toggle_off_color([r, g, b, 1.0]);
+}
+
+fn apply_paginator_tab_margin_x(margin: u16) {
+    write_config_value("paginator_tab_margin_x", &margin.to_string());
+    send_ipc_command(&format!("layout paginator_tab_margin_x {}", margin));
+}
+
+fn apply_paginator_tab_margin_y(margin: u16) {
+    write_config_value("paginator_tab_margin_y", &margin.to_string());
+    send_ipc_command(&format!("layout paginator_tab_margin_y {}", margin));
+}
+
+fn apply_paginator_tab_padding_x(padding: u16) {
+    write_config_value("paginator_tab_padding_x", &padding.to_string());
+    send_ipc_command(&format!("layout paginator_tab_padding_x {}", padding));
+}
+
+fn apply_paginator_tab_padding_y(padding: u16) {
+    write_config_value("paginator_tab_padding_y", &padding.to_string());
+    send_ipc_command(&format!("layout paginator_tab_padding_y {}", padding));
+}
+
+pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
+
+    // 1. Pages Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Pages");
+        sec.spacing(8.0);
+        state.color_selectors[0].color = state.page_low_color;
+        sec.widget(pc, &mut state.color_selectors[0], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        sec.finish(pc)
+    });
+
+    // 2. Layout Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Layout");
+        sec.spacing(8.0);
+        state.color_selectors[7].color = state.low_color;
+        sec.widget(pc, &mut state.color_selectors[7], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[1].color = state.high_color;
+        sec.widget(pc, &mut state.color_selectors[1], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[2].color = state.visual_guides_color;
+        sec.widget(pc, &mut state.color_selectors[2], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        sec.finish(pc)
+    });
+
+    // 3. Status Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Status");
+        sec.spacing(8.0);
+        state.color_selectors[8].color = state.normal_color;
+        sec.widget(pc, &mut state.color_selectors[8], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[3].color = state.disabled_color;
+        sec.widget(pc, &mut state.color_selectors[3], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[4].color = state.separator_color;
+        sec.widget(pc, &mut state.color_selectors[4], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        sec.finish(pc)
+    });
+
+    // 4. Controls Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Controls");
+        sec.spacing(8.0);
+        state.color_selectors[5].color = state.slider_track_color;
+        sec.widget(pc, &mut state.color_selectors[5], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[6].color = state.color_borders_color;
+        sec.widget(pc, &mut state.color_selectors[6], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[10].color = state.primary_highlight_color;
+        sec.widget(pc, &mut state.color_selectors[10], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        sec.finish(pc)
+    });
+
+    // 5. Paginator Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Paginator");
+        sec.spacing(8.0);
+        state.color_selectors[9].color = state.paginator_sidebar_color;
+        sec.widget(pc, &mut state.color_selectors[9], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[11].color = state.paginator_tab_label_color;
+        sec.widget(pc, &mut state.color_selectors[11], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.tab_margin_spinbox_x.value = state.paginator_tab_margin_x as i32;
+        sec.widget(pc, &mut state.tab_margin_spinbox_x, 12.0, 200.0, 26.0);
+        sec.spacing(8.0);
+        state.tab_margin_spinbox_y.value = state.paginator_tab_margin_y as i32;
+        sec.widget(pc, &mut state.tab_margin_spinbox_y, 12.0, 200.0, 26.0);
+        sec.spacing(8.0);
+        state.tab_padding_spinbox_x.value = state.paginator_tab_padding_x as i32;
+        sec.widget(pc, &mut state.tab_padding_spinbox_x, 12.0, 200.0, 26.0);
+        sec.spacing(8.0);
+        state.tab_padding_spinbox_y.value = state.paginator_tab_padding_y as i32;
+        sec.widget(pc, &mut state.tab_padding_spinbox_y, 12.0, 200.0, 26.0);
+        sec.spacing(8.0);
+        sec.finish(pc)
+    });
+
+    // 6. Toggles Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Toggles");
+        sec.spacing(8.0);
+        state.color_selectors[12].color = state.toggle_enabled_color;
+        sec.widget(pc, &mut state.color_selectors[12], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        state.color_selectors[13].color = state.toggle_disabled_color;
+        sec.widget(pc, &mut state.color_selectors[13], 12.0, 220.0, 22.0);
+        sec.spacing(8.0);
+        sec.finish(pc)
+    });
+
+    final_pc
+}
+
+
+pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
     match msg {
-        ColorsMessage::SetLowColor(rgb) => {
+        InterfaceMessage::SetLowColor(rgb) => {
             state.low_color = rgb;
             apply_background(rgb);
         }
-        ColorsMessage::SetPageLowColor(rgb) => {
+        InterfaceMessage::SetPageLowColor(rgb) => {
             state.page_low_color = rgb;
             apply_page_low_color(rgb);
         }
-        ColorsMessage::SetHighColor(rgb) => {
+        InterfaceMessage::SetHighColor(rgb) => {
             state.high_color = rgb;
             apply_border_color(rgb);
         }
-        ColorsMessage::SetDisabledColor(rgb) => {
+        InterfaceMessage::SetDisabledColor(rgb) => {
             state.disabled_color = rgb;
             apply_disabled_color(rgb);
         }
-        ColorsMessage::SetSeparatorColor(rgb) => {
+        InterfaceMessage::SetSeparatorColor(rgb) => {
             state.separator_color = rgb;
             apply_separator_color(rgb);
         }
-        ColorsMessage::SetVisualGuidesColor(rgb) => {
+        InterfaceMessage::SetVisualGuidesColor(rgb) => {
             state.visual_guides_color = rgb;
             apply_visual_guides_color(rgb);
         }
-        ColorsMessage::SetSliderTrackColor(rgb) => {
+        InterfaceMessage::SetSliderTrackColor(rgb) => {
             state.slider_track_color = rgb;
             apply_slider_track_color(rgb);
         }
-        ColorsMessage::SetColorBordersColor(rgb) => {
+        InterfaceMessage::SetColorBordersColor(rgb) => {
             state.color_borders_color = rgb;
             apply_color_borders_color(rgb);
         }
-        ColorsMessage::SetNormalColor(rgb) => {
+        InterfaceMessage::SetNormalColor(rgb) => {
             state.normal_color = rgb;
             apply_normal_color(rgb);
         }
-        ColorsMessage::SetPaginatorSidebarColor(rgb) => {
+        InterfaceMessage::SetPaginatorSidebarColor(rgb) => {
             state.paginator_sidebar_color = rgb;
             apply_paginator_sidebar_color(rgb);
         }
-        ColorsMessage::SetPrimaryHighlightColor(rgb) => {
+        InterfaceMessage::SetPrimaryHighlightColor(rgb) => {
             state.primary_highlight_color = rgb;
             apply_primary_highlight_color(rgb);
         }
-        ColorsMessage::SetPaginatorTabLabelColor(rgb) => {
+        InterfaceMessage::SetPaginatorTabLabelColor(rgb) => {
             state.paginator_tab_label_color = rgb;
             apply_paginator_tab_label_color(rgb);
         }
-        ColorsMessage::PickLowColor | ColorsMessage::PickHighColor | ColorsMessage::PickDisabledColor | ColorsMessage::PickSeparatorColor | ColorsMessage::PickVisualGuides | ColorsMessage::PickSliderTrackColor | ColorsMessage::PickPageLowColor | ColorsMessage::PickColorBordersColor | ColorsMessage::PickNormalColor | ColorsMessage::PickPaginatorSidebarColor | ColorsMessage::PickPrimaryHighlightColor | ColorsMessage::PickPaginatorTabLabelColor => {}
-        ColorsMessage::Refreshed(new) => {
+        InterfaceMessage::SetToggleEnabledColor(rgb) => {
+            state.toggle_enabled_color = rgb;
+            apply_toggle_enabled_color(rgb);
+        }
+        InterfaceMessage::SetToggleDisabledColor(rgb) => {
+            state.toggle_disabled_color = rgb;
+            apply_toggle_disabled_color(rgb);
+        }
+        InterfaceMessage::SetTabMarginX(margin) => {
+            state.paginator_tab_margin_x = margin;
+            apply_paginator_tab_margin_x(margin);
+        }
+        InterfaceMessage::SetTabMarginY(margin) => {
+            state.paginator_tab_margin_y = margin;
+            apply_paginator_tab_margin_y(margin);
+        }
+        InterfaceMessage::SetTabPaddingX(padding) => {
+            state.paginator_tab_padding_x = padding;
+            apply_paginator_tab_padding_x(padding);
+        }
+        InterfaceMessage::SetTabPaddingY(padding) => {
+            state.paginator_tab_padding_y = padding;
+            apply_paginator_tab_padding_y(padding);
+        }
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickPaginatorTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
+        InterfaceMessage::Refreshed(new) => {
+            let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
+            let was_my_hovered = state.tab_margin_spinbox_y.hovered();
+            let was_px_hovered = state.tab_padding_spinbox_x.hovered();
+            let was_py_hovered = state.tab_padding_spinbox_y.hovered();
             *state = new;
+            state.tab_margin_spinbox_x.set_hovered(was_mx_hovered);
+            state.tab_margin_spinbox_y.set_hovered(was_my_hovered);
+            state.tab_padding_spinbox_x.set_hovered(was_px_hovered);
+            state.tab_padding_spinbox_y.set_hovered(was_py_hovered);
         }
     }
 }
@@ -466,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\npaginator_tab_label_color = \"#e6e6f2\"\n";
+        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\npaginator_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -479,6 +642,8 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "paginator_sidebar_color", [0, 0, 0]), [90, 90, 101]);
         assert_eq!(parse_color_from_key(content, "primary_highlight_color", [0, 0, 0]), [255, 255, 255]);
         assert_eq!(parse_color_from_key(content, "paginator_tab_label_color", [0, 0, 0]), [230, 230, 242]);
+        assert_eq!(parse_color_from_key(content, "toggle_enabled_color", [0, 0, 0]), [104, 216, 165]);
+        assert_eq!(parse_color_from_key(content, "toggle_disabled_color", [0, 0, 0]), [135, 135, 148]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
     }
 

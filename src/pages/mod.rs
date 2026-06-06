@@ -12,7 +12,7 @@ pub mod notifications;
 pub mod backup;
 pub mod typeface;
 pub mod services;
-pub mod colors;
+pub mod interface;
 pub mod screensaver;
 pub mod accounts;
 
@@ -32,7 +32,7 @@ pub enum Page {
     Notifications,
     Backup,
     Typefaces,
-    Colors,
+    Interface,
     Screensaver,
 }
 
@@ -41,7 +41,7 @@ impl Page {
         Page::Accounts,
         Page::Audio,
         Page::Backup,
-        Page::Colors,
+        Page::Interface,
         Page::Display,
         Page::Input,
         Page::Layout,
@@ -72,7 +72,7 @@ impl Page {
             Page::Notifications => "Notifications",
             Page::Backup => "Backup",
             Page::Typefaces => "Typefaces",
-            Page::Colors => "Colors",
+            Page::Interface => "Interface",
             Page::Screensaver => "Screensaver",
         }
     }

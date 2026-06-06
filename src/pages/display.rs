@@ -1,5 +1,5 @@
 use crate::app::PageContent;
-use clear_ui::layout::{render_widget, Section};
+use clear_ui::layout::{render_widget, Section, PageLayoutBuilder, LayoutStrategy, Subsection};
 use clear_ui::widget::{Spinbox, Label, Widget};
 
 #[derive(Debug, Clone)]
@@ -171,80 +171,89 @@ const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const BLANK_BAR: [f32; 4] = [0.15, 0.15, 0.24, 1.0];
 const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 
-pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
     // ── Brightness ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Brightness");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Brightness");
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading display settings...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        let bright_pct = if state.max_brightness > 0.0 {
-            (state.brightness / state.max_brightness * 100.0).round() as i32
-        } else { 0 };
+        if !state.loaded {
+            sec.text(pc, "Loading display settings...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        } else {
+            let bright_pct = if state.max_brightness > 0.0 {
+                (state.brightness / state.max_brightness * 100.0).round() as i32
+            } else { 0 };
 
-        let bar_w = cw - 100.0;
-        let yt = sec.ay();
-        pc.rect(BLANK_BAR, sec.ax(12.0), yt, bar_w, 8.0);
-        pc.rect(FILL_BAR, sec.ax(12.0), yt, bar_w * bright_pct as f32 / 100.0, 8.0);
-        pc.text(&format!("{}%", bright_pct), sec.ax(16.0 + bar_w), yt - 2.0, 11.0, TEXT_DIM);
-        sec.content_y += 14.0;
+            let bar_w = sec_w - 100.0;
+            let yt = sec.ay();
+            pc.rect(BLANK_BAR, sec.ax(12.0), yt, bar_w, 8.0);
+            pc.rect(FILL_BAR, sec.ax(12.0), yt, bar_w * bright_pct as f32 / 100.0, 8.0);
+            pc.text(&format!("{}%", bright_pct), sec.ax(16.0 + bar_w), yt - 2.0, 11.0, TEXT_DIM);
+            sec.content_y += 14.0;
 
-        let yt = sec.ay();
-        let sb_w = 100.0;
-        let sb_h = 26.0;
-        state.brightness_spinbox.value = bright_pct;
-        state.brightness_spinbox.set_row_rect(sec.ax(8.0), cw - 16.0);
-        render_widget(&mut pc, &mut state.brightness_spinbox, sec.ax(12.0), yt, sb_w, sb_h);
-        sec.content_y += sb_h + 12.0;
-    }
-    y = sec.finish(&mut pc);
+            let yt = sec.ay();
+            let sb_w = 100.0;
+            let sb_h = 26.0;
+            state.brightness_spinbox.value = bright_pct;
+            state.brightness_spinbox.set_row_rect(sec.ax(8.0), sec_w - 16.0);
+            render_widget(pc, &mut state.brightness_spinbox, sec.ax(12.0), yt, sb_w, sb_h);
+            sec.content_y += sb_h + 12.0;
+        }
+        sec.finish(pc)
+    });
 
     // ── Night Light ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Night Light");
-    if !state.loaded {
-        sec.text(&mut pc, "Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
-        state.night_light_label.set_text(nl_label);
-        sec.widget(&mut pc, &mut state.night_light_label, 12.0, cw - 24.0, 20.0);
-        sec.spacing(8.0);
-    }
-    y = sec.finish(&mut pc);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Night Light");
+        if !state.loaded {
+            sec.text(pc, "Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        } else {
+            let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
+            state.night_light_label.set_text(nl_label);
+            sec.widget(pc, &mut state.night_light_label, 12.0, sec_w - 24.0, 20.0);
+            sec.spacing(8.0);
+        }
+        sec.finish(pc)
+    });
 
     // ── Outputs ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Outputs");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Outputs");
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        for out in &mut state.outputs {
-            let yt = sec.ay();
-            
-            // Name label at x = 14.0
-            render_widget(&mut pc, &mut out.name_label, sec.ax(14.0), yt, 100.0, 20.0);
-            
-            // Resolution label at x = 120.0
-            render_widget(&mut pc, &mut out.resolution_label, sec.ax(120.0), yt, 160.0, 20.0);
-            
-            // Scale label at x = 290.0 if present
-            if let Some(ref mut scale_lbl) = out.scale_label {
-                render_widget(&mut pc, scale_lbl, sec.ax(290.0), yt, cw - 304.0, 20.0);
+        if !state.loaded {
+            sec.text(pc, "Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        } else {
+            for out in &mut state.outputs {
+                let mut subsec = Subsection::new(
+                    pc,
+                    sec.ax(0.0) + Section::ROW_PADDING_X,
+                    sec.content_y,
+                    sec.cw - 2.0 * Section::ROW_PADDING_X,
+                    &out.name,
+                );
+                
+                subsec.widget(pc, &mut out.resolution_label, 12.0, 240.0, 20.0);
+                
+                if let Some(ref mut scale_lbl) = out.scale_label {
+                    subsec.widget(pc, scale_lbl, 12.0, 240.0, 20.0);
+                }
+                
+                let sub_h = subsec.finish(pc);
+                sec.content_y = sub_h;
             }
-            
-            sec.content_y += 20.0;
-            sec.spacing(12.0);
         }
-    }
-    sec.finish(&mut pc);
+        sec.finish(pc)
+    });
 
-    pc
+    final_pc
 }
+
 
 pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
     match msg {
@@ -281,3 +290,17 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_view_layout_grid() {
+        let mut state = DisplayState::default();
+        let mut layout = clear_ui::layout::GridLayout::new(320.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout);
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
+}
+

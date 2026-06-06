@@ -2,8 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::PageContent;
-use clear_ui::layout::Section;
-use clear_ui::widget::{Dropdown, Spinbox, Toggle, Widget, Finger, Trackpad};
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
+use clear_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Widget};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
 
@@ -389,125 +389,145 @@ fn apply_repeat_config(rate: u16, delay: u16) {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
 
     // ── Touchpad ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Touchpad");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Touchpad");
 
-    let toggle_w = 48.0;
-    let toggle_h = 24.0;
-    state.tap_toggle.set_toggled(state.tap_to_click);
-    sec.widget(&mut pc, &mut state.tap_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(8.0);
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        state.tap_toggle.set_toggled(state.tap_to_click);
+        sec.widget(pc, &mut state.tap_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(8.0);
 
-    // Built-in trackpad visualizer widget
-    let pad_w = 280.0;
-    let pad_h = 140.0;
-    state.trackpad.set_fingers(state.fingers.clone());
-    sec.widget(&mut pc, &mut state.trackpad, 14.0, pad_w, pad_h);
-    sec.spacing(12.0);
-    y = sec.finish(&mut pc);
+        // Built-in trackpad visualizer widget
+        let pad_w = 280.0;
+        let pad_h = 140.0;
+        state.trackpad.set_fingers(state.fingers.clone());
+        sec.widget(pc, &mut state.trackpad, 14.0, pad_w, pad_h);
+        sec.spacing(12.0);
+        sec.finish(pc)
+    });
 
     // ── Trackpoint ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Trackpoint");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Trackpoint");
 
-    state.dwtp_toggle.set_toggled(state.dwtp);
-    sec.widget(&mut pc, &mut state.dwtp_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(12.0);
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        state.dwtp_toggle.set_toggled(state.dwtp);
+        sec.widget(pc, &mut state.dwtp_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.trackpoint_accel_speed_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(12.0);
+        sec.widget(pc, &mut state.trackpoint_accel_speed_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.trackpoint_accel_profile_menu, 14.0, 200.0, 26.0);
-    sec.spacing(8.0);
-    y = sec.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
+        sec.widget(pc, &mut state.trackpoint_accel_profile_menu, 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
+        sec.finish_focused(pc, sec_focused.first().copied().unwrap_or(false))
+    });
 
     // ── Keyboard ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Keyboard");
 
-    sec.widget(&mut pc, &mut state.rate_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(8.0);
+        sec.widget(pc, &mut state.rate_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
 
-    sec.widget(&mut pc, &mut state.delay_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(8.0);
-    y = sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
+        sec.widget(pc, &mut state.delay_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
+        sec.finish_focused(pc, sec_focused.get(1).copied().unwrap_or(false))
+    });
 
     // ── Cursor ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Cursor");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Cursor");
 
-    sec.widget(&mut pc, &mut state.cursor_theme_menu, 14.0, 200.0, 26.0);
-    sec.spacing(12.0);
+        sec.widget(pc, &mut state.cursor_theme_menu, 14.0, 200.0, 26.0);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.cursor_size_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(8.0);
+        sec.widget(pc, &mut state.cursor_size_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(2).copied().unwrap_or(false));
+        sec.finish_focused(pc, sec_focused.get(2).copied().unwrap_or(false))
+    });
 
     // ── Scrolling ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Scrolling");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Scrolling");
 
-    state.scroll_toggle.set_toggled(state.inertial_scroll);
-    sec.widget(&mut pc, &mut state.scroll_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(12.0);
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        state.scroll_toggle.set_toggled(state.inertial_scroll);
+        sec.widget(pc, &mut state.scroll_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.scroll_friction_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(12.0);
+        sec.widget(pc, &mut state.scroll_friction_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(12.0);
 
-    state.natural_toggle.set_toggled(state.natural_scroll);
-    sec.widget(&mut pc, &mut state.natural_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(12.0);
+        state.natural_toggle.set_toggled(state.natural_scroll);
+        sec.widget(pc, &mut state.natural_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.scroll_speed_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(8.0);
+        sec.widget(pc, &mut state.scroll_speed_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(3).copied().unwrap_or(false));
+        sec.finish_focused(pc, sec_focused.get(3).copied().unwrap_or(false))
+    });
 
     // ── Inertial Input ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Inertial Input");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Inertial Input");
 
-    state.pointer_toggle.set_toggled(state.inertial_pointer);
-    sec.widget(&mut pc, &mut state.pointer_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(12.0);
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        state.pointer_toggle.set_toggled(state.inertial_pointer);
+        sec.widget(pc, &mut state.pointer_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.pointer_friction_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(16.0);
+        sec.widget(pc, &mut state.pointer_friction_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(16.0);
 
-    state.trackpad_toggle.set_toggled(state.inertial_trackpad);
-    sec.widget(&mut pc, &mut state.trackpad_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(12.0);
+        state.trackpad_toggle.set_toggled(state.inertial_trackpad);
+        sec.widget(pc, &mut state.trackpad_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(12.0);
 
-    sec.widget(&mut pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(8.0);
+        sec.widget(pc, &mut state.trackpad_friction_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(8.0);
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(4).copied().unwrap_or(false));
+        sec.finish_focused(pc, sec_focused.get(4).copied().unwrap_or(false))
+    });
 
     // ── Keybindings ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Keyboard Bindings");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Keyboard Bindings");
 
-    for kb in &state.keybinds {
-        let binding = if kb.mods.is_empty() {
-            kb.key.clone()
-        } else {
-            format!("{}+{}", kb.mods, kb.key)
-        };
-        let action_label = if kb.command.is_empty() {
-            kb.action.clone()
-        } else {
-            format!("{}: {}", kb.action, kb.command)
-        };
-        sec.text(&mut pc, &binding, 14.0, 0.0, 12.0, TEXT_FG);
-        let label_w = cw - 200.0;
-        sec.text(&mut pc, &action_label, 14.0 + label_w.min(180.0), 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    }
-    sec.finish(&mut pc);
+        for kb in &state.keybinds {
+            let binding = if kb.mods.is_empty() {
+                kb.key.clone()
+            } else {
+                format!("{}+{}", kb.mods, kb.key)
+            };
+            let action_label = if kb.command.is_empty() {
+                kb.action.clone()
+            } else {
+                format!("{}: {}", kb.action, kb.command)
+            };
+            sec.text(pc, &binding, 14.0, 0.0, 12.0, TEXT_FG);
+            let label_w = sec_w - 200.0;
+            sec.text(pc, &action_label, 14.0 + label_w.min(180.0), 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        }
+        sec.finish(pc)
+    });
 
-
-
-    pc
+    final_pc
 }
+
 
 pub fn update(state: &mut InputState, msg: InputMessage) {
     match msg {
@@ -639,5 +659,14 @@ mod tests {
         assert_eq!(parse_bool_from_default(empty_content, "natural_scroll", false), false);
         assert_eq!(parse_f32_key(empty_content, "scroll_speed", 1.0), 1.0);
     }
+
+    #[test]
+    fn test_view_layout_grid() {
+        let mut state = InputState::default();
+        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false, false], &mut layout);
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
 }
+
 

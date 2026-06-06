@@ -1,4 +1,4 @@
-use clear_ui::layout::RenderTarget;
+use clear_ui::layout::{RenderTarget, Radial};
 
 use crate::pages::audio;
 use crate::pages::display;
@@ -13,7 +13,7 @@ use crate::pages::system_info;
 use crate::pages::backup;
 use crate::pages::typeface;
 use crate::pages::services;
-use crate::pages::colors;
+use crate::pages::interface;
 use crate::pages::screensaver;
 use crate::pages::accounts;
 use crate::pages::Page;
@@ -33,7 +33,7 @@ pub struct AppState {
     pub backup: backup::BackupState,
     pub typeface: typeface::TypefaceState,
     pub services: services::ServicesState,
-    pub colors: colors::ColorsState,
+    pub interface: interface::InterfaceState,
     pub screensaver: screensaver::ScreensaverState,
     pub accounts: accounts::AccountsState,
 }
@@ -55,7 +55,7 @@ impl Default for AppState {
             backup: backup::BackupState::default(),
             typeface: typeface::TypefaceState::default(),
             services: services::ServicesState::default(),
-            colors: colors::ColorsState::default(),
+            interface: interface::InterfaceState::default(),
             screensaver: screensaver::read_screensaver_config(),
             accounts: accounts::AccountsState::default_mock(),
         }
@@ -77,12 +77,13 @@ pub enum AppAction {
     Backup(backup::BackupMessage),
     Typeface(typeface::TypefaceMessage),
     Services(services::ServicesMessage),
-    Colors(colors::ColorsMessage),
+    Interface(interface::InterfaceMessage),
     Screensaver(screensaver::ScreensaverMessage),
     Accounts(accounts::AccountsMessage),
 }
 
 
+#[derive(Default)]
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32)>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
@@ -162,3 +163,6 @@ impl RenderTarget for PageContent {
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), bounds));
     }
 }
+
+
+

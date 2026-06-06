@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 
 #[derive(Debug, Clone, Default)]
 pub struct SystemState {
@@ -48,52 +48,57 @@ fn spawn_systemctl(action: &str) {
     let _ = tokio::process::Command::new("systemctl").arg(action).spawn();
 }
 
-pub fn view(state: &SystemState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+pub fn view(state: &SystemState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "System");
-    if !state.loaded {
-        sec.text(&mut pc, "Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
-        sec.spacing(10.0);
-    } else {
-        sec.text(&mut pc, &format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
-        sec.spacing(10.0);
-        sec.text(&mut pc, &format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
-    }
-    y = sec.finish(&mut pc);
-
-    // ── System Actions section ──
-    let mut sec_act = Section::new(&mut pc, cx, y, cw, "System Actions");
-
-    let yt = sec_act.ay();
-    let act_btn_h = 32.0;
-
-    sec_act.row(4, 8.0, act_btn_h, |i, x, w| {
-        match i {
-            0 => {
-                pc.button("Suspend", x, yt, w, act_btn_h,
-                    SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Suspend));
-            }
-            1 => {
-                pc.button("Hibernate", x, yt, w, act_btn_h,
-                    SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Hibernate));
-            }
-            2 => {
-                pc.button("Reboot", x, yt, w, act_btn_h,
-                    DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Reboot));
-            }
-            3 => {
-                pc.button("Power Off", x, yt, w, act_btn_h,
-                    DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::PowerOff));
-            }
-            _ => {}
+    // 1. System Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "System");
+        if !state.loaded {
+            sec.text(pc, "Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
+            sec.spacing(10.0);
+        } else {
+            sec.text(pc, &format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
+            sec.spacing(10.0);
+            sec.text(pc, &format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
         }
+        sec.finish(pc)
     });
-    sec_act.spacing(12.0);
-    sec_act.finish(&mut pc);
 
-    pc
+    // 2. System Actions Section
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec_act = Section::new(pc, rx, ry, sec_w, "System Actions");
+        let yt = sec_act.ay();
+        let act_btn_h = 32.0;
+
+        sec_act.row(4, 8.0, act_btn_h, |i, x, w| {
+            match i {
+                0 => {
+                    pc.button("Suspend", x, yt, w, act_btn_h,
+                        SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Suspend));
+                }
+                1 => {
+                    pc.button("Hibernate", x, yt, w, act_btn_h,
+                        SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Hibernate));
+                }
+                2 => {
+                    pc.button("Reboot", x, yt, w, act_btn_h,
+                        DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Reboot));
+                }
+                3 => {
+                    pc.button("Power Off", x, yt, w, act_btn_h,
+                        DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::PowerOff));
+                }
+                _ => {}
+            }
+        });
+        sec_act.spacing(12.0);
+        sec_act.finish(pc)
+    });
+
+    final_pc
 }
 
 pub fn update(_state: &mut SystemState, msg: SystemMessage) {

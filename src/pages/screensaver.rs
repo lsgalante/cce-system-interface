@@ -1,6 +1,6 @@
 use std::fs;
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Toggle, Spinbox, Dropdown};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
@@ -230,50 +230,53 @@ const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
 const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut ScreensaverState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let y = cy + 12.0;
+pub fn view(state: &mut ScreensaverState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Screensaver Settings");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Screensaver Settings");
 
-    let toggle_w = 48.0;
-    let toggle_h = 24.0;
-    
-    state.enable_toggle.set_toggled(state.enable);
-    sec.widget(&mut pc, &mut state.enable_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(8.0);
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        
+        state.enable_toggle.set_toggled(state.enable);
+        sec.widget(pc, &mut state.enable_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(8.0);
 
-    state.lock_screen_toggle.set_toggled(state.lock_screen);
-    sec.widget(&mut pc, &mut state.lock_screen_toggle, 14.0, toggle_w, toggle_h);
-    sec.spacing(16.0);
+        state.lock_screen_toggle.set_toggled(state.lock_screen);
+        sec.widget(pc, &mut state.lock_screen_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(16.0);
 
-    state.timeout_spinbox.value = state.timeout;
-    sec.widget(&mut pc, &mut state.timeout_spinbox, 14.0, 200.0, 26.0);
-    sec.spacing(16.0);
+        state.timeout_spinbox.value = state.timeout;
+        sec.widget(pc, &mut state.timeout_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(16.0);
 
-    sec.widget(&mut pc, &mut state.style_menu, 14.0, 200.0, 26.0);
-    sec.spacing(24.0);
+        sec.widget(pc, &mut state.style_menu, 14.0, 200.0, 26.0);
+        sec.spacing(24.0);
 
-    let btn_w = 160.0;
-    let btn_h = 32.0;
-    let btn_y = sec.ay();
-    sec.row(1, 0.0, btn_h, |_, x, _| {
-        pc.button(
-            "Preview Screensaver",
-            x,
-            btn_y,
-            btn_w,
-            btn_h,
-            BTN_BG,
-            BTN_HOVER,
-            WHITE,
-            AppAction::Screensaver(ScreensaverMessage::StartPreview),
-        );
+        let btn_w = 160.0;
+        let btn_h = 32.0;
+        let btn_y = sec.ay();
+        sec.row(1, 0.0, btn_h, |_, x, _| {
+            pc.button(
+                "Preview Screensaver",
+                x,
+                btn_y,
+                btn_w,
+                btn_h,
+                BTN_BG,
+                BTN_HOVER,
+                WHITE,
+                AppAction::Screensaver(ScreensaverMessage::StartPreview),
+            );
+        });
+        sec.spacing(12.0);
+        sec.finish(pc)
     });
-    sec.spacing(12.0);
-    sec.finish(&mut pc);
 
-    pc
+    final_pc
 }
 
 pub fn update(state: &mut ScreensaverState, msg: ScreensaverMessage) {

@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{render_widget, Section};
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{TextBox, Widget};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -303,298 +303,301 @@ pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Se
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, _ch: f32) -> PageContent {
-    let mut pc = PageContent::new();
-    let y = cy + 12.0;
+pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Online Accounts");
-
-    if !state.loaded {
-        sec.text(&mut pc, "Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        let usable_w = cw - 24.0;
-        let gap = 24.0;
-        let left_w = (usable_w - gap) * 0.40;
-        let right_w = (usable_w - gap) * 0.60;
-        let left_x = cx + 12.0;
-        let right_x = left_x + left_w + gap;
-
-        let mut left_y = sec.ay();
-        let row_h = 28.0;
-        let row_gap = 8.0;
-
-        if state.accounts.is_empty() {
-            pc.text("No accounts configured.", left_x + 8.0, left_y, 12.0, TEXT_DIM);
-            left_y += 20.0;
+    // ── Accounts Section ──
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec_accounts = Section::new(pc, rx, ry, sec_w, "Accounts");
+        if !state.loaded {
+            sec_accounts.text(pc, "Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec_accounts.spacing(18.0);
         } else {
-            for (idx, acc) in state.accounts.iter().enumerate() {
-                let label = if acc.is_default {
-                    format!("{} [Default]", acc.email)
-                } else {
-                    acc.email.clone()
-                };
-                let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
-                let bg_col = if is_selected { [0.20, 0.40, 0.65, 0.4] } else { [0.10, 0.10, 0.16, 0.3] };
-                pc.button(
-                    &label,
-                    left_x,
-                    left_y,
-                    left_w,
-                    row_h,
-                    bg_col,
-                    [0.20, 0.20, 0.25, 0.15],
-                    [0.90, 0.90, 0.95, 1.0],
-                    AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
-                );
-                left_y += row_h + row_gap;
+            let row_h = 28.0;
+            let row_gap = 8.0;
+            let item_w = sec_w - 40.0;
+
+            if state.accounts.is_empty() {
+                sec_accounts.text(pc, "No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
+                sec_accounts.spacing(20.0);
+            } else {
+                for (idx, acc) in state.accounts.iter().enumerate() {
+                    let label = if acc.is_default {
+                        format!("{} [Default]", acc.email)
+                    } else {
+                        acc.email.clone()
+                    };
+                    let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
+                    let bg_col = if is_selected { [0.20, 0.40, 0.65, 0.4] } else { [0.10, 0.10, 0.16, 0.3] };
+                    pc.button(
+                        &label,
+                        sec_accounts.ax(12.0),
+                        sec_accounts.ay(),
+                        item_w,
+                        row_h,
+                        bg_col,
+                        [0.20, 0.20, 0.25, 0.15],
+                        [0.90, 0.90, 0.95, 1.0],
+                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
+                    );
+                    sec_accounts.spacing(row_h + row_gap);
+                }
+            }
+
+            sec_accounts.spacing(12.0);
+
+            let add_bg = if state.adding_new { [0.20, 0.40, 0.65, 0.4] } else { [0.13, 0.18, 0.14, 1.0] };
+            pc.button(
+                "Add Account",
+                sec_accounts.ax(12.0),
+                sec_accounts.ay(),
+                item_w,
+                row_h,
+                add_bg,
+                [0.25, 0.30, 0.26, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Accounts(AccountsMessage::AddAccountStart),
+            );
+            sec_accounts.spacing(row_h + row_gap);
+
+            let oauth_bg = if state.editing_oauth_creds { [0.20, 0.40, 0.65, 0.4] } else { [0.15, 0.15, 0.20, 1.0] };
+            pc.button(
+                "Google API Settings",
+                sec_accounts.ax(12.0),
+                sec_accounts.ay(),
+                item_w,
+                row_h,
+                oauth_bg,
+                [0.25, 0.25, 0.30, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
+            );
+            sec_accounts.spacing(row_h + row_gap);
+
+            if let Some(selected_idx) = state.selected_idx {
+                if selected_idx < state.accounts.len() && !state.adding_new && !state.editing_oauth_creds {
+                    let acc = &state.accounts[selected_idx];
+                    if !acc.is_default {
+                        pc.button(
+                            "Make Default",
+                            sec_accounts.ax(12.0),
+                            sec_accounts.ay(),
+                            item_w,
+                            row_h,
+                            [0.15, 0.15, 0.25, 1.0],
+                            [0.25, 0.25, 0.35, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::MakeDefault(selected_idx)),
+                        );
+                        sec_accounts.spacing(row_h + row_gap);
+                    }
+                    pc.button(
+                        "Delete Account",
+                        sec_accounts.ax(12.0),
+                        sec_accounts.ay(),
+                        item_w,
+                        row_h,
+                        [0.33, 0.20, 0.20, 1.0],
+                        [0.45, 0.25, 0.25, 1.0],
+                        [1.0, 0.33, 0.33, 1.0],
+                        AppAction::Accounts(AccountsMessage::DeleteAccount(selected_idx)),
+                    );
+                    sec_accounts.spacing(row_h + row_gap);
+                }
             }
         }
+        sec_accounts.finish(pc)
+    });
 
-        left_y += 12.0;
-        
-        let add_bg = if state.adding_new { [0.20, 0.40, 0.65, 0.4] } else { [0.13, 0.18, 0.14, 1.0] };
-        pc.button(
-            "Add Account",
-            left_x,
-            left_y,
-            left_w,
-            row_h,
-            add_bg,
-            [0.25, 0.30, 0.26, 1.0],
-            [1.0, 1.0, 1.0, 1.0],
-            AppAction::Accounts(AccountsMessage::AddAccountStart),
-        );
-        left_y += row_h + row_gap;
+    // ── Modify Accounts Section ──
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec_modify = Section::new(pc, rx, ry, sec_w, "Modify Accounts");
+        let item_w = sec_w - 40.0;
+        let row_h = 28.0;
 
-        let oauth_bg = if state.editing_oauth_creds { [0.20, 0.40, 0.65, 0.4] } else { [0.15, 0.15, 0.20, 1.0] };
-        pc.button(
-            "Google API Settings",
-            left_x,
-            left_y,
-            left_w,
-            row_h,
-            oauth_bg,
-            [0.25, 0.25, 0.30, 1.0],
-            [1.0, 1.0, 1.0, 1.0],
-            AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
-        );
-        left_y += row_h + row_gap;
+        if state.loaded {
+            if state.adding_new {
+                sec_modify.text(pc, "Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+                sec_modify.spacing(24.0);
 
-        if let Some(selected_idx) = state.selected_idx {
-            if selected_idx < state.accounts.len() && !state.adding_new && !state.editing_oauth_creds {
-                let acc = &state.accounts[selected_idx];
-                if !acc.is_default {
-                    pc.button(
-                        "Make Default",
-                        left_x,
-                        left_y,
-                        left_w,
-                        row_h,
-                        [0.15, 0.15, 0.25, 1.0],
-                        [0.25, 0.25, 0.35, 1.0],
-                        [1.0, 1.0, 1.0, 1.0],
-                        AppAction::Accounts(AccountsMessage::MakeDefault(selected_idx)),
-                    );
-                    left_y += row_h + row_gap;
-                }
+                sec_modify.text(pc, "Note: Gmail uses Google Login. iCloud requires App PW.", 12.0, 0.0, 11.0, TEXT_DIM);
+                sec_modify.spacing(18.0);
+
+                let widget_h = 26.0;
+                let field_gap = 14.0;
+
+                // Email Address textbox
+                let email_top = state.email_box.top_room();
+                state.email_box.set_row_rect(rx + 12.0, item_w);
+                clear_ui::layout::render_widget(pc, &mut state.email_box, rx + 12.0, sec_modify.ay() + email_top, item_w, widget_h);
+                sec_modify.spacing(widget_h + email_top + field_gap);
+
+                // Password textbox
+                let password_top = state.password_box.top_room();
+                state.password_box.set_row_rect(rx + 12.0, item_w);
+                clear_ui::layout::render_widget(pc, &mut state.password_box, rx + 12.0, sec_modify.ay() + password_top, item_w, widget_h);
+                sec_modify.spacing(widget_h + password_top + field_gap);
+
+                // IMAP Server textbox
+                let imap_top = state.imap_box.top_room();
+                state.imap_box.set_row_rect(rx + 12.0, item_w);
+                clear_ui::layout::render_widget(pc, &mut state.imap_box, rx + 12.0, sec_modify.ay() + imap_top, item_w, widget_h);
+                sec_modify.spacing(widget_h + imap_top + field_gap);
+
+                // SMTP Server textbox
+                let smtp_top = state.smtp_box.top_room();
+                state.smtp_box.set_row_rect(rx + 12.0, item_w);
+                clear_ui::layout::render_widget(pc, &mut state.smtp_box, rx + 12.0, sec_modify.ay() + smtp_top, item_w, widget_h);
+                sec_modify.spacing(widget_h + smtp_top + field_gap);
+
+                let helper_w = (item_w - 8.0) / 2.0;
                 pc.button(
-                    "Delete Account",
-                    left_x,
-                    left_y,
-                    left_w,
+                    "Login (Google)",
+                    sec_modify.ax(12.0),
+                    sec_modify.ay(),
+                    helper_w,
+                    row_h,
+                    [0.15, 0.15, 0.25, 1.0],
+                    [0.25, 0.25, 0.35, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::GoogleLoginInit),
+                );
+                pc.button(
+                    "Login (iCloud)",
+                    sec_modify.ax(12.0) + helper_w + 8.0,
+                    sec_modify.ay(),
+                    helper_w,
+                    row_h,
+                    [0.15, 0.15, 0.25, 1.0],
+                    [0.25, 0.25, 0.35, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::ICloudLoginHelp),
+                );
+                sec_modify.spacing(row_h + 16.0);
+
+                pc.button(
+                    "Save Account",
+                    sec_modify.ax(12.0),
+                    sec_modify.ay(),
+                    helper_w,
+                    row_h,
+                    [0.13, 0.18, 0.14, 1.0],
+                    [0.25, 0.30, 0.26, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::AddAccountSave),
+                );
+                pc.button(
+                    "Cancel",
+                    sec_modify.ax(12.0) + helper_w + 8.0,
+                    sec_modify.ay(),
+                    helper_w,
                     row_h,
                     [0.33, 0.20, 0.20, 1.0],
                     [0.45, 0.25, 0.25, 1.0],
-                    [1.0, 0.33, 0.33, 1.0],
-                    AppAction::Accounts(AccountsMessage::DeleteAccount(selected_idx)),
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::AddAccountCancel),
                 );
-                left_y += row_h + row_gap;
-            }
-        }
+                sec_modify.spacing(row_h + 12.0);
+            } else if state.editing_oauth_creds {
+                sec_modify.text(pc, "Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+                sec_modify.spacing(24.0);
 
-        let mut right_y = sec.ay();
+                sec_modify.text(pc, "Configures client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
+                sec_modify.spacing(18.0);
+                sec_modify.text(pc, "Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", 12.0, 0.0, 11.0, TEXT_DIM);
+                sec_modify.spacing(18.0);
 
-        if state.adding_new {
-            pc.text("Add New Account", right_x, right_y, 14.0, [0.35, 0.65, 0.90, 1.0]);
-            right_y += 24.0;
+                let widget_h = 26.0;
+                let field_gap = 14.0;
 
-            pc.text("Note: Gmail uses Google Login. iCloud requires App PW.", right_x, right_y, 11.0, TEXT_DIM);
-            right_y += 18.0;
+                // Client ID textbox
+                let client_id_top = state.oauth_client_id_box.top_room();
+                state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
+                clear_ui::layout::render_widget(pc, &mut state.oauth_client_id_box, rx + 12.0, sec_modify.ay() + client_id_top, item_w, widget_h);
+                sec_modify.spacing(widget_h + client_id_top + field_gap);
 
-            let widget_h = 26.0;
-            let field_gap = 14.0;
+                // Client Secret textbox
+                let client_secret_top = state.oauth_client_secret_box.top_room();
+                state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
+                clear_ui::layout::render_widget(pc, &mut state.oauth_client_secret_box, rx + 12.0, sec_modify.ay() + client_secret_top, item_w, widget_h);
+                sec_modify.spacing(widget_h + client_secret_top + field_gap);
 
-            // Email Address textbox
-            let email_top = state.email_box.top_room();
-            state.email_box.set_row_rect(right_x, right_w);
-            clear_ui::layout::render_widget(&mut pc, &mut state.email_box, right_x, right_y + email_top, right_w, widget_h);
-            right_y += widget_h + email_top + field_gap;
+                let helper_w = (item_w - 8.0) / 2.0;
+                pc.button(
+                    "Save Credentials",
+                    sec_modify.ax(12.0),
+                    sec_modify.ay(),
+                    helper_w,
+                    row_h,
+                    [0.13, 0.18, 0.14, 1.0],
+                    [0.25, 0.30, 0.26, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::EditOAuthCredsSave),
+                );
+                pc.button(
+                    "Cancel",
+                    sec_modify.ax(12.0) + helper_w + 8.0,
+                    sec_modify.ay(),
+                    helper_w,
+                    row_h,
+                    [0.33, 0.20, 0.20, 1.0],
+                    [0.45, 0.25, 0.25, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
+                );
+                sec_modify.spacing(row_h + 12.0);
+            } else if let Some(selected_idx) = state.selected_idx {
+                if selected_idx < state.accounts.len() {
+                    let acc = &state.accounts[selected_idx];
 
-            // Password textbox
-            let password_top = state.password_box.top_room();
-            state.password_box.set_row_rect(right_x, right_w);
-            clear_ui::layout::render_widget(&mut pc, &mut state.password_box, right_x, right_y + password_top, right_w, widget_h);
-            right_y += widget_h + password_top + field_gap;
+                    sec_modify.text(pc, "Account Details", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+                    sec_modify.spacing(28.0);
 
-            // IMAP Server textbox
-            let imap_top = state.imap_box.top_room();
-            state.imap_box.set_row_rect(right_x, right_w);
-            clear_ui::layout::render_widget(&mut pc, &mut state.imap_box, right_x, right_y + imap_top, right_w, widget_h);
-            right_y += widget_h + imap_top + field_gap;
+                    sec_modify.text(pc, &format!("Email Address:   {}", acc.email), 12.0, 0.0, 12.0, [0.90, 0.90, 0.95, 1.0]);
+                    sec_modify.spacing(18.0);
 
-            // SMTP Server textbox
-            let smtp_top = state.smtp_box.top_room();
-            state.smtp_box.set_row_rect(right_x, right_w);
-            clear_ui::layout::render_widget(&mut pc, &mut state.smtp_box, right_x, right_y + smtp_top, right_w, widget_h);
-            right_y += widget_h + smtp_top + field_gap;
+                    let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password-based" };
+                    sec_modify.text(pc, &format!("Authentication:  {}", auth_type), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
+                    sec_modify.spacing(18.0);
 
-            let helper_w = (right_w - 8.0) / 2.0;
-            pc.button(
-                "Login (Google)",
-                right_x,
-                right_y,
-                helper_w,
-                row_h,
-                [0.15, 0.15, 0.25, 1.0],
-                [0.25, 0.25, 0.35, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::GoogleLoginInit),
-            );
-            pc.button(
-                "Login (iCloud)",
-                right_x + helper_w + 8.0,
-                right_y,
-                helper_w,
-                row_h,
-                [0.15, 0.15, 0.25, 1.0],
-                [0.25, 0.25, 0.35, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::ICloudLoginHelp),
-            );
-            right_y += row_h + 16.0;
+                    sec_modify.text(pc, &format!("IMAP Server:     {}", acc.imap), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
+                    sec_modify.spacing(18.0);
 
-            pc.button(
-                "Save Account",
-                right_x,
-                right_y,
-                helper_w,
-                row_h,
-                [0.13, 0.18, 0.14, 1.0],
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::AddAccountSave),
-            );
-            pc.button(
-                "Cancel",
-                right_x + helper_w + 8.0,
-                right_y,
-                helper_w,
-                row_h,
-                [0.33, 0.20, 0.20, 1.0],
-                [0.45, 0.25, 0.25, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::AddAccountCancel),
-            );
-            right_y += row_h + 12.0;
-        } else if state.editing_oauth_creds {
-            pc.text("Google OAuth Credentials", right_x, right_y, 14.0, [0.35, 0.65, 0.90, 1.0]);
-            right_y += 24.0;
+                    sec_modify.text(pc, &format!("SMTP Server:     {}", acc.smtp), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
+                    sec_modify.spacing(24.0);
 
-            pc.text("Configures client ID & secret from your Google Cloud Console.", right_x, right_y, 11.0, TEXT_DIM);
-            right_y += 18.0;
-            pc.text("Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", right_x, right_y, 11.0, TEXT_DIM);
-            right_y += 18.0;
-
-            let widget_h = 26.0;
-            let field_gap = 14.0;
-
-            // Client ID textbox
-            let client_id_top = state.oauth_client_id_box.top_room();
-            state.oauth_client_id_box.set_row_rect(right_x, right_w);
-            clear_ui::layout::render_widget(&mut pc, &mut state.oauth_client_id_box, right_x, right_y + client_id_top, right_w, widget_h);
-            right_y += widget_h + client_id_top + field_gap;
-
-            // Client Secret textbox
-            let client_secret_top = state.oauth_client_secret_box.top_room();
-            state.oauth_client_secret_box.set_row_rect(right_x, right_w);
-            clear_ui::layout::render_widget(&mut pc, &mut state.oauth_client_secret_box, right_x, right_y + client_secret_top, right_w, widget_h);
-            right_y += widget_h + client_secret_top + field_gap;
-
-            let helper_w = (right_w - 8.0) / 2.0;
-            pc.button(
-                "Save Credentials",
-                right_x,
-                right_y,
-                helper_w,
-                row_h,
-                [0.13, 0.18, 0.14, 1.0],
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::EditOAuthCredsSave),
-            );
-            pc.button(
-                "Cancel",
-                right_x + helper_w + 8.0,
-                right_y,
-                helper_w,
-                row_h,
-                [0.33, 0.20, 0.20, 1.0],
-                [0.45, 0.25, 0.25, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
-            );
-            right_y += row_h + 12.0;
-        } else if let Some(selected_idx) = state.selected_idx {
-            if selected_idx < state.accounts.len() {
-                let acc = &state.accounts[selected_idx];
-
-                pc.text("Account Details", right_x, right_y, 14.0, [0.35, 0.65, 0.90, 1.0]);
-                right_y += 28.0;
-
-                pc.text(&format!("Email Address:   {}", acc.email), right_x + 8.0, right_y, 12.0, [0.90, 0.90, 0.95, 1.0]);
-                right_y += 18.0;
-
-                let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password-based" };
-                pc.text(&format!("Authentication:  {}", auth_type), right_x + 8.0, right_y, 12.0, [0.83, 0.83, 0.83, 1.0]);
-                right_y += 18.0;
-
-                pc.text(&format!("IMAP Server:     {}", acc.imap), right_x + 8.0, right_y, 12.0, [0.83, 0.83, 0.83, 1.0]);
-                right_y += 18.0;
-
-                pc.text(&format!("SMTP Server:     {}", acc.smtp), right_x + 8.0, right_y, 12.0, [0.83, 0.83, 0.83, 1.0]);
-                right_y += 24.0;
-
-                if acc.is_oauth {
-                    pc.button(
-                        "Click to Login (Browser)",
-                        right_x + 8.0,
-                        right_y,
-                        200.0,
-                        row_h,
-                        [0.15, 0.15, 0.25, 1.0],
-                        [0.25, 0.25, 0.35, 1.0],
-                        [1.0, 1.0, 1.0, 1.0],
-                        AppAction::Accounts(AccountsMessage::GoogleLoginInit),
-                    );
-                    right_y += row_h + 12.0;
+                    if acc.is_oauth {
+                        pc.button(
+                            "Click to Login (Browser)",
+                            sec_modify.ax(12.0),
+                            sec_modify.ay(),
+                            200.0,
+                            row_h,
+                            [0.15, 0.15, 0.25, 1.0],
+                            [0.25, 0.25, 0.35, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::GoogleLoginInit),
+                        );
+                        sec_modify.spacing(row_h + 12.0);
+                    }
                 }
+            } else {
+                sec_modify.text(pc, "Select an account to view details, or click Add Account.", 12.0, 0.0, 12.0, TEXT_DIM);
+                sec_modify.spacing(20.0);
             }
-        } else {
-            pc.text("Select an account to view details, or click Add Account.", right_x, right_y, 12.0, TEXT_DIM);
-            right_y += 20.0;
+
+            if let Some(ref msg) = state.status_msg {
+                sec_modify.spacing(12.0);
+                sec_modify.text(pc, msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
+                sec_modify.spacing(24.0);
+            }
         }
+        sec_modify.finish(pc)
+    });
 
-        if let Some(ref msg) = state.status_msg {
-            pc.text(msg, right_x, right_y + 12.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
-            right_y += 24.0;
-        }
-
-        sec.content_y = left_y.max(right_y) + 24.0;
-    }
-
-    sec.finish(&mut pc);
-    pc
+    final_pc
 }
 
 pub fn update(state: &mut AccountsState, msg: AccountsMessage) {

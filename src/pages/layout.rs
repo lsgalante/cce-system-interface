@@ -2,8 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::PageContent;
-use clear_ui::layout::Section;
-use clear_ui::widget::{Dropdown, Spinbox};
+use clear_ui::layout::{render_widget, Section, PageLayoutBuilder, LayoutStrategy};
+use clear_ui::widget::{Spinbox, Dropdown};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
 
@@ -504,643 +504,220 @@ fn get_short_app_name(app_id: &str) -> String {
     }
 }
 
-pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+struct SimNode {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    label: String,
+}
+
+pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
 
     // Current Layout Section (Read-only visual preview)
-    let mut sec_cl = Section::new(&mut pc, cx, y, cw, "Current Layout");
-    sec_cl.spacing(8.0);
-    
-    let info = read_current_layout_status();
-    
-    let card_w = (cw - 24.0) / 2.0;
-    let card_h = 135.0;
-    
-    for tag_idx in 0..4 {
-        let col = tag_idx % 2;
-        let row = tag_idx / 2;
-        let tx = cx + 8.0 + col as f32 * (card_w + 8.0);
-        let ty = sec_cl.ay() + row as f32 * (card_h + 8.0);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec_cl = Section::new(pc, rx, ry, sec_w, "Current Layout");
+        sec_cl.spacing(8.0);
         
-        let is_active = (info.active_tags & (1 << tag_idx)) != 0;
-        let is_focused = (info.focused_tags & (1 << tag_idx)) != 0;
+        let info = read_current_layout_status();
         
-        // Draw card border and background
-        let border_color = if is_focused {
-            [0.2, 0.6, 1.0, 1.0]
-        } else if is_active {
-            [0.28, 0.28, 0.32, 1.0]
-        } else {
-            [0.16, 0.16, 0.18, 1.0]
-        };
+        let card_w = (sec_w - 24.0) / 2.0;
+        let card_h = 135.0;
         
-        let bg_color = if is_active {
-            [0.08, 0.08, 0.11, 0.9]
-        } else {
-            [0.05, 0.05, 0.07, 0.9]
-        };
-        
-        pc.rect(border_color, tx, ty, card_w, card_h);
-        pc.rect(bg_color, tx + 1.0, ty + 1.0, card_w - 2.0, card_h - 2.0);
-        
-        // Render tag label in top-left of the card
-        let tag_label = format!("T{}", tag_idx + 1);
-        let tag_label_color = if is_focused {
-            [1.0, 1.0, 1.0, 1.0]
-        } else if is_active {
-            [0.8, 0.8, 0.85, 1.0]
-        } else {
-            [0.4, 0.4, 0.45, 1.0]
-        };
-        pc.text(&tag_label, tx + 8.0, ty + 6.0, 9.5, tag_label_color);
-        
-        // Render miniature screen preview inside the box (on the left side)
-        let px = tx + 8.0;
-        let py = ty + 24.0;
-        let p_w = 70.0;
-        let p_h = 44.0;
-        
-        // Screen background
-        pc.rect([0.04, 0.04, 0.06, 1.0], px, py, p_w, p_h);
-        pc.rect([0.16, 0.16, 0.18, 1.0], px, py, p_w, 1.0); // Top border
-        pc.rect([0.16, 0.16, 0.18, 1.0], px, py + p_h - 1.0, p_w, 1.0); // Bottom border
-        pc.rect([0.16, 0.16, 0.18, 1.0], px, py, 1.0, p_h); // Left border
-        pc.rect([0.16, 0.16, 0.18, 1.0], px + p_w - 1.0, py, 1.0, p_h); // Right border
-        
-        // Find windows for this tag
-        let tag_windows: Vec<&PreviewWindow> = info.windows.iter()
-            .filter(|w| w.app_id != "clear-status-interface" && ((w.tags & (1 << tag_idx)) != 0 || w.tags == u32::MAX))
-            .collect();
+        for tag_idx in 0..4 {
+            let col = tag_idx % 2;
+            let row = tag_idx / 2;
+            let tx = rx + 8.0 + col as f32 * (card_w + 8.0);
+            let ty = sec_cl.ay() + row as f32 * (card_h + 8.0);
             
-        // Reference screen size
-        let screen_w = 1920.0;
-        let screen_h = 1200.0;
-        let scale_x = p_w / screen_w;
-        let scale_y = p_h / screen_h;
-        
-        for win in &tag_windows {
-            let wx = (px + win.x * scale_x).max(px).min(px + p_w);
-            let wy = (py + win.y * scale_y).max(py).min(py + p_h);
-            let ww = (win.w * scale_x).min(p_w - (wx - px));
-            let wh = (win.h * scale_y).min(p_h - (wy - py));
+            // Draw card background
+            let is_active = (info.active_tags & (1 << tag_idx)) != 0;
+            let bg_col = if is_active { [0.12, 0.24, 0.14, 0.55] } else { [0.08, 0.08, 0.12, 0.35] };
+            let border_col = if is_active { [0.36, 0.56, 0.38, 0.95] } else { [0.24, 0.24, 0.28, 0.45] };
+            pc.rect(bg_col, tx, ty, card_w, card_h);
+            // Card border
+            pc.rect(border_col, tx, ty, card_w, 1.0);
+            pc.rect(border_col, tx, ty + card_h - 1.0, card_w, 1.0);
+            pc.rect(border_col, tx, ty, 1.0, card_h);
+            pc.rect(border_col, tx + card_w - 1.0, ty, 1.0, card_h);
             
-            let is_win_focused = !win.title.is_empty() && win.title == info.focused_title;
-            let color = if is_win_focused {
-                [0.2, 0.6, 1.0, 1.0]
-            } else {
-                [0.4, 0.4, 0.45, 1.0]
-            };
-            let fill = if is_win_focused {
-                [0.10, 0.32, 0.55, 0.4]
-            } else {
-                [0.12, 0.12, 0.15, 0.4]
-            };
+            // Tag index text
+            pc.text(&format!("TAG {}", tag_idx + 1), tx + 8.0, ty + 8.0, 10.0, [0.55, 0.55, 0.60, 1.0]);
             
-            pc.rect(color, wx, wy, ww, wh);
-            pc.rect(fill, wx + 0.5, wy + 0.5, ww - 1.0, wh - 1.0);
-        }
-        
-        // Determine Tag layout mode
-        let layout_name = if is_focused {
-            info.focused_layout_mode.clone()
-        } else if let Some(win) = tag_windows.first() {
-            win.layout_mode.clone()
-        } else {
+            // Layout Name
             let layout_idx = state.tag_layout_menus.get(tag_idx).map(|m| m.selected).unwrap_or(0);
-            let layout_modes = ["Cascade", "Grid", "Fullscreen", "Floating", "Popup"];
-            layout_modes.get(layout_idx).copied().unwrap_or("Cascade").to_string()
-        };
-
-        // Render Visual Focus Hierarchy Tree on the right side of the card
-        let tx_tree = tx + 84.0;
-        let ty_tree = ty + 18.0;
-        let t_w = card_w - 92.0;
-        let t_h = card_h - 26.0;
-        
-        struct TreeNode {
-            label: String,
-            is_focused: bool,
-            is_layout: bool,
-            is_role: bool,
-            x: f32,
-            y: f32,
-            w: f32,
-            h: f32,
-        }
-        
-        struct TreeLine {
-            x0: f32,
-            y0: f32,
-            x1: f32,
-            y1: f32,
-            is_dotted: bool,
-        }
-        
-        let mut nodes = Vec::new();
-        let mut lines = Vec::new();
-        
-        // 1. Root Node: Layout mode
-        let layout_label = match layout_name.as_str() {
-            "Grid" => "GRID",
-            "Cascade" => "CASC",
-            "Fullscreen" => "FULL",
-            "Floating" => "FLOT",
-            "Popup" => "POP",
-            _ => "CASC",
-        };
-        nodes.push(TreeNode {
-            label: layout_label.to_string(),
-            is_focused: false,
-            is_layout: true,
-            is_role: false,
-            x: tx_tree + 2.0,
-            y: ty_tree + (t_h - 14.0) / 2.0,
-            w: 28.0,
-            h: 14.0,
-        });
-        
-        // 2. Window hierarchy
-        if tag_windows.is_empty() {
-            nodes.push(TreeNode {
-                label: "(empty)".to_string(),
-                is_focused: false,
-                is_layout: false,
-                is_role: true,
-                x: tx_tree + 46.0,
-                y: ty_tree + (t_h - 12.0) / 2.0,
-                w: 42.0,
-                h: 12.0,
-            });
-            lines.push(TreeLine {
-                x0: tx_tree + 30.0,
-                y0: ty_tree + t_h / 2.0,
-                x1: tx_tree + 46.0,
-                y1: ty_tree + t_h / 2.0,
-                is_dotted: true,
-            });
-        } else {
-            // Group transient/child windows under their parent
-            struct WinNode {
-                win: PreviewWindow,
-                children: Vec<PreviewWindow>,
-            }
-            let mut groups: Vec<WinNode> = Vec::new();
-            for w in &tag_windows {
-                if w.has_parent && !groups.is_empty() {
-                    groups.last_mut().unwrap().children.push((*w).clone());
-                } else {
-                    groups.push(WinNode {
-                        win: (*w).clone(),
-                        children: Vec::new(),
-                    });
+            let layout_name = match layout_idx {
+                1 => "Cascade",
+                2 => "Stack",
+                3 => "Grid",
+                4 => "L-Tiled",
+                5 => "R-Tiled",
+                6 => "Equal",
+                7 => "Spiral",
+                8 => "Floating",
+                _ => "Fullscreen",
+            };
+            pc.text(layout_name, tx + 8.0, ty + 20.0, 13.0, [0.90, 0.90, 0.95, 1.0]);
+            
+            // Visual nodes layout preview inside card
+            let preview_x = tx + 8.0;
+            let preview_y = ty + 38.0;
+            let preview_w = card_w - 16.0;
+            let preview_h = card_h - 46.0;
+            
+            // Gray border for preview box
+            pc.rect([0.16, 0.16, 0.20, 0.6], preview_x, preview_y, preview_w, preview_h);
+            pc.rect([0.22, 0.22, 0.26, 0.8], preview_x, preview_y, preview_w, 1.0);
+            pc.rect([0.22, 0.22, 0.26, 0.8], preview_x, preview_y + preview_h - 1.0, preview_w, 1.0);
+            pc.rect([0.22, 0.22, 0.26, 0.8], preview_x, preview_y, 1.0, preview_h);
+            pc.rect([0.22, 0.22, 0.26, 0.8], preview_x + preview_w - 1.0, preview_y, 1.0, preview_h);
+            
+            // Simulate layout windows preview
+            let mut nodes = Vec::new();
+            match layout_idx {
+                0 => { // Fullscreen
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: preview_w - 4.0, h: preview_h - 4.0, label: "F".to_string() });
                 }
+                1 => { // Cascade
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: preview_w - 12.0, h: preview_h - 12.0, label: "1".to_string() });
+                    nodes.push(SimNode { x: 6.0, y: 6.0, w: preview_w - 12.0, h: preview_h - 12.0, label: "2".to_string() });
+                    nodes.push(SimNode { x: 10.0, y: 10.0, w: preview_w - 12.0, h: preview_h - 12.0, label: "3".to_string() });
+                }
+                2 => { // Stack
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: preview_w - 4.0, h: preview_h - 4.0, label: "Stack".to_string() });
+                }
+                3 => { // Grid
+                    let hw = (preview_w - 6.0) / 2.0;
+                    let hh = (preview_h - 6.0) / 2.0;
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: hw, h: hh, label: "1".to_string() });
+                    nodes.push(SimNode { x: 4.0 + hw, y: 2.0, w: hw, h: hh, label: "2".to_string() });
+                    nodes.push(SimNode { x: 2.0, y: 4.0 + hh, w: hw, h: hh, label: "3".to_string() });
+                    nodes.push(SimNode { x: 4.0 + hw, y: 4.0 + hh, w: hw, h: hh, label: "4".to_string() });
+                }
+                4 => { // Left Tiled (Main window on left, stack on right)
+                    let mw = (preview_w - 6.0) * 0.55;
+                    let sw = (preview_w - 6.0) - mw;
+                    let sh = (preview_h - 6.0) / 2.0;
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: mw, h: preview_h - 4.0, label: "M".to_string() });
+                    nodes.push(SimNode { x: 4.0 + mw, y: 2.0, w: sw, h: sh, label: "1".to_string() });
+                    nodes.push(SimNode { x: 4.0 + mw, y: 4.0 + sh, w: sw, h: sh, label: "2".to_string() });
+                }
+                5 => { // Right Tiled (Main window on right, stack on left)
+                    let mw = (preview_w - 6.0) * 0.55;
+                    let sw = (preview_w - 6.0) - mw;
+                    let sh = (preview_h - 6.0) / 2.0;
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: sw, h: sh, label: "1".to_string() });
+                    nodes.push(SimNode { x: 2.0, y: 4.0 + sh, w: sw, h: sh, label: "2".to_string() });
+                    nodes.push(SimNode { x: 4.0 + sw, y: 2.0, w: mw, h: preview_h - 4.0, label: "M".to_string() });
+                }
+                6 => { // Equal (Split evenly horizontally)
+                    let ew = (preview_w - 8.0) / 3.0;
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: ew, h: preview_h - 4.0, label: "1".to_string() });
+                    nodes.push(SimNode { x: 4.0 + ew, y: 2.0, w: ew, h: preview_h - 4.0, label: "2".to_string() });
+                    nodes.push(SimNode { x: 6.0 + 2.0 * ew, y: 2.0, w: ew, h: preview_h - 4.0, label: "3".to_string() });
+                }
+                7 => { // Spiral (Fibonacci layout)
+                    let w1 = (preview_w - 6.0) * 0.5;
+                    let w2 = (preview_w - 6.0) - w1;
+                    let h2 = (preview_h - 6.0) * 0.5;
+                    nodes.push(SimNode { x: 2.0, y: 2.0, w: w1, h: preview_h - 4.0, label: "1".to_string() });
+                    nodes.push(SimNode { x: 4.0 + w1, y: 2.0, w: w2, h: h2, label: "2".to_string() });
+                    nodes.push(SimNode { x: 4.0 + w1, y: 4.0 + h2, w: w2 * 0.5, h: h2, label: "3".to_string() });
+                    nodes.push(SimNode { x: 4.0 + w1 + w2 * 0.5, y: 4.0 + h2, w: w2 * 0.5, h: h2, label: "4".to_string() });
+                }
+                8 => { // Floating (Scatter windows randomly)
+                    nodes.push(SimNode { x: 4.0, y: 6.0, w: preview_w * 0.45, h: preview_h * 0.5, label: "1".to_string() });
+                    nodes.push(SimNode { x: preview_w * 0.4, y: 12.0, w: preview_w * 0.5, h: preview_h * 0.45, label: "2".to_string() });
+                    nodes.push(SimNode { x: 8.0, y: preview_h * 0.4, w: preview_w * 0.55, h: preview_h * 0.5, label: "3".to_string() });
+                }
+                _ => {}
             }
             
-            let num_roots = groups.len();
-            if num_roots == 1 {
-                // One root group: Layout -> Root -> Children
-                let root_g = &groups[0];
-                let rx = tx_tree + 44.0;
-                let ry = ty_tree + (t_h - 14.0) / 2.0;
-                let is_root_focused = !root_g.win.title.is_empty() && root_g.win.title == info.focused_title;
-                nodes.push(TreeNode {
-                    label: get_short_app_name(&root_g.win.app_id),
-                    is_focused: is_root_focused,
-                    is_layout: false,
-                    is_role: false,
-                    x: rx,
-                    y: ry,
-                    w: 42.0,
-                    h: 14.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 30.0,
-                    y0: ty_tree + t_h / 2.0,
-                    x1: rx,
-                    y1: ty_tree + t_h / 2.0,
-                    is_dotted: false,
-                });
+            // Draw simulated layout preview rectangles
+            for node in nodes {
+                let rect_x = preview_x + node.x;
+                let rect_y = preview_y + node.y;
                 
-                let child_count = root_g.children.len();
-                for (ci, child) in root_g.children.iter().enumerate() {
-                    let cx = tx_tree + 104.0;
-                    let cy = if child_count == 1 {
-                        ty_tree + (t_h - 12.0) / 2.0
-                    } else {
-                        ty_tree + 6.0 + (ci as f32 / (child_count - 1) as f32) * (t_h - 24.0)
-                    };
-                    let is_child_focused = !child.title.is_empty() && child.title == info.focused_title;
-                    nodes.push(TreeNode {
-                        label: get_short_app_name(&child.app_id),
-                        is_focused: is_child_focused,
-                        is_layout: false,
-                        is_role: false,
-                        x: cx,
-                        y: cy,
-                        w: 32.0,
-                        h: 12.0,
-                    });
-                    lines.push(TreeLine {
-                        x0: rx + 42.0,
-                        y0: ry + 7.0,
-                        x1: cx,
-                        y1: cy + 6.0,
-                        is_dotted: true,
-                    });
-                }
-            } else if num_roots == 2 {
-                // Two root groups (Master & Stack): C -> M & S -> Windows -> Children
-                let m_y = ty_tree + (t_h / 2.0) - 20.0;
-                let s_y = ty_tree + (t_h / 2.0) + 20.0;
+                // Semi-transparent blue for node backgrounds, slightly highlighted if active tag
+                let node_bg = if is_active { [0.30, 0.45, 0.65, 0.45] } else { [0.20, 0.24, 0.30, 0.25] };
+                let node_border = if is_active { [0.45, 0.65, 0.90, 0.85] } else { [0.35, 0.40, 0.45, 0.55] };
                 
-                // M indicator
-                nodes.push(TreeNode {
-                    label: "M".to_string(),
-                    is_focused: false,
-                    is_layout: false,
-                    is_role: true,
-                    x: tx_tree + 44.0,
-                    y: m_y - 6.0,
-                    w: 12.0,
-                    h: 12.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 30.0,
-                    y0: ty_tree + t_h / 2.0,
-                    x1: tx_tree + 44.0,
-                    y1: m_y,
-                    is_dotted: false,
-                });
+                pc.rect(node_bg, rect_x, rect_y, node.w, node.h);
                 
-                // Master Window
-                let m_win = &groups[0];
-                let is_m_focused = !m_win.win.title.is_empty() && m_win.win.title == info.focused_title;
-                nodes.push(TreeNode {
-                    label: get_short_app_name(&m_win.win.app_id),
-                    is_focused: is_m_focused,
-                    is_layout: false,
-                    is_role: false,
-                    x: tx_tree + 68.0,
-                    y: m_y - 7.0,
-                    w: 36.0,
-                    h: 14.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 56.0,
-                    y0: m_y,
-                    x1: tx_tree + 68.0,
-                    y1: m_y,
-                    is_dotted: false,
-                });
+                // Draw node border lines
+                pc.rect(node_border, rect_x, rect_y, node.w, 1.0);
+                pc.rect(node_border, rect_x, rect_y + node.h - 1.0, node.w, 1.0);
+                pc.rect(node_border, rect_x, rect_y, 1.0, node.h);
+                pc.rect(node_border, rect_x + node.w - 1.0, rect_y, 1.0, node.h);
                 
-                // S indicator
-                nodes.push(TreeNode {
-                    label: "S".to_string(),
-                    is_focused: false,
-                    is_layout: false,
-                    is_role: true,
-                    x: tx_tree + 44.0,
-                    y: s_y - 6.0,
-                    w: 12.0,
-                    h: 12.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 30.0,
-                    y0: ty_tree + t_h / 2.0,
-                    x1: tx_tree + 44.0,
-                    y1: s_y,
-                    is_dotted: false,
-                });
+                // Center the label text inside the simulated node
+                let text_sz = 9.0;
+                let text_w = node.label.len() as f32 * 6.0;
+                let text_color = if is_active { [0.95, 0.95, 1.0, 0.95] } else { [0.70, 0.70, 0.75, 0.75] };
+                let tx_offset = ((node.w - text_w) / 2.0).max(1.0);
+                let ty_offset = ((node.h - text_sz) / 2.0).max(1.0);
                 
-                // Stack Window
-                let s_win = &groups[1];
-                let is_s_focused = !s_win.win.title.is_empty() && s_win.win.title == info.focused_title;
-                nodes.push(TreeNode {
-                    label: get_short_app_name(&s_win.win.app_id),
-                    is_focused: is_s_focused,
-                    is_layout: false,
-                    is_role: false,
-                    x: tx_tree + 68.0,
-                    y: s_y - 7.0,
-                    w: 36.0,
-                    h: 14.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 56.0,
-                    y0: s_y,
-                    x1: tx_tree + 68.0,
-                    y1: s_y,
-                    is_dotted: false,
-                });
-                
-                // Master children
-                let m_child_count = m_win.children.len();
-                for (ci, child) in m_win.children.iter().enumerate() {
-                    let cx = tx_tree + 114.0;
-                    let cy = if m_child_count == 1 {
-                        m_y - 6.0
-                    } else {
-                        m_y - 20.0 + (ci as f32 / (m_child_count - 1) as f32) * 30.0
-                    };
-                    let is_child_focused = !child.title.is_empty() && child.title == info.focused_title;
-                    nodes.push(TreeNode {
-                        label: get_short_app_name(&child.app_id),
-                        is_focused: is_child_focused,
-                        is_layout: false,
-                        is_role: false,
-                        x: cx,
-                        y: cy,
-                        w: 28.0,
-                        h: 11.0,
-                    });
-                    lines.push(TreeLine {
-                        x0: tx_tree + 104.0,
-                        y0: m_y,
-                        x1: cx,
-                        y1: cy + 5.5,
-                        is_dotted: true,
-                    });
-                }
-                
-                // Stack children
-                let s_child_count = s_win.children.len();
-                for (ci, child) in s_win.children.iter().enumerate() {
-                    let cx = tx_tree + 114.0;
-                    let cy = if s_child_count == 1 {
-                        s_y - 6.0
-                    } else {
-                        s_y - 20.0 + (ci as f32 / (s_child_count - 1) as f32) * 30.0
-                    };
-                    let is_child_focused = !child.title.is_empty() && child.title == info.focused_title;
-                    nodes.push(TreeNode {
-                        label: get_short_app_name(&child.app_id),
-                        is_focused: is_child_focused,
-                        is_layout: false,
-                        is_role: false,
-                        x: cx,
-                        y: cy,
-                        w: 28.0,
-                        h: 11.0,
-                    });
-                    lines.push(TreeLine {
-                        x0: tx_tree + 104.0,
-                        y0: s_y,
-                        x1: cx,
-                        y1: cy + 5.5,
-                        is_dotted: true,
-                    });
-                }
-            } else {
-                // More than 2 roots: Master & Stacks (list of stack items)
-                let m_y = ty_tree + (t_h / 2.0) - 24.0;
-                let s_y = ty_tree + (t_h / 2.0) + 20.0;
-                
-                // M indicator
-                nodes.push(TreeNode {
-                    label: "M".to_string(),
-                    is_focused: false,
-                    is_layout: false,
-                    is_role: true,
-                    x: tx_tree + 44.0,
-                    y: m_y - 6.0,
-                    w: 12.0,
-                    h: 12.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 30.0,
-                    y0: ty_tree + t_h / 2.0,
-                    x1: tx_tree + 44.0,
-                    y1: m_y,
-                    is_dotted: false,
-                });
-                
-                // Master Window
-                let m_win = &groups[0];
-                let is_m_focused = !m_win.win.title.is_empty() && m_win.win.title == info.focused_title;
-                nodes.push(TreeNode {
-                    label: get_short_app_name(&m_win.win.app_id),
-                    is_focused: is_m_focused,
-                    is_layout: false,
-                    is_role: false,
-                    x: tx_tree + 68.0,
-                    y: m_y - 7.0,
-                    w: 36.0,
-                    h: 14.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 56.0,
-                    y0: m_y,
-                    x1: tx_tree + 68.0,
-                    y1: m_y,
-                    is_dotted: false,
-                });
-                
-                // S indicator
-                nodes.push(TreeNode {
-                    label: "S".to_string(),
-                    is_focused: false,
-                    is_layout: false,
-                    is_role: true,
-                    x: tx_tree + 44.0,
-                    y: s_y - 6.0,
-                    w: 12.0,
-                    h: 12.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 30.0,
-                    y0: ty_tree + t_h / 2.0,
-                    x1: tx_tree + 44.0,
-                    y1: s_y,
-                    is_dotted: false,
-                });
-                
-                // Render first 2 Stack items vertically spaced
-                let s1_win = &groups[1];
-                let is_s1_focused = !s1_win.win.title.is_empty() && s1_win.win.title == info.focused_title;
-                let s1_y = s_y - 14.0;
-                nodes.push(TreeNode {
-                    label: get_short_app_name(&s1_win.win.app_id),
-                    is_focused: is_s1_focused,
-                    is_layout: false,
-                    is_role: false,
-                    x: tx_tree + 68.0,
-                    y: s1_y - 7.0,
-                    w: 36.0,
-                    h: 14.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 56.0,
-                    y0: s_y,
-                    x1: tx_tree + 68.0,
-                    y1: s1_y,
-                    is_dotted: false,
-                });
-                
-                let s2_win = &groups[2];
-                let is_s2_focused = !s2_win.win.title.is_empty() && s2_win.win.title == info.focused_title;
-                let s2_y = s_y + 14.0;
-                nodes.push(TreeNode {
-                    label: get_short_app_name(&s2_win.win.app_id),
-                    is_focused: is_s2_focused,
-                    is_layout: false,
-                    is_role: false,
-                    x: tx_tree + 68.0,
-                    y: s2_y - 7.0,
-                    w: 36.0,
-                    h: 14.0,
-                });
-                lines.push(TreeLine {
-                    x0: tx_tree + 56.0,
-                    y0: s_y,
-                    x1: tx_tree + 68.0,
-                    y1: s2_y,
-                    is_dotted: false,
-                });
+                pc.text(&node.label, rect_x + tx_offset, rect_y + ty_offset, text_sz, text_color);
             }
         }
         
-        let line_color = if is_active {
-            [0.30, 0.30, 0.35, 0.8]
-        } else {
-            [0.18, 0.18, 0.20, 0.6]
-        };
-        let draw_line = |pc: &mut PageContent, x0: f32, y0: f32, x1: f32, y1: f32, is_dotted: bool, color: [f32; 4]| {
-            if is_dotted {
-                if (x0 - x1).abs() < 0.1 {
-                    let sy = y0.min(y1);
-                    let ey = y0.max(y1);
-                    let mut curr_y = sy;
-                    while curr_y <= ey {
-                        pc.rect(color, x0 - 0.5, curr_y, 1.0, 1.0);
-                        curr_y += 3.0;
-                    }
-                } else if (y0 - y1).abs() < 0.1 {
-                    let sx = x0.min(x1);
-                    let ex = x0.max(x1);
-                    let mut curr_x = sx;
-                    while curr_x <= ex {
-                        pc.rect(color, curr_x, y0 - 0.5, 1.0, 1.0);
-                        curr_x += 3.0;
-                    }
-                } else {
-                    pc.rect(color, x0.min(x1), y0.min(y1), (x0 - x1).abs().max(1.0), (y0 - y1).abs().max(1.0));
-                }
-            } else {
-                if (x0 - x1).abs() < 0.1 {
-                    pc.rect(color, x0 - 0.5, y0.min(y1), 1.0, (y0 - y1).abs());
-                } else if (y0 - y1).abs() < 0.1 {
-                    pc.rect(color, x0.min(x1), y0 - 0.5, (x0 - x1).abs(), 1.0);
-                } else {
-                    pc.rect(color, x0.min(x1), y0.min(y1), (x0 - x1).abs().max(1.0), (y0 - y1).abs().max(1.0));
-                }
-            }
-        };
-        
-        for line in &lines {
-            let mid_x = (line.x0 + line.x1) / 2.0;
-            draw_line(&mut pc, line.x0, line.y0, mid_x, line.y0, line.is_dotted, line_color);
-            draw_line(&mut pc, mid_x, line.y0, mid_x, line.y1, line.is_dotted, line_color);
-            draw_line(&mut pc, mid_x, line.y1, line.x1, line.y1, line.is_dotted, line_color);
-        }
-        
-        // Draw nodes
-        for node in nodes {
-            let border = if node.is_layout {
-                [0.32, 0.32, 0.38, 1.0]
-            } else if node.is_role {
-                [0.20, 0.20, 0.24, 0.8]
-            } else if node.is_focused {
-                [0.2, 0.6, 1.0, 1.0]
-            } else {
-                [0.22, 0.22, 0.26, 1.0]
-            };
-            
-            let bg = if node.is_layout {
-                [0.14, 0.14, 0.18, 1.0]
-            } else if node.is_role {
-                [0.09, 0.09, 0.11, 0.9]
-            } else if node.is_focused {
-                [0.10, 0.32, 0.55, 1.0]
-            } else {
-                [0.11, 0.11, 0.15, 1.0]
-            };
-            
-            pc.rect(border, node.x, node.y, node.w, node.h);
-            pc.rect(bg, node.x + 1.0, node.y + 1.0, node.w - 2.0, node.h - 2.0);
-            
-            let text_color = if node.is_focused {
-                [1.0, 1.0, 1.0, 1.0]
-            } else if node.is_role {
-                [0.48, 0.48, 0.52, 1.0]
-            } else {
-                [0.78, 0.78, 0.82, 1.0]
-            };
-            
-            let text_sz = if node.is_layout {
-                7.5
-            } else if node.is_role {
-                7.0
-            } else {
-                7.0
-            };
-            
-            let char_width = text_sz * 0.52;
-            let text_w = node.label.len() as f32 * char_width;
-            let tx_offset = ((node.w - text_w) / 2.0).max(1.0);
-            let ty_offset = ((node.h - text_sz) / 2.0).max(1.0);
-            
-            pc.text(&node.label, node.x + tx_offset, node.y + ty_offset, text_sz, text_color);
-        }
-    }
-    
-    sec_cl.content_y += 2.0 * (card_h + 8.0) + 4.0;
-    y = sec_cl.finish(&mut pc);
+        sec_cl.content_y += 2.0 * (card_h + 8.0) + 4.0;
+        sec_cl.finish(pc)
+    });
 
     // 1. Border Width Section
-    let mut sec_bw = Section::new(&mut pc, cx, y, cw, "Border Width");
-    sec_bw.spacing(8.0);
-    for (i, param) in WidthParam::ALL.iter().enumerate() {
-        state.spinboxes[i].set_label(param.label());
-        sec_bw.widget(&mut pc, &mut state.spinboxes[i], 14.0, 200.0, 26.0);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec_bw = Section::new(pc, rx, ry, sec_w, "Border Width");
         sec_bw.spacing(8.0);
-    }
-    y = sec_bw.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
+        for (i, param) in WidthParam::ALL.iter().enumerate() {
+            state.spinboxes[i].set_label(param.label());
+            sec_bw.widget(pc, &mut state.spinboxes[i], 14.0, 200.0, 26.0);
+            sec_bw.spacing(8.0);
+        }
+        sec_bw.finish_focused(pc, sec_focused.first().copied().unwrap_or(false))
+    });
 
     // 2. Cascade Section
-    let mut sec_cascade = Section::new(&mut pc, cx, y, cw, "Cascade");
-    sec_cascade.spacing(8.0);
-    state.cascade_offset_spinbox.set_label("Offset");
-    sec_cascade.widget(&mut pc, &mut state.cascade_offset_spinbox, 14.0, 200.0, 26.0);
-    sec_cascade.spacing(8.0);
-    state.edge_gap_spinbox.set_label("Edge Gap");
-    sec_cascade.widget(&mut pc, &mut state.edge_gap_spinbox, 14.0, 200.0, 26.0);
-    sec_cascade.spacing(8.0);
-    state.top_gap_spinbox.set_label("Top Gap");
-    sec_cascade.widget(&mut pc, &mut state.top_gap_spinbox, 14.0, 200.0, 26.0);
-    sec_cascade.spacing(8.0);
-    y = sec_cascade.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec_cascade = Section::new(pc, rx, ry, sec_w, "Cascade");
+        sec_cascade.spacing(8.0);
+        state.cascade_offset_spinbox.set_label("Offset");
+        sec_cascade.widget(pc, &mut state.cascade_offset_spinbox, 14.0, 200.0, 26.0);
+        sec_cascade.spacing(8.0);
+        state.edge_gap_spinbox.set_label("Edge Gap");
+        sec_cascade.widget(pc, &mut state.edge_gap_spinbox, 14.0, 200.0, 26.0);
+        sec_cascade.spacing(8.0);
+        state.top_gap_spinbox.set_label("Top Gap");
+        sec_cascade.widget(pc, &mut state.top_gap_spinbox, 14.0, 200.0, 26.0);
+        sec_cascade.spacing(8.0);
+        sec_cascade.finish_focused(pc, sec_focused.get(1).copied().unwrap_or(false))
+    });
 
     // 3. Movement Section
-    let mut movement_sec = Section::new(&mut pc, cx, y, cw, "Movement");
-    movement_sec.spacing(8.0);
-    state.transition_duration_spinbox.set_label("Duration (ms)");
-    movement_sec.widget(&mut pc, &mut state.transition_duration_spinbox, 14.0, 200.0, 26.0);
-    movement_sec.spacing(8.0);
-    y = movement_sec.finish_focused(&mut pc, sec_focused.get(2).copied().unwrap_or(false));
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut movement_sec = Section::new(pc, rx, ry, sec_w, "Movement");
+        movement_sec.spacing(8.0);
+        state.transition_duration_spinbox.set_label("Duration (ms)");
+        movement_sec.widget(pc, &mut state.transition_duration_spinbox, 14.0, 200.0, 26.0);
+        movement_sec.spacing(8.0);
+        movement_sec.finish_focused(pc, sec_focused.get(2).copied().unwrap_or(false))
+    });
 
     // 4. Default Layouts Section
-    let mut default_layouts_sec = Section::new(&mut pc, cx, y, cw, "Default Layouts");
-    default_layouts_sec.spacing(8.0);
-    for i in 0..4 {
-        default_layouts_sec.widget(&mut pc, &mut state.tag_layout_menus[i], 14.0, 200.0, 26.0);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut default_layouts_sec = Section::new(pc, rx, ry, sec_w, "Default Layouts");
         default_layouts_sec.spacing(8.0);
-    }
-    default_layouts_sec.finish_focused(&mut pc, sec_focused.get(3).copied().unwrap_or(false));
+        for i in 0..4 {
+            default_layouts_sec.widget(pc, &mut state.tag_layout_menus[i], 14.0, 200.0, 26.0);
+            default_layouts_sec.spacing(8.0);
+        }
+        default_layouts_sec.finish_focused(pc, sec_focused.get(3).copied().unwrap_or(false))
+    });
 
-
-
-    pc
+    final_pc
 }
 
 fn set_width(state: &mut LayoutState, param: WidthParam, val: u16) {
@@ -1269,5 +846,13 @@ mode = "popup"
 "#;
         let modes = parse_tag_layouts_from_config(content);
         assert_eq!(modes, vec!["cascade", "cascade", "cascade", "cascade"]);
+    }
+
+    #[test]
+    fn test_view_layout_grid() {
+        let mut state = LayoutState::default();
+        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false], &mut layout);
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

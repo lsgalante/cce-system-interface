@@ -1,6 +1,6 @@
 use std::fs;
 use crate::app::PageContent;
-use clear_ui::layout::Section;
+use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, Dropdown, TextBox, Spinbox, Button};
 use clear_ui::widget::{ElementState, KeyEvent, MouseButton, Key, NamedKey};
 
@@ -149,7 +149,7 @@ pub fn read_preferred_fonts() -> (String, String, String, String, String, String
     let status = parse_font_for_alias(&content, "status-interface").unwrap_or_else(|| "Noto Sans".to_string());
     let fuzzel_font = parse_font_for_alias(&content, "fuzzel").unwrap_or_else(|| "Noto Sans".to_string());
     let term = parse_font_for_alias(&content, "terminal").unwrap_or_else(|| "Noto Sans Mono".to_string());
-    let paginator = parse_font_for_alias(&content, "paginator-tab-labels").unwrap_or_else(|| "Noto Sans".to_string());
+    let paginator = parse_font_for_alias(&content, "paginator-tab-labels").unwrap_or_else(|| "Noto Sans Mono".to_string());
     
     (sans, serif, mono, borders, status, fuzzel_font, term, paginator)
 }
@@ -540,313 +540,300 @@ pub async fn fetch_typeface_state() -> TypefaceState {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+pub fn view(state: &mut TypefaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
-    let widget_w = cw - 24.0;
     let widget_h = 26.0;
 
     // ── System Typefaces Section ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "System Typefaces");
-    sec.spacing(8.0);
-
-    if !state.loaded {
-        sec.text(&mut pc, "Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        // Sans-Serif
-        sec.widget(&mut pc, &mut state.sans_box, 12.0, widget_w, widget_h);
-        sec.spacing(12.0);
-
-        // Serif
-        sec.widget(&mut pc, &mut state.serif_box, 12.0, widget_w, widget_h);
-        sec.spacing(12.0);
-
-        // Monospace
-        sec.widget(&mut pc, &mut state.mono_box, 12.0, widget_w, widget_h);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "System Typefaces");
         sec.spacing(8.0);
-    }
-    let sys_focused = sec_focused.get(0).copied().unwrap_or(false);
-    y = sec.finish_focused(&mut pc, sys_focused);
+
+        if !state.loaded {
+            sec.text(pc, "Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        } else {
+            let inner_w = sec_w - 24.0;
+            // Sans-Serif
+            sec.widget(pc, &mut state.sans_box, 12.0, inner_w, widget_h);
+            sec.spacing(12.0);
+
+            // Serif
+            sec.widget(pc, &mut state.serif_box, 12.0, inner_w, widget_h);
+            sec.spacing(12.0);
+
+            // Monospace
+            sec.widget(pc, &mut state.mono_box, 12.0, inner_w, widget_h);
+            sec.spacing(8.0);
+        }
+        let sys_focused = sec_focused.get(0).copied().unwrap_or(false);
+        sec.finish_focused(pc, sys_focused)
+    });
 
     // ── Program Typefaces Section ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Program Typefaces");
-    sec.spacing(8.0);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Program Typefaces");
+        sec.spacing(8.0);
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        let dropdown_w = 120.0;
-        let textbox_w = 300.0;
-        let spinbox_w = 90.0;
+        if !state.loaded {
+            sec.text(pc, "Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        } else {
+            let inner_w = sec_w - 24.0;
 
-        let menu_row_w = dropdown_w + 10.0;
-        let box_row_w = textbox_w + 10.0;
-        let spinbox_row_w = spinbox_w + 10.0;
+            // Window Borders
+            let start_y = sec.ay();
+            sec.row(2, 10.0, widget_h, |idx, x, w| {
+                if idx == 0 {
+                    state.borders_menu.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.borders_menu, x, start_y, w, widget_h);
+                } else {
+                    state.borders_size_box.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.borders_size_box, x, start_y, w, widget_h);
+                }
+            });
+            sec.widget(pc, &mut state.borders_box, 12.0, inner_w, widget_h);
+            sec.spacing(16.0);
 
-        let box_row_x = cx + 8.0 + menu_row_w;
-        let spin_row_x = box_row_x + box_row_w;
-        let spin_x = cx + 12.0 + dropdown_w + 12.0 + textbox_w + 12.0;
+            // Status Interface
+            let start_y = sec.ay();
+            sec.row(2, 10.0, widget_h, |idx, x, w| {
+                if idx == 0 {
+                    state.status_menu.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.status_menu, x, start_y, w, widget_h);
+                } else {
+                    state.status_size_box.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.status_size_box, x, start_y, w, widget_h);
+                }
+            });
+            sec.widget(pc, &mut state.status_box, 12.0, inner_w, widget_h);
+            sec.spacing(16.0);
 
-        // Window Borders
-        let start_y = sec.ay();
-        let top_room = state.borders_box.top_room();
-        state.borders_menu.set_row_rect(cx + 8.0, menu_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.borders_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.borders_box.set_row_rect(box_row_x, box_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.borders_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
-        state.borders_size_box.set_row_rect(spin_row_x, spinbox_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.borders_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
-        sec.spacing(widget_h + top_room + 12.0);
+            // Fuzzel
+            let start_y = sec.ay();
+            sec.row(2, 10.0, widget_h, |idx, x, w| {
+                if idx == 0 {
+                    state.fuzzel_menu.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.fuzzel_menu, x, start_y, w, widget_h);
+                } else {
+                    state.fuzzel_size_box.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.fuzzel_size_box, x, start_y, w, widget_h);
+                }
+            });
+            sec.widget(pc, &mut state.fuzzel_box, 12.0, inner_w, widget_h);
+            sec.spacing(16.0);
 
-        // Status Interface
-        let start_y = sec.ay();
-        let top_room = state.status_box.top_room();
-        state.status_menu.set_row_rect(cx + 8.0, menu_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.status_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.status_box.set_row_rect(box_row_x, box_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.status_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
-        state.status_size_box.set_row_rect(spin_row_x, spinbox_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.status_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
-        sec.spacing(widget_h + top_room + 12.0);
+            // Terminal
+            let start_y = sec.ay();
+            sec.row(2, 10.0, widget_h, |idx, x, w| {
+                if idx == 0 {
+                    state.terminal_menu.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.terminal_menu, x, start_y, w, widget_h);
+                } else {
+                    state.terminal_size_box.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.terminal_size_box, x, start_y, w, widget_h);
+                }
+            });
+            sec.widget(pc, &mut state.terminal_box, 12.0, inner_w, widget_h);
+            sec.spacing(16.0);
 
-        // Fuzzel
-        let start_y = sec.ay();
-        let top_room = state.fuzzel_box.top_room();
-        state.fuzzel_menu.set_row_rect(cx + 8.0, menu_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.fuzzel_box.set_row_rect(box_row_x, box_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
-        state.fuzzel_size_box.set_row_rect(spin_row_x, spinbox_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.fuzzel_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
-        sec.spacing(widget_h + top_room + 12.0);
-
-        // Terminal
-        let start_y = sec.ay();
-        let top_room = state.terminal_box.top_room();
-        state.terminal_menu.set_row_rect(cx + 8.0, menu_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.terminal_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.terminal_box.set_row_rect(box_row_x, box_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.terminal_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
-        state.terminal_size_box.set_row_rect(spin_row_x, spinbox_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.terminal_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
-        sec.spacing(widget_h + top_room + 12.0);
-
-        // Paginator Tab Labels
-        let start_y = sec.ay();
-        let top_room = state.paginator_box.top_room();
-        state.paginator_menu.set_row_rect(cx + 8.0, menu_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.paginator_menu, cx + 12.0, start_y + top_room, dropdown_w, widget_h);
-        state.paginator_box.set_row_rect(box_row_x, box_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.paginator_box, cx + 12.0 + dropdown_w + 12.0, start_y + top_room, textbox_w, widget_h);
-        state.paginator_size_box.set_row_rect(spin_row_x, spinbox_row_w);
-        clear_ui::layout::render_widget(&mut pc, &mut state.paginator_size_box, spin_x, start_y + top_room, spinbox_w, widget_h);
-        sec.spacing(widget_h + top_room + 8.0);
-    }
-    let prog_focused = sec_focused.get(1).copied().unwrap_or(false);
-    y = sec.finish_focused(&mut pc, prog_focused);
+            // Paginator Tab Labels
+            let start_y = sec.ay();
+            sec.row(2, 10.0, widget_h, |idx, x, w| {
+                if idx == 0 {
+                    state.paginator_menu.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.paginator_menu, x, start_y, w, widget_h);
+                } else {
+                    state.paginator_size_box.set_row_rect(x, w);
+                    clear_ui::layout::render_widget(pc, &mut state.paginator_size_box, x, start_y, w, widget_h);
+                }
+            });
+            sec.widget(pc, &mut state.paginator_box, 12.0, inner_w, widget_h);
+            sec.spacing(8.0);
+        }
+        let prog_focused = sec_focused.get(1).copied().unwrap_or(false);
+        sec.finish_focused(pc, prog_focused)
+    });
 
     // ── Typefaces Section (List & Preview) ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Typefaces");
-    sec.spacing(12.0);
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Typefaces");
+        sec.spacing(12.0);
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading installed fonts...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else {
-        let start_y = sec.ay();
-        let usable_w = cw - 24.0;
-        let gap = 24.0;
-        let left_w = (usable_w - gap) * 0.40;
-        let right_w = (usable_w - gap) * 0.60;
-        let left_x = cx + 12.0;
-        let right_x = left_x + left_w + gap;
-
-        // 1. Render Left Column (Search + List Box)
-        let mut left_y = start_y;
-        
-        let top_room = state.search_box.top_room();
-        let search_box_h = widget_h + top_room;
-        state.search_box.set_row_rect(left_x, left_w);
-        clear_ui::layout::render_widget(
-            &mut pc,
-            &mut state.search_box,
-            left_x,
-            left_y + top_room,
-            left_w,
-            widget_h,
-        );
-        left_y += search_box_h + 12.0;
-
-        // Scrolling box configuration
-        let list_box_y = left_y;
-        let list_box_h = 320.0;
-        
-        // Render the standardized ScrollingList widget
-        clear_ui::layout::render_widget(&mut pc, &mut state.list_box, left_x, list_box_y, left_w, list_box_h);
-
-        let query = state.search_box.text.to_lowercase();
-        let matching_fonts: Vec<&String> = state.all_fonts.iter()
-            .filter(|font| font.to_lowercase().contains(&query))
-            .collect();
-
-        // Ensure we have exactly matching_fonts.len() buttons of each type
-        if state.font_buttons.len() != matching_fonts.len() {
-            state.font_buttons.clear();
-            state.copy_buttons.clear();
-            for _ in 0..matching_fonts.len() {
-                state.font_buttons.push(Button::new_list_row(0.0, 0.0, 0.0, 0.0));
-                state.copy_buttons.push(Button::new_copy_icon(0.0, 0.0, 0.0, 0.0));
-            }
-        }
-
-        let btn_h = 24.0;
-        let inner_x = left_x + 4.0;
-        let inner_w = left_w - 16.0; // leave room for scrollbar
-        
-        // Update ScrollingList bounds to clamp and render correctly
-        state.list_box.update_bounds(matching_fonts.len(), list_box_y, list_box_h);
-
-        // Render visible buttons inside scroll region
-        
-        for (idx, font_name) in matching_fonts.iter().enumerate() {
-            // Only render buttons that are completely within the visible area
-            if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 0.0) {
-                let is_selected = state.selected_font.as_ref() == Some(*font_name);
-                
-                let font_btn = &mut state.font_buttons[idx];
-                font_btn.set_text(font_name);
-                font_btn.selected = is_selected;
-                clear_ui::layout::render_widget(&mut pc, font_btn, inner_x, draw_y, inner_w - 44.0, btn_h);
-
-                let copy_btn = &mut state.copy_buttons[idx];
-                copy_btn.set_text("📋");
-                copy_btn.selected = is_selected;
-                clear_ui::layout::render_widget(&mut pc, copy_btn, inner_x + inner_w - 40.0, draw_y, 40.0, btn_h);
-            }
-        }
-        
-        if matching_fonts.is_empty() {
-            pc.text("No fonts match query", inner_x + 8.0, list_box_y + 16.0, 12.0, TEXT_DIM);
-        }
-
-        left_y += list_box_h;
-
-        // 2. Render Right Column (Live Preview)
-        let mut right_y = start_y;
-        
-        // Render Info Box
-        let info_h = 96.0;
-        let info_bg = [0.12, 0.18, 0.28, 0.3]; // Sleek translucent blue-ish background
-        let info_border = [0.25, 0.40, 0.60, 0.5]; // Soft blue border
-        
-        pc.rect(info_bg, right_x, right_y, right_w, info_h);
-        pc.rect(info_border, right_x, right_y, right_w, 1.0);
-        pc.rect(info_border, right_x, right_y + info_h - 1.0, right_w, 1.0);
-        pc.rect(info_border, right_x, right_y, 1.0, info_h);
-        pc.rect(info_border, right_x + right_w - 1.0, right_y, 1.0, info_h);
-        
-        let text_padding_x = 16.0;
-        let mut text_y = right_y + 12.0;
-        
-        pc.text("Font Directories & Installation", right_x + text_padding_x, text_y, 12.0, [0.35, 0.65, 0.90, 1.0]);
-        text_y += 20.0;
-        
-        pc.text("• Active Directory: ~/Dropbox/Fonts", right_x + text_padding_x, text_y, 11.0, [0.80, 0.80, 0.85, 1.0]);
-        text_y += 16.0;
-        
-        pc.text("• Place TTF/OTF files there to install new fonts.", right_x + text_padding_x, text_y, 11.0, [0.80, 0.80, 0.85, 1.0]);
-        text_y += 16.0;
-
-        pc.text("• Changes will be cached automatically by fontconfig.", right_x + text_padding_x, text_y, 11.0, [0.55, 0.55, 0.60, 1.0]);
-        
-        right_y += info_h + 12.0;
-        
-        if let Some(ref font_name) = state.selected_font {
-            let card_h = 240.0;
-            pc.rect([0.10, 0.10, 0.14, 0.3], right_x, right_y, right_w, card_h);
-            pc.rect([0.25, 0.25, 0.35, 0.5], right_x, right_y, right_w, 1.0);
-            pc.rect([0.25, 0.25, 0.35, 0.5], right_x, right_y + card_h - 1.0, right_w, 1.0);
-            pc.rect([0.25, 0.25, 0.35, 0.5], right_x, right_y, 1.0, card_h);
-            pc.rect([0.25, 0.25, 0.35, 0.5], right_x + right_w - 1.0, right_y, 1.0, card_h);
-            
-            let text_padding_x = 16.0;
-            let mut text_y = right_y + 16.0;
-            
-            pc.text(&format!("Family: {}", font_name), right_x + text_padding_x, text_y, 15.0, [0.90, 0.90, 0.95, 1.0]);
-            text_y += 28.0;
-            
-            pc.rect([0.22, 0.22, 0.30, 0.8], right_x + text_padding_x, text_y, right_w - (text_padding_x * 2.0), 1.0);
-            text_y += 16.0;
-            
-            pc.text_with_font(
-                "abcdefghijklmnopqrstuvwxyz",
-                right_x + text_padding_x,
-                text_y,
-                13.0,
-                [0.75, 0.75, 0.80, 1.0],
-                font_name,
-            );
-            text_y += 22.0;
-            
-            pc.text_with_font(
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                right_x + text_padding_x,
-                text_y,
-                13.0,
-                [0.75, 0.75, 0.80, 1.0],
-                font_name,
-            );
-            text_y += 22.0;
-            
-            pc.text_with_font(
-                "0123456789 (!@#$%&*?)",
-                right_x + text_padding_x,
-                text_y,
-                13.0,
-                [0.75, 0.75, 0.80, 1.0],
-                font_name,
-            );
-            text_y += 26.0;
-            
-            pc.text_with_font(
-                "The quick brown fox jumps over the lazy dog.",
-                right_x + text_padding_x,
-                text_y,
-                18.0,
-                [0.90, 0.90, 0.95, 1.0],
-                font_name,
-            );
-            text_y += 32.0;
-
-            pc.text_with_font(
-                "The five boxing wizards jump quickly.",
-                right_x + text_padding_x,
-                text_y,
-                24.0,
-                [0.95, 0.95, 1.0, 1.0],
-                font_name,
-            );
-            
-            right_y += card_h;
+        if !state.loaded {
+            sec.text(pc, "Loading installed fonts...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
         } else {
-            pc.text("Select a font to preview", right_x + 12.0, right_y + 20.0, 13.0, TEXT_DIM);
-            right_y += 40.0;
+            let inner_w = sec_w - 24.0;
+
+            // 1. Search Box
+            let top_room = state.search_box.top_room();
+            state.search_box.set_row_rect(rx + 12.0, inner_w);
+            clear_ui::layout::render_widget(
+                pc,
+                &mut state.search_box,
+                rx + 12.0,
+                sec.ay() + top_room,
+                inner_w,
+                widget_h,
+            );
+            sec.spacing(widget_h + top_room + 12.0);
+
+            // 2. Scrolling List Box
+            let list_box_y = sec.ay();
+            let list_box_h = 200.0;
+            
+            clear_ui::layout::render_widget(pc, &mut state.list_box, rx + 12.0, list_box_y, inner_w, list_box_h);
+
+            let query = state.search_box.text.to_lowercase();
+            let matching_fonts: Vec<&String> = state.all_fonts.iter()
+                .filter(|font| font.to_lowercase().contains(&query))
+                .collect();
+
+            if state.font_buttons.len() != matching_fonts.len() {
+                state.font_buttons.clear();
+                state.copy_buttons.clear();
+                for _ in 0..matching_fonts.len() {
+                    state.font_buttons.push(Button::new_list_row(0.0, 0.0, 0.0, 0.0));
+                    state.copy_buttons.push(Button::new_copy_icon(0.0, 0.0, 0.0, 0.0));
+                }
+            }
+
+            let btn_h = 24.0;
+            let list_inner_x = rx + 16.0;
+            let list_inner_w = inner_w - 16.0;
+
+            state.list_box.update_bounds(matching_fonts.len(), list_box_y, list_box_h);
+
+            for (idx, font_name) in matching_fonts.iter().enumerate() {
+                if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 0.0) {
+                    let is_selected = state.selected_font.as_ref() == Some(*font_name);
+                    
+                    let font_btn = &mut state.font_buttons[idx];
+                    font_btn.set_text(font_name);
+                    font_btn.selected = is_selected;
+                    clear_ui::layout::render_widget(pc, font_btn, list_inner_x, draw_y, list_inner_w - 44.0, btn_h);
+
+                    let copy_btn = &mut state.copy_buttons[idx];
+                    copy_btn.set_text("📋");
+                    copy_btn.selected = is_selected;
+                    clear_ui::layout::render_widget(pc, copy_btn, list_inner_x + list_inner_w - 40.0, draw_y, 40.0, btn_h);
+                }
+            }
+
+            if matching_fonts.is_empty() {
+                pc.text("No fonts match query", list_inner_x + 8.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+            }
+
+            sec.spacing(list_box_h + 12.0);
+
+            // 3. Info Box
+            let info_h = 96.0;
+            let info_bg = [0.12, 0.18, 0.28, 0.3];
+            let info_border = [0.25, 0.40, 0.60, 0.5];
+            let info_y = sec.ay();
+
+            pc.rect(info_bg, rx + 12.0, info_y, inner_w, info_h);
+            pc.rect(info_border, rx + 12.0, info_y, inner_w, 1.0);
+            pc.rect(info_border, rx + 12.0, info_y + info_h - 1.0, inner_w, 1.0);
+            pc.rect(info_border, rx + 12.0, info_y, 1.0, info_h);
+            pc.rect(info_border, rx + 12.0 + inner_w - 1.0, info_y, 1.0, info_h);
+
+            let text_padding_x = 16.0;
+            let mut text_y = info_y + 12.0;
+
+            pc.text("Font Directories & Installation", rx + 12.0 + text_padding_x, text_y, 12.0, [0.35, 0.65, 0.90, 1.0]);
+            text_y += 20.0;
+
+            pc.text("• Active Directory: ~/Dropbox/Fonts", rx + 12.0 + text_padding_x, text_y, 11.0, [0.80, 0.80, 0.85, 1.0]);
+            text_y += 16.0;
+
+            pc.text("• Place TTF/OTF files there to install new fonts.", rx + 12.0 + text_padding_x, text_y, 11.0, [0.80, 0.80, 0.85, 1.0]);
+            text_y += 16.0;
+
+            pc.text("• Changes will be cached automatically by fontconfig.", rx + 12.0 + text_padding_x, text_y, 11.0, [0.55, 0.55, 0.60, 1.0]);
+
+            sec.spacing(info_h + 12.0);
+
+            // 4. Preview Card
+            if let Some(ref font_name) = state.selected_font {
+                let card_h = 240.0;
+                let card_y = sec.ay();
+                pc.rect([0.10, 0.10, 0.14, 0.3], rx + 12.0, card_y, inner_w, card_h);
+                pc.rect([0.25, 0.25, 0.35, 0.5], rx + 12.0, card_y, inner_w, 1.0);
+                pc.rect([0.25, 0.25, 0.35, 0.5], rx + 12.0, card_y + card_h - 1.0, inner_w, 1.0);
+                pc.rect([0.25, 0.25, 0.35, 0.5], rx + 12.0, card_y, 1.0, card_h);
+                pc.rect([0.25, 0.25, 0.35, 0.5], rx + 12.0 + inner_w - 1.0, card_y, 1.0, card_h);
+
+                let mut p_text_y = card_y + 16.0;
+                pc.text(&format!("Family: {}", font_name), rx + 12.0 + text_padding_x, p_text_y, 15.0, [0.90, 0.90, 0.95, 1.0]);
+                p_text_y += 28.0;
+
+                pc.rect([0.22, 0.22, 0.30, 0.8], rx + 12.0 + text_padding_x, p_text_y, inner_w - (text_padding_x * 2.0), 1.0);
+                p_text_y += 16.0;
+
+                pc.text_with_font(
+                    "abcdefghijklmnopqrstuvwxyz",
+                    rx + 12.0 + text_padding_x,
+                    p_text_y,
+                    13.0,
+                    [0.75, 0.75, 0.80, 1.0],
+                    font_name,
+                );
+                p_text_y += 22.0;
+
+                pc.text_with_font(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    rx + 12.0 + text_padding_x,
+                    p_text_y,
+                    13.0,
+                    [0.75, 0.75, 0.80, 1.0],
+                    font_name,
+                );
+                p_text_y += 22.0;
+
+                pc.text_with_font(
+                    "0123456789 (!@#$%&*?)",
+                    rx + 12.0 + text_padding_x,
+                    p_text_y,
+                    13.0,
+                    [0.75, 0.75, 0.80, 1.0],
+                    font_name,
+                );
+                p_text_y += 26.0;
+
+                pc.text_with_font(
+                    "The quick brown fox jumps over the lazy dog.",
+                    rx + 12.0 + text_padding_x,
+                    p_text_y,
+                    16.0,
+                    [0.90, 0.90, 0.95, 1.0],
+                    font_name,
+                );
+                p_text_y += 32.0;
+
+                pc.text_with_font(
+                    "The five boxing wizards jump quickly.",
+                    rx + 12.0 + text_padding_x,
+                    p_text_y,
+                    20.0,
+                    [0.95, 0.95, 1.0, 1.0],
+                    font_name,
+                );
+                sec.spacing(card_h + 8.0);
+            } else {
+                pc.text("Select a font to preview", rx + 24.0, sec.ay() + 20.0, 13.0, TEXT_DIM);
+                sec.spacing(40.0);
+            }
         }
+        let list_focused = sec_focused.get(2).copied().unwrap_or(false);
+        sec.finish_focused(pc, list_focused)
+    });
 
-        sec.content_y = left_y.max(right_y);
-    }
-    let list_focused = sec_focused.get(2).copied().unwrap_or(false);
-    sec.finish_focused(&mut pc, list_focused);
-
-
-
-    // Render dropdown popovers on top of all other widgets
-
-
-    pc
+    final_pc
 }
 
 pub fn update(state: &mut TypefaceState, msg: TypefaceMessage) {

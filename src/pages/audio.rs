@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{render_widget, Section};
+use clear_ui::layout::{render_widget, Section, PageLayoutBuilder, LayoutStrategy, GridLayout};
 use clear_ui::widget::{Spinbox, Widget};
 
 #[derive(Debug, Clone)]
@@ -207,126 +207,132 @@ const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 
-pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, _ch: f32, sec_focused: &[bool]) -> PageContent {
-    let mut pc = PageContent::new();
-    let mut y = cy + 12.0;
+pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+    let mut final_pc = PageContent::new();
+    let sec_w = 320.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
     // ── Output section ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Output");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Output");
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading output devices...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else if state.sinks.is_empty() {
-        sec.text(&mut pc, "No output devices found", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    }
-
-    if state.loaded {
-        for (idx, sink) in state.sinks.iter().enumerate() {
-            let label = if !sink.active {
-                format!("{}  (inactive)", sink.name)
-            } else if sink.muted {
-                format!("{}  {:.0}%  (muted)", sink.name, sink.volume * 100.0)
-            } else {
-                format!("{}  {:.0}%", sink.name, sink.volume * 100.0)
-            };
-            let lc = if sink.muted { RED } else { TEXT_FG };
-            sec.text(&mut pc, &label, 14.0, 0.0, 13.0, lc);
+        if !state.loaded {
+            sec.text(pc, "Loading output devices...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
+        } else if state.sinks.is_empty() {
+            sec.text(pc, "No output devices found", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        }
 
-            if sink.active {
-                let bar_w = cw - 100.0;
-                let bar_x = 14.0;
-                let yt = sec.ay();
-                pc.rect(BLANK_BAR, sec.ax(bar_x), yt, bar_w, 8.0);
-                pc.rect(FILL_BAR, sec.ax(bar_x), yt, bar_w * sink.volume, 8.0);
-                sec.text(&mut pc, &format!("{:.0}%", sink.volume * 100.0), bar_x + bar_w + 8.0, -2.0, 11.0, TEXT_DIM);
+        if state.loaded {
+            for (idx, sink) in state.sinks.iter().enumerate() {
+                let label = if !sink.active {
+                    format!("{}  (inactive)", sink.name)
+                } else if sink.muted {
+                    format!("{}  {:.0}%  (muted)", sink.name, sink.volume * 100.0)
+                } else {
+                    format!("{}  {:.0}%", sink.name, sink.volume * 100.0)
+                };
+                let lc = if sink.muted { RED } else { TEXT_FG };
+                sec.text(pc, &label, 14.0, 0.0, 13.0, lc);
+                sec.spacing(18.0);
 
-                let row_y = sec.ay() + 12.0;
-                let sb_w = 100.0;
-                let sb_h = 26.0;
-                let mute_w = 60.0;
-                let gap = 8.0;
+                if sink.active {
+                    let bar_w = sec_w - 100.0;
+                    let bar_x = 14.0;
+                    let yt = sec.ay();
+                    pc.rect(BLANK_BAR, sec.ax(bar_x), yt, bar_w, 8.0);
+                    pc.rect(FILL_BAR, sec.ax(bar_x), yt, bar_w * sink.volume, 8.0);
+                    sec.text(pc, &format!("{:.0}%", sink.volume * 100.0), bar_x + bar_w + 8.0, -2.0, 11.0, TEXT_DIM);
 
-                state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
-                state.sink_spinboxes[idx].set_row_rect(sec.ax(8.0), cw - 16.0);
-                render_widget(&mut pc, &mut state.sink_spinboxes[idx], sec.ax(bar_x), row_y, sb_w, sb_h);
+                    let row_y = sec.ay() + 12.0;
+                    let sb_w = 100.0;
+                    let sb_h = 26.0;
+                    let mute_w = 60.0;
+                    let gap = 8.0;
 
-                let mute_label = if sink.muted { "Unmute" } else { "Mute" };
-                let mute_col = if sink.muted { MUTED_BG } else { BTN_INACTIVE };
-                pc.button(mute_label, sec.ax(bar_x) + sb_w + gap, row_y, mute_w, sb_h,
-                    mute_col, BTN_HOVER, WHITE,
-                    AppAction::Audio(AudioMessage::SinkMute(sink.id)));
+                    state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
+                    state.sink_spinboxes[idx].set_row_rect(sec.ax(8.0), sec_w - 16.0);
+                    render_widget(pc, &mut state.sink_spinboxes[idx], sec.ax(bar_x), row_y, sb_w, sb_h);
 
-                sec.content_y += 12.0 + sb_h + 6.0;
-            } else {
-                sec.content_y += 6.0;
+                    let mute_label = if sink.muted { "Unmute" } else { "Mute" };
+                    let mute_col = if sink.muted { MUTED_BG } else { BTN_INACTIVE };
+                    pc.button(mute_label, sec.ax(bar_x) + sb_w + gap, row_y, mute_w, sb_h,
+                        mute_col, BTN_HOVER, WHITE,
+                        AppAction::Audio(AudioMessage::SinkMute(sink.id)));
+
+                    sec.content_y += 12.0 + sb_h + 6.0;
+                } else {
+                    sec.content_y += 6.0;
+                }
             }
         }
-    }
 
-    y = sec.finish_focused(&mut pc, sec_focused.get(0).copied().unwrap_or(false));
+        sec.finish_focused(pc, sec_focused.first().copied().unwrap_or(false))
+    });
 
     // ── Input section ──
-    let mut sec = Section::new(&mut pc, cx, y, cw, "Input");
+    builder.add_section(&mut final_pc, |pc, rx, ry| {
+        let mut sec = Section::new(pc, rx, ry, sec_w, "Input");
 
-    if !state.loaded {
-        sec.text(&mut pc, "Loading input devices...", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    } else if state.sources.is_empty() {
-        sec.text(&mut pc, "No input devices found", 12.0, 0.0, 12.0, TEXT_DIM);
-        sec.spacing(18.0);
-    }
-
-    if state.loaded {
-        for (idx, src) in state.sources.iter().enumerate() {
-            let label = if !src.active {
-                format!("{}  (inactive)", src.name)
-            } else if src.muted {
-                format!("{}  {:.0}%  (muted)", src.name, src.volume * 100.0)
-            } else {
-                format!("{}  {:.0}%", src.name, src.volume * 100.0)
-            };
-            let lc = if src.muted { RED } else { TEXT_FG };
-            sec.text(&mut pc, &label, 14.0, 0.0, 13.0, lc);
+        if !state.loaded {
+            sec.text(pc, "Loading input devices...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
+        } else if state.sources.is_empty() {
+            sec.text(pc, "No input devices found", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        }
 
-            if src.active {
-                let bar_w = cw - 100.0;
-                let bar_x = 14.0;
-                let yt = sec.ay();
-                pc.rect(BLANK_BAR, sec.ax(bar_x), yt, bar_w, 8.0);
-                pc.rect(FILL_BAR, sec.ax(bar_x), yt, bar_w * src.volume, 8.0);
-                sec.text(&mut pc, &format!("{:.0}%", src.volume * 100.0), bar_x + bar_w + 8.0, -2.0, 11.0, TEXT_DIM);
+        if state.loaded {
+            for (idx, src) in state.sources.iter().enumerate() {
+                let label = if !src.active {
+                    format!("{}  (inactive)", src.name)
+                } else if src.muted {
+                    format!("{}  {:.0}%  (muted)", src.name, src.volume * 100.0)
+                } else {
+                    format!("{}  {:.0}%", src.name, src.volume * 100.0)
+                };
+                let lc = if src.muted { RED } else { TEXT_FG };
+                sec.text(pc, &label, 14.0, 0.0, 13.0, lc);
+                sec.spacing(18.0);
 
-                let row_y = sec.ay() + 12.0;
-                let sb_w = 100.0;
-                let sb_h = 26.0;
-                let mute_w = 60.0;
-                let gap = 8.0;
+                if src.active {
+                    let bar_w = sec_w - 100.0;
+                    let bar_x = 14.0;
+                    let yt = sec.ay();
+                    pc.rect(BLANK_BAR, sec.ax(bar_x), yt, bar_w, 8.0);
+                    pc.rect(FILL_BAR, sec.ax(bar_x), yt, bar_w * src.volume, 8.0);
+                    sec.text(pc, &format!("{:.0}%", src.volume * 100.0), bar_x + bar_w + 8.0, -2.0, 11.0, TEXT_DIM);
 
-                state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
-                state.source_spinboxes[idx].set_row_rect(sec.ax(8.0), cw - 16.0);
-                render_widget(&mut pc, &mut state.source_spinboxes[idx], sec.ax(bar_x), row_y, sb_w, sb_h);
+                    let row_y = sec.ay() + 12.0;
+                    let sb_w = 100.0;
+                    let sb_h = 26.0;
+                    let mute_w = 60.0;
+                    let gap = 8.0;
 
-                let mute_label = if src.muted { "Unmute" } else { "Mute" };
-                let mute_col = if src.muted { MUTED_BG } else { BTN_INACTIVE };
-                pc.button(mute_label, sec.ax(bar_x) + sb_w + gap, row_y, mute_w, sb_h,
-                    mute_col, BTN_HOVER, WHITE,
-                    AppAction::Audio(AudioMessage::SourceMute(src.id)));
+                    state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
+                    state.source_spinboxes[idx].set_row_rect(sec.ax(8.0), sec_w - 16.0);
+                    render_widget(pc, &mut state.source_spinboxes[idx], sec.ax(bar_x), row_y, sb_w, sb_h);
 
-                sec.content_y += 12.0 + sb_h + 6.0;
-            } else {
-                sec.content_y += 6.0;
+                    let mute_label = if src.muted { "Unmute" } else { "Mute" };
+                    let mute_col = if src.muted { MUTED_BG } else { BTN_INACTIVE };
+                    pc.button(mute_label, sec.ax(bar_x) + sb_w + gap, row_y, mute_w, sb_h,
+                        mute_col, BTN_HOVER, WHITE,
+                        AppAction::Audio(AudioMessage::SourceMute(src.id)));
+
+                    sec.content_y += 12.0 + sb_h + 6.0;
+                } else {
+                    sec.content_y += 6.0;
+                }
             }
         }
-    }
 
-    sec.finish_focused(&mut pc, sec_focused.get(1).copied().unwrap_or(false));
+        sec.finish_focused(pc, sec_focused.get(1).copied().unwrap_or(false))
+    });
 
-    pc
+    final_pc
 }
+
 
 pub fn update(state: &mut AudioState, msg: AudioMessage) {
     match msg {
@@ -361,3 +367,17 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_view_layout_grid() {
+        let mut state = AudioState::default();
+        let mut layout = GridLayout::new(320.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout);
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
+}
+

@@ -206,7 +206,7 @@ struct SystemInterface {
     rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
     rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
-    rx_colors: std::sync::mpsc::Receiver<pages::colors::ColorsState>,
+    rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
@@ -233,6 +233,7 @@ impl clear_ui::engine::Application for SystemInterface {
     type Message = AppAction;
 
     fn new(_qh: &wayland_client::QueueHandle<clear_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
+        clear_ui::scale::set_scale_factor(1.0);
         let app = AppState {
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
@@ -365,11 +366,11 @@ impl clear_ui::engine::Application for SystemInterface {
         let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
         let rx_services = spawn_bg(3, || pages::services::fetch_services());
         let rx_accounts = spawn_bg(3, || pages::accounts::fetch_accounts());
-        let rx_colors = {
-            let (tx, rx) = std::sync::mpsc::channel::<pages::colors::ColorsState>();
+        let rx_interface = {
+            let (tx, rx) = std::sync::mpsc::channel::<pages::interface::InterfaceState>();
             tokio::spawn(async move {
                 loop {
-                    let val = tokio::task::spawn_blocking(|| pages::colors::read_colors_config()).await;
+                    let val = tokio::task::spawn_blocking(|| pages::interface::read_interface_config()).await;
                     if let Ok(val) = val { if tx.send(val).is_err() { break; } }
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 }
@@ -383,7 +384,8 @@ impl clear_ui::engine::Application for SystemInterface {
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let paginator = clear_ui::widget::Paginator::new(56.0, pages_names)
-            .with_tabs_rotated(true);
+            .with_tabs_rotated(true)
+            .with_sidebar_label("SYSTEM");
 
         let initial_page_idx = INITIAL_PAGE_INDEX.load(std::sync::atomic::Ordering::SeqCst);
         let mut app_state = app;
@@ -397,7 +399,7 @@ impl clear_ui::engine::Application for SystemInterface {
             widgets: Vec::new(),
             text_items: Vec::new(),
             page_buttons: Vec::new(),
-            sidebar_width: 56.0,
+            sidebar_width: paginator.sidebar_w(),
             header_height: 0.0,
             status_height: 0.0,
             cursor_x: 0.0,
@@ -418,7 +420,7 @@ impl clear_ui::engine::Application for SystemInterface {
             rx_backup_state,
             rx_typeface,
             rx_services,
-            rx_colors,
+            rx_interface,
             rx_accounts,
             tx_backup,
             rx_backup,
@@ -477,7 +479,7 @@ impl clear_ui::engine::Application for SystemInterface {
             self.width = width as u32;
             self.height = height as u32;
             self.scale_factor = scale;
-            self.paginator.set_scale_factor(scale as f32);
+            clear_ui::scale::set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
@@ -491,9 +493,9 @@ impl clear_ui::engine::Application for SystemInterface {
 
     fn clear_color(&self) -> [f32; 4] {
         let mut color = [
-            self.app.colors.page_low_color[0] as f32 / 255.0,
-            self.app.colors.page_low_color[1] as f32 / 255.0,
-            self.app.colors.page_low_color[2] as f32 / 255.0,
+            self.app.interface.page_low_color[0] as f32 / 255.0,
+            self.app.interface.page_low_color[1] as f32 / 255.0,
+            self.app.interface.page_low_color[2] as f32 / 255.0,
             1.0,
         ];
         if let Some(opacity) = clear_ui::color::read_opacity_if_configured() {
@@ -545,6 +547,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 }
 
     fn rebuild_layout(&mut self, sw: f32, sh: f32) {
+        self.sidebar_width = self.paginator.sidebar_w();
         let s = 1.0f32;
         let mut widgets = Vec::new();
         let mut text_items = Vec::new();
@@ -643,10 +646,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         self.app.layout.transition_duration_spinbox.clear_children(); self.app.layout.transition_duration_spinbox.set_parent(None);
         self.app.layout.status_height_spinbox.clear_children(); self.app.layout.status_height_spinbox.set_parent(None);
 
-        for cs in &mut self.app.colors.color_selectors {
+        for cs in &mut self.app.interface.color_selectors {
             cs.clear_children();
             cs.set_parent(None);
         }
+        self.app.interface.tab_margin_spinbox_x.clear_children();
+        self.app.interface.tab_margin_spinbox_x.set_parent(None);
+        self.app.interface.tab_margin_spinbox_y.clear_children();
+        self.app.interface.tab_margin_spinbox_y.set_parent(None);
+        self.app.interface.tab_padding_spinbox_x.clear_children();
+        self.app.interface.tab_padding_spinbox_x.set_parent(None);
+        self.app.interface.tab_padding_spinbox_y.clear_children();
+        self.app.interface.tab_padding_spinbox_y.set_parent(None);
 
         self.app.notifications.duration_spinbox.clear_children(); self.app.notifications.duration_spinbox.set_parent(None);
         self.app.notifications.opacity_slider.clear_children(); self.app.notifications.opacity_slider.set_parent(None);
@@ -756,10 +767,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     link_parent_child(&mut self.page_sec_containers[4], menu);
                 }
             }
-            Page::Colors => {
-                for cs in &mut self.app.colors.color_selectors {
+            Page::Interface => {
+                for cs in &mut self.app.interface.color_selectors {
                     link_parent_child(&mut self.page_root_container, cs);
                 }
+                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_margin_spinbox_x);
+                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_margin_spinbox_y);
+                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_padding_spinbox_x);
+                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_padding_spinbox_y);
             }
             Page::Notifications => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
@@ -1008,27 +1023,29 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 
     fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use pages::*;
+        use clear_ui::layout::{LayoutStrategy, GridLayout};
+        let mut layout = GridLayout::new(320.0, 20.0);
         let root_focused = clear_ui::widget::focus::is_focused(&self.page_root_container);
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()
             .map(|c| clear_ui::widget::focus::is_focused(c))
             .collect();
         match self.app.current_page {
-            Page::Accounts => accounts::view(&mut self.app.accounts, cx, cy, cw, ch),
-            Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused),
-            Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch),
-            Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused),
-            Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch, &sec_focused),
-            Page::Hardware => hardware::view(&mut self.app.hardware, cx, cy, cw, ch, root_focused),
-            Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused),
-            Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch),
-            Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch),
-            Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch),
-            Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch),
-            Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch),
-            Page::Screensaver => screensaver::view(&mut self.app.screensaver, cx, cy, cw, ch),
-            Page::Typefaces => typeface::view(&mut self.app.typeface, cx, cy, cw, ch, &sec_focused),
-            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, root_focused),
-            Page::Colors => colors::view(&mut self.app.colors, cx, cy, cw, ch),
+            Page::Accounts => accounts::view(&mut self.app.accounts, cx, cy, cw, ch, &mut layout),
+            Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused, &mut layout),
+            Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch, &mut layout),
+            Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused, &mut layout),
+            Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch, &sec_focused, &mut layout),
+            Page::Hardware => hardware::view(&mut self.app.hardware, cx, cy, cw, ch, root_focused, &mut layout),
+            Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused, &mut layout),
+            Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch, &mut layout),
+            Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch, &mut layout),
+            Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch, &mut layout),
+            Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch, &mut layout),
+            Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch, &mut layout),
+            Page::Screensaver => screensaver::view(&mut self.app.screensaver, cx, cy, cw, ch, &mut layout),
+            Page::Typefaces => typeface::view(&mut self.app.typeface, cx, cy, cw, ch, &sec_focused, &mut layout),
+            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, root_focused, &mut layout),
+            Page::Interface => interface::view(&mut self.app.interface, cx, cy, cw, ch, &mut layout),
         }
     }
 
@@ -1055,41 +1072,45 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         // Asynchronously check color selector changes (e.g. Zenity process exit)
         let mut color_changed = false;
         let mut color_actions = Vec::new();
-        for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
+        for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
             if cp.tick(dt) {
                 needs_redraw = true;
                 self.needs_rebuild = true;
             }
             let state_color = match i {
-                0 => self.app.colors.page_low_color,
-                1 => self.app.colors.high_color,
-                2 => self.app.colors.visual_guides_color,
-                3 => self.app.colors.disabled_color,
-                4 => self.app.colors.separator_color,
-                5 => self.app.colors.slider_track_color,
-                6 => self.app.colors.color_borders_color,
-                7 => self.app.colors.low_color,
-                8 => self.app.colors.normal_color,
-                9 => self.app.colors.paginator_sidebar_color,
-                10 => self.app.colors.primary_highlight_color,
-                11 => self.app.colors.paginator_tab_label_color,
-                _ => self.app.colors.low_color,
+                0 => self.app.interface.page_low_color,
+                1 => self.app.interface.high_color,
+                2 => self.app.interface.visual_guides_color,
+                3 => self.app.interface.disabled_color,
+                4 => self.app.interface.separator_color,
+                5 => self.app.interface.slider_track_color,
+                6 => self.app.interface.color_borders_color,
+                7 => self.app.interface.low_color,
+                8 => self.app.interface.normal_color,
+                9 => self.app.interface.paginator_sidebar_color,
+                10 => self.app.interface.primary_highlight_color,
+                11 => self.app.interface.paginator_tab_label_color,
+                12 => self.app.interface.toggle_enabled_color,
+                13 => self.app.interface.toggle_disabled_color,
+                _ => self.app.interface.low_color,
             };
             if cp.color != state_color {
-                color_actions.push(AppAction::Colors(match i {
-                    0 => pages::colors::ColorsMessage::SetPageLowColor(cp.color),
-                    1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
-                    2 => pages::colors::ColorsMessage::SetVisualGuidesColor(cp.color),
-                    3 => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
-                    4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
-                    5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
-                    6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
-                    7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
-                    8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
-                    9 => pages::colors::ColorsMessage::SetPaginatorSidebarColor(cp.color),
-                    10 => pages::colors::ColorsMessage::SetPrimaryHighlightColor(cp.color),
-                    11 => pages::colors::ColorsMessage::SetPaginatorTabLabelColor(cp.color),
-                    _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                color_actions.push(AppAction::Interface(match i {
+                    0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
+                    1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
+                    2 => pages::interface::InterfaceMessage::SetVisualGuidesColor(cp.color),
+                    3 => pages::interface::InterfaceMessage::SetDisabledColor(cp.color),
+                    4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
+                    5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
+                    6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
+                    7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                    8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
+                    9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
+                    10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
+                    11 => pages::interface::InterfaceMessage::SetPaginatorTabLabelColor(cp.color),
+                    12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
+                    13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                    _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                 }));
                 color_changed = true;
             }
@@ -1177,8 +1198,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             pages::services::update(&mut self.app.services, pages::services::ServicesMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
-        while let Ok(s) = self.rx_colors.try_recv() {
-            colors::update(&mut self.app.colors, pages::colors::ColorsMessage::Refreshed(s));
+        while let Ok(s) = self.rx_interface.try_recv() {
+            interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::Refreshed(s));
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_accounts.try_recv() {
@@ -1192,10 +1213,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         while let Ok(action) = self.rx_color_selector.try_recv() {
             match action {
                 ColorSelectorAction::Background(rgb) => {
-                    colors::update(&mut self.app.colors, pages::colors::ColorsMessage::SetLowColor(rgb));
+                    interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::SetLowColor(rgb));
                 }
                 ColorSelectorAction::Border(rgb) => {
-                    colors::update(&mut self.app.colors, pages::colors::ColorsMessage::SetHighColor(rgb));
+                    interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::SetHighColor(rgb));
                 }
             }
             self.needs_rebuild = true;
@@ -1222,7 +1243,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 self.monospace_family = self.app.typeface.monospace.clone();
             }
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
-            AppAction::Colors(m) => colors::update(&mut self.app.colors, m.clone()),
+            AppAction::Interface(m) => interface::update(&mut self.app.interface, m.clone()),
             AppAction::Screensaver(m) => screensaver::update(&mut self.app.screensaver, m.clone()),
             AppAction::Backup(m) => match m {
                 pages::backup::BackupMessage::StartBackup => {
@@ -1309,11 +1330,23 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
             }
         }
-        if self.app.current_page == Page::Colors {
-            for cp in &mut self.app.colors.color_selectors {
+        if self.app.current_page == Page::Interface {
+            for cp in &mut self.app.interface.color_selectors {
                 if cp.cursor_moved(lx, ly) {
                     changed = true;
                 }
+            }
+            if self.app.interface.tab_margin_spinbox_x.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.tab_margin_spinbox_y.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.tab_padding_spinbox_x.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.tab_padding_spinbox_y.cursor_moved(lx, ly) {
+                changed = true;
             }
         }
         if self.app.current_page == Page::Input {
@@ -1615,10 +1648,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         if menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                     }
                 }
-                Page::Colors => {
-                    for cp in &mut self.app.colors.color_selectors {
+                Page::Interface => {
+                    for cp in &mut self.app.interface.color_selectors {
                         if cp.hit_test(lx, ly) { clicked_any_focusable = true; }
                     }
+                    if self.app.interface.tab_margin_spinbox_x.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.interface.tab_margin_spinbox_y.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.interface.tab_padding_spinbox_x.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.interface.tab_padding_spinbox_y.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Input => {
                     if self.app.input.rate_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
@@ -1773,45 +1810,73 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Colors {
-            for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
+            for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
                 if !cp.hit_test(lx, ly) { cp.unfocus(); }
                 cp.mouse_input(button, state, lx, ly);
                 if cp.take_click() {
-                    actions.push(AppAction::Colors(match i {
-                        0 => pages::colors::ColorsMessage::PickPageLowColor,
-                        1 => pages::colors::ColorsMessage::PickHighColor,
-                        2 => pages::colors::ColorsMessage::PickVisualGuides,
-                        3 => pages::colors::ColorsMessage::PickDisabledColor,
-                        4 => pages::colors::ColorsMessage::PickSeparatorColor,
-                        5 => pages::colors::ColorsMessage::PickSliderTrackColor,
-                        6 => pages::colors::ColorsMessage::PickColorBordersColor,
-                        7 => pages::colors::ColorsMessage::PickLowColor,
-                        8 => pages::colors::ColorsMessage::PickNormalColor,
-                        9 => pages::colors::ColorsMessage::PickPaginatorSidebarColor,
-                        10 => pages::colors::ColorsMessage::PickPrimaryHighlightColor,
-                        11 => pages::colors::ColorsMessage::PickPaginatorTabLabelColor,
-                        _ => pages::colors::ColorsMessage::PickLowColor,
+                    actions.push(AppAction::Interface(match i {
+                        0 => pages::interface::InterfaceMessage::PickPageLowColor,
+                        1 => pages::interface::InterfaceMessage::PickHighColor,
+                        2 => pages::interface::InterfaceMessage::PickVisualGuides,
+                        3 => pages::interface::InterfaceMessage::PickDisabledColor,
+                        4 => pages::interface::InterfaceMessage::PickSeparatorColor,
+                        5 => pages::interface::InterfaceMessage::PickSliderTrackColor,
+                        6 => pages::interface::InterfaceMessage::PickColorBordersColor,
+                        7 => pages::interface::InterfaceMessage::PickLowColor,
+                        8 => pages::interface::InterfaceMessage::PickNormalColor,
+                        9 => pages::interface::InterfaceMessage::PickPaginatorSidebarColor,
+                        10 => pages::interface::InterfaceMessage::PickPrimaryHighlightColor,
+                        11 => pages::interface::InterfaceMessage::PickPaginatorTabLabelColor,
+                        12 => pages::interface::InterfaceMessage::PickToggleEnabledColor,
+                        13 => pages::interface::InterfaceMessage::PickToggleDisabledColor,
+                        _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
                 if cp.color != old {
-                    actions.push(AppAction::Colors(match i {
-                        0 => pages::colors::ColorsMessage::SetPageLowColor(cp.color),
-                        1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
-                        2 => pages::colors::ColorsMessage::SetVisualGuidesColor(cp.color),
-                        3 => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
-                        4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
-                        5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
-                        6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
-                        7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
-                        8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
-                        9 => pages::colors::ColorsMessage::SetPaginatorSidebarColor(cp.color),
-                        10 => pages::colors::ColorsMessage::SetPrimaryHighlightColor(cp.color),
-                        11 => pages::colors::ColorsMessage::SetPaginatorTabLabelColor(cp.color),
-                        _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                    actions.push(AppAction::Interface(match i {
+                        0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
+                        1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
+                        2 => pages::interface::InterfaceMessage::SetVisualGuidesColor(cp.color),
+                        3 => pages::interface::InterfaceMessage::SetDisabledColor(cp.color),
+                        4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
+                        5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
+                        6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
+                        7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                        8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
+                        9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
+                        10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
+                        11 => pages::interface::InterfaceMessage::SetPaginatorTabLabelColor(cp.color),
+                        12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
+                        13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                        _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                     }));
                 }
+            }
+            let sb = &mut self.app.interface.tab_margin_spinbox_x;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.tab_margin_spinbox_y;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.tab_padding_spinbox_x;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.tab_padding_spinbox_y;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(sb.value as u16)));
             }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Input {
@@ -1981,6 +2046,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetStyle(menu.selected)));
             }
         }
+
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Audio {
             for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
                 if !sb.hit_test(lx, ly) { sb.unfocus(); }
@@ -2438,7 +2504,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
     fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Widget + 'static)> {
         match self.app.current_page {
             Page::Typefaces | Page::Services | Page::Hardware | Page::Radios |
-            Page::Layout | Page::Colors | Page::Notifications | Page::Input |
+            Page::Layout | Page::Interface | Page::Notifications | Page::Input |
             Page::Audio | Page::Display => {
                 let ptr = &mut self.page_root_container as &mut dyn clear_ui::widget::Widget as *mut dyn clear_ui::widget::Widget;
                 let static_ptr = unsafe {
@@ -2561,27 +2627,29 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 return true;
             }
         }
-        if self.app.current_page == Page::Colors {
+        if self.app.current_page == Page::Interface {
             let mut changed = false;
             let mut actions = Vec::new();
-            for (i, cp) in self.app.colors.color_selectors.iter_mut().enumerate() {
+            for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
                 if cp.keyboard_input(event) {
                     if cp.color != old {
-                        actions.push(AppAction::Colors(match i {
-                            0 => pages::colors::ColorsMessage::SetPageLowColor(cp.color),
-                            1 => pages::colors::ColorsMessage::SetHighColor(cp.color),
-                            2 => pages::colors::ColorsMessage::SetVisualGuidesColor(cp.color),
-                            3 => pages::colors::ColorsMessage::SetDisabledColor(cp.color),
-                            4 => pages::colors::ColorsMessage::SetSeparatorColor(cp.color),
-                            5 => pages::colors::ColorsMessage::SetSliderTrackColor(cp.color),
-                            6 => pages::colors::ColorsMessage::SetColorBordersColor(cp.color),
-                            7 => pages::colors::ColorsMessage::SetLowColor(cp.color),
-                            8 => pages::colors::ColorsMessage::SetNormalColor(cp.color),
-                            9 => pages::colors::ColorsMessage::SetPaginatorSidebarColor(cp.color),
-                            10 => pages::colors::ColorsMessage::SetPrimaryHighlightColor(cp.color),
-                            11 => pages::colors::ColorsMessage::SetPaginatorTabLabelColor(cp.color),
-                            _ => pages::colors::ColorsMessage::SetLowColor(cp.color),
+                        actions.push(AppAction::Interface(match i {
+                            0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
+                            1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
+                            2 => pages::interface::InterfaceMessage::SetVisualGuidesColor(cp.color),
+                            3 => pages::interface::InterfaceMessage::SetDisabledColor(cp.color),
+                            4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
+                            5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
+                            6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
+                            7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                            8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
+                            9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
+                            10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
+                            11 => pages::interface::InterfaceMessage::SetPaginatorTabLabelColor(cp.color),
+                            12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
+                            13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                            _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
                     changed = true;
@@ -2591,6 +2659,50 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 self.handle_action(a);
             }
             if changed {
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.tab_margin_spinbox_x;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.tab_margin_spinbox_y;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.tab_padding_spinbox_x;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.tab_padding_spinbox_y;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                drop(sb);
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(new_val as u16)));
+                }
                 self.needs_rebuild = true;
                 return true;
             }
