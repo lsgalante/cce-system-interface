@@ -1,5 +1,5 @@
-use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
+use crate::app::{AppAction, PageContent, SectionContextExt};
+use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 
 #[derive(Debug, Clone, Default)]
 pub struct SystemState {
@@ -54,48 +54,45 @@ pub fn view(state: &SystemState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mu
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
     // 1. System Section
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "System");
+    builder.add_section(&mut final_pc, "System", false, |sec| {
         if !state.loaded {
-            sec.text(pc, "Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
+            sec.text("Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
             sec.spacing(10.0);
         } else {
-            sec.text(pc, &format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
+            sec.text(&format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
             sec.spacing(10.0);
-            sec.text(pc, &format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text(&format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
         }
-        sec.finish(pc)
     });
 
     // 2. System Actions Section
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec_act = Section::new(pc, rx, ry, sec_w, "System Actions");
-        let yt = sec_act.ay();
+    builder.add_section(&mut final_pc, "System Actions", false, |sec| {
+        let yt = sec.ay();
         let act_btn_h = 32.0;
 
-        sec_act.row(4, 8.0, act_btn_h, |i, x, w| {
+        let cols = sec.row_layout(4, 8.0);
+        for (i, &(x, w)) in cols.iter().enumerate() {
             match i {
                 0 => {
-                    pc.button("Suspend", x, yt, w, act_btn_h,
+                    sec.button("Suspend", x, yt, w, act_btn_h,
                         SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Suspend));
                 }
                 1 => {
-                    pc.button("Hibernate", x, yt, w, act_btn_h,
+                    sec.button("Hibernate", x, yt, w, act_btn_h,
                         SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Hibernate));
                 }
                 2 => {
-                    pc.button("Reboot", x, yt, w, act_btn_h,
+                    sec.button("Reboot", x, yt, w, act_btn_h,
                         DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Reboot));
                 }
                 3 => {
-                    pc.button("Power Off", x, yt, w, act_btn_h,
+                    sec.button("Power Off", x, yt, w, act_btn_h,
                         DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::PowerOff));
                 }
                 _ => {}
             }
-        });
-        sec_act.spacing(12.0);
-        sec_act.finish(pc)
+        }
+        sec.spacing(12.0);
     });
 
     final_pc

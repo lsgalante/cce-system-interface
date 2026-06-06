@@ -1,6 +1,8 @@
-use crate::app::PageContent;
-use clear_ui::layout::{render_widget, Section, PageLayoutBuilder, LayoutStrategy, Subsection};
-use clear_ui::widget::{Spinbox, Label, Widget};
+use crate::app::{PageContent, SectionContextExt};
+use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use clear_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown};
+
+const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
 
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -51,6 +53,15 @@ pub struct DisplayState {
     pub night_light: bool,
     pub brightness_spinbox: Spinbox,
     pub night_light_label: Label,
+    // screensaver fields:
+    pub screensaver_enable: bool,
+    pub screensaver_enable_toggle: Toggle,
+    pub screensaver_timeout: i32,
+    pub screensaver_timeout_spinbox: Spinbox,
+    pub screensaver_lock_screen: bool,
+    pub screensaver_lock_screen_toggle: Toggle,
+    pub screensaver_style: String,
+    pub screensaver_style_menu: Dropdown,
 }
 
 impl Default for DisplayState {
@@ -63,6 +74,19 @@ impl Default for DisplayState {
             night_light: false,
             brightness_spinbox: Spinbox::new(50, 0, 100, 5).with_unit("%"),
             night_light_label: Label::new("Night Light: OFF").with_font_size(13.0).with_color([0xd4, 0xd4, 0xd4]),
+            screensaver_enable: true,
+            screensaver_enable_toggle: Toggle::new().with_label("Enable Screensaver"),
+            screensaver_timeout: 10,
+            screensaver_timeout_spinbox: Spinbox::new(10, 1, 120, 1)
+                .with_label("Screensaver Timeout")
+                .with_unit("m"),
+            screensaver_lock_screen: true,
+            screensaver_lock_screen_toggle: Toggle::new().with_label("Lock Screen on Activation"),
+            screensaver_style: "starfield".to_string(),
+            screensaver_style_menu: Dropdown::new(
+                vec!["Blank".to_string(), "Starfield".to_string(), "Matrix Rain".to_string()],
+                1,
+            ).with_label("Screensaver Style"),
         }
     }
 }
@@ -71,6 +95,159 @@ impl Default for DisplayState {
 pub enum DisplayMessage {
     Refreshed(DisplayState),
     BrightnessSet(u32),
+    ToggleScreensaverEnable,
+    ToggleScreensaverLockScreen,
+    SetScreensaverTimeout(i32),
+    SetScreensaverStyle(usize),
+    StartScreensaverPreview,
+}
+
+fn parse_screensaver_enable(content: &str) -> bool {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[screensaver]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("enable") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                return val.trim() == "true";
+            }
+        }
+    }
+    true // default to true
+}
+
+fn parse_screensaver_lock_screen(content: &str) -> bool {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[screensaver]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("lock_screen") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                return val.trim() == "true";
+            }
+        }
+    }
+    true // default to true
+}
+
+fn parse_screensaver_timeout(content: &str) -> i32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[screensaver]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("timeout") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(t) = val.trim().parse::<i32>() {
+                    return t;
+                }
+            }
+        }
+    }
+    10 // default to 10 minutes
+}
+
+fn parse_screensaver_style(content: &str) -> String {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[screensaver]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("style") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                return val.trim().trim_matches('"').to_string();
+            }
+        }
+    }
+    "starfield".to_string() // default to starfield
+}
+
+pub fn write_config_value(key: &str, value: &str) {
+    let content = std::fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[screensaver]" {
+            in_section = true;
+            updated_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            in_section = false;
+        }
+        if in_section && trimmed.starts_with(key) {
+            found = true;
+            updated_lines.push(new_line.clone());
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let mut updated = updated_lines.join("\n");
+
+    if !found {
+        let mut result = String::new();
+        let has_section = content.lines().any(|l| l.trim() == "[screensaver]");
+        if has_section {
+            let mut in_section = false;
+            let mut inserted = false;
+            for line in updated.lines() {
+                if line.trim() == "[screensaver]" {
+                    in_section = true;
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+                if line.trim().starts_with('[') && in_section {
+                    if !inserted {
+                        result.push_str(&new_line);
+                        result.push('\n');
+                        inserted = true;
+                    }
+                    in_section = false;
+                }
+                result.push_str(line);
+                result.push('\n');
+            }
+            if !inserted {
+                result.push_str(&new_line);
+                result.push('\n');
+            }
+            updated = result;
+        } else {
+            updated.push_str("\n[screensaver]\n");
+            updated.push_str(&new_line);
+            updated.push_str("\n");
+        }
+    }
+    let _ = std::fs::write(CONFIG_PATH, updated);
 }
 
 pub async fn fetch_display_state() -> DisplayState {
@@ -80,6 +257,20 @@ pub async fn fetch_display_state() -> DisplayState {
     let pct = if max_brightness > 0.0 {
         (brightness / max_brightness * 100.0).round() as i32
     } else { 50 };
+
+    let content = std::fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let screensaver_enable = parse_screensaver_enable(&content);
+    let screensaver_timeout = parse_screensaver_timeout(&content);
+    let screensaver_lock_screen = parse_screensaver_lock_screen(&content);
+    let screensaver_style = parse_screensaver_style(&content);
+
+    let style_idx = match screensaver_style.to_lowercase().as_str() {
+        "blank" => 0,
+        "starfield" => 1,
+        "matrix" => 2,
+        _ => 1, // default to Starfield
+    };
+
     DisplayState {
         loaded: true,
         brightness, max_brightness, outputs, night_light,
@@ -87,6 +278,19 @@ pub async fn fetch_display_state() -> DisplayState {
         night_light_label: Label::new(if night_light { "Night Light: ON" } else { "Night Light: OFF" })
             .with_font_size(13.0)
             .with_color([0xd4, 0xd4, 0xd4]),
+        screensaver_enable,
+        screensaver_enable_toggle: Toggle::new().with_label("Enable Screensaver"),
+        screensaver_timeout,
+        screensaver_timeout_spinbox: Spinbox::new(screensaver_timeout, 1, 120, 1)
+            .with_label("Screensaver Timeout")
+            .with_unit("m"),
+        screensaver_lock_screen,
+        screensaver_lock_screen_toggle: Toggle::new().with_label("Lock Screen on Activation"),
+        screensaver_style: screensaver_style.clone(),
+        screensaver_style_menu: Dropdown::new(
+            vec!["Blank".to_string(), "Starfield".to_string(), "Matrix Rain".to_string()],
+            style_idx,
+        ).with_label("Screensaver Style"),
     }
 }
 
@@ -166,22 +370,23 @@ fn spawn_brightness(pct: u32) {
         .args(["set", &format!("{}%", pct), "-n"]).spawn();
 }
 
-const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const BLANK_BAR: [f32; 4] = [0.15, 0.15, 0.24, 1.0];
 const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 
+const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
+const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
 pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(4);
 
     // ── Brightness ──
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "Brightness");
-
+    builder.add_section(&mut final_pc, "Brightness", false, |sec| {
         if !state.loaded {
-            sec.text(pc, "Loading display settings...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading display settings...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
         } else {
             let bright_pct = if state.max_brightness > 0.0 {
@@ -190,65 +395,93 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
 
             let bar_w = sec_w - 100.0;
             let yt = sec.ay();
-            pc.rect(BLANK_BAR, sec.ax(12.0), yt, bar_w, 8.0);
-            pc.rect(FILL_BAR, sec.ax(12.0), yt, bar_w * bright_pct as f32 / 100.0, 8.0);
-            pc.text(&format!("{}%", bright_pct), sec.ax(16.0 + bar_w), yt - 2.0, 11.0, TEXT_DIM);
-            sec.content_y += 14.0;
+            let usage_bar_x = sec.ax(12.0);
+            let mut usage_bar = clear_ui::widget::UsageBar::new(bright_pct as f32 / 100.0)
+                .with_colors(FILL_BAR, BLANK_BAR);
+            render_widget(sec.pc, &mut usage_bar, usage_bar_x, yt, bar_w, 8.0);
+            sec.text(&format!("{}%", bright_pct), 16.0 + bar_w, -2.0, 11.0, TEXT_DIM);
+            sec.spacing(14.0);
 
             let yt = sec.ay();
             let sb_w = 100.0;
             let sb_h = 26.0;
             state.brightness_spinbox.value = bright_pct;
-            state.brightness_spinbox.set_row_rect(sec.ax(8.0), sec_w - 16.0);
-            render_widget(pc, &mut state.brightness_spinbox, sec.ax(12.0), yt, sb_w, sb_h);
-            sec.content_y += sb_h + 12.0;
+            let row_rect_x = sec.ax(8.0);
+            state.brightness_spinbox.set_row_rect(row_rect_x, sec_w - 16.0);
+            let sb_x = sec.ax(12.0);
+            render_widget(sec.pc, &mut state.brightness_spinbox, sb_x, yt, sb_w, sb_h);
+            sec.spacing(sb_h + 12.0);
         }
-        sec.finish(pc)
     });
 
     // ── Night Light ──
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "Night Light");
+    builder.add_section(&mut final_pc, "Night Light", false, |sec| {
         if !state.loaded {
-            sec.text(pc, "Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
         } else {
             let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
             state.night_light_label.set_text(nl_label);
-            sec.widget(pc, &mut state.night_light_label, 12.0, sec_w - 24.0, 20.0);
+            sec.widget(&mut state.night_light_label, 12.0, sec_w - 24.0, 20.0);
             sec.spacing(8.0);
         }
-        sec.finish(pc)
     });
 
     // ── Outputs ──
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "Outputs");
-
+    builder.add_section(&mut final_pc, "Outputs", false, |sec| {
         if !state.loaded {
-            sec.text(pc, "Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
         } else {
             for out in &mut state.outputs {
-                let mut subsec = Subsection::new(
-                    pc,
-                    sec.ax(0.0) + Section::ROW_PADDING_X,
-                    sec.content_y,
-                    sec.cw - 2.0 * Section::ROW_PADDING_X,
-                    &out.name,
-                );
-                
-                subsec.widget(pc, &mut out.resolution_label, 12.0, 240.0, 20.0);
-                
-                if let Some(ref mut scale_lbl) = out.scale_label {
-                    subsec.widget(pc, scale_lbl, 12.0, 240.0, 20.0);
-                }
-                
-                let sub_h = subsec.finish(pc);
-                sec.content_y = sub_h;
+                sec.add_subsection(&out.name, false, |subsec| {
+                    subsec.widget(&mut out.resolution_label, 12.0, 240.0, 20.0);
+                    if let Some(ref mut scale_lbl) = out.scale_label {
+                        subsec.widget(scale_lbl, 12.0, 240.0, 20.0);
+                    }
+                });
             }
         }
-        sec.finish(pc)
+    });
+
+    // ── Screensaver Settings ──
+    builder.add_section(&mut final_pc, "Screensaver Settings", false, |sec| {
+        let toggle_w = 48.0;
+        let toggle_h = 24.0;
+        
+        state.screensaver_enable_toggle.set_toggled(state.screensaver_enable);
+        sec.widget(&mut state.screensaver_enable_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(8.0);
+
+        state.screensaver_lock_screen_toggle.set_toggled(state.screensaver_lock_screen);
+        sec.widget(&mut state.screensaver_lock_screen_toggle, 14.0, toggle_w, toggle_h);
+        sec.spacing(16.0);
+
+        state.screensaver_timeout_spinbox.value = state.screensaver_timeout;
+        sec.widget(&mut state.screensaver_timeout_spinbox, 14.0, 200.0, 26.0);
+        sec.spacing(16.0);
+
+        sec.widget(&mut state.screensaver_style_menu, 14.0, 200.0, 26.0);
+        sec.spacing(24.0);
+
+        let btn_w = 160.0;
+        let btn_h = 32.0;
+        let btn_y = sec.ay();
+        let cols = sec.row_layout(1, 0.0);
+        if let Some(&(x, _)) = cols.first() {
+            sec.button(
+                "Preview Screensaver",
+                x,
+                btn_y,
+                btn_w,
+                btn_h,
+                BTN_BG,
+                BTN_HOVER,
+                WHITE,
+                crate::app::AppAction::Display(DisplayMessage::StartScreensaverPreview),
+            );
+        }
+        sec.spacing(12.0);
     });
 
     final_pc
@@ -268,10 +501,20 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
                     out.scale_label.as_ref().map(|l| l.hovered()).unwrap_or(false)
                 ));
             }
+
+            let enable_hover = state.screensaver_enable_toggle.hovered();
+            let lock_hover = state.screensaver_lock_screen_toggle.hovered();
+            let timeout_hover = state.screensaver_timeout_spinbox.hovered();
+            let style_hover = state.screensaver_style_menu.hovered();
             
             *state = new;
             state.night_light_label.set_hovered(was_nl_hovered);
             
+            state.screensaver_enable_toggle.set_hovered(enable_hover);
+            state.screensaver_lock_screen_toggle.set_hovered(lock_hover);
+            state.screensaver_timeout_spinbox.set_hovered(timeout_hover);
+            state.screensaver_style_menu.set_hovered(style_hover);
+
             for out in &mut state.outputs {
                 if let Some(&(name_h, res_h, scale_h)) = hovers.get(&out.name) {
                     out.name_label.set_hovered(name_h);
@@ -287,6 +530,48 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
             state.brightness = pct as f32 / 100.0 * state.max_brightness;
             spawn_brightness(pct);
             state.brightness_spinbox.value = pct as i32;
+        }
+        DisplayMessage::ToggleScreensaverEnable => {
+            state.screensaver_enable = !state.screensaver_enable;
+            write_config_value("enable", &state.screensaver_enable.to_string());
+        }
+        DisplayMessage::ToggleScreensaverLockScreen => {
+            state.screensaver_lock_screen = !state.screensaver_lock_screen;
+            write_config_value("lock_screen", &state.screensaver_lock_screen.to_string());
+        }
+        DisplayMessage::SetScreensaverTimeout(t) => {
+            state.screensaver_timeout = t;
+            write_config_value("timeout", &state.screensaver_timeout.to_string());
+        }
+        DisplayMessage::SetScreensaverStyle(idx) => {
+            state.screensaver_style_menu.selected = idx;
+            let val = match idx {
+                0 => "blank",
+                1 => "starfield",
+                2 => "matrix",
+                _ => "starfield",
+            };
+            state.screensaver_style = val.to_string();
+            write_config_value("style", &format!("\"{}\"", val));
+        }
+        DisplayMessage::StartScreensaverPreview => {
+            let style_flag = match state.screensaver_style_menu.selected {
+                0 => "blank",
+                1 => "starfield",
+                2 => "matrix",
+                _ => "starfield",
+            };
+            
+            // Spawn screensaver tool from PATH or local directory
+            std::process::Command::new("/home/lsgalante/Dropbox/Clear/cce-screenaver/target/debug/cce-screenaver")
+                .arg(style_flag)
+                .spawn()
+                .or_else(|_| {
+                    std::process::Command::new("cce-screenaver")
+                        .arg(style_flag)
+                        .spawn()
+                })
+                .ok();
         }
     }
 }

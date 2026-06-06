@@ -1,9 +1,30 @@
-use crate::app::PageContent;
-use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Widget, TextLabel, ScrollBox, ScrollingList, TextBox};
-use clear_ui::widget::{ElementState, KeyEvent, MouseButton, Key, NamedKey};
+use std::fs;
+use std::io::Write;
+use crate::app::{AppAction, PageContent, SectionContextExt};
+use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use clear_ui::widget::{Element, ScrollingList, TextBox, StatusDot, DotStatus, InteractiveListItem, Toggle, Spinbox, Slider, Label};
+use crate::pages::interface::parse_u16_from;
 
+// ── Notifications Data and Settings Configuration ──
 
+#[derive(Debug, Clone)]
+pub struct NotificationsConfig {
+    pub enable: bool,
+    pub bell: bool,
+    pub duration: i32,
+    pub opacity: f32,
+}
+
+// ── Status Interface Data ──
+
+#[derive(Debug, Clone)]
+pub struct StatusData {
+    pub font_size: u16,
+    pub padding: u16,
+    pub separators: bool,
+    pub underline: bool,
+    pub running: bool,
+}
 
 // ── Service Types and Page State ──
 
@@ -35,6 +56,29 @@ pub struct ServicesState {
     pub active_tab: ServiceTab,
     pub search_box: TextBox,
     pub list_box: ScrollingList,
+    pub service_items: Vec<InteractiveListItem>,
+    pub notifications_loaded: bool,
+    pub notifications_enable: bool,
+    pub notifications_enable_toggle: Toggle,
+    pub notifications_bell: bool,
+    pub notifications_bell_toggle: Toggle,
+    pub notifications_duration: i32,
+    pub notifications_duration_spinbox: Spinbox,
+    pub notifications_opacity: f32,
+    pub notifications_opacity_slider: Slider,
+
+    // Status Interface fields
+    pub status_loaded: bool,
+    pub status_font_size: u16,
+    pub status_padding: u16,
+    pub status_separators: bool,
+    pub status_underline: bool,
+    pub status_running: bool,
+    pub status_label: Label,
+    pub status_size_label: Label,
+    pub status_separators_toggle: Toggle,
+    pub status_underline_toggle: Toggle,
+    pub status_padding_spinbox: Spinbox,
 }
 
 impl Default for ServicesState {
@@ -45,6 +89,33 @@ impl Default for ServicesState {
             active_tab: ServiceTab::System,
             search_box: TextBox::new(String::new()).with_label("Filter Services"),
             list_box: ScrollingList::new(36.0, 6.0),
+            service_items: Vec::new(),
+            notifications_loaded: false,
+            notifications_enable: true,
+            notifications_enable_toggle: Toggle::new().with_label("Enable Notifications"),
+            notifications_bell: false,
+            notifications_bell_toggle: Toggle::new().with_label("Play Bell Sound"),
+            notifications_duration: 5,
+            notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
+                .with_label("Notification Duration")
+                .with_unit("s"),
+            notifications_opacity: 0.9,
+            notifications_opacity_slider: Slider::new()
+                .with_label("Transparency")
+                .with_value(0.9),
+
+            // Status Interface default initialization
+            status_loaded: false,
+            status_font_size: 11,
+            status_padding: 8,
+            status_separators: true,
+            status_underline: true,
+            status_running: false,
+            status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
+            status_size_label: Label::new("Font size: 11px").with_font_size(13.0).with_color([212, 212, 212]),
+            status_separators_toggle: Toggle::new().with_label("Show Separators"),
+            status_underline_toggle: Toggle::new().with_label("Show Underline"),
+            status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Side Padding").with_unit("px"),
         }
     }
 }
@@ -56,6 +127,21 @@ pub enum ServicesMessage {
     Start(String, bool),
     Stop(String, bool),
     Restart(String, bool),
+    ToggleNotificationsEnable,
+    ToggleNotificationsBell,
+    SetNotificationsDuration(i32),
+    SetNotificationsOpacity(f32),
+    SendTestNotification,
+    NotificationsRefreshed(NotificationsConfig),
+
+    // Status Interface variants
+    StatusRefreshed(StatusData),
+    StatusFontSizeUp,
+    StatusFontSizeDown,
+    StatusToggleSeparators,
+    StatusToggleUnderline,
+    StatusReload,
+    StatusSetPadding(u16),
 }
 
 // ── Background Fetching ──
@@ -138,16 +224,14 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "Services");
-
+    builder.add_section(&mut final_pc, "Services", sec_focused.first().copied().unwrap_or(false), |sec| {
         if !state.loaded {
-            sec.text(pc, "Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
         } else {
             // Tab header buttons: System Services, User Services
@@ -161,9 +245,12 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             let label1 = if tab_w < 110.0 { "System" } else { "System Services" };
             let label2 = if tab_w < 110.0 { "User" } else { "User Services" };
 
-            pc.button(
+            let tab_x1 = sec.left + 12.0;
+            let tab_x2 = sec.left + 12.0 + tab_w + 8.0;
+
+            sec.pc.button(
                 label1,
-                rx + 12.0,
+                tab_x1,
                 tab_y,
                 tab_w,
                 tab_h,
@@ -173,9 +260,9 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
                 crate::app::AppAction::Services(ServicesMessage::SetTab(ServiceTab::System)),
             );
 
-            pc.button(
+            sec.pc.button(
                 label2,
-                rx + 12.0 + tab_w + 8.0,
+                tab_x2,
                 tab_y,
                 tab_w,
                 tab_h,
@@ -187,28 +274,28 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             sec.content_y += tab_h + 12.0;
 
             // Search textbox
-            let search_y = sec.ay() + state.search_box.top_room();
+            let search_y = sec.ay();
             let search_w = sec_w - 24.0;
-            let search_h = 28.0;
+            let search_h = 46.0;
             
-            state.search_box.set_row_rect(rx + 12.0, search_w);
+            state.search_box.set_row_rect(sec.left + 12.0, search_w);
             clear_ui::layout::render_widget(
-                pc,
+                sec.pc,
                 &mut state.search_box,
-                rx + 12.0,
+                sec.left + 12.0,
                 search_y,
                 search_w,
                 search_h,
             );
-            sec.content_y += search_h + state.search_box.top_room() + 16.0;
+            sec.content_y += search_h + 16.0;
 
             // Scroll box list
-            let list_box_x = rx + 12.0;
+            let list_box_x = sec.left + 12.0;
             let list_box_y = sec.ay();
             let list_box_w = sec_w - 24.0;
             let list_box_h = 360.0;
             
-            clear_ui::layout::render_widget(pc, &mut state.list_box, list_box_x, list_box_y, list_box_w, list_box_h);
+            clear_ui::layout::render_widget(sec.pc, &mut state.list_box, list_box_x, list_box_y, list_box_w, list_box_h);
 
             // Filter services
             let query = if state.search_box.editing {
@@ -226,24 +313,16 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
 
             let item_h = state.list_box.item_height;
 
+            if state.service_items.len() != filtered_services.len() {
+                state.service_items.clear();
+                for _ in 0..filtered_services.len() {
+                    state.service_items.push(InteractiveListItem::new(""));
+                }
+            }
+
             for (idx, service) in filtered_services.iter().enumerate() {
                 if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 4.0) {
-                    // Item background
-                    let bg_color = [0.08, 0.08, 0.12, 0.2];
-                    pc.rect(bg_color, list_box_x + 4.0, draw_y, list_box_w - 24.0, item_h);
-
-                    // Status indicator color
                     let is_active = service.active_state == "active" || service.sub_state == "running";
-                    let status_color = if service.active_state == "failed" {
-                        [0.85, 0.25, 0.25, 1.0] // failed = red
-                    } else if is_active {
-                        [0.25, 0.75, 0.35, 1.0] // active = green
-                    } else {
-                        [0.55, 0.55, 0.60, 1.0] // inactive/dead = gray
-                    };
-
-                    // Render status dot (small square)
-                    pc.rect(status_color, list_box_x + 14.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0);
 
                     // Control buttons: Start, Stop, Restart on the right
                     let is_small = sec_w < 350.0;
@@ -259,9 +338,6 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
                     let btn_y = draw_y + (item_h - 22.0) / 2.0;
                     let btn_h = 22.0;
 
-                    // Service Name
-                    pc.text(&service.name, list_box_x + 32.0, draw_y + 4.0, 13.0, [0.90, 0.90, 0.95, 1.0]);
-
                     // Service Description (Truncate dynamically based on remaining space before Start button)
                     let text_max_w = (start_x - 8.0) - (list_box_x + 32.0);
                     let max_chars = ((text_max_w / 6.0) as usize).max(10);
@@ -271,7 +347,23 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
                     } else {
                         desc.to_string()
                     };
-                    pc.text(&desc_truncated, list_box_x + 32.0, draw_y + 19.0, 11.0, [0.55, 0.55, 0.60, 1.0]);
+
+                    // Render InteractiveListItem background and text labels
+                    let item_btn = &mut state.service_items[idx];
+                    item_btn.title = service.name.clone();
+                    item_btn.subtitle = Some(desc_truncated);
+                    clear_ui::layout::render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h);
+
+                    // Render StatusDot
+                    let status_dot_state = if service.active_state == "failed" {
+                        DotStatus::Error
+                    } else if is_active {
+                        DotStatus::Active
+                    } else {
+                        DotStatus::Inactive
+                    };
+                    let mut dot = StatusDot::new(status_dot_state);
+                    clear_ui::layout::render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
                     let disabled_txt = [0.40, 0.40, 0.45, 1.0];
@@ -281,7 +373,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
                     let restart_lbl = if is_small { "⟳" } else { "Restart" };
 
                     // Start button
-                    pc.button(
+                    sec.pc.button(
                         start_lbl,
                         start_x,
                         btn_y,
@@ -294,7 +386,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
                     );
 
                     // Stop button
-                    pc.button(
+                    sec.pc.button(
                         stop_lbl,
                         stop_x,
                         btn_y,
@@ -307,7 +399,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
                     );
 
                     // Restart button
-                    pc.button(
+                    sec.pc.button(
                         restart_lbl,
                         restart_x,
                         btn_y,
@@ -322,12 +414,145 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             }
 
             if filtered_services.is_empty() {
-                pc.text("No services match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                sec.pc.text("No services match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
             }
 
             sec.content_y += list_box_h;
         }
-        sec.finish_focused(pc, root_focused)
+    });
+
+    // ── System Notifications ──
+    builder.add_section(&mut final_pc, "System Notifications", sec_focused.get(1).copied().unwrap_or(false), |sec2| {
+        let toggle_w = 48.0;
+        let toggle_h = 42.0;
+        state.notifications_enable_toggle.set_toggled(state.notifications_enable);
+        sec2.widget(&mut state.notifications_enable_toggle, 14.0, toggle_w, toggle_h);
+        sec2.spacing(8.0);
+
+        state.notifications_bell_toggle.set_toggled(state.notifications_bell);
+        sec2.widget(&mut state.notifications_bell_toggle, 14.0, toggle_w, toggle_h);
+        sec2.spacing(16.0);
+
+        state.notifications_duration_spinbox.value = state.notifications_duration;
+        state.notifications_duration_spinbox.set_label("Notification Duration");
+        sec2.widget(&mut state.notifications_duration_spinbox, 14.0, 200.0, 44.0);
+        sec2.spacing(16.0);
+
+        // Opacity Slider (Transparency, moved here)
+        state.notifications_opacity_slider.set_value(state.notifications_opacity);
+        sec2.widget(&mut state.notifications_opacity_slider, 14.0, 300.0, 38.0);
+        sec2.spacing(16.0);
+
+        let btn_w = 160.0;
+        let btn_h = 32.0;
+        let btn_y = sec2.ay();
+        let white_color = [1.0, 1.0, 1.0, 1.0];
+        let btn_bg = [0.20, 0.40, 0.65, 1.0];
+        let btn_hover = [0.28, 0.50, 0.78, 1.0];
+        
+        let cols = sec2.row_layout(1, 0.0);
+        if let Some(&(x, _)) = cols.first() {
+            sec2.button(
+                "Send Test Notification",
+                x,
+                btn_y,
+                btn_w,
+                btn_h,
+                btn_bg,
+                btn_hover,
+                white_color,
+                AppAction::Services(ServicesMessage::SendTestNotification),
+            );
+        }
+        sec2.spacing(12.0);
+    });
+
+    // ── Status Interface ──
+    builder.add_section(&mut final_pc, "Status Interface", sec_focused.get(2).copied().unwrap_or(false), |sec3| {
+        if !state.status_loaded {
+            sec3.text("Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec3.spacing(18.0);
+        } else {
+            // Status
+            let status_text = if state.status_running { "Status Interface: Running" } else { "Status Interface: Stopped" };
+            let status_color = if state.status_running { [92, 143, 97] } else { [170, 51, 51] };
+            state.status_label.set_text(status_text);
+            state.status_label.set_color(status_color);
+            sec3.widget(&mut state.status_label, 12.0, sec_w - 24.0, 20.0);
+            sec3.spacing(12.0);
+
+            // Font size
+            state.status_size_label.set_text(&format!("Font size: {}px", state.status_font_size));
+            sec3.widget(&mut state.status_size_label, 12.0, sec_w - 24.0, 20.0);
+            sec3.spacing(12.0);
+
+            let btn_h = 28.0;
+            let yt = sec3.ay();
+            let ax1 = sec3.ax(12.0);
+            let ax2 = sec3.ax(56.0);
+            let ax3 = sec3.ax(12.0 + 36.0 + 8.0);
+            let text_color = [0.83, 0.83, 0.83, 1.0];
+            
+            sec3.button(
+                "-1",
+                ax1,
+                yt,
+                36.0,
+                btn_h,
+                [0.13, 0.18, 0.14, 1.0],
+                [0.25, 0.30, 0.26, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Services(ServicesMessage::StatusFontSizeDown),
+            );
+            
+            sec3.pc.text(&format!(" {}px ", state.status_font_size), ax2, yt + 7.0, 13.0, text_color);
+            
+            sec3.button(
+                "+1",
+                ax3,
+                yt,
+                36.0,
+                btn_h,
+                [0.20, 0.40, 0.22, 1.0],
+                [0.25, 0.30, 0.26, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Services(ServicesMessage::StatusFontSizeUp),
+            );
+            sec3.spacing(16.0);
+
+            // Separators toggle
+            state.status_separators_toggle.set_toggled(state.status_separators);
+            sec3.widget(&mut state.status_separators_toggle, 12.0, 48.0, 42.0);
+            sec3.spacing(16.0);
+
+            // Underline toggle
+            state.status_underline_toggle.set_toggled(state.status_underline);
+            sec3.widget(&mut state.status_underline_toggle, 12.0, 48.0, 42.0);
+            sec3.spacing(16.0);
+
+            // Padding spinbox
+            state.status_padding_spinbox.value = state.status_padding as i32;
+            sec3.widget(&mut state.status_padding_spinbox, 12.0, 200.0, 44.0);
+            sec3.spacing(16.0);
+
+            // Reload button
+            let yt_reload = sec3.ay();
+            let btn_w = (sec_w - 24.0).min(200.0);
+            let rx = sec3.left;
+            let button_x = rx + sec_w / 2.0 - btn_w / 2.0;
+            sec3.button(
+                "Reload Status Interface",
+                button_x,
+                yt_reload,
+                btn_w,
+                32.0,
+                [0.13, 0.18, 0.14, 1.0],
+                [0.25, 0.30, 0.26, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Services(ServicesMessage::StatusReload),
+            );
+            sec3.spacing(12.0);
+        }
     });
 
     final_pc
@@ -338,10 +563,12 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
         ServicesMessage::Refreshed(new_services) => {
             state.loaded = true;
             state.services = new_services;
+            state.service_items.clear();
         }
         ServicesMessage::SetTab(tab) => {
             state.active_tab = tab;
             state.list_box.set_scroll_y(0.0);
+            state.service_items.clear();
         }
         ServicesMessage::Start(name, is_system) => {
             if let Some(srv) = state.services.iter_mut().find(|s| s.name == name && s.is_system == is_system) {
@@ -364,6 +591,441 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
             }
             service_action(&name, "restart", is_system);
         }
+        ServicesMessage::ToggleNotificationsEnable => {
+            state.notifications_enable = !state.notifications_enable;
+            write_enable_notifications(state.notifications_enable);
+        }
+        ServicesMessage::ToggleNotificationsBell => {
+            state.notifications_bell = !state.notifications_bell;
+            write_config_value("bell", &state.notifications_bell.to_string());
+        }
+        ServicesMessage::SetNotificationsDuration(d) => {
+            state.notifications_duration = d;
+            write_config_value("duration", &state.notifications_duration.to_string());
+        }
+        ServicesMessage::SetNotificationsOpacity(o) => {
+            state.notifications_opacity = o;
+            write_transparency_config_value("opacity", &format!("{:.2}", o));
+            send_ipc_command("reload");
+        }
+        ServicesMessage::SendTestNotification => {
+            send_ipc_command("notify \"ccec\" \"System notifications are working correctly!\"");
+        }
+        ServicesMessage::NotificationsRefreshed(new) => {
+            state.notifications_loaded = true;
+            state.notifications_enable = new.enable;
+            state.notifications_bell = new.bell;
+            state.notifications_duration = new.duration;
+            state.notifications_opacity = new.opacity;
+        }
+        ServicesMessage::StatusRefreshed(new) => {
+            let was_status_hovered = state.status_label.hovered();
+            let was_size_hovered = state.status_size_label.hovered();
+            let was_separators_hovered = state.status_separators_toggle.hovered();
+            let was_underline_hovered = state.status_underline_toggle.hovered();
+
+            state.status_loaded = true;
+            state.status_font_size = new.font_size;
+            state.status_padding = new.padding;
+            state.status_separators = new.separators;
+            state.status_underline = new.underline;
+            state.status_running = new.running;
+
+            state.status_label.set_hovered(was_status_hovered);
+            state.status_size_label.set_hovered(was_size_hovered);
+            state.status_separators_toggle.set_hovered(was_separators_hovered);
+            state.status_underline_toggle.set_hovered(was_underline_hovered);
+        }
+        ServicesMessage::StatusFontSizeUp => {
+            if state.status_font_size < 28 {
+                state.status_font_size += 1;
+                write_status_font_size(state.status_font_size);
+                status_interface_reload();
+            }
+        }
+        ServicesMessage::StatusFontSizeDown => {
+            if state.status_font_size > 8 {
+                state.status_font_size -= 1;
+                write_status_font_size(state.status_font_size);
+                status_interface_reload();
+            }
+        }
+        ServicesMessage::StatusToggleSeparators => {
+            state.status_separators = !state.status_separators;
+            write_status_separators(state.status_separators);
+            status_interface_reload();
+        }
+        ServicesMessage::StatusToggleUnderline => {
+            state.status_underline = !state.status_underline;
+            write_status_underline(state.status_underline);
+            status_interface_reload();
+        }
+        ServicesMessage::StatusSetPadding(val) => {
+            state.status_padding = val;
+            write_status_padding(val);
+            status_interface_reload();
+        }
+        ServicesMessage::StatusReload => {
+            status_interface_reload();
+        }
+    }
+}
+
+// ── Notifications Configuration Reader & Writer ──
+
+const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
+
+fn get_socket_path() -> String {
+    match std::env::var("WAYLAND_DISPLAY") {
+        Ok(display) => format!("/tmp/ccec-{}.sock", display),
+        Err(_) => "/tmp/ccec.sock".to_string(),
+    }
+}
+
+pub fn read_notifications_config() -> NotificationsConfig {
+    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let enable = parse_notifications_enable(&content);
+    let bell = parse_notifications_bell(&content);
+    let duration = parse_notifications_duration(&content);
+    let opacity = parse_transparency_opacity(&content);
+    NotificationsConfig {
+        enable,
+        bell,
+        duration,
+        opacity,
+    }
+}
+
+fn parse_notifications_enable(content: &str) -> bool {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("enable") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                return val.trim() == "true";
+            }
+        }
+    }
+    true // default to true
+}
+
+fn parse_notifications_bell(content: &str) -> bool {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("bell") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                return val.trim() == "true";
+            }
+        }
+    }
+    false // default to false
+}
+
+fn parse_notifications_duration(content: &str) -> i32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("duration") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(d) = val.trim().parse::<i32>() {
+                    return d;
+                }
+            }
+        }
+    }
+    5 // default to 5 seconds
+}
+
+fn parse_transparency_opacity(content: &str) -> f32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[transparency]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("opacity") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(o) = val.trim().parse::<f32>() {
+                    return o.clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
+    0.9 // default to 0.9
+}
+
+fn send_ipc_command(cmd: &str) {
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_socket_path()) {
+        let _ = stream.write_all(format!("{}\n", cmd).as_bytes());
+    }
+}
+
+fn write_config_value(key: &str, value: &str) {
+    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            updated_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            in_section = false;
+        }
+        if in_section && trimmed.starts_with(key) {
+            found = true;
+            updated_lines.push(new_line.clone());
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let mut updated = updated_lines.join("\n");
+
+    if !found {
+        let mut result = String::new();
+        let has_section = content.lines().any(|l| l.trim() == "[notifications]");
+        if has_section {
+            let mut in_section = false;
+            let mut inserted = false;
+            for line in updated.lines() {
+                if line.trim() == "[notifications]" {
+                    in_section = true;
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+                if line.trim().starts_with('[') && in_section {
+                    if !inserted {
+                        result.push_str(&new_line);
+                        result.push('\n');
+                        inserted = true;
+                    }
+                    in_section = false;
+                }
+                result.push_str(line);
+                result.push('\n');
+            }
+            if !inserted {
+                result.push_str(&new_line);
+                result.push('\n');
+            }
+            updated = result;
+        } else {
+            updated.push_str("\n[notifications]\n");
+            updated.push_str(&new_line);
+            updated.push_str("\n");
+        }
+    }
+    let _ = fs::write(CONFIG_PATH, updated);
+}
+
+fn write_enable_notifications(enabled: bool) {
+    write_config_value("enable", &enabled.to_string());
+    send_ipc_command("reload");
+}
+
+fn write_transparency_config_value(key: &str, value: &str) {
+    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[transparency]" {
+            in_section = true;
+            updated_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            in_section = false;
+        }
+        if in_section && trimmed.starts_with(key) {
+            found = true;
+            updated_lines.push(new_line.clone());
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let mut updated = updated_lines.join("\n");
+
+    if !found {
+        let mut result = String::new();
+        let has_section = content.lines().any(|l| l.trim() == "[transparency]");
+        if has_section {
+            let mut in_section = false;
+            let mut inserted = false;
+            for line in updated.lines() {
+                if line.trim() == "[transparency]" {
+                    in_section = true;
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+                if line.trim().starts_with('[') && in_section {
+                    if !inserted {
+                        result.push_str(&new_line);
+                        result.push('\n');
+                        inserted = true;
+                    }
+                    in_section = false;
+                }
+                result.push_str(line);
+                result.push('\n');
+            }
+            if !inserted {
+                result.push_str(&new_line);
+                result.push('\n');
+            }
+            updated = result;
+        } else {
+            updated.push_str("\n[transparency]\n");
+            updated.push_str(&new_line);
+            updated.push_str("\n");
+        }
+    }
+    let _ = fs::write(CONFIG_PATH, updated);
+}
+
+thread_local! {
+    static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+}
+
+fn get_config_path() -> String {
+    #[cfg(test)]
+    {
+        TEST_CONFIG_PATH.with(|p| {
+            if let Some(path) = p.borrow().as_ref() {
+                return path.clone();
+            }
+            "/home/lsgalante/.config/ccec/config.toml".to_string()
+        })
+    }
+    #[cfg(not(test))]
+    {
+        "/home/lsgalante/.config/ccec/config.toml".to_string()
+    }
+}
+
+fn write_status_value(key: &str, value: &str) {
+    crate::pages::interface::write_config_value_path(&get_config_path(), key, value);
+}
+
+fn read_status_font_size() -> Option<u16> {
+    let content = std::fs::read_to_string(&get_config_path()).ok()?;
+    Some(parse_u16_from(&content, "status_font_size", 11))
+}
+
+fn write_status_font_size(size: u16) {
+    write_status_value("status_font_size", &size.to_string());
+}
+
+fn read_status_padding() -> Option<u16> {
+    let content = std::fs::read_to_string(&get_config_path()).ok()?;
+    Some(parse_u16_from(&content, "status_padding", 8))
+}
+
+fn write_status_padding(padding: u16) {
+    write_status_value("status_padding", &padding.to_string());
+}
+
+fn read_status_separators() -> Option<bool> {
+    let content = std::fs::read_to_string(&get_config_path()).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("status_separators") {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+            if let Ok(val) = rest.trim_end_matches('"').trim().parse::<bool>() {
+                return Some(val);
+            }
+        }
+    }
+    Some(true)
+}
+
+fn write_status_separators(val: bool) {
+    write_status_value("status_separators", &val.to_string());
+}
+
+fn read_status_underline() -> Option<bool> {
+    let content = std::fs::read_to_string(&get_config_path()).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("status_underline") {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+            if let Ok(val) = rest.trim_end_matches('"').trim().parse::<bool>() {
+                return Some(val);
+            }
+        }
+    }
+    Some(true)
+}
+
+fn write_status_underline(val: bool) {
+    write_status_value("status_underline", &val.to_string());
+}
+
+fn status_interface_reload() {
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "clear-status-interface"])
+        .status();
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    send_ipc_command("spawn clear-status-interface");
+}
+
+pub async fn fetch_status_state() -> StatusData {
+    let running = tokio::process::Command::new("pgrep")
+        .args(["-f", "clear-status-interface"]).output().await.ok()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+
+    let font_size = read_status_font_size().unwrap_or(11);
+    let padding = read_status_padding().unwrap_or(8);
+    let separators = read_status_separators().unwrap_or(true);
+    let underline = read_status_underline().unwrap_or(true);
+
+    StatusData {
+        font_size,
+        padding,
+        separators,
+        underline,
+        running,
     }
 }
 
@@ -375,8 +1037,126 @@ mod tests {
     fn test_view_layout_grid() {
         let mut state = ServicesState::default();
         let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout);
+        let sec_focused = vec![false, false];
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &sec_focused, &mut layout);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
+
+    #[test]
+    fn test_parse_notifications_enable_default() {
+        assert!(parse_notifications_enable(""));
+        assert!(parse_notifications_enable("[layout]\ngap = 18\n"));
+    }
+
+    #[test]
+    fn test_parse_notifications_enable_explicit() {
+        let content = "\
+[notifications]
+enable = false
+";
+        assert!(!parse_notifications_enable(content));
+
+        let content = "\
+[notifications]
+enable = true
+";
+        assert!(parse_notifications_enable(content));
+    }
+
+    #[test]
+    fn test_parse_notifications_enable_other_sections() {
+        let content = "\
+[layout]
+enable = false
+
+[notifications]
+enable = true
+
+[input]
+enable = false
+";
+        assert!(parse_notifications_enable(content));
+
+        let content = "\
+[layout]
+enable = true
+
+[notifications]
+enable = false
+
+[input]
+enable = true
+";
+        assert!(!parse_notifications_enable(content));
+    }
+
+    #[test]
+    fn test_parse_notifications_duration_default() {
+        assert_eq!(parse_notifications_duration(""), 5);
+        assert_eq!(parse_notifications_duration("[notifications]\n"), 5);
+    }
+
+    #[test]
+    fn test_parse_notifications_duration_explicit() {
+        let content = "\
+[notifications]
+duration = 10
+";
+        assert_eq!(parse_notifications_duration(content), 10);
+    }
+
+    #[test]
+    fn test_read_write_separators() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_status_separators.toml");
+        let path_str = path.to_str().unwrap().to_string();
+
+        let _ = fs::write(&path_str, "[layout]\nstatus_separators = true\nstatus_padding = 8\n");
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
+
+        let original = read_status_separators().unwrap_or(true);
+        write_status_separators(!original);
+        assert_eq!(read_status_separators(), Some(!original));
+        write_status_separators(original);
+        assert_eq!(read_status_separators(), Some(original));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_read_write_padding() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_status_padding.toml");
+        let path_str = path.to_str().unwrap().to_string();
+
+        let _ = fs::write(&path_str, "[layout]\nstatus_separators = true\nstatus_padding = 8\n");
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
+
+        let original = read_status_padding().unwrap_or(8);
+        write_status_padding(12);
+        assert_eq!(read_status_padding(), Some(12));
+        write_status_padding(original);
+        assert_eq!(read_status_padding(), Some(original));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_read_write_underline() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_status_underline.toml");
+        let path_str = path.to_str().unwrap().to_string();
+
+        let _ = fs::write(&path_str, "[layout]\nstatus_underline = true\nstatus_padding = 8\n");
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
+
+        let original = read_status_underline().unwrap_or(true);
+        write_status_underline(!original);
+        assert_eq!(read_status_underline(), Some(!original));
+        write_status_underline(original);
+        assert_eq!(read_status_underline(), Some(original));
+
+        let _ = fs::remove_file(path);
     }
 }
 

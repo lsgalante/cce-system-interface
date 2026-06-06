@@ -1,5 +1,5 @@
-use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
+use crate::app::{AppAction, PageContent, SectionContextExt};
+use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::ScrollingList;
 
 #[derive(Debug, Clone)]
@@ -250,18 +250,18 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
     // ── WiFi ──
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "WiFi");
+    builder.add_section(&mut final_pc, "WiFi", root_focused, |sec| {
+        let rx = sec.left;
 
         if !state.loaded {
-            sec.text(pc, "Loading WiFi interfaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading WiFi interfaces...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
         } else {
             let yt = sec.ay();
             let wifi_btn_w = if sec_w < 200.0 { 40.0 } else { 60.0 };
             let wifi_btn_x = sec_w - wifi_btn_w - 12.0;
 
-            pc.button(if state.wifi_enabled { "ON" } else { "OFF" },
+            sec.button(if state.wifi_enabled { "ON" } else { "OFF" },
                 sec.ax(wifi_btn_x), yt, wifi_btn_w, 28.0,
                 if state.wifi_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::ToggleWifi));
@@ -274,23 +274,23 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 } else {
                     state.connected_ssid.clone()
                 };
-                sec.text(pc, &format!("Connected: {}", ssid_truncated), 14.0, 0.0, 13.0, ACCENT);
+                sec.text(&format!("Connected: {}", ssid_truncated), 14.0, 0.0, 13.0, ACCENT);
                 sec.spacing(18.0);
 
                 if sec_w < 220.0 {
-                    sec.text(pc, &format!("Signal: {}%", state.signal_strength), 14.0, 0.0, 12.0, TEXT_DIM);
+                    sec.text(&format!("Signal: {}%", state.signal_strength), 14.0, 0.0, 12.0, TEXT_DIM);
                     sec.spacing(16.0);
                     if !state.ip_address.is_empty() {
-                        sec.text(pc, &format!("IP: {}", state.ip_address), 14.0, 0.0, 12.0, TEXT_DIM);
+                        sec.text(&format!("IP: {}", state.ip_address), 14.0, 0.0, 12.0, TEXT_DIM);
                         sec.spacing(16.0);
                     }
                 } else {
-                    sec.text(pc, &format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
+                    sec.text(&format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
                         14.0, 0.0, 12.0, TEXT_DIM);
                     sec.spacing(16.0);
                 }
             } else if state.wifi_enabled {
-                sec.text(pc, "Not connected", 14.0, 0.0, 12.0, TEXT_DIM);
+                sec.text("Not connected", 14.0, 0.0, 12.0, TEXT_DIM);
                 sec.spacing(16.0);
             }
 
@@ -300,7 +300,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 let list_box_w = sec_w - 24.0;
                 let list_box_h = 160.0;
 
-                clear_ui::layout::render_widget(pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h);
+                render_widget(sec.pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h);
 
                 state.wifi_list_box.update_bounds(state.available.len(), list_box_y, list_box_h);
 
@@ -317,7 +317,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                         };
                         let label = format!("{}  {}  ({}%)", prefix, ssid_truncated, net.signal);
                         let active = net.in_use;
-                        pc.button(&label, list_box_x + 4.0, draw_y, btn_w, 26.0,
+                        sec.button(&label, list_box_x + 4.0, draw_y, btn_w, 26.0,
                             if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
                             if active { ACCENT } else { TEXT_FG },
                             AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
@@ -326,32 +326,31 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 sec.content_y += list_box_h + 8.0;
             }
         }
-        sec.finish_focused(pc, root_focused)
     });
 
     // ── Bluetooth ──
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
+    builder.add_section_with_width(&mut final_pc, sec_w * 2.0, "Bluetooth", false, |sec| {
         let bt_sec_w = sec_w * 2.0;
-        let mut sec = Section::new(pc, rx, ry, bt_sec_w, "Bluetooth");
+        let rx = sec.left;
 
         if !state.loaded {
-            sec.text(pc, "Loading Bluetooth status...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading Bluetooth status...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
         } else if !state.bt_installed {
-            sec.text(pc, "Bluetooth tools (bluez) not installed", 14.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Bluetooth tools (bluez) not installed", 14.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
             let yt = sec.ay();
-            pc.button("Install Tools", rx + 12.0, yt, btn_w, 28.0,
+            sec.button("Install Tools", rx + 12.0, yt, btn_w, 28.0,
                 TOGGLE_ON, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::InstallBtTools));
             sec.content_y += 34.0;
         } else if !state.bt_service_active {
-            sec.text(pc, "Bluetooth service is stopped", 14.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Bluetooth service is stopped", 14.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
             let yt = sec.ay();
-            pc.button("Start Service", rx + 12.0, yt, btn_w, 28.0,
+            sec.button("Start Service", rx + 12.0, yt, btn_w, 28.0,
                 TOGGLE_ON, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::StartBtService));
             sec.content_y += 34.0;
@@ -362,11 +361,11 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             let bt_btn_x = bt_sec_w - bt_btn_w - scan_btn_w - 20.0;
             let scan_btn_x = bt_sec_w - scan_btn_w - 12.0;
 
-            pc.button(if state.bt_enabled { "ON" } else { "OFF" },
+            sec.button(if state.bt_enabled { "ON" } else { "OFF" },
                 sec.ax(bt_btn_x), yt, bt_btn_w, 28.0,
                 if state.bt_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::ToggleBluetooth));
-            pc.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, 28.0,
+            sec.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, 28.0,
                 TOGGLE_OFF, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::BtScan));
             sec.content_y += 34.0;
@@ -374,7 +373,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             if state.bt_devices.is_empty() {
                 if state.bt_enabled {
                     let no_devices_msg = if bt_sec_w < 200.0 { "No paired devices" } else { "No paired devices found" };
-                    sec.text(pc, no_devices_msg, 14.0, 0.0, 12.0, TEXT_DIM);
+                    sec.text(no_devices_msg, 14.0, 0.0, 12.0, TEXT_DIM);
                 }
             } else {
                 for dev in &state.bt_devices {
@@ -415,8 +414,8 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                     };
 
                     let yt = sec.ay();
-                    sec.text(pc, &label, 14.0, 0.0, 12.0, if dev.connected { ACCENT } else { TEXT_FG });
-                    pc.button(action_label, sec.ax(bt_sec_w - btn_w - 20.0), yt - 2.0, btn_w, 22.0,
+                    sec.text(&label, 14.0, 0.0, 12.0, if dev.connected { ACCENT } else { TEXT_FG });
+                    sec.button(action_label, sec.ax(bt_sec_w - btn_w - 20.0), yt - 2.0, btn_w, 22.0,
                         if dev.connected { TOGGLE_OFF } else { TOGGLE_ON }, BTN_HOVER, WHITE,
                         if dev.connected {
                             AppAction::Radios(NetworkMessage::BtDisconnect(dev.mac.clone()))
@@ -427,7 +426,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 }
             }
         }
-        sec.finish(pc)
     });
 
     final_pc

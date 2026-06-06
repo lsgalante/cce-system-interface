@@ -1,20 +1,15 @@
-use clear_ui::layout::{RenderTarget, Radial};
+use clear_ui::layout::RenderTarget;
 
 use crate::pages::audio;
 use crate::pages::display;
 use crate::pages::input;
 use crate::pages::layout;
 use crate::pages::network;
-use crate::pages::notifications;
 use crate::pages::hardware;
-use crate::pages::status;
-use crate::pages::storage;
 use crate::pages::system_info;
-use crate::pages::backup;
-use crate::pages::typeface;
+use crate::pages::storage;
 use crate::pages::services;
 use crate::pages::interface;
-use crate::pages::screensaver;
 use crate::pages::accounts;
 use crate::pages::Page;
 
@@ -27,14 +22,9 @@ pub struct AppState {
     pub input: input::InputState,
     pub hardware: hardware::HardwareState,
     pub system_info: system_info::SystemState,
-    pub status: status::StatusState,
     pub storage: storage::StorageState,
-    pub notifications: notifications::NotificationsState,
-    pub backup: backup::BackupState,
-    pub typeface: typeface::TypefaceState,
     pub services: services::ServicesState,
     pub interface: interface::InterfaceState,
-    pub screensaver: screensaver::ScreensaverState,
     pub accounts: accounts::AccountsState,
 }
 
@@ -49,14 +39,9 @@ impl Default for AppState {
             input: input::InputState::default(),
             hardware: hardware::HardwareState::default(),
             system_info: system_info::SystemState::default(),
-            status: status::StatusState::default(),
             storage: storage::StorageState::default(),
-            notifications: notifications::read_notifications_config(),
-            backup: backup::BackupState::default(),
-            typeface: typeface::TypefaceState::default(),
             services: services::ServicesState::default(),
             interface: interface::InterfaceState::default(),
-            screensaver: screensaver::read_screensaver_config(),
             accounts: accounts::AccountsState::default_mock(),
         }
     }
@@ -71,14 +56,9 @@ pub enum AppAction {
     Input(input::InputMessage),
     Hardware(hardware::HardwareMessage),
     SystemInfo(system_info::SystemMessage),
-    Status(status::StatusMessage),
     Storage(storage::StorageMessage),
-    Notifications(notifications::NotificationsMessage),
-    Backup(backup::BackupMessage),
-    Typeface(typeface::TypefaceMessage),
     Services(services::ServicesMessage),
     Interface(interface::InterfaceMessage),
-    Screensaver(screensaver::ScreensaverMessage),
     Accounts(accounts::AccountsMessage),
 }
 
@@ -163,6 +143,36 @@ impl RenderTarget for PageContent {
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), bounds));
     }
 }
+
+pub trait SectionContextExt {
+    fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
+    fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
+}
+
+impl<'a> SectionContextExt for clear_ui::layout::SectionContext<'a, PageContent> {
+    fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
+        self.pc.button(label, x, y, w, h, bg, hover_bg, label_color, action);
+        self.content_y = self.content_y.max(y + h);
+    }
+    
+    fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
+        self.pc.button_left(label, x, y, w, h, bg, hover_bg, label_color, action);
+        self.content_y = self.content_y.max(y + h);
+    }
+}
+
+impl<'a> SectionContextExt for clear_ui::layout::SubsectionContext<'a, PageContent> {
+    fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
+        self.pc.button(label, x, y, w, h, bg, hover_bg, label_color, action);
+        self.content_y = self.content_y.max(y + h);
+    }
+    
+    fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
+        self.pc.button_left(label, x, y, w, h, bg, hover_bg, label_color, action);
+        self.content_y = self.content_y.max(y + h);
+    }
+}
+
 
 
 

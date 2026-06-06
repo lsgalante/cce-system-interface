@@ -8,7 +8,7 @@ pub struct SectionStyle {
     pub h: f32,
 }
 
-pub fn section_rects(label: &str, x: f32, y: f32, w: f32, h: f32) -> Vec<([f32; 4], f32, f32, f32, f32)> {
+pub fn section_rects(_label: &str, x: f32, y: f32, w: f32, h: f32) -> Vec<([f32; 4], f32, f32, f32, f32)> {
     let mut rects = Vec::new();
     // Section background
     rects.push((color::CONTENT_BG, x, y, w, h));

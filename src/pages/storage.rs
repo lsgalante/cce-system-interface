@@ -1,18 +1,80 @@
-use crate::app::PageContent;
-use clear_ui::layout::{Section, PageLayoutBuilder, LayoutStrategy};
+use crate::app::{AppAction, PageContent, SectionContextExt};
+use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use std::fs;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct StorageState {
     pub disk_total: f64,
     pub disk_used: f64,
     pub ram_total: f64,
     pub ram_used: f64,
     pub loaded: bool,
+
+    // Backup states
+    pub backup_loaded: bool,
+    pub backup_in_progress: bool,
+    pub last_backup_time: String,
+    pub backup_size: String,
+    pub error_message: Option<String>,
+}
+
+impl Default for StorageState {
+    fn default() -> Self {
+        Self {
+            disk_total: 0.0,
+            disk_used: 0.0,
+            ram_total: 0.0,
+            ram_used: 0.0,
+            loaded: false,
+            backup_loaded: false,
+            backup_in_progress: false,
+            last_backup_time: "Never".to_string(),
+            backup_size: "0 B".to_string(),
+            error_message: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum StorageMessage {
     Refreshed(StorageState),
+    StartBackup,
+    BackupFinished(Result<(String, String), String>),
+}
+
+fn status_path() -> String {
+    format!("{}/.config/clear-system-interface/backup_status.txt", std::env::var("HOME").unwrap_or_default())
+}
+
+pub fn read_backup_status() -> (String, String, Option<String>) {
+    let path_str = status_path();
+    let content = fs::read_to_string(path_str).unwrap_or_default();
+    
+    let mut last_backup = "Never".to_string();
+    let mut size = "0 B".to_string();
+    let mut err_msg = None;
+    
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("last_backup_time") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                last_backup = val.trim().to_string();
+            }
+        } else if trimmed.starts_with("backup_size") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                size = val.trim().to_string();
+            }
+        } else if trimmed.starts_with("error_message") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                let v = val.trim().to_string();
+                if !v.is_empty() {
+                    err_msg = Some(v);
+                }
+            }
+        }
+    }
+    
+    (last_backup, size, err_msg)
 }
 
 pub async fn fetch_storage_state() -> StorageState {
@@ -30,7 +92,42 @@ pub async fn fetch_storage_state() -> StorageState {
         .unwrap_or_default();
     let (ram_total, ram_used) = parse_mem(&mem_output);
 
-    StorageState { disk_total, disk_used, ram_total, ram_used, loaded: true }
+    let (last_backup, size, err) = read_backup_status();
+
+    StorageState {
+        disk_total,
+        disk_used,
+        ram_total,
+        ram_used,
+        loaded: true,
+        backup_loaded: true,
+        backup_in_progress: false,
+        last_backup_time: last_backup,
+        backup_size: size,
+        error_message: err,
+    }
+}
+
+pub async fn run_backup() -> Result<(String, String), String> {
+    // Run the backup system helper script via pkexec (graphical auth prompt)
+    let output = tokio::process::Command::new("pkexec")
+        .arg("/home/lsgalante/.local/share/clear-system-interface/helpers/backup-system.sh")
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run backup script: {}", e))?;
+        
+    if !output.status.success() {
+        // Retrieve any specific error message written to the status file by the script
+        let (_, _, err_msg) = read_backup_status();
+        if let Some(msg) = err_msg {
+            return Err(msg);
+        }
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!("Backup process failed: {}", err));
+    }
+    
+    let (last_backup, size, _) = read_backup_status();
+    Ok((last_backup, size))
 }
 
 fn parse_disk(info: &str) -> (f64, f64) {
@@ -61,16 +158,23 @@ fn parse_mem(info: &str) -> (f64, f64) {
 
 const LABEL_FG: [f32; 4] = [0.56, 0.83, 0.56, 1.0];
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
+const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
+const GREEN: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
+const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
+const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
+const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
-    builder.add_section(&mut final_pc, |pc, rx, ry| {
-        let mut sec = Section::new(pc, rx, ry, sec_w, "Local Storage");
+    // Section 1: Local Storage
+    builder.add_section(&mut final_pc, "Local Storage", false, |sec| {
         if !state.loaded {
-            sec.text(pc, "Loading storage and memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
+            sec.text("Loading storage usage...", 12.0, 0.0, 12.0, TEXT_FG);
             sec.spacing(18.0);
         } else {
             let disk_pct = if state.disk_total > 0.0 {
@@ -79,8 +183,8 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
                 0.0
             };
 
-            sec.text(pc, "Disk", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text(pc,
+            sec.text("Disk", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(
                 &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
                 100.0, 0.0, 12.0, TEXT_FG,
             );
@@ -88,32 +192,98 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
 
             let bar_w = sec_w - 24.0;
             let yt = sec.ay();
-            pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
-            if disk_pct > 0.0 {
-                pc.rect([0.36, 0.60, 0.36, 1.0], sec.ax(12.0), yt, bar_w * (disk_pct as f32 / 100.0).min(1.0), 8.0);
-            }
-            sec.content_y += 20.0;
+            let disk_bar_x = sec.ax(12.0);
+            let mut disk_bar = clear_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
+                .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]);
+            render_widget(sec.pc, &mut disk_bar, disk_bar_x, yt, bar_w, 8.0);
+        }
+    });
 
+    // Section 2: Memory
+    builder.add_section(&mut final_pc, "Memory", false, |sec| {
+        if !state.loaded {
+            sec.text("Loading memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
+        } else {
             let ram_pct = if state.ram_total > 0.0 {
                 state.ram_used / state.ram_total * 100.0
             } else {
                 0.0
             };
 
-            sec.text(pc, "RAM", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text(pc,
+            sec.text("RAM", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(
                 &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
                 100.0, 0.0, 12.0, TEXT_FG,
             );
             sec.spacing(18.0);
 
+            let bar_w = sec_w - 24.0;
             let yt = sec.ay();
-            pc.rect([0.15, 0.15, 0.25, 1.0], sec.ax(12.0), yt, bar_w, 8.0);
-            if ram_pct > 0.0 {
-                pc.rect([0.50, 0.50, 0.65, 1.0], sec.ax(12.0), yt, bar_w * (ram_pct as f32 / 100.0).min(1.0), 8.0);
-            }
+            let ram_bar_x = sec.ax(12.0);
+            let mut ram_bar = clear_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
+                .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]);
+            render_widget(sec.pc, &mut ram_bar, ram_bar_x, yt, bar_w, 8.0);
         }
-        sec.finish(pc)
+    });
+
+    // Section 2: Full System Backup
+    builder.add_section(&mut final_pc, "Full System Backup", false, |sec| {
+        if !state.backup_loaded {
+            sec.text("Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+        } else {
+            // Status Row
+            sec.text("Backup Status", 12.0, 0.0, 12.0, LABEL_FG);
+            let status_text = if state.backup_in_progress { "Backing up..." } else { "Idle" };
+            let status_color = if state.backup_in_progress { GREEN } else { TEXT_FG };
+            sec.text(status_text, 120.0, 0.0, 12.0, status_color);
+            sec.spacing(18.0);
+
+            // Last Backup Row
+            sec.text("Last Backup", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(&state.last_backup_time, 120.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
+
+            // Backup Size Row
+            sec.text("Archive Size", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text(&state.backup_size, 120.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(18.0);
+
+            // Target Directories Row
+            sec.text("Backup Targets", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text("Entire Filesystem (/)  [Preserving attributes]", 120.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(18.0);
+
+            // Destination Archive Row
+            sec.text("Destination", 12.0, 0.0, 12.0, LABEL_FG);
+            sec.text("USB Drive (/mnt/usb or /run/media/...)", 120.0, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(24.0);
+
+            // Error message if present
+            if let Some(ref err) = state.error_message {
+                sec.text("Error:", 12.0, 0.0, 12.0, RED);
+                sec.text(err, 60.0, 0.0, 11.0, RED);
+                sec.spacing(18.0);
+            }
+
+            // Action Button
+            let btn_w = 120.0;
+            let btn_h = 32.0;
+            let yt = sec.ay();
+            
+            let (btn_label, bg, hover, action) = if state.backup_in_progress {
+                ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Storage(StorageMessage::StartBackup))
+            } else {
+                ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Storage(StorageMessage::StartBackup))
+            };
+            
+            let cols = sec.row_layout(1, 0.0);
+            if let Some(&(x, _)) = cols.first() {
+                sec.button(btn_label, x, yt, btn_w, btn_h, bg, hover, WHITE, action.clone());
+            }
+            sec.spacing(12.0);
+        }
     });
 
     final_pc
@@ -121,6 +291,27 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
 
 pub fn update(state: &mut StorageState, msg: StorageMessage) {
     match msg {
-        StorageMessage::Refreshed(new) => { *state = new; }
+        StorageMessage::Refreshed(new) => {
+            let in_prog = state.backup_in_progress;
+            *state = new;
+            state.backup_in_progress = in_prog;
+        }
+        StorageMessage::StartBackup => {
+            state.backup_in_progress = true;
+            state.error_message = None;
+        }
+        StorageMessage::BackupFinished(res) => {
+            state.backup_in_progress = false;
+            match res {
+                Ok((date, size)) => {
+                    state.last_backup_time = date;
+                    state.backup_size = size;
+                    state.error_message = None;
+                }
+                Err(err) => {
+                    state.error_message = Some(err);
+                }
+            }
+        }
     }
 }

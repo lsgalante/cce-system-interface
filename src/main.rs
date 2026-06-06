@@ -1,79 +1,8 @@
-use std::sync::Arc;
-
-use clear_ui::color;
-use clear_ui::widget::{Spinbox, Widget, Finger, Slider, hover_animation, TextItem};
-use glyphon::{
-    Attrs, Buffer, Cache, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
-    TextBounds, TextRenderer, Viewport,
-};
+use clear_ui::widget::{Finger, hover_animation, TextItem, Element};
+use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use clear_system_interface::app::{AppAction, AppState, ContentButton, PageContent};
 use clear_system_interface::pages::{self, Page};
-
-use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_keyboard, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window, delegate_output,
-    registry::{ProvidesRegistryState, RegistryState},
-    output::{OutputHandler, OutputState},
-    seat::{
-        keyboard::KeyboardHandler,
-        pointer::{PointerHandler, ThemedPointer, ThemeSpec, CursorIcon},
-        Capability, SeatHandler, SeatState,
-    },
-    shell::{
-        xdg::{
-            window::{Window as XdgWindow, WindowConfigure, WindowHandler, WindowDecorations},
-            XdgShell,
-        },
-        WaylandSurface,
-    },
-    shm::{Shm, ShmHandler},
-};
-use wayland_client::{
-    globals::registry_queue_init,
-    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
-    Connection, QueueHandle, Proxy,
-};
-use calloop::EventLoop;
-use calloop_wayland_source::WaylandSource;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 2],
-    color: [f32; 4],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
-        0 => Float32x2,
-        1 => Float32x4,
-    ];
-
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-fn quad_vertices(x: f32, y: f32, w: f32, h: f32, sw: f32, sh: f32, c: [f32; 4]) -> [Vertex; 6] {
-    let x0 = (x / sw) * 2.0 - 1.0;
-    let y0 = 1.0 - (y / sh) * 2.0;
-    let x1 = ((x + w) / sw) * 2.0 - 1.0;
-    let y1 = 1.0 - ((y + h) / sh) * 2.0;
-    [
-        Vertex { position: [x0, y0], color: c },
-        Vertex { position: [x1, y0], color: c },
-        Vertex { position: [x0, y1], color: c },
-        Vertex { position: [x1, y0], color: c },
-        Vertex { position: [x1, y1], color: c },
-        Vertex { position: [x0, y1], color: c },
-    ]
-}
 
 fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
     let metrics = Metrics::new(size, size * 1.4);
@@ -107,12 +36,16 @@ fn make_text_buffer_with_font(
     let metrics = Metrics::new(size, size * 1.4);
     let mut buf = Buffer::new(fs, metrics);
     let mut attrs = Attrs::new();
-    let mut resolved_storage = None;
+    let resolved_storage = font.and_then(|font_name| match font_name {
+        "monospace" if !mono_fallback.is_empty() => find_cased_family(fs, mono_fallback),
+        "sans-serif" if !sans_fallback.is_empty() => find_cased_family(fs, sans_fallback),
+        "serif" if !serif_fallback.is_empty() => find_cased_family(fs, serif_fallback),
+        _ => None,
+    });
     if let Some(font_name) = font {
         let family = match font_name {
             "monospace" => {
                 if !mono_fallback.is_empty() {
-                    resolved_storage = find_cased_family(fs, mono_fallback);
                     if let Some(ref cased) = resolved_storage {
                         glyphon::Family::Name(cased)
                     } else {
@@ -124,7 +57,6 @@ fn make_text_buffer_with_font(
             }
             "sans-serif" => {
                 if !sans_fallback.is_empty() {
-                    resolved_storage = find_cased_family(fs, sans_fallback);
                     if let Some(ref cased) = resolved_storage {
                         glyphon::Family::Name(cased)
                     } else {
@@ -136,7 +68,6 @@ fn make_text_buffer_with_font(
             }
             "serif" => {
                 if !serif_fallback.is_empty() {
-                    resolved_storage = find_cased_family(fs, serif_fallback);
                     if let Some(ref cased) = resolved_storage {
                         glyphon::Family::Name(cased)
                     } else {
@@ -160,18 +91,6 @@ struct AppWidget {
     color: [f32; 4],
     hover_color: [f32; 4],
     hovering: bool,
-    kind: WidgetKind,
-}
-
-#[derive(Clone)]
-enum WidgetKind {
-    ActionButton(AppAction),
-    Static,
-}
-
-enum ColorSelectorAction {
-    Background([u8; 3]),
-    Border([u8; 3]),
 }
 
 static INITIAL_PAGE_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -199,19 +118,16 @@ struct SystemInterface {
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_hardware: std::sync::mpsc::Receiver<pages::hardware::HardwareState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
-    rx_status: std::sync::mpsc::Receiver<pages::status::StatusState>,
+    rx_status: std::sync::mpsc::Receiver<pages::services::StatusData>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
-    rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsState>,
-    rx_screensaver: std::sync::mpsc::Receiver<pages::screensaver::ScreensaverState>,
-    rx_backup_state: std::sync::mpsc::Receiver<pages::backup::BackupState>,
-    rx_typeface: std::sync::mpsc::Receiver<pages::typeface::TypefaceState>,
+    rx_notifications: std::sync::mpsc::Receiver<pages::services::NotificationsConfig>,
+    rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
-    tx_backup: std::sync::mpsc::Sender<pages::backup::BackupMessage>,
-    rx_backup: std::sync::mpsc::Receiver<pages::backup::BackupMessage>,
-    tx_color_selector: std::sync::mpsc::Sender<ColorSelectorAction>,
-    rx_color_selector: std::sync::mpsc::Receiver<ColorSelectorAction>,
+    tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
+    rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
+
 
     scale_factor: f64,
     width: u32,
@@ -317,9 +233,12 @@ impl clear_ui::engine::Application for SystemInterface {
         let rx_fingers = {
             let (tx, rx) = std::sync::mpsc::channel::<Vec<Finger>>();
             tokio::spawn(async move {
-                let socket_path = "/tmp/clear-input-coords.sock";
+                let socket_path = match std::env::var("WAYLAND_DISPLAY") {
+                    Ok(display) => format!("/tmp/clear-input-coords-{}.sock", display),
+                    Err(_) => "/tmp/clear-input-coords.sock".to_string(),
+                };
                 loop {
-                    if let Ok(stream) = tokio::net::UnixStream::connect(socket_path).await {
+                    if let Ok(stream) = tokio::net::UnixStream::connect(&socket_path).await {
                         use tokio::io::AsyncBufReadExt;
                         let reader = tokio::io::BufReader::new(stream);
                         let mut lines = reader.lines();
@@ -338,32 +257,20 @@ impl clear_ui::engine::Application for SystemInterface {
         };
         let rx_system = spawn_bg(5, || pages::system_info::fetch_system_state());
         let rx_hardware = spawn_bg(3, || pages::hardware::fetch_hardware_state());
-        let rx_status = spawn_bg(10, || pages::status::fetch_status_state());
+        let rx_status = spawn_bg(10, || pages::services::fetch_status_state());
         let rx_storage = spawn_bg(10, || pages::storage::fetch_storage_state());
         let rx_notifications = {
-            let (tx, rx) = std::sync::mpsc::channel::<pages::notifications::NotificationsState>();
+            let (tx, rx) = std::sync::mpsc::channel::<pages::services::NotificationsConfig>();
             tokio::spawn(async move {
                 loop {
-                    let val = tokio::task::spawn_blocking(|| pages::notifications::read_notifications_config()).await;
+                    let val = tokio::task::spawn_blocking(|| pages::services::read_notifications_config()).await;
                     if let Ok(val) = val { if tx.send(val).is_err() { break; } }
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 }
             });
             rx
         };
-        let rx_screensaver = {
-            let (tx, rx) = std::sync::mpsc::channel::<pages::screensaver::ScreensaverState>();
-            tokio::spawn(async move {
-                loop {
-                    let val = tokio::task::spawn_blocking(|| pages::screensaver::read_screensaver_config()).await;
-                    if let Ok(val) = val { if tx.send(val).is_err() { break; } }
-                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-                }
-            });
-            rx
-        };
-        let rx_backup_state = spawn_bg(30, || pages::backup::fetch_backup_state());
-        let rx_typeface = spawn_bg(30, || pages::typeface::fetch_typeface_state());
+        let rx_typeface = spawn_bg(30, || pages::interface::fetch_typeface_state());
         let rx_services = spawn_bg(3, || pages::services::fetch_services());
         let rx_accounts = spawn_bg(3, || pages::accounts::fetch_accounts());
         let rx_interface = {
@@ -378,9 +285,8 @@ impl clear_ui::engine::Application for SystemInterface {
             rx
         };
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
-        let (tx_color_selector, rx_color_selector) = std::sync::mpsc::channel();
 
-        let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::typeface::read_preferred_fonts();
+        let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::interface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let paginator = clear_ui::widget::Paginator::new(56.0, pages_names)
@@ -416,16 +322,13 @@ impl clear_ui::engine::Application for SystemInterface {
             rx_status,
             rx_storage,
             rx_notifications,
-            rx_screensaver,
-            rx_backup_state,
             rx_typeface,
             rx_services,
             rx_interface,
             rx_accounts,
             tx_backup,
             rx_backup,
-            tx_color_selector,
-            rx_color_selector,
+
             scale_factor: 1.0,
             width: 820,
             height: 680,
@@ -510,7 +413,9 @@ impl clear_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState, _pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) -> Option<Self::Message> {
+    fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) -> Option<Self::Message> {
+        self.cursor_x = pos.x;
+        self.cursor_y = pos.y;
         if self.handle_mouse_input_internal(button, state) {
             *needs_rebuild = true;
         }
@@ -533,7 +438,7 @@ impl clear_ui::engine::Application for SystemInterface {
 
 impl SystemInterface {
 
-fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f32, f32, f32, f32)>) {
+fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(f32, f32, f32, f32)>) {
     if let Some(rect) = w.popover_rect() {
         popovers.push(rect);
     }
@@ -573,7 +478,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             widgets.push(AppWidget {
                 x: *x * s, y: *y * s, w: *w * s, h: *h * s,
                 color: *c, hover_color: *c,
-                hovering: false, kind: WidgetKind::Static,
+                hovering: false,
             });
         }
         for (t, size, x, y, tc, font_opt, bounds) in &paginator_pc.texts {
@@ -599,28 +504,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
         clear_ui::layout::render_popovers(&mut pc);
 
-        // ── Rebuild Widget Focus Hierarchy ──
+        // ── Rebuild Element Focus Hierarchy ──
         self.page_root_container.clear_children();
         self.page_root_container.set_parent(None);
         self.page_sec_containers.clear();
 
         // Clear all widgets' hierarchy links
-        self.app.typeface.sans_box.clear_children(); self.app.typeface.sans_box.set_parent(None);
-        self.app.typeface.serif_box.clear_children(); self.app.typeface.serif_box.set_parent(None);
-        self.app.typeface.mono_box.clear_children(); self.app.typeface.mono_box.set_parent(None);
-        self.app.typeface.borders_menu.clear_children(); self.app.typeface.borders_menu.set_parent(None);
-        self.app.typeface.borders_box.clear_children(); self.app.typeface.borders_box.set_parent(None);
-        self.app.typeface.status_menu.clear_children(); self.app.typeface.status_menu.set_parent(None);
-        self.app.typeface.status_box.clear_children(); self.app.typeface.status_box.set_parent(None);
-        self.app.typeface.fuzzel_menu.clear_children(); self.app.typeface.fuzzel_menu.set_parent(None);
-        self.app.typeface.fuzzel_box.clear_children(); self.app.typeface.fuzzel_box.set_parent(None);
-        self.app.typeface.terminal_menu.clear_children(); self.app.typeface.terminal_menu.set_parent(None);
-        self.app.typeface.terminal_box.clear_children(); self.app.typeface.terminal_box.set_parent(None);
-        self.app.typeface.paginator_menu.clear_children(); self.app.typeface.paginator_menu.set_parent(None);
-        self.app.typeface.paginator_box.clear_children(); self.app.typeface.paginator_box.set_parent(None);
-        self.app.typeface.search_box.clear_children(); self.app.typeface.search_box.set_parent(None);
-        self.app.typeface.list_box.scroll_box.clear_children(); self.app.typeface.list_box.scroll_box.set_parent(None);
-
         self.app.services.search_box.clear_children(); self.app.services.search_box.set_parent(None);
         self.app.accounts.email_box.clear_children(); self.app.accounts.email_box.set_parent(None);
         self.app.accounts.password_box.clear_children(); self.app.accounts.password_box.set_parent(None);
@@ -659,8 +548,26 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         self.app.interface.tab_padding_spinbox_y.clear_children();
         self.app.interface.tab_padding_spinbox_y.set_parent(None);
 
-        self.app.notifications.duration_spinbox.clear_children(); self.app.notifications.duration_spinbox.set_parent(None);
-        self.app.notifications.opacity_slider.clear_children(); self.app.notifications.opacity_slider.set_parent(None);
+        self.app.interface.sans_box.clear_children(); self.app.interface.sans_box.set_parent(None);
+        self.app.interface.serif_box.clear_children(); self.app.interface.serif_box.set_parent(None);
+        self.app.interface.mono_box.clear_children(); self.app.interface.mono_box.set_parent(None);
+        self.app.interface.borders_menu.clear_children(); self.app.interface.borders_menu.set_parent(None);
+        self.app.interface.borders_box.clear_children(); self.app.interface.borders_box.set_parent(None);
+        self.app.interface.status_menu.clear_children(); self.app.interface.status_menu.set_parent(None);
+        self.app.interface.status_box.clear_children(); self.app.interface.status_box.set_parent(None);
+        self.app.interface.fuzzel_menu.clear_children(); self.app.interface.fuzzel_menu.set_parent(None);
+        self.app.interface.fuzzel_box.clear_children(); self.app.interface.fuzzel_box.set_parent(None);
+        self.app.interface.terminal_menu.clear_children(); self.app.interface.terminal_menu.set_parent(None);
+        self.app.interface.terminal_box.clear_children(); self.app.interface.terminal_box.set_parent(None);
+        self.app.interface.paginator_menu.clear_children(); self.app.interface.paginator_menu.set_parent(None);
+        self.app.interface.paginator_box.clear_children(); self.app.interface.paginator_box.set_parent(None);
+        self.app.interface.search_box.clear_children(); self.app.interface.search_box.set_parent(None);
+        self.app.interface.list_box.scroll_box.clear_children(); self.app.interface.list_box.scroll_box.set_parent(None);
+
+        self.app.services.notifications_enable_toggle.clear_children(); self.app.services.notifications_enable_toggle.set_parent(None);
+        self.app.services.notifications_bell_toggle.clear_children(); self.app.services.notifications_bell_toggle.set_parent(None);
+        self.app.services.notifications_duration_spinbox.clear_children(); self.app.services.notifications_duration_spinbox.set_parent(None);
+        self.app.services.notifications_opacity_slider.clear_children(); self.app.services.notifications_opacity_slider.set_parent(None);
 
         self.app.input.rate_spinbox.clear_children(); self.app.input.rate_spinbox.set_parent(None);
         self.app.input.delay_spinbox.clear_children(); self.app.input.delay_spinbox.set_parent(None);
@@ -688,12 +595,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         }
 
         self.app.display.brightness_spinbox.clear_children(); self.app.display.brightness_spinbox.set_parent(None);
-        self.app.status.padding_spinbox.clear_children(); self.app.status.padding_spinbox.set_parent(None);
+        self.app.services.status_separators_toggle.clear_children(); self.app.services.status_separators_toggle.set_parent(None);
+        self.app.services.status_underline_toggle.clear_children(); self.app.services.status_underline_toggle.set_parent(None);
+        self.app.services.status_padding_spinbox.clear_children(); self.app.services.status_padding_spinbox.set_parent(None);
 
         for menu in &mut self.app.layout.tag_layout_menus {
             menu.clear_children();
             menu.set_parent(None);
         }
+        self.app.layout.side_panel_behavior_menu.clear_children();
+        self.app.layout.side_panel_behavior_menu.set_parent(None);
+        self.app.layout.side_panel_width_spinbox.clear_children();
+        self.app.layout.side_panel_width_spinbox.set_parent(None);
 
         use clear_ui::widget::focus::link_parent_child;
         match self.app.current_page {
@@ -708,84 +621,128 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     link_parent_child(&mut self.page_root_container, &mut self.app.accounts.smtp_box);
                 }
             }
-            Page::Typefaces => {
-                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
-                
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1]);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2]);
-                
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.sans_box);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.serif_box);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.typeface.mono_box);
-                
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.borders_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.status_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.fuzzel_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.terminal_box);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.paginator_menu);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.typeface.paginator_box);
-                
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.search_box);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.typeface.list_box.scroll_box);
-            }
+
             Page::Services => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.services.search_box);
-                link_parent_child(&mut self.page_root_container, &mut self.app.services.list_box.scroll_box);
+                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
+                for i in 0..3 {
+                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
+                }
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.services.search_box);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.services.list_box.scroll_box);
+
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_enable_toggle);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_bell_toggle);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_duration_spinbox);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_opacity_slider);
+
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_separators_toggle);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_underline_toggle);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_padding_spinbox);
             }
             Page::Hardware => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_list_box.scroll_box);
+                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_gov_menu);
+                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.gpu_gov_menu);
             }
             Page::Radios => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box);
             }
             Page::Layout => {
-                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(7, clear_ui::widget::Container::new);
                 
-                for i in 0..5 {
+                for i in 0..7 {
                     link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
                 }
                 
-                for sb in &mut self.app.layout.spinboxes {
-                    link_parent_child(&mut self.page_sec_containers[0], sb);
-                }
+                // Fullscreen (Section 0)
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.layout.spinboxes[0]);
                 
+                // Cascade (Section 1)
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.spinboxes[1]);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.cascade_offset_spinbox);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.edge_gap_spinbox);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.grid_gap_spinbox);
                 
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.transition_duration_spinbox);
+                // Grid (Section 2)
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.spinboxes[2]);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.grid_gap_spinbox);
                 
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.layout.status_height_spinbox);
-
+                // Floating (Section 3)
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.layout.spinboxes[3]);
+                
+                // Movement (Section 4)
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.layout.transition_duration_spinbox);
+                
+                // Default Layouts (Section 5)
                 for menu in &mut self.app.layout.tag_layout_menus {
-                    link_parent_child(&mut self.page_sec_containers[4], menu);
+                    link_parent_child(&mut self.page_sec_containers[5], menu);
                 }
+
+                // Side Panel (Section 6)
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_behavior_menu);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_width_spinbox);
             }
             Page::Interface => {
-                for cs in &mut self.app.interface.color_selectors {
-                    link_parent_child(&mut self.page_root_container, cs);
+                self.page_sec_containers.resize_with(10, clear_ui::widget::Container::new);
+                
+                for i in 0..10 {
+                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i]);
                 }
-                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_margin_spinbox_x);
-                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_margin_spinbox_y);
-                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_padding_spinbox_x);
-                link_parent_child(&mut self.page_root_container, &mut self.app.interface.tab_padding_spinbox_y);
+                
+                // Section 0: Pages
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.color_selectors[0]);
+                
+                // Section 1: Layout
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[7]);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[1]);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[2]);
+                
+                // Section 2: Status
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[8]);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[3]);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[4]);
+                
+                // Section 3: Controls
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[5]);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[6]);
+                
+                // Section 4: Primary Highlight
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.color_selectors[10]);
+                
+                // Section 5: Paginator
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.color_selectors[9]);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.color_selectors[11]);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.tab_margin_spinbox_x);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.tab_margin_spinbox_y);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.tab_padding_spinbox_x);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.tab_padding_spinbox_y);
+                
+                // Section 6: Toggles
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[12]);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[13]);
+                
+                // Section 7: System Typefaces
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.sans_box);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.serif_box);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.mono_box);
+                
+                // Section 8: Program Typefaces
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.borders_menu);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.borders_box);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.status_menu);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.status_box);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.fuzzel_menu);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.fuzzel_box);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.terminal_menu);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.terminal_box);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.paginator_menu);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.paginator_box);
+                
+                // Section 9: Typefaces (List & Preview)
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.search_box);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.list_box.scroll_box);
             }
-            Page::Notifications => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.duration_spinbox);
-                link_parent_child(&mut self.page_root_container, &mut self.app.notifications.opacity_slider);
-            }
-            Page::Screensaver => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.enable_toggle);
-                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.lock_screen_toggle);
-                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.timeout_spinbox);
-                link_parent_child(&mut self.page_root_container, &mut self.app.screensaver.style_menu);
-            }
+
             Page::Input => {
                 self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
                 link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0]);
@@ -828,9 +785,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             Page::Display => {
                 link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_spinbox);
-            }
-            Page::Status => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.status.padding_spinbox);
+                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_enable_toggle);
+                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_lock_screen_toggle);
+                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_timeout_spinbox);
+                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_style_menu);
             }
             _ => {}
         }
@@ -871,7 +829,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             widgets.push(AppWidget {
                 x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
                 color: *c, hover_color: *c,
-                hovering: false, kind: WidgetKind::Static,
+                hovering: false,
             });
         }
         for (t, size, x, y, tc, font_opt, bounds) in &pc.texts {
@@ -897,7 +855,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 x: btn.x * s, y: (btn.y - scroll_offset_y) * s, w: btn.w * s, h: btn.h * s,
                 color: btn.bg, hover_color: btn.hover_bg,
                 hovering: false,
-                kind: WidgetKind::ActionButton(btn.action.clone()),
             });
             let buf = make_text_buffer(&mut self.font_system, &btn.label, btn.label_size * s);
             let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0);
@@ -906,8 +863,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 
             // Auto-detect if inside a ScrollBox to apply left alignment by default
             if !left_align && btn.w >= 60.0 {
-                if self.app.current_page == Page::Typefaces {
-                    let sb = &self.app.typeface.list_box;
+                if self.app.current_page == Page::Interface {
+                    let sb = &self.app.interface.list_box;
                     let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
                     if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
                        && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
@@ -962,7 +919,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 color: qc,
                 hover_color: qc,
                 hovering: false,
-                kind: WidgetKind::Static,
             });
         }
 
@@ -977,13 +933,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             widgets.push(AppWidget {
                 x: cx * s, y: cy * s, w: cw * s, h: ch * s,
                 color: [0.22, 0.22, 0.28, 1.0], hover_color: [0.22, 0.22, 0.28, 1.0],
-                hovering: false, kind: WidgetKind::Static,
+                hovering: false,
             });
             // Bg
             widgets.push(AppWidget {
                 x: (cx + 1.0) * s, y: (cy + 1.0) * s, w: (cw - 2.0) * s, h: (ch - 2.0) * s,
                 color: [0.06, 0.06, 0.09, 1.0], hover_color: [0.06, 0.06, 0.09, 1.0],
-                hovering: false, kind: WidgetKind::Static,
+                hovering: false,
             });
             
             // Hover highlight
@@ -992,7 +948,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 widgets.push(AppWidget {
                     x: (cx + 2.0) * s, y: (iy + 2.0) * s, w: (cw - 4.0) * s, h: 20.0 * s,
                     color: [0.20, 0.40, 0.65, 0.6], hover_color: [0.20, 0.40, 0.65, 0.6],
-                    hovering: false, kind: WidgetKind::Static,
+                    hovering: false,
                 });
             }
             
@@ -1023,7 +979,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
 
     fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use pages::*;
-        use clear_ui::layout::{LayoutStrategy, GridLayout};
+        use clear_ui::layout::GridLayout;
         let mut layout = GridLayout::new(320.0, 20.0);
         let root_focused = clear_ui::widget::focus::is_focused(&self.page_root_container);
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()
@@ -1038,14 +994,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             Page::Hardware => hardware::view(&mut self.app.hardware, cx, cy, cw, ch, root_focused, &mut layout),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused, &mut layout),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch, &mut layout),
-            Page::Status => status::view(&mut self.app.status, cx, cy, cw, ch, &mut layout),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch, &mut layout),
-            Page::Notifications => notifications::view(&mut self.app.notifications, cx, cy, cw, ch, &mut layout),
-            Page::Backup => backup::view(&self.app.backup, cx, cy, cw, ch, &mut layout),
-            Page::Screensaver => screensaver::view(&mut self.app.screensaver, cx, cy, cw, ch, &mut layout),
-            Page::Typefaces => typeface::view(&mut self.app.typeface, cx, cy, cw, ch, &sec_focused, &mut layout),
-            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, root_focused, &mut layout),
-            Page::Interface => interface::view(&mut self.app.interface, cx, cy, cw, ch, &mut layout),
+            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, &sec_focused, &mut layout),
+            Page::Interface => interface::view(&mut self.app.interface, cx, cy, cw, ch, &sec_focused, &mut layout),
         }
     }
 
@@ -1168,7 +1119,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_status.try_recv() {
-            status::update(&mut self.app.status, status::StatusMessage::Refreshed(s));
+            services::update(&mut self.app.services, services::ServicesMessage::StatusRefreshed(s));
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_storage.try_recv() {
@@ -1176,22 +1127,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_notifications.try_recv() {
-            notifications::update(&mut self.app.notifications, notifications::NotificationsMessage::Refreshed(s));
-            self.needs_rebuild = true;
-        }
-        while let Ok(s) = self.rx_screensaver.try_recv() {
-            screensaver::update(&mut self.app.screensaver, pages::screensaver::ScreensaverMessage::Refreshed(s));
-            self.needs_rebuild = true;
-        }
-        while let Ok(s) = self.rx_backup_state.try_recv() {
-            pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::Refreshed(s));
+            services::update(&mut self.app.services, services::ServicesMessage::NotificationsRefreshed(s));
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_typeface.try_recv() {
             self.sans_serif_family = s.sans_serif.clone();
             self.serif_family = s.serif.clone();
             self.monospace_family = s.monospace.clone();
-            typeface::update(&mut self.app.typeface, typeface::TypefaceMessage::Refreshed(s));
+            interface::update(&mut self.app.interface, interface::InterfaceMessage::TypefaceRefreshed(s));
             self.needs_rebuild = true;
         }
         while let Ok(s) = self.rx_services.try_recv() {
@@ -1207,18 +1150,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             self.needs_rebuild = true;
         }
         while let Ok(m) = self.rx_backup.try_recv() {
-            self.handle_action(&AppAction::Backup(m));
-            self.needs_rebuild = true;
-        }
-        while let Ok(action) = self.rx_color_selector.try_recv() {
-            match action {
-                ColorSelectorAction::Background(rgb) => {
-                    interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::SetLowColor(rgb));
-                }
-                ColorSelectorAction::Border(rgb) => {
-                    interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::SetHighColor(rgb));
-                }
-            }
+            self.handle_action(&AppAction::Storage(m));
             self.needs_rebuild = true;
         }
     }
@@ -1233,29 +1165,25 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
             AppAction::Hardware(m) => hardware::update(&mut self.app.hardware, m.clone()),
-            AppAction::Status(m) => status::update(&mut self.app.status, m.clone()),
-            AppAction::Storage(m) => storage::update(&mut self.app.storage, m.clone()),
-            AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
-            AppAction::Typeface(m) => {
-                typeface::update(&mut self.app.typeface, m.clone());
-                self.sans_serif_family = self.app.typeface.sans_serif.clone();
-                self.serif_family = self.app.typeface.serif.clone();
-                self.monospace_family = self.app.typeface.monospace.clone();
-            }
-            AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
-            AppAction::Interface(m) => interface::update(&mut self.app.interface, m.clone()),
-            AppAction::Screensaver(m) => screensaver::update(&mut self.app.screensaver, m.clone()),
-            AppAction::Backup(m) => match m {
-                pages::backup::BackupMessage::StartBackup => {
-                    pages::backup::update(&mut self.app.backup, pages::backup::BackupMessage::StartBackup);
+            AppAction::Storage(m) => match m {
+                pages::storage::StorageMessage::StartBackup => {
+                    pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup);
                     let tx = self.tx_backup.clone();
                     tokio::spawn(async move {
-                        let res = pages::backup::run_backup().await;
-                        let _ = tx.send(pages::backup::BackupMessage::BackupFinished(res));
+                        let res = pages::storage::run_backup().await;
+                        let _ = tx.send(pages::storage::StorageMessage::BackupFinished(res));
                     });
                 }
-                _ => pages::backup::update(&mut self.app.backup, m.clone()),
+                _ => pages::storage::update(&mut self.app.storage, m.clone()),
             },
+
+            AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
+            AppAction::Interface(m) => {
+                interface::update(&mut self.app.interface, m.clone());
+                self.sans_serif_family = self.app.interface.sans_serif.clone();
+                self.serif_family = self.app.interface.serif.clone();
+                self.monospace_family = self.app.interface.monospace.clone();
+            }
             AppAction::Accounts(m) => match m {
                 pages::accounts::AccountsMessage::GoogleLoginInit => {
                     pages::accounts::update(&mut self.app.accounts, m.clone());
@@ -1288,8 +1216,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         let ly = self.cursor_y / s + self.scroll_y;
         clear_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
-        if self.paginator.cursor_moved(lx_no_scroll, ly_no_scroll) {
-            changed = true;
+        if lx_no_scroll < self.sidebar_width {
+            if self.paginator.cursor_moved(lx_no_scroll, ly_no_scroll) {
+                changed = true;
+            }
         }
         for w in &mut self.widgets {
             let was = w.hovering;
@@ -1329,6 +1259,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     changed = true;
                 }
             }
+            if self.app.layout.side_panel_behavior_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.layout.side_panel_width_spinbox.cursor_moved(lx, ly) {
+                changed = true;
+            }
         }
         if self.app.current_page == Page::Interface {
             for cp in &mut self.app.interface.color_selectors {
@@ -1347,6 +1283,78 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
             if self.app.interface.tab_padding_spinbox_y.cursor_moved(lx, ly) {
                 changed = true;
+            }
+            if self.app.interface.sans_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.serif_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.mono_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.borders_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.borders_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.status_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.status_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.fuzzel_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.fuzzel_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.terminal_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.terminal_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.paginator_menu.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.paginator_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.search_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.list_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.borders_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.status_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.fuzzel_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.terminal_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.interface.paginator_size_box.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            let query = self.app.interface.search_box.text.to_lowercase();
+            let matching_count = self.app.interface.all_fonts.iter()
+                .filter(|f| f.to_lowercase().contains(&query))
+                .count();
+            for i in 0..matching_count.min(self.app.interface.font_buttons.len()) {
+                if self.app.interface.font_buttons[i].cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.interface.copy_buttons[i].cursor_moved(lx, ly) {
+                    changed = true;
+                }
             }
         }
         if self.app.current_page == Page::Input {
@@ -1419,41 +1427,28 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     }
                 }
             }
-        }
-        if self.opacity_dragging && self.app.current_page == Page::Notifications {
-            if self.app.notifications.opacity_slider.drag_update(lx, ly) {
+            if self.app.display.screensaver_enable_toggle.cursor_moved(lx, ly) {
                 changed = true;
             }
-        } else if self.app.current_page == Page::Notifications {
-            if self.app.notifications.enable_toggle.cursor_moved(lx, ly) {
+            if self.app.display.screensaver_lock_screen_toggle.cursor_moved(lx, ly) {
                 changed = true;
             }
-            if self.app.notifications.bell_toggle.cursor_moved(lx, ly) {
+            if self.app.display.screensaver_timeout_spinbox.cursor_moved(lx, ly) {
                 changed = true;
             }
-            if self.app.notifications.duration_spinbox.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.notifications.opacity_slider.cursor_moved(lx, ly) {
+            if self.app.display.screensaver_style_menu.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
-        if self.app.current_page == Page::Screensaver {
-            if self.app.screensaver.enable_toggle.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.screensaver.lock_screen_toggle.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.screensaver.timeout_spinbox.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.screensaver.style_menu.cursor_moved(lx, ly) {
-                changed = true;
-            }
-        }
+
         if self.app.current_page == Page::Hardware {
             if self.app.hardware.cpu_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.hardware.cpu_usage_label.cursor_moved(lx, ly) {
+                changed = true;
+            }
+            if self.app.hardware.cpu_temp_label.cursor_moved(lx, ly) {
                 changed = true;
             }
             for gpu_lbl in &mut self.app.hardware.gpu_labels {
@@ -1464,104 +1459,67 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             if self.app.hardware.cpu_list_box.cursor_moved(lx, ly) {
                 changed = true;
             }
-        }
-        if self.app.current_page == Page::Status {
-            if self.app.status.status_label.cursor_moved(lx, ly) {
+            if self.app.hardware.cpu_gov_menu.cursor_moved(lx, ly) {
                 changed = true;
             }
-            if self.app.status.size_label.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.status.separators_toggle.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.status.underline_toggle.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.status.padding_spinbox.cursor_moved(lx, ly) {
+            if self.app.hardware.gpu_gov_menu.cursor_moved(lx, ly) {
                 changed = true;
             }
         }
-        if self.app.current_page == Page::Typefaces {
-            if self.app.typeface.sans_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.serif_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.mono_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.borders_menu.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.borders_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.status_menu.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.status_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.fuzzel_menu.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.fuzzel_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.terminal_menu.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.terminal_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.paginator_menu.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.paginator_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.search_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.list_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.borders_size_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.status_size_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.fuzzel_size_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.terminal_size_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.typeface.paginator_size_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            let query = self.app.typeface.search_box.text.to_lowercase();
-            let matching_count = self.app.typeface.all_fonts.iter()
-                .filter(|f| f.to_lowercase().contains(&query))
-                .count();
-            for i in 0..matching_count.min(self.app.typeface.font_buttons.len()) {
-                if self.app.typeface.font_buttons[i].cursor_moved(lx, ly) {
-                    changed = true;
-                }
-                if self.app.typeface.copy_buttons[i].cursor_moved(lx, ly) {
-                    changed = true;
-                }
-            }
-        }
+
         if self.app.current_page == Page::Services {
-            if self.app.services.search_box.cursor_moved(lx, ly) {
-                changed = true;
-            }
-            if self.app.services.list_box.cursor_moved(lx, ly) {
-                changed = true;
+            if self.opacity_dragging {
+                if self.app.services.notifications_opacity_slider.drag_update(lx, ly) {
+                    changed = true;
+                }
+            } else {
+                if self.app.services.search_box.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.list_box.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                let query = if self.app.services.search_box.editing {
+                    self.app.services.search_box.edit_buffer.to_lowercase()
+                } else {
+                    self.app.services.search_box.text.to_lowercase()
+                };
+                let matching_count = self.app.services.services.iter()
+                    .filter(|s| s.is_system == (self.app.services.active_tab == pages::services::ServiceTab::System))
+                    .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
+                    .count();
+                for i in 0..matching_count.min(self.app.services.service_items.len()) {
+                    if self.app.services.service_items[i].cursor_moved(lx, ly) {
+                        changed = true;
+                    }
+                }
+                if self.app.services.notifications_enable_toggle.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.notifications_bell_toggle.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.notifications_duration_spinbox.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.notifications_opacity_slider.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.status_label.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.status_size_label.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.status_separators_toggle.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.status_underline_toggle.cursor_moved(lx, ly) {
+                    changed = true;
+                }
+                if self.app.services.status_padding_spinbox.cursor_moved(lx, ly) {
+                    changed = true;
+                }
             }
         }
         if self.app.current_page == Page::Accounts {
@@ -1591,17 +1549,21 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             }
         }
 
-        if self.paginator.mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
-            if self.paginator.take_click() {
-                let idx = self.paginator.selected_page();
-                if idx < Page::ALL.len() {
-                    clear_ui::widget::focus::clear_focus();
-                    self.app.current_page = Page::ALL[idx];
-                    self.scroll_y = 0.0;
+        if lx_no_scroll < self.sidebar_width {
+            if self.paginator.mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
+                if self.paginator.take_click() {
+                    let idx = self.paginator.selected_page();
+                    if idx < Page::ALL.len() {
+                        clear_ui::widget::focus::clear_focus();
+                        let new_page = Page::ALL[idx];
+                        self.app.current_page = new_page;
+                        self.scroll_y = 0.0;
+                        pages::interface::write_config_value("last_page", &format!("\"{}\"", new_page.label().to_lowercase()));
+                    }
                 }
+                self.needs_rebuild = true;
+                return true;
             }
-            self.needs_rebuild = true;
-            return true;
         }
 
         if button != clear_ui::widget::MouseButton::Left && button != clear_ui::widget::MouseButton::Right { return false; }
@@ -1647,6 +1609,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     for menu in &mut self.app.layout.tag_layout_menus {
                         if menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                     }
+                    if self.app.layout.side_panel_behavior_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.layout.side_panel_width_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Interface => {
                     for cp in &mut self.app.interface.color_selectors {
@@ -1656,6 +1620,22 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     if self.app.interface.tab_margin_spinbox_y.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.interface.tab_padding_spinbox_x.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.interface.tab_padding_spinbox_y.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    let tf = &mut self.app.interface;
+                    if tf.sans_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.serif_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.mono_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.borders_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.borders_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.status_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.status_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.fuzzel_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.fuzzel_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.terminal_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.terminal_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.paginator_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.paginator_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if tf.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Input => {
                     if self.app.input.rate_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
@@ -1666,14 +1646,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     if self.app.input.trackpoint_accel_speed_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if self.app.input.trackpoint_accel_profile_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
-                Page::Notifications => {
-                    if self.app.notifications.duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if self.app.notifications.opacity_slider.hit_test(lx, ly) { clicked_any_focusable = true; }
-                }
-                Page::Screensaver => {
-                    if self.app.screensaver.timeout_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if self.app.screensaver.style_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
-                }
+
                 Page::Audio => {
                     for sb in &mut self.app.audio.sink_spinboxes {
                         if sb.hit_test(lx, ly) { clicked_any_focusable = true; }
@@ -1692,38 +1665,24 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                             if scale_lbl.hit_test(lx, ly) { clicked_any_focusable = true; }
                         }
                     }
-                }
-                Page::Status => {
-                    if self.app.status.status_label.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if self.app.status.size_label.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if self.app.status.padding_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
-                }
-                Page::Typefaces => {
-                    let tf = &mut self.app.typeface;
-                    if tf.sans_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.serif_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.mono_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.borders_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.borders_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.status_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.status_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.fuzzel_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.fuzzel_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.terminal_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.terminal_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.paginator_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.paginator_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
-                    if tf.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.display.screensaver_timeout_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if self.app.display.screensaver_style_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Services => {
                     let srv = &mut self.app.services;
                     if srv.search_box.hit_test(lx, ly) { clicked_any_focusable = true; }
                     if srv.list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if srv.notifications_duration_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if srv.notifications_opacity_slider.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if srv.status_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if srv.status_size_label.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if srv.status_padding_spinbox.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Hardware => {
                     let hw = &mut self.app.hardware;
                     if hw.cpu_list_box.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if hw.cpu_gov_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
+                    if hw.gpu_gov_menu.hit_test(lx, ly) { clicked_any_focusable = true; }
                 }
                 Page::Radios => {
                     let net = &mut self.app.network;
@@ -1808,6 +1767,22 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                     actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTagLayout(idx + 1, menu.selected)));
                 }
+            }
+            let menu = &mut self.app.layout.side_panel_behavior_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(menu.selected)));
+            }
+            let sb = &mut self.app.layout.side_panel_width_spinbox;
+            if !sb.hit_test(lx, ly) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetSidePanelWidth(sb.value as u16)
+                ));
             }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
@@ -1929,12 +1904,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Notifications {
-            let sb = &mut self.app.notifications.duration_spinbox;
+        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
+            let sb = &mut self.app.services.notifications_duration_spinbox;
             if !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly) && sb.value != old {
-                actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(sb.value)));
+                actions.push(AppAction::Services(pages::services::ServicesMessage::SetNotificationsDuration(sb.value)));
+            }
+            let sb2 = &mut self.app.services.status_padding_spinbox;
+            if !sb2.hit_test(lx, ly) { sb2.unfocus(); }
+            let old2 = sb2.value;
+            if sb2.mouse_input(button, state, lx, ly) && sb2.value != old2 {
+                actions.push(AppAction::Services(pages::services::ServicesMessage::StatusSetPadding(sb2.value as u16)));
             }
         }
         if self.app.current_page == Page::Input {
@@ -1985,18 +1966,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorTheme(menu.selected)));
             }
         }
-        if self.app.current_page == Page::Notifications {
-            let toggle = &mut self.app.notifications.enable_toggle;
+        if self.app.current_page == Page::Services {
+            let toggle = &mut self.app.services.notifications_enable_toggle;
             toggle.mouse_input(button, state, lx, ly);
             if toggle.take_click() {
-                actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleEnable));
+                actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsEnable));
             }
-            let toggle = &mut self.app.notifications.bell_toggle;
+            let toggle = &mut self.app.services.notifications_bell_toggle;
             toggle.mouse_input(button, state, lx, ly);
             if toggle.take_click() {
-                actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::ToggleBell));
+                actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsBell));
             }
-            let slider = &mut self.app.notifications.opacity_slider;
+            let slider = &mut self.app.services.notifications_opacity_slider;
             if button == clear_ui::widget::MouseButton::Left {
                 if state == clear_ui::widget::ElementState::Pressed {
                     if slider.hit_test(lx, ly) {
@@ -2009,41 +1990,78 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                         self.opacity_dragging = false;
                         slider.drag_end();
                         let val = slider.value() as f32 / 100.0;
-                        actions.push(AppAction::Notifications(pages::notifications::NotificationsMessage::SetOpacity(val)));
+                        actions.push(AppAction::Services(pages::services::ServicesMessage::SetNotificationsOpacity(val)));
                         self.needs_rebuild = true;
                     }
                 }
             }
-        }
-        if self.app.current_page == Page::Screensaver {
-            let toggle = &mut self.app.screensaver.enable_toggle;
-            toggle.mouse_input(button, state, lx, ly);
-            if toggle.take_click() {
-                actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::ToggleEnable));
-            }
-
-            let toggle = &mut self.app.screensaver.lock_screen_toggle;
-            toggle.mouse_input(button, state, lx, ly);
-            if toggle.take_click() {
-                actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::ToggleLockScreen));
-            }
-
             if state == clear_ui::widget::ElementState::Pressed {
-                let sb = &mut self.app.screensaver.timeout_spinbox;
-                if !sb.hit_test(lx, ly) { sb.unfocus(); }
-                let old = sb.value;
-                if sb.mouse_input(button, state, lx, ly) && sb.value != old {
-                    actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetTimeout(sb.value)));
-                }
+                let lbl1 = &mut self.app.services.status_label;
+                if !lbl1.hit_test(lx, ly) { lbl1.unfocus(); }
+                lbl1.mouse_input(button, state, lx, ly);
+
+                let lbl2 = &mut self.app.services.status_size_label;
+                if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
+                lbl2.mouse_input(button, state, lx, ly);
+            }
+            let toggle = &mut self.app.services.status_separators_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Services(pages::services::ServicesMessage::StatusToggleSeparators));
+            }
+            let toggle2 = &mut self.app.services.status_underline_toggle;
+            toggle2.mouse_input(button, state, lx, ly);
+            if toggle2.take_click() {
+                actions.push(AppAction::Services(pages::services::ServicesMessage::StatusToggleUnderline));
+            }
+        }
+        if self.app.current_page == Page::Display {
+            let toggle = &mut self.app.display.screensaver_enable_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Display(pages::display::DisplayMessage::ToggleScreensaverEnable));
             }
 
-            let menu = &mut self.app.screensaver.style_menu;
+            let toggle = &mut self.app.display.screensaver_lock_screen_toggle;
+            toggle.mouse_input(button, state, lx, ly);
+            if toggle.take_click() {
+                actions.push(AppAction::Display(pages::display::DisplayMessage::ToggleScreensaverLockScreen));
+            }
+
+            let menu = &mut self.app.display.screensaver_style_menu;
             if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetStyle(menu.selected)));
+                actions.push(AppAction::Display(pages::display::DisplayMessage::SetScreensaverStyle(menu.selected)));
+            }
+        }
+        if self.app.current_page == Page::Hardware {
+            let menu = &mut self.app.hardware.cpu_gov_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                if menu.selected == 0 {
+                    actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPerformance));
+                } else {
+                    actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPowersave));
+                }
+            }
+
+            let menu = &mut self.app.hardware.gpu_gov_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                if menu.selected == 0 {
+                    actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuDefault));
+                } else {
+                    actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuPowersave));
+                }
             }
         }
 
@@ -2090,36 +2108,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                     scale_lbl.mouse_input(button, state, lx, ly);
                 }
             }
-        }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Status {
-            let lbl1 = &mut self.app.status.status_label;
-            if !lbl1.hit_test(lx, ly) { lbl1.unfocus(); }
-            lbl1.mouse_input(button, state, lx, ly);
 
-            let lbl2 = &mut self.app.status.size_label;
-            if !lbl2.hit_test(lx, ly) { lbl2.unfocus(); }
-            lbl2.mouse_input(button, state, lx, ly);
-
-            let sb = &mut self.app.status.padding_spinbox;
+            let sb = &mut self.app.display.screensaver_timeout_spinbox;
             if !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly) && sb.value != old {
-                actions.push(AppAction::Status(pages::status::StatusMessage::SetPadding(sb.value as u16)));
+                actions.push(AppAction::Display(pages::display::DisplayMessage::SetScreensaverTimeout(sb.value)));
             }
         }
-        if self.app.current_page == Page::Status {
-            let toggle = &mut self.app.status.separators_toggle;
-            toggle.mouse_input(button, state, lx, ly);
-            if toggle.take_click() {
-                actions.push(AppAction::Status(pages::status::StatusMessage::ToggleSeparators));
-            }
 
-            let toggle2 = &mut self.app.status.underline_toggle;
-            toggle2.mouse_input(button, state, lx, ly);
-            if toggle2.take_click() {
-                actions.push(AppAction::Status(pages::status::StatusMessage::ToggleUnderline));
-            }
-        }
         if self.app.current_page == Page::Accounts {
             if self.app.accounts.editing_oauth_creds {
                 let tb = &mut self.app.accounts.oauth_client_id_box;
@@ -2178,184 +2175,184 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
             }
         }
-        if self.app.current_page == Page::Typefaces {
-            let tb = &mut self.app.typeface.sans_box;
+        if self.app.current_page == Page::Interface {
+            let tb = &mut self.app.interface.sans_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSans(tb.text.clone())));
             }
 
-            let tb = &mut self.app.typeface.serif_box;
+            let tb = &mut self.app.interface.serif_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSerif(tb.text.clone())));
             }
 
-            let tb = &mut self.app.typeface.mono_box;
+            let tb = &mut self.app.interface.mono_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMono(tb.text.clone())));
             }
 
-            let menu = &mut self.app.typeface.borders_menu;
+            let menu = &mut self.app.interface.borders_menu;
             if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersMenu(menu.selected)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBordersMenu(menu.selected)));
             }
 
-            let tb = &mut self.app.typeface.borders_box;
+            let tb = &mut self.app.interface.borders_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBorders(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBorders(tb.text.clone())));
             }
 
-            let menu = &mut self.app.typeface.status_menu;
+            let menu = &mut self.app.interface.status_menu;
             if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusMenu(menu.selected)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusMenu(menu.selected)));
             }
 
-            let tb = &mut self.app.typeface.status_box;
+            let tb = &mut self.app.interface.status_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatus(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatus(tb.text.clone())));
             }
 
-            let menu = &mut self.app.typeface.fuzzel_menu;
+            let menu = &mut self.app.interface.fuzzel_menu;
             if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelMenu(menu.selected)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzelMenu(menu.selected)));
             }
 
-            let tb = &mut self.app.typeface.fuzzel_box;
+            let tb = &mut self.app.interface.fuzzel_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzel(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzel(tb.text.clone())));
             }
 
-            let menu = &mut self.app.typeface.terminal_menu;
+            let menu = &mut self.app.interface.terminal_menu;
             if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalMenu(menu.selected)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminalMenu(menu.selected)));
             }
 
-            let tb = &mut self.app.typeface.terminal_box;
+            let tb = &mut self.app.interface.terminal_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminal(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminal(tb.text.clone())));
             }
 
-            let menu = &mut self.app.typeface.paginator_menu;
+            let menu = &mut self.app.interface.paginator_menu;
             if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginatorMenu(menu.selected)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPaginatorMenu(menu.selected)));
             }
 
-            let tb = &mut self.app.typeface.paginator_box;
+            let tb = &mut self.app.interface.paginator_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginator(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPaginator(tb.text.clone())));
             }
 
-            let tb = &mut self.app.typeface.search_box;
+            let tb = &mut self.app.interface.search_box;
             if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSearch(tb.text.clone())));
             }
 
-            let sb = &mut self.app.typeface.borders_size_box;
+            let sb = &mut self.app.interface.borders_size_box;
             if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if sb.value != old_val {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersSize(sb.value)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBordersSize(sb.value)));
             }
 
-            let sb = &mut self.app.typeface.status_size_box;
+            let sb = &mut self.app.interface.status_size_box;
             if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if sb.value != old_val {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusSize(sb.value)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusSize(sb.value)));
             }
 
-            let sb = &mut self.app.typeface.fuzzel_size_box;
+            let sb = &mut self.app.interface.fuzzel_size_box;
             if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if sb.value != old_val {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelSize(sb.value)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzelSize(sb.value)));
             }
 
-            let sb = &mut self.app.typeface.terminal_size_box;
+            let sb = &mut self.app.interface.terminal_size_box;
             if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if sb.value != old_val {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalSize(sb.value)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminalSize(sb.value)));
             }
 
-            let sb = &mut self.app.typeface.paginator_size_box;
+            let sb = &mut self.app.interface.paginator_size_box;
             if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
             }
             if sb.value != old_val {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginatorSize(sb.value)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPaginatorSize(sb.value)));
             }
 
-            let tf = &mut self.app.typeface;
+            let tf = &mut self.app.interface;
             let query = tf.search_box.text.to_lowercase();
             let matching_fonts: Vec<String> = tf.all_fonts.iter()
                 .filter(|font| font.to_lowercase().contains(&query))
@@ -2387,9 +2384,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             if let Some(idx) = clicked_idx {
                 if let Some(font_name) = matching_fonts.get(idx) {
                     let action = if is_copy {
-                        AppAction::Typeface(pages::typeface::TypefaceMessage::CopyFontName(font_name.clone()))
+                        AppAction::Interface(pages::interface::InterfaceMessage::CopyFontName(font_name.clone()))
                     } else {
-                        AppAction::Typeface(pages::typeface::TypefaceMessage::SelectFont(font_name.clone()))
+                        AppAction::Interface(pages::interface::InterfaceMessage::SelectFont(font_name.clone()))
                     };
                     actions.push(action);
                 }
@@ -2408,6 +2405,20 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let srv = &mut self.app.services;
             if srv.list_box.mouse_input(button, state, lx, ly) {
                 self.needs_rebuild = true;
+            }
+            let query = if srv.search_box.editing {
+                srv.search_box.edit_buffer.to_lowercase()
+            } else {
+                srv.search_box.text.to_lowercase()
+            };
+            let matching_count = srv.services.iter()
+                .filter(|s| s.is_system == (srv.active_tab == pages::services::ServiceTab::System))
+                .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
+                .count();
+            for i in 0..matching_count.min(srv.service_items.len()) {
+                if srv.service_items[i].mouse_input(button, state, lx, ly) {
+                    self.needs_rebuild = true;
+                }
             }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Hardware {
@@ -2450,8 +2461,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
             }
 
-            if self.app.current_page == Page::Typefaces {
-                let tf = &mut self.app.typeface;
+            if self.app.current_page == Page::Interface {
+                let tf = &mut self.app.interface;
                 if tf.list_box.mouse_wheel(delta, lx, ly) {
                     self.needs_rebuild = true;
                     return true;
@@ -2501,14 +2512,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         false
     }
 
-    fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Widget + 'static)> {
+    fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Element + 'static)> {
         match self.app.current_page {
-            Page::Typefaces | Page::Services | Page::Hardware | Page::Radios |
-            Page::Layout | Page::Interface | Page::Notifications | Page::Input |
+            Page::Services | Page::Hardware | Page::Radios |
+            Page::Layout | Page::Interface | Page::Input |
             Page::Audio | Page::Display => {
-                let ptr = &mut self.page_root_container as &mut dyn clear_ui::widget::Widget as *mut dyn clear_ui::widget::Widget;
+                let ptr = &mut self.page_root_container as &mut dyn clear_ui::widget::Element as *mut dyn clear_ui::widget::Element;
                 let static_ptr = unsafe {
-                    std::mem::transmute::<*mut dyn clear_ui::widget::Widget, *mut (dyn clear_ui::widget::Widget + 'static)>(ptr)
+                    std::mem::transmute::<*mut dyn clear_ui::widget::Element, *mut (dyn clear_ui::widget::Element + 'static)>(ptr)
                 };
                 Some(static_ptr)
             }
@@ -2619,6 +2630,28 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
                 }
                 changed = true;
             }
+            let (menu_changed, old_selected, new_selected) = {
+                let menu = &mut self.app.layout.side_panel_behavior_menu;
+                let old = menu.selected;
+                let changed = menu.keyboard_input(event);
+                (changed, old, menu.selected)
+            };
+            if menu_changed {
+                if new_selected != old_selected {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(new_selected)));
+                }
+                changed = true;
+            }
+            let sb = &mut self.app.layout.side_panel_width_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetSidePanelWidth(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
             for a in &actions {
                 self.handle_action(a);
             }
@@ -2666,7 +2699,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(new_val as u16)));
                 }
@@ -2677,7 +2709,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(new_val as u16)));
                 }
@@ -2688,7 +2719,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(new_val as u16)));
                 }
@@ -2699,35 +2729,240 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(new_val as u16)));
                 }
                 self.needs_rebuild = true;
                 return true;
             }
-        }
-        if self.app.current_page == Page::Screensaver {
-            let sb = &mut self.app.screensaver.timeout_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event) {
-                let new_val = sb.value;
-                drop(sb);
-                if new_val != old {
-                    self.handle_action(&AppAction::Screensaver(pages::screensaver::ScreensaverMessage::SetTimeout(new_val)));
+
+            if event.state == clear_ui::widget::ElementState::Pressed {
+                let is_down = match (&event.logical_key, event.ctrl) {
+                    (clear_ui::widget::Key::Character(c), true) if c == "n" || c == "N" => true,
+                    (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowDown), false) => true,
+                    _ => false,
+                };
+                let is_up = match (&event.logical_key, event.ctrl) {
+                    (clear_ui::widget::Key::Character(c), true) if c == "p" || c == "P" => true,
+                    (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowUp), false) => true,
+                    _ => false,
+                };
+                if is_down && clear_ui::widget::focus::is_focused(&self.app.interface.list_box.scroll_box) {
+                    let next_idx_font_scroll = {
+                        let tf = &self.app.interface;
+                        let query = tf.search_box.text.to_lowercase();
+                        let matching_fonts: Vec<&String> = tf.all_fonts.iter()
+                            .filter(|font| font.to_lowercase().contains(&query))
+                            .collect();
+                        if !matching_fonts.is_empty() {
+                            let current_idx = tf.selected_font.as_ref()
+                                .and_then(|f| matching_fonts.iter().position(|&x| x == f));
+                            let next_idx = match current_idx {
+                                Some(idx) => (idx + 1).min(matching_fonts.len() - 1),
+                                None => 0,
+                            };
+                            let font = matching_fonts[next_idx].clone();
+                            
+                            // Compute scroll
+                            let btn_h = 24.0;
+                            let btn_gap = 4.0;
+                            let item_height_full = btn_h + btn_gap;
+                            let item_y = next_idx as f32 * item_height_full;
+                            let list_box_h = 320.0;
+                            
+                            let mut scroll_y = tf.list_box.scroll_y();
+                            if item_y < scroll_y {
+                                scroll_y = item_y;
+                            } else if item_y + btn_h > scroll_y + list_box_h {
+                                scroll_y = item_y + btn_h - list_box_h;
+                            }
+                            Some((font, scroll_y))
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some((font, scroll_y)) = next_idx_font_scroll {
+                        self.app.interface.list_box.set_scroll_y(scroll_y);
+                        self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SelectFont(font)));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                } else if is_up && clear_ui::widget::focus::is_focused(&self.app.interface.list_box.scroll_box) {
+                    let next_idx_font_scroll = {
+                        let tf = &self.app.interface;
+                        let query = tf.search_box.text.to_lowercase();
+                        let matching_fonts: Vec<&String> = tf.all_fonts.iter()
+                            .filter(|font| font.to_lowercase().contains(&query))
+                            .collect();
+                        if !matching_fonts.is_empty() {
+                            let current_idx = tf.selected_font.as_ref()
+                                .and_then(|f| matching_fonts.iter().position(|&x| x == f));
+                            let next_idx = match current_idx {
+                                Some(idx) => idx.saturating_sub(1),
+                                None => 0,
+                            };
+                            let font = matching_fonts[next_idx].clone();
+                            
+                            // Compute scroll
+                            let btn_h = 24.0;
+                            let btn_gap = 4.0;
+                            let item_height_full = btn_h + btn_gap;
+                            let item_y = next_idx as f32 * item_height_full;
+                            let list_box_h = 320.0;
+                            
+                            let mut scroll_y = tf.list_box.scroll_y();
+                            if item_y < scroll_y {
+                                scroll_y = item_y;
+                            } else if item_y + btn_h > scroll_y + list_box_h {
+                                scroll_y = item_y + btn_h - list_box_h;
+                            }
+                            Some((font, scroll_y))
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some((font, scroll_y)) = next_idx_font_scroll {
+                        self.app.interface.list_box.set_scroll_y(scroll_y);
+                        self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SelectFont(font)));
+                        self.needs_rebuild = true;
+                        return true;
+                    }
                 }
+            }
+
+            let mut actions = Vec::new();
+            let mut consumed = false;
+            
+            let tf = &mut self.app.interface;
+            let tb = &mut tf.sans_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSans(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.serif_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSerif(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.mono_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMono(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.borders_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBorders(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.status_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatus(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.fuzzel_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzel(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.terminal_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminal(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.paginator_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPaginator(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let tb = &mut self.app.interface.search_box;
+            if tb.keyboard_input(event) {
+                if tb.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSearch(tb.text.clone())));
+                }
+                consumed = true;
+            }
+
+            let sb = &mut self.app.interface.borders_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBordersSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.interface.status_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.interface.fuzzel_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzelSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.interface.terminal_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminalSize(sb.value)));
+                consumed = true;
+            }
+
+            let sb = &mut self.app.interface.paginator_size_box;
+            if sb.keyboard_input(event) {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPaginatorSize(sb.value)));
+                consumed = true;
+            }
+            
+            for a in &actions {
+                self.handle_action(a);
+            }
+            if consumed {
                 self.needs_rebuild = true;
                 return true;
             }
         }
-        if self.app.current_page == Page::Notifications {
-            let sb = &mut self.app.notifications.duration_spinbox;
+        if self.app.current_page == Page::Services {
+            let sb = &mut self.app.services.notifications_duration_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
-                    self.handle_action(&AppAction::Notifications(pages::notifications::NotificationsMessage::SetDuration(new_val)));
+                    self.handle_action(&AppAction::Services(pages::services::ServicesMessage::SetNotificationsDuration(new_val)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.services.status_padding_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Services(pages::services::ServicesMessage::StatusSetPadding(new_val as u16)));
                 }
                 self.needs_rebuild = true;
                 return true;
@@ -2850,238 +3085,38 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
                     self.handle_action(&AppAction::Display(pages::display::DisplayMessage::BrightnessSet(new_val as u32)));
                 }
                 self.needs_rebuild = true;
                 return true;
             }
-        }
-        if self.app.current_page == Page::Status {
-            let sb = &mut self.app.status.padding_spinbox;
+            let sb = &mut self.app.display.screensaver_timeout_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event) {
                 let new_val = sb.value;
-                drop(sb);
                 if new_val != old {
-                    self.handle_action(&AppAction::Status(pages::status::StatusMessage::SetPadding(new_val as u16)));
+                    self.handle_action(&AppAction::Display(pages::display::DisplayMessage::SetScreensaverTimeout(new_val)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let (menu_changed, old_selected, new_selected) = {
+                let menu = &mut self.app.display.screensaver_style_menu;
+                let old = menu.selected;
+                let changed = menu.keyboard_input(event);
+                (changed, old, menu.selected)
+            };
+            if menu_changed {
+                if new_selected != old_selected {
+                    self.handle_action(&AppAction::Display(pages::display::DisplayMessage::SetScreensaverStyle(new_selected)));
                 }
                 self.needs_rebuild = true;
                 return true;
             }
         }
-        if self.app.current_page == Page::Typefaces {
-            if event.state == clear_ui::widget::ElementState::Pressed {
-                let is_down = match (&event.logical_key, event.ctrl) {
-                    (clear_ui::widget::Key::Character(c), true) if c == "n" || c == "N" => true,
-                    (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowDown), false) => true,
-                    _ => false,
-                };
-                let is_up = match (&event.logical_key, event.ctrl) {
-                    (clear_ui::widget::Key::Character(c), true) if c == "p" || c == "P" => true,
-                    (clear_ui::widget::Key::Named(clear_ui::widget::NamedKey::ArrowUp), false) => true,
-                    _ => false,
-                };
-                if is_down && clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
-                    let next_idx_font_scroll = {
-                        let tf = &self.app.typeface;
-                        let query = tf.search_box.text.to_lowercase();
-                        let matching_fonts: Vec<&String> = tf.all_fonts.iter()
-                            .filter(|font| font.to_lowercase().contains(&query))
-                            .collect();
-                        if !matching_fonts.is_empty() {
-                            let current_idx = tf.selected_font.as_ref()
-                                .and_then(|f| matching_fonts.iter().position(|&x| x == f));
-                            let next_idx = match current_idx {
-                                Some(idx) => (idx + 1).min(matching_fonts.len() - 1),
-                                None => 0,
-                            };
-                            let font = matching_fonts[next_idx].clone();
-                            
-                            // Compute scroll
-                            let btn_h = 24.0;
-                            let btn_gap = 4.0;
-                            let item_height_full = btn_h + btn_gap;
-                            let item_y = next_idx as f32 * item_height_full;
-                            let list_box_h = 320.0;
-                            
-                            let mut scroll_y = tf.list_box.scroll_y();
-                            if item_y < scroll_y {
-                                scroll_y = item_y;
-                            } else if item_y + btn_h > scroll_y + list_box_h {
-                                scroll_y = item_y + btn_h - list_box_h;
-                            }
-                            Some((font, scroll_y))
-                        } else {
-                            None
-                        }
-                    };
 
-                    if let Some((font, scroll_y)) = next_idx_font_scroll {
-                        self.app.typeface.list_box.set_scroll_y(scroll_y);
-                        self.handle_action(&AppAction::Typeface(pages::typeface::TypefaceMessage::SelectFont(font)));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                } else if is_up && clear_ui::widget::focus::is_focused(&self.app.typeface.list_box.scroll_box) {
-                    let next_idx_font_scroll = {
-                        let tf = &self.app.typeface;
-                        let query = tf.search_box.text.to_lowercase();
-                        let matching_fonts: Vec<&String> = tf.all_fonts.iter()
-                            .filter(|font| font.to_lowercase().contains(&query))
-                            .collect();
-                        if !matching_fonts.is_empty() {
-                            let current_idx = tf.selected_font.as_ref()
-                                .and_then(|f| matching_fonts.iter().position(|&x| x == f));
-                            let next_idx = match current_idx {
-                                Some(idx) => idx.saturating_sub(1),
-                                None => 0,
-                            };
-                            let font = matching_fonts[next_idx].clone();
-                            
-                            // Compute scroll
-                            let btn_h = 24.0;
-                            let btn_gap = 4.0;
-                            let item_height_full = btn_h + btn_gap;
-                            let item_y = next_idx as f32 * item_height_full;
-                            let list_box_h = 320.0;
-                            
-                            let mut scroll_y = tf.list_box.scroll_y();
-                            if item_y < scroll_y {
-                                scroll_y = item_y;
-                            } else if item_y + btn_h > scroll_y + list_box_h {
-                                scroll_y = item_y + btn_h - list_box_h;
-                            }
-                            Some((font, scroll_y))
-                        } else {
-                            None
-                        }
-                    };
 
-                    if let Some((font, scroll_y)) = next_idx_font_scroll {
-                        self.app.typeface.list_box.set_scroll_y(scroll_y);
-                        self.handle_action(&AppAction::Typeface(pages::typeface::TypefaceMessage::SelectFont(font)));
-                        self.needs_rebuild = true;
-                        return true;
-                    }
-                }
-            }
-
-            let mut actions = Vec::new();
-            let mut consumed = false;
-            
-            let tf = &mut self.app.typeface;
-            let tb = &mut tf.sans_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSans(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.serif_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSerif(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.mono_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetMono(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.borders_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBorders(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.status_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatus(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.fuzzel_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzel(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.terminal_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminal(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.paginator_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginator(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let tb = &mut self.app.typeface.search_box;
-            if tb.keyboard_input(event) {
-                if tb.take_change() {
-                    actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetSearch(tb.text.clone())));
-                }
-                consumed = true;
-            }
-
-            let sb = &mut self.app.typeface.borders_size_box;
-            if sb.keyboard_input(event) {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetBordersSize(sb.value)));
-                consumed = true;
-            }
-
-            let sb = &mut self.app.typeface.status_size_box;
-            if sb.keyboard_input(event) {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetStatusSize(sb.value)));
-                consumed = true;
-            }
-
-            let sb = &mut self.app.typeface.fuzzel_size_box;
-            if sb.keyboard_input(event) {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetFuzzelSize(sb.value)));
-                consumed = true;
-            }
-
-            let sb = &mut self.app.typeface.terminal_size_box;
-            if sb.keyboard_input(event) {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetTerminalSize(sb.value)));
-                consumed = true;
-            }
-
-            let sb = &mut self.app.typeface.paginator_size_box;
-            if sb.keyboard_input(event) {
-                actions.push(AppAction::Typeface(pages::typeface::TypefaceMessage::SetPaginatorSize(sb.value)));
-                consumed = true;
-            }
-            
-            for a in &actions {
-                self.handle_action(a);
-            }
-            if consumed {
-                self.needs_rebuild = true;
-                return true;
-            }
-        }
         if self.app.current_page == Page::Services {
             let srv = &mut self.app.services;
             if srv.list_box.keyboard_input(event) {
@@ -3098,6 +3133,40 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Widget, popovers: &mut Vec<(f
         if self.app.current_page == Page::Hardware {
             let hw = &mut self.app.hardware;
             if hw.cpu_list_box.keyboard_input(event) {
+                self.needs_rebuild = true;
+                return true;
+            }
+            let (cpu_changed, old_cpu, new_cpu) = {
+                let menu = &mut hw.cpu_gov_menu;
+                let old = menu.selected;
+                let changed = menu.keyboard_input(event);
+                (changed, old, menu.selected)
+            };
+            if cpu_changed {
+                if new_cpu != old_cpu {
+                    if new_cpu == 0 {
+                        self.handle_action(&AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPerformance));
+                    } else {
+                        self.handle_action(&AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPowersave));
+                    }
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let (gpu_changed, old_gpu, new_gpu) = {
+                let menu = &mut hw.gpu_gov_menu;
+                let old = menu.selected;
+                let changed = menu.keyboard_input(event);
+                (changed, old, menu.selected)
+            };
+            if gpu_changed {
+                if new_gpu != old_gpu {
+                    if new_gpu == 0 {
+                        self.handle_action(&AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuDefault));
+                    } else {
+                        self.handle_action(&AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuPowersave));
+                    }
+                }
                 self.needs_rebuild = true;
                 return true;
             }
@@ -3119,6 +3188,26 @@ fn main() {
     let _guard = rt.enter();
 
     let mut initial_page = Page::ALL[0];
+
+    // Try to load last_page from config
+    let config_path = "/home/lsgalante/.config/ccec/config.toml";
+    if let Ok(content) = std::fs::read_to_string(config_path) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("last_page") {
+                if let Some(val_str) = trimmed.split('=').nth(1) {
+                    let last_page_val = val_str.trim().trim_matches('"').trim_matches('\'').trim().to_lowercase();
+                    for page in Page::ALL {
+                        if page.label().to_lowercase() == last_page_val {
+                            initial_page = page;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         let arg = args.last().unwrap().to_lowercase();
