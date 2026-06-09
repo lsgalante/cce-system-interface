@@ -128,14 +128,14 @@ fn format_duration(secs: i64) -> String {
 fn spawn_cpu_power(powersave: bool) {
     let script = if powersave { "cpu-powersave-on" } else { "cpu-powersave-off" };
     let _ = tokio::process::Command::new("pkexec")
-        .arg(format!("/home/lsgalante/.local/share/clear-system-interface/helpers/{}", script))
+        .arg(format!("/home/lsgalante/.local/share/cce-system-interface/helpers/{}", script))
         .spawn();
 }
 
 fn spawn_gpu_power(powersave: bool) {
     let script = if powersave { "gpu-powersave-on" } else { "gpu-powersave-off" };
     let _ = tokio::process::Command::new("pkexec")
-        .arg(format!("/home/lsgalante/.local/share/clear-system-interface/helpers/{}", script))
+        .arg(format!("/home/lsgalante/.local/share/cce-system-interface/helpers/{}", script))
         .spawn();
 }
 
@@ -243,17 +243,18 @@ async fn read_nvidia_gpu_temp() -> Option<f32> {
 }
 
 pub async fn fetch_hardware_state() -> HardwareState {
-    let (cpu_model, cpu_cores) = {
-        let lscpu = tokio::process::Command::new("lscpu")
-            .output().await.ok()
+    static CPU_INFO: std::sync::OnceLock<(String, u32)> = std::sync::OnceLock::new();
+    let (cpu_model, cpu_cores) = CPU_INFO.get_or_init(|| {
+        let output = std::process::Command::new("lscpu")
+            .output().ok()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
-        let model = lscpu.lines()
+        let model = output.lines()
             .find(|l| l.contains("Model name"))
             .and_then(|l| l.split(':').nth(1))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
-        let cores = lscpu.lines()
+        let cores = output.lines()
             .find(|l| l.contains("CPU(s)"))
             .and_then(|l| {
                 let rest = l.split(':').nth(1).unwrap_or("").trim();
@@ -261,7 +262,7 @@ pub async fn fetch_hardware_state() -> HardwareState {
             })
             .unwrap_or(0);
         (model, cores)
-    };
+    }).clone();
 
     let cpu_usage = {
         let read_stat = || -> Option<(u64, u64)> {
@@ -283,19 +284,23 @@ pub async fn fetch_hardware_state() -> HardwareState {
         } else { 0.0 }
     } as f32;
 
-    let mut gpus = Vec::new();
-    if let Some(o) = tokio::process::Command::new("lspci").output().await.ok() {
-        for line in String::from_utf8_lossy(&o.stdout).lines() {
-            if line.contains("VGA") || line.contains("3D") {
-                if let Some(name) = line.split(':').nth(2) {
-                    let trimmed = name.trim().to_string();
-                    if !trimmed.is_empty() {
-                        gpus.push(trimmed);
+    static GPUS_INFO: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let gpus = GPUS_INFO.get_or_init(|| {
+        let mut list = Vec::new();
+        if let Some(o) = std::process::Command::new("lspci").output().ok() {
+            for line in String::from_utf8_lossy(&o.stdout).lines() {
+                if line.contains("VGA") || line.contains("3D") {
+                    if let Some(name) = line.split(':').nth(2) {
+                        let trimmed = name.trim().to_string();
+                        if !trimmed.is_empty() {
+                            list.push(trimmed);
+                        }
                     }
                 }
             }
         }
-    }
+        list
+    }).clone();
 
     let processes = {
         let mut list = Vec::new();
@@ -373,7 +378,7 @@ const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 const ORANGE: [f32; 4] = [1.0, 0.73, 0.20, 1.0];
 
-pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
@@ -386,15 +391,15 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             sec.spacing(10.0);
         } else {
             // CPU Info Label
-            sec.widget(&mut state.cpu_label, 12.0, sec.cw - 24.0, 26.0);
+            sec.widget(&mut state.cpu_label, 12.0, sec.cw - 24.0, 26.0, ctx);
             sec.spacing(12.0);
 
             // CPU Usage Label
-            sec.widget(&mut state.cpu_usage_label, 12.0, sec.cw - 24.0, 26.0);
+            sec.widget(&mut state.cpu_usage_label, 12.0, sec.cw - 24.0, 26.0, ctx);
             sec.spacing(12.0);
 
             // CPU Temp Label
-            sec.widget(&mut state.cpu_temp_label, 12.0, sec.cw - 24.0, 26.0);
+            sec.widget(&mut state.cpu_temp_label, 12.0, sec.cw - 24.0, 26.0, ctx);
             sec.spacing(12.0);
 
             // Scrolling box configuration for process list
@@ -404,7 +409,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             let list_box_h = 220.0;
             
             // Render the standardized ScrollBox widget
-            render_widget(sec.pc, &mut state.cpu_list_box, list_box_x, list_box_y, list_box_w, list_box_h);
+            render_widget(sec.pc, &mut state.cpu_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
             // Header for process list columns (drawn static on top of the ScrollBox background)
             let header_h = 22.0;
@@ -457,7 +462,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
         } else {
             for (i, gpu_lbl) in state.gpu_labels.iter_mut().enumerate() {
                 if i > 0 { sec_gpu.spacing(12.0); }
-                sec_gpu.widget(gpu_lbl, 12.0, sec_gpu.cw - 24.0, 26.0);
+                sec_gpu.widget(gpu_lbl, 12.0, sec_gpu.cw - 24.0, 26.0, ctx);
             }
         }
     });
@@ -504,6 +509,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
 
             let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
             sec_bat.text(ac_str, 12.0, 0.0, 14.0, TEXT_FG);
+            sec_bat.spacing(20.0);
         }
     });
 
@@ -514,7 +520,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             sec_gov.text("Loading CPU governor...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec_gov.spacing(18.0);
         } else {
-            sec_gov.widget(&mut state.cpu_gov_menu, 12.0, sec_gov.cw - 24.0, 26.0);
+            sec_gov.widget(&mut state.cpu_gov_menu, 12.0, sec_gov.cw - 24.0, 26.0, ctx);
             sec_gov.spacing(12.0);
 
             let (info_title, info_lines) = if state.cpu_powersave {
@@ -538,7 +544,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             let mut info_box = InfoBox::new(info_title, info_lines);
             let info_h = 80.0;
             let info_y = sec_gov.ay();
-            render_widget(sec_gov.pc, &mut info_box, rx + 12.0, info_y, sec_gov.cw - 24.0, info_h);
+            render_widget(sec_gov.pc, &mut info_box, rx + 12.0, info_y, sec_gov.cw - 24.0, info_h, ctx);
             sec_gov.spacing(info_h + 12.0);
         }
     });
@@ -550,7 +556,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             sec_gpow.text("Loading GPU power status...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec_gpow.spacing(18.0);
         } else {
-            sec_gpow.widget(&mut state.gpu_gov_menu, 12.0, sec_gpow.cw - 24.0, 26.0);
+            sec_gpow.widget(&mut state.gpu_gov_menu, 12.0, sec_gpow.cw - 24.0, 26.0, ctx);
             sec_gpow.spacing(12.0);
 
             let (info_title, info_lines) = if state.gpu_powersave {
@@ -574,7 +580,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             let mut info_box = InfoBox::new(info_title, info_lines);
             let info_h = 80.0;
             let info_y = sec_gpow.ay();
-            render_widget(sec_gpow.pc, &mut info_box, rx + 12.0, info_y, sec_gpow.cw - 24.0, info_h);
+            render_widget(sec_gpow.pc, &mut info_box, rx + 12.0, info_y, sec_gpow.cw - 24.0, info_h, ctx);
             sec_gpow.spacing(info_h + 12.0);
         }
     });

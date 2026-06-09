@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Element};
+use clear_ui::widget::{Spinbox, Slider, Element};
 
 #[derive(Debug, Clone)]
 pub struct AudioSink {
@@ -27,6 +27,8 @@ pub struct AudioState {
     pub sources: Vec<AudioSource>,
     pub sink_spinboxes: Vec<Spinbox>,
     pub source_spinboxes: Vec<Spinbox>,
+    pub sink_sliders: Vec<Slider>,
+    pub source_sliders: Vec<Slider>,
 }
 
 #[derive(Debug, Clone)]
@@ -118,7 +120,15 @@ pub async fn fetch_audio_state() -> AudioState {
     let connected = drm_connected_ports();
     let sinks = fetch_sinks(&connected).await;
     let sources = fetch_sources(&connected).await;
-    AudioState { loaded: true, sinks, sources, sink_spinboxes: Vec::new(), source_spinboxes: Vec::new() }
+    AudioState {
+        loaded: true,
+        sinks,
+        sources,
+        sink_spinboxes: Vec::new(),
+        source_spinboxes: Vec::new(),
+        sink_sliders: Vec::new(),
+        source_sliders: Vec::new(),
+    }
 }
 
 async fn fetch_sinks(connected_ports: &[String]) -> Vec<AudioSink> {
@@ -207,7 +217,7 @@ const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 
-pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
@@ -224,30 +234,32 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 
         if state.loaded {
             for (idx, sink) in state.sinks.iter().enumerate() {
-                let label = if !sink.active {
-                    format!("{}  (inactive)", sink.name)
-                } else if sink.muted {
-                    format!("{}  {:.0}%  (muted)", sink.name, sink.volume * 100.0)
+                if !sink.active {
+                    let label = format!("{}  (inactive)", sink.name);
+                    let lc = if sink.muted { RED } else { TEXT_FG };
+                    sec.text(&label, 14.0, 0.0, 13.0, lc);
+                    sec.spacing(18.0);
                 } else {
-                    format!("{}  {:.0}%", sink.name, sink.volume * 100.0)
-                };
-                let lc = if sink.muted { RED } else { TEXT_FG };
-                sec.text(&label, 14.0, 0.0, 13.0, lc);
-                sec.spacing(18.0);
+                    let label = if sink.muted {
+                        format!("{}  {:.0}%  (muted)", sink.name, sink.volume * 100.0)
+                    } else {
+                        format!("{}  {:.0}%", sink.name, sink.volume * 100.0)
+                    };
+                    state.sink_sliders[idx].set_label(&label);
 
-                if sink.active {
                     let bar_w = sec_w - 100.0;
                     let bar_x = 14.0;
                     let yt = sec.ay();
-                    let usage_bar_x = sec.ax(bar_x);
-                    let mut usage_bar = clear_ui::widget::UsageBar::new(sink.volume)
-                        .with_colors(FILL_BAR, BLANK_BAR);
-                    render_widget(sec.pc, &mut usage_bar, usage_bar_x, yt, bar_w, 8.0);
-                    sec.text(&format!("{:.0}%", sink.volume * 100.0), bar_x + bar_w + 8.0, -2.0, 11.0, TEXT_DIM);
+                    state.sink_sliders[idx].set_value(sink.volume);
+                    let slider_x = sec.ax(bar_x);
+                    
+                                        let label_h = clear_ui::widget::label_offset(&state.sink_sliders[idx]);
+                    let slider_h = clear_ui::layout::slider_height() + label_h;
+                    render_widget(sec.pc, &mut state.sink_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
 
-                    let row_y = sec.ay() + 12.0;
+                    let row_y = sec.ay() + slider_h + 8.0;
                     let sb_w = 100.0;
-                    let sb_h = 26.0;
+                    let sb_h = clear_ui::layout::spinbox_height();
                     let mute_w = 60.0;
                     let gap = 8.0;
 
@@ -255,7 +267,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                     state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
                     state.sink_spinboxes[idx].set_row_rect(row_rect_x, sec_w - 16.0);
                     let sb_x = sec.ax(bar_x);
-                    render_widget(sec.pc, &mut state.sink_spinboxes[idx], sb_x, row_y, sb_w, sb_h);
+                    render_widget(sec.pc, &mut state.sink_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
 
                     let mute_label = if sink.muted { "Unmute" } else { "Mute" };
                     let mute_col = if sink.muted { MUTED_BG } else { BTN_INACTIVE };
@@ -264,9 +276,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         mute_col, BTN_HOVER, WHITE,
                         AppAction::Audio(AudioMessage::SinkMute(sink.id)));
 
-                    sec.content_y += 12.0 + sb_h + 6.0;
-                } else {
-                    sec.content_y += 6.0;
+                    sec.content_y += slider_h + 8.0 + sb_h + 6.0;
                 }
             }
         }
@@ -284,30 +294,32 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 
         if state.loaded {
             for (idx, src) in state.sources.iter().enumerate() {
-                let label = if !src.active {
-                    format!("{}  (inactive)", src.name)
-                } else if src.muted {
-                    format!("{}  {:.0}%  (muted)", src.name, src.volume * 100.0)
+                if !src.active {
+                    let label = format!("{}  (inactive)", src.name);
+                    let lc = if src.muted { RED } else { TEXT_FG };
+                    sec.text(&label, 14.0, 0.0, 13.0, lc);
+                    sec.spacing(18.0);
                 } else {
-                    format!("{}  {:.0}%", src.name, src.volume * 100.0)
-                };
-                let lc = if src.muted { RED } else { TEXT_FG };
-                sec.text(&label, 14.0, 0.0, 13.0, lc);
-                sec.spacing(18.0);
+                    let label = if src.muted {
+                        format!("{}  {:.0}%  (muted)", src.name, src.volume * 100.0)
+                    } else {
+                        format!("{}  {:.0}%", src.name, src.volume * 100.0)
+                    };
+                    state.source_sliders[idx].set_label(&label);
 
-                if src.active {
                     let bar_w = sec_w - 100.0;
                     let bar_x = 14.0;
                     let yt = sec.ay();
-                    let usage_bar_x = sec.ax(bar_x);
-                    let mut usage_bar = clear_ui::widget::UsageBar::new(src.volume)
-                        .with_colors(FILL_BAR, BLANK_BAR);
-                    render_widget(sec.pc, &mut usage_bar, usage_bar_x, yt, bar_w, 8.0);
-                    sec.text(&format!("{:.0}%", src.volume * 100.0), bar_x + bar_w + 8.0, -2.0, 11.0, TEXT_DIM);
+                    state.source_sliders[idx].set_value(src.volume);
+                    let slider_x = sec.ax(bar_x);
+                    
+                                        let label_h = clear_ui::widget::label_offset(&state.source_sliders[idx]);
+                    let slider_h = clear_ui::layout::slider_height() + label_h;
+                    render_widget(sec.pc, &mut state.source_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
 
-                    let row_y = sec.ay() + 12.0;
+                    let row_y = sec.ay() + slider_h + 8.0;
                     let sb_w = 100.0;
-                    let sb_h = 26.0;
+                    let sb_h = clear_ui::layout::spinbox_height();
                     let mute_w = 60.0;
                     let gap = 8.0;
 
@@ -315,7 +327,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                     state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
                     state.source_spinboxes[idx].set_row_rect(row_rect_x, sec_w - 16.0);
                     let sb_x = sec.ax(bar_x);
-                    render_widget(sec.pc, &mut state.source_spinboxes[idx], sb_x, row_y, sb_w, sb_h);
+                    render_widget(sec.pc, &mut state.source_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
 
                     let mute_label = if src.muted { "Unmute" } else { "Mute" };
                     let mute_col = if src.muted { MUTED_BG } else { BTN_INACTIVE };
@@ -324,9 +336,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         mute_col, BTN_HOVER, WHITE,
                         AppAction::Audio(AudioMessage::SourceMute(src.id)));
 
-                    sec.content_y += 12.0 + sb_h + 6.0;
-                } else {
-                    sec.content_y += 6.0;
+                    sec.content_y += slider_h + 8.0 + sb_h + 6.0;
                 }
             }
         }
@@ -342,6 +352,8 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
             *state = new;
             state.sink_spinboxes.resize_with(state.sinks.len(), || Spinbox::new(50, 0, 100, 1));
             state.source_spinboxes.resize_with(state.sources.len(), || Spinbox::new(50, 0, 100, 1));
+            state.sink_sliders.resize_with(state.sinks.len(), || Slider::new().with_range(0.0, 1.0).with_scroll(true));
+            state.source_sliders.resize_with(state.sources.len(), || Slider::new().with_range(0.0, 1.0).with_scroll(true));
         }
         AudioMessage::SinkVolume(id, vol) => {
             if let Some(sink) = state.sinks.iter_mut().find(|s| s.id == id) {
@@ -378,8 +390,8 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = AudioState::default();
-        let mut layout = GridLayout::new(320.0, 20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout);
+        let mut layout = GridLayout::new(260.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut clear_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

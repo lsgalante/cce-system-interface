@@ -11,6 +11,7 @@ use crate::pages::storage;
 use crate::pages::services;
 use crate::pages::interface;
 use crate::pages::accounts;
+use crate::pages::packages;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -26,6 +27,7 @@ pub struct AppState {
     pub services: services::ServicesState,
     pub interface: interface::InterfaceState,
     pub accounts: accounts::AccountsState,
+    pub packages: packages::PackagesState,
 }
 
 impl Default for AppState {
@@ -43,6 +45,7 @@ impl Default for AppState {
             services: services::ServicesState::default(),
             interface: interface::InterfaceState::default(),
             accounts: accounts::AccountsState::default_mock(),
+            packages: packages::PackagesState::default(),
         }
     }
 }
@@ -60,6 +63,7 @@ pub enum AppAction {
     Services(services::ServicesMessage),
     Interface(interface::InterfaceMessage),
     Accounts(accounts::AccountsMessage),
+    Packages(packages::PackagesMessage),
 }
 
 
@@ -161,17 +165,6 @@ impl<'a> SectionContextExt for clear_ui::layout::SectionContext<'a, PageContent>
     }
 }
 
-impl<'a> SectionContextExt for clear_ui::layout::SubsectionContext<'a, PageContent> {
-    fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
-        self.pc.button(label, x, y, w, h, bg, hover_bg, label_color, action);
-        self.content_y = self.content_y.max(y + h);
-    }
-    
-    fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
-        self.pc.button_left(label, x, y, w, h, bg, hover_bg, label_color, action);
-        self.content_y = self.content_y.max(y + h);
-    }
-}
 
 
 

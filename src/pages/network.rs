@@ -244,7 +244,7 @@ const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
 const ACT_BTN: [f32; 4] = [0.16, 0.29, 0.18, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
@@ -300,7 +300,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 let list_box_w = sec_w - 24.0;
                 let list_box_h = 160.0;
 
-                render_widget(sec.pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h);
+                render_widget(sec.pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
                 state.wifi_list_box.update_bounds(state.available.len(), list_box_y, list_box_h);
 
@@ -471,7 +471,7 @@ mod tests {
     fn test_view_layout_grid() {
         let mut state = NetworkState::default();
         let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut clear_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 }

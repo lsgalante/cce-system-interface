@@ -5,7 +5,7 @@ build:
 
 install: build
 	mkdir -p ~/.local/bin
-	install -m 755 target/release/clear-system-interface ~/.local/bin/clear-system-interface
+	install -m 755 target/release/cce-system-interface ~/.local/bin/cce-system-interface
 
 run:
 	cargo run

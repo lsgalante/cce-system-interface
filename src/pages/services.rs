@@ -75,7 +75,6 @@ pub struct ServicesState {
     pub status_underline: bool,
     pub status_running: bool,
     pub status_label: Label,
-    pub status_size_label: Label,
     pub status_separators_toggle: Toggle,
     pub status_underline_toggle: Toggle,
     pub status_padding_spinbox: Spinbox,
@@ -112,7 +111,6 @@ impl Default for ServicesState {
             status_underline: true,
             status_running: false,
             status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-            status_size_label: Label::new("Font size: 11px").with_font_size(13.0).with_color([212, 212, 212]),
             status_separators_toggle: Toggle::new().with_label("Show Separators"),
             status_underline_toggle: Toggle::new().with_label("Show Underline"),
             status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Side Padding").with_unit("px"),
@@ -136,8 +134,6 @@ pub enum ServicesMessage {
 
     // Status Interface variants
     StatusRefreshed(StatusData),
-    StatusFontSizeUp,
-    StatusFontSizeDown,
     StatusToggleSeparators,
     StatusToggleUnderline,
     StatusReload,
@@ -224,12 +220,13 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
     builder.add_section(&mut final_pc, "Services", sec_focused.first().copied().unwrap_or(false), |sec| {
+        let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(18.0);
@@ -286,6 +283,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 search_y,
                 search_w,
                 search_h,
+                ctx,
             );
             sec.content_y += search_h + 16.0;
 
@@ -295,7 +293,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             let list_box_w = sec_w - 24.0;
             let list_box_h = 360.0;
             
-            clear_ui::layout::render_widget(sec.pc, &mut state.list_box, list_box_x, list_box_y, list_box_w, list_box_h);
+            clear_ui::layout::render_widget(sec.pc, &mut state.list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
             // Filter services
             let query = if state.search_box.editing {
@@ -352,7 +350,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     let item_btn = &mut state.service_items[idx];
                     item_btn.title = service.name.clone();
                     item_btn.subtitle = Some(desc_truncated);
-                    clear_ui::layout::render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h);
+                    clear_ui::layout::render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
 
                     // Render StatusDot
                     let status_dot_state = if service.active_state == "failed" {
@@ -363,7 +361,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                         DotStatus::Inactive
                     };
                     let mut dot = StatusDot::new(status_dot_state);
-                    clear_ui::layout::render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0);
+                    clear_ui::layout::render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
                     let disabled_txt = [0.40, 0.40, 0.45, 1.0];
@@ -423,27 +421,25 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
     // ── System Notifications ──
     builder.add_section(&mut final_pc, "System Notifications", sec_focused.get(1).copied().unwrap_or(false), |sec2| {
-        let toggle_w = 48.0;
-        let toggle_h = 42.0;
+        let sec_w = sec2.cw;
         state.notifications_enable_toggle.set_toggled(state.notifications_enable);
-        sec2.widget(&mut state.notifications_enable_toggle, 14.0, toggle_w, toggle_h);
+        sec2.widget_full(&mut state.notifications_enable_toggle, clear_ui::layout::toggle_height(), ctx);
         sec2.spacing(8.0);
 
         state.notifications_bell_toggle.set_toggled(state.notifications_bell);
-        sec2.widget(&mut state.notifications_bell_toggle, 14.0, toggle_w, toggle_h);
+        sec2.widget_full(&mut state.notifications_bell_toggle, clear_ui::layout::toggle_height(), ctx);
         sec2.spacing(16.0);
 
         state.notifications_duration_spinbox.value = state.notifications_duration;
         state.notifications_duration_spinbox.set_label("Notification Duration");
-        sec2.widget(&mut state.notifications_duration_spinbox, 14.0, 200.0, 44.0);
+        sec2.widget(&mut state.notifications_duration_spinbox, 14.0, sec_w - 28.0, 44.0, ctx);
         sec2.spacing(16.0);
 
         // Opacity Slider (Transparency, moved here)
         state.notifications_opacity_slider.set_value(state.notifications_opacity);
-        sec2.widget(&mut state.notifications_opacity_slider, 14.0, 300.0, 38.0);
+        sec2.widget(&mut state.notifications_opacity_slider, 14.0, sec_w - 28.0, 38.0, ctx);
         sec2.spacing(16.0);
 
-        let btn_w = 160.0;
         let btn_h = 32.0;
         let btn_y = sec2.ay();
         let white_color = [1.0, 1.0, 1.0, 1.0];
@@ -451,12 +447,12 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         let btn_hover = [0.28, 0.50, 0.78, 1.0];
         
         let cols = sec2.row_layout(1, 0.0);
-        if let Some(&(x, _)) = cols.first() {
+        if let Some(&(x, w)) = cols.first() {
             sec2.button(
                 "Send Test Notification",
                 x,
                 btn_y,
-                btn_w,
+                w,
                 btn_h,
                 btn_bg,
                 btn_hover,
@@ -469,6 +465,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
     // ── Status Interface ──
     builder.add_section(&mut final_pc, "Status Interface", sec_focused.get(2).copied().unwrap_or(false), |sec3| {
+        let sec_w = sec3.cw;
         if !state.status_loaded {
             sec3.text("Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec3.spacing(18.0);
@@ -478,68 +475,30 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             let status_color = if state.status_running { [92, 143, 97] } else { [170, 51, 51] };
             state.status_label.set_text(status_text);
             state.status_label.set_color(status_color);
-            sec3.widget(&mut state.status_label, 12.0, sec_w - 24.0, 20.0);
+            sec3.widget(&mut state.status_label, 12.0, sec_w - 24.0, 20.0, ctx);
             sec3.spacing(12.0);
 
-            // Font size
-            state.status_size_label.set_text(&format!("Font size: {}px", state.status_font_size));
-            sec3.widget(&mut state.status_size_label, 12.0, sec_w - 24.0, 20.0);
-            sec3.spacing(12.0);
-
-            let btn_h = 28.0;
-            let yt = sec3.ay();
-            let ax1 = sec3.ax(12.0);
-            let ax2 = sec3.ax(56.0);
-            let ax3 = sec3.ax(12.0 + 36.0 + 8.0);
-            let text_color = [0.83, 0.83, 0.83, 1.0];
-            
-            sec3.button(
-                "-1",
-                ax1,
-                yt,
-                36.0,
-                btn_h,
-                [0.13, 0.18, 0.14, 1.0],
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Services(ServicesMessage::StatusFontSizeDown),
-            );
-            
-            sec3.pc.text(&format!(" {}px ", state.status_font_size), ax2, yt + 7.0, 13.0, text_color);
-            
-            sec3.button(
-                "+1",
-                ax3,
-                yt,
-                36.0,
-                btn_h,
-                [0.20, 0.40, 0.22, 1.0],
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Services(ServicesMessage::StatusFontSizeUp),
-            );
-            sec3.spacing(16.0);
+            sec3.spacing(4.0);
 
             // Separators toggle
             state.status_separators_toggle.set_toggled(state.status_separators);
-            sec3.widget(&mut state.status_separators_toggle, 12.0, 48.0, 42.0);
+            sec3.widget_full(&mut state.status_separators_toggle, clear_ui::layout::toggle_height(), ctx);
             sec3.spacing(16.0);
 
             // Underline toggle
             state.status_underline_toggle.set_toggled(state.status_underline);
-            sec3.widget(&mut state.status_underline_toggle, 12.0, 48.0, 42.0);
+            sec3.widget_full(&mut state.status_underline_toggle, clear_ui::layout::toggle_height(), ctx);
             sec3.spacing(16.0);
 
             // Padding spinbox
             state.status_padding_spinbox.value = state.status_padding as i32;
-            sec3.widget(&mut state.status_padding_spinbox, 12.0, 200.0, 44.0);
+            sec3.widget(&mut state.status_padding_spinbox, 12.0, sec_w - 24.0, 44.0, ctx);
             sec3.spacing(16.0);
 
             // Reload button
             let yt_reload = sec3.ay();
-            let btn_w = (sec_w - 24.0).min(200.0);
-            let rx = sec3.left;
-            let button_x = rx + sec_w / 2.0 - btn_w / 2.0;
+            let btn_w = sec_w - 24.0;
+            let button_x = sec3.left + 12.0;
             sec3.button(
                 "Reload Status Interface",
                 button_x,
@@ -609,7 +568,7 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
             send_ipc_command("reload");
         }
         ServicesMessage::SendTestNotification => {
-            send_ipc_command("notify \"ccec\" \"System notifications are working correctly!\"");
+            send_ipc_command("notify \"cce-client\" \"System notifications are working correctly!\"");
         }
         ServicesMessage::NotificationsRefreshed(new) => {
             state.notifications_loaded = true;
@@ -620,7 +579,6 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
         }
         ServicesMessage::StatusRefreshed(new) => {
             let was_status_hovered = state.status_label.hovered();
-            let was_size_hovered = state.status_size_label.hovered();
             let was_separators_hovered = state.status_separators_toggle.hovered();
             let was_underline_hovered = state.status_underline_toggle.hovered();
 
@@ -632,24 +590,10 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
             state.status_running = new.running;
 
             state.status_label.set_hovered(was_status_hovered);
-            state.status_size_label.set_hovered(was_size_hovered);
             state.status_separators_toggle.set_hovered(was_separators_hovered);
             state.status_underline_toggle.set_hovered(was_underline_hovered);
         }
-        ServicesMessage::StatusFontSizeUp => {
-            if state.status_font_size < 28 {
-                state.status_font_size += 1;
-                write_status_font_size(state.status_font_size);
-                status_interface_reload();
-            }
-        }
-        ServicesMessage::StatusFontSizeDown => {
-            if state.status_font_size > 8 {
-                state.status_font_size -= 1;
-                write_status_font_size(state.status_font_size);
-                status_interface_reload();
-            }
-        }
+
         ServicesMessage::StatusToggleSeparators => {
             state.status_separators = !state.status_separators;
             write_status_separators(state.status_separators);
@@ -673,12 +617,12 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
 
 // ── Notifications Configuration Reader & Writer ──
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/ccec-{}.sock", display),
-        Err(_) => "/tmp/ccec.sock".to_string(),
+        Ok(display) => format!("/tmp/cce-client-{}.sock", display),
+        Err(_) => "/tmp/cce-client.sock".to_string(),
     }
 }
 
@@ -934,12 +878,12 @@ fn get_config_path() -> String {
             if let Some(path) = p.borrow().as_ref() {
                 return path.clone();
             }
-            "/home/lsgalante/.config/ccec/config.toml".to_string()
+            "/home/lsgalante/.config/cce/config.toml".to_string()
         })
     }
     #[cfg(not(test))]
     {
-        "/home/lsgalante/.config/ccec/config.toml".to_string()
+        "/home/lsgalante/.config/cce/config.toml".to_string()
     }
 }
 
@@ -952,9 +896,6 @@ fn read_status_font_size() -> Option<u16> {
     Some(parse_u16_from(&content, "status_font_size", 11))
 }
 
-fn write_status_font_size(size: u16) {
-    write_status_value("status_font_size", &size.to_string());
-}
 
 fn read_status_padding() -> Option<u16> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
@@ -1003,15 +944,15 @@ fn write_status_underline(val: bool) {
 
 fn status_interface_reload() {
     let _ = std::process::Command::new("pkill")
-        .args(["-f", "clear-status-interface"])
+        .args(["-f", "cce-status-interface"])
         .status();
     std::thread::sleep(std::time::Duration::from_millis(150));
-    send_ipc_command("spawn clear-status-interface");
+    send_ipc_command("spawn cce-status-interface");
 }
 
 pub async fn fetch_status_state() -> StatusData {
     let running = tokio::process::Command::new("pgrep")
-        .args(["-f", "clear-status-interface"]).output().await.ok()
+        .args(["-f", "cce-status-interface"]).output().await.ok()
         .map(|o| !o.stdout.is_empty())
         .unwrap_or(false);
 
@@ -1038,7 +979,8 @@ mod tests {
         let mut state = ServicesState::default();
         let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
         let sec_focused = vec![false, false];
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &sec_focused, &mut layout);
+        let mut ctx = clear_ui::context::UiContext::new();
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &sec_focused, &mut layout, &mut ctx);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 

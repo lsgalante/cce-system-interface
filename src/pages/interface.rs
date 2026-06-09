@@ -3,15 +3,15 @@ use std::io::Write;
 use crate::app::PageContent;
 use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{
-    ColorSelector, Spinbox, Element, ScrollingList, Dropdown, TextBox, Button, InfoBox, FontPreview, InteractiveListItem
+    ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle, Slider
 };
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/ccec-{}.sock", display),
-        Err(_) => "/tmp/ccec.sock".to_string(),
+        Ok(display) => format!("/tmp/cce-client-{}.sock", display),
+        Err(_) => "/tmp/cce-client.sock".to_string(),
     }
 }
 
@@ -40,6 +40,38 @@ pub struct InterfaceState {
     pub paginator_tab_padding_y: u16,
     pub tab_padding_spinbox_x: Spinbox,
     pub tab_padding_spinbox_y: Spinbox,
+    pub section_padding: u16,
+    pub section_padding_spinbox: Spinbox,
+    pub plate_padding: u16,
+    pub plate_padding_spinbox: Spinbox,
+    pub page_margin: u16,
+    pub page_margin_spinbox: Spinbox,
+    pub grid_min_col_width: u16,
+    pub grid_min_col_width_spinbox: Spinbox,
+    pub spinbox_height: u16,
+    pub spinbox_height_spinbox: Spinbox,
+    pub toggle_height: u16,
+    pub toggle_height_spinbox: Spinbox,
+    pub color_selector_height: u16,
+    pub color_selector_height_spinbox: Spinbox,
+    pub color_selector_preview_corner_radius: u16,
+    pub color_selector_preview_corner_radius_spinbox: Spinbox,
+    pub color_selector_preview_margin: u16,
+    pub color_selector_preview_margin_spinbox: Spinbox,
+    pub textbox_height: u16,
+    pub textbox_height_spinbox: Spinbox,
+    pub slider_height: u16,
+    pub slider_height_spinbox: Spinbox,
+    pub font_selector_height: u16,
+    pub font_selector_height_spinbox: Spinbox,
+    pub dropdown_height: u16,
+    pub dropdown_height_spinbox: Spinbox,
+    pub nested_section_label_alignment: u8,
+    pub label_alignment_menu: Dropdown,
+    pub nested_section_label_offset: i16,
+    pub label_offset_spinbox: Spinbox,
+    pub label_margin: u16,
+    pub label_margin_spinbox: Spinbox,
     // Typeface state fields
     pub typeface_loaded: bool,
     pub sans_serif: String,
@@ -59,22 +91,31 @@ pub struct InterfaceState {
     pub status_box: TextBox,
     pub fuzzel_box: TextBox,
     pub terminal_box: TextBox,
-    pub paginator_box: TextBox,
-    pub search_box: TextBox,
-    pub selected_font: Option<String>,
-    pub list_box: ScrollingList,
     pub borders_menu: Dropdown,
     pub status_menu: Dropdown,
     pub fuzzel_menu: Dropdown,
     pub terminal_menu: Dropdown,
-    pub paginator_menu: Dropdown,
     pub borders_size_box: Spinbox,
     pub status_size_box: Spinbox,
     pub fuzzel_size_box: Spinbox,
     pub terminal_size_box: Spinbox,
-    pub paginator_size_box: Spinbox,
-    pub font_buttons: Vec<InteractiveListItem>,
-    pub copy_buttons: Vec<Button>,
+    pub color_selector_font: String,
+    pub color_selector_font_selector: FontSelector,
+    pub menubar_font: String,
+    pub menubar_font_selector: FontSelector,
+    pub section_label_font: String,
+    pub section_label_font_selector: FontSelector,
+    pub nested_section_label_font: String,
+    pub nested_section_label_font_selector: FontSelector,
+    // Graph configuration fields
+    pub graph_show_grid: bool,
+    pub graph_show_grid_toggle: Toggle,
+    pub graph_snap_enabled: bool,
+    pub graph_snap_enabled_toggle: Toggle,
+    pub graph_uniform_background: bool,
+    pub graph_uniform_background_toggle: Toggle,
+    pub graph_network_opacity: f32,
+    pub graph_network_opacity_slider: Slider,
 }
 
 impl Default for InterfaceState {
@@ -95,7 +136,7 @@ impl Default for InterfaceState {
             toggle_enabled_color: [104, 217, 165],
             toggle_disabled_color: [135, 135, 148],
             color_selectors: vec![
-                ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Pages - Low Color
+                ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Plate - Low Color
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
                 ColorSelector::new([0xff, 0x8c, 0x00]).with_label("Visual Guides"), // 2: Layout - Visual Guides
                 ColorSelector::new([0x55, 0x55, 0x55]).with_label("Disabled"), // 3: Status - Disabled
@@ -118,6 +159,41 @@ impl Default for InterfaceState {
             paginator_tab_padding_y: 14,
             tab_padding_spinbox_x: Spinbox::new(10, 0, 100, 1).with_label("Tab Padding X").with_unit("px"),
             tab_padding_spinbox_y: Spinbox::new(14, 0, 100, 1).with_label("Tab Padding Y").with_unit("px"),
+            section_padding: 8,
+            section_padding_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Padding").with_unit("px"),
+            plate_padding: 20,
+            plate_padding_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Padding").with_unit("px"),
+            page_margin: 20,
+            page_margin_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Page Margin").with_unit("px"),
+            grid_min_col_width: 260,
+            grid_min_col_width_spinbox: Spinbox::new(260, 100, 1000, 10).with_label("Minimum Width").with_unit("px"),
+            spinbox_height: 26,
+            spinbox_height_spinbox: Spinbox::new(26, 10, 100, 1).with_label("Height").with_unit("px"),
+            toggle_height: 44,
+            toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            color_selector_height: 22,
+            color_selector_height_spinbox: Spinbox::new(22, 10, 100, 1).with_label("Height").with_unit("px"),
+            color_selector_preview_corner_radius: 4,
+            color_selector_preview_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Preview Corner Radius").with_unit("px"),
+            color_selector_preview_margin: 0,
+            color_selector_preview_margin_spinbox: Spinbox::new(0, 0, 20, 1).with_label("Preview Margin").with_unit("px"),
+            textbox_height: 44,
+            textbox_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            slider_height: 28,
+            slider_height_spinbox: Spinbox::new(28, 10, 100, 1).with_label("Height").with_unit("px"),
+            font_selector_height: 44,
+            font_selector_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            dropdown_height: 44,
+            dropdown_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            nested_section_label_alignment: 0,
+            label_alignment_menu: Dropdown::new(
+                vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
+                0,
+            ).with_label("Label Alignment"),
+            nested_section_label_offset: 0,
+            label_offset_spinbox: Spinbox::new(0, -100, 100, 1).with_label("Label Offset").with_unit("px"),
+            label_margin: 6,
+            label_margin_spinbox: Spinbox::new(6, 0, 100, 1).with_label("Label Margin").with_unit("px"),
             typeface_loaded: false,
             sans_serif: String::new(),
             serif: String::new(),
@@ -136,22 +212,30 @@ impl Default for InterfaceState {
             status_box: TextBox::default(),
             fuzzel_box: TextBox::default(),
             terminal_box: TextBox::default(),
-            paginator_box: TextBox::default(),
-            search_box: TextBox::default(),
-            selected_font: None,
-            list_box: ScrollingList::new(24.0, 4.0),
             borders_menu: Dropdown::default(),
             status_menu: Dropdown::default(),
             fuzzel_menu: Dropdown::default(),
             terminal_menu: Dropdown::default(),
-            paginator_menu: Dropdown::default(),
             borders_size_box: Spinbox::new(11, 6, 72, 1),
             status_size_box: Spinbox::new(11, 6, 72, 1),
             fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
             terminal_size_box: Spinbox::new(12, 6, 72, 1),
-            paginator_size_box: Spinbox::new(12, 6, 72, 1),
-            font_buttons: Vec::new(),
-            copy_buttons: Vec::new(),
+            color_selector_font: "monospace".to_string(),
+            color_selector_font_selector: FontSelector::new("monospace".to_string()).with_label("Value"),
+            menubar_font: "Outfit".to_string(),
+            menubar_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font"),
+            section_label_font: "Outfit".to_string(),
+            section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
+            nested_section_label_font: "Outfit".to_string(),
+            nested_section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
+            graph_show_grid: true,
+            graph_show_grid_toggle: Toggle::new().with_label("Show Grid"),
+            graph_snap_enabled: true,
+            graph_snap_enabled_toggle: Toggle::new().with_label("Grid Snapping"),
+            graph_uniform_background: false,
+            graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
+            graph_network_opacity: 0.95,
+            graph_network_opacity_slider: Slider::new().with_label("Network Opacity").with_value(0.95),
         }
     }
 }
@@ -176,6 +260,30 @@ pub enum InterfaceMessage {
     SetTabMarginY(u16),
     SetTabPaddingX(u16),
     SetTabPaddingY(u16),
+    SetSectionPadding(u16),
+    SetPlatePadding(u16),
+    SetPageMargin(u16),
+    SetGridMinColWidth(u16),
+    SetSpinboxHeight(u16),
+    SetToggleHeight(u16),
+    SetColorSelectorHeight(u16),
+    SetColorSelectorPreviewCornerRadius(u16),
+    SetColorSelectorPreviewMargin(u16),
+    SetTextboxHeight(u16),
+    SetSliderHeight(u16),
+    SetFontSelectorHeight(u16),
+    SetDropdownHeight(u16),
+    SetColorSelectorFont(String),
+    SetMenubarFont(String),
+    SetSectionLabelFont(String),
+    SetNestedSectionLabelFont(String),
+    SetNestedSectionLabelAlignment(usize),
+    SetNestedSectionLabelOffset(i16),
+    SetLabelMargin(u16),
+    SetGraphShowGrid(bool),
+    SetGraphSnapEnabled(bool),
+    SetGraphUniformBackground(bool),
+    SetGraphOpacity(f32),
     PickLowColor,
     PickHighColor,
     PickDisabledColor,
@@ -199,20 +307,14 @@ pub enum InterfaceMessage {
     SetStatus(String),
     SetFuzzel(String),
     SetTerminal(String),
-    SetPaginator(String),
-    SetSearch(String),
-    SelectFont(String),
-    CopyFontName(String),
     SetBordersMenu(usize),
     SetStatusMenu(usize),
     SetFuzzelMenu(usize),
     SetTerminalMenu(usize),
-    SetPaginatorMenu(usize),
     SetBordersSize(i32),
     SetStatusSize(i32),
     SetFuzzelSize(i32),
     SetTerminalSize(i32),
-    SetPaginatorSize(i32),
 }
 
 pub fn read_interface_config() -> InterfaceState {
@@ -260,6 +362,30 @@ pub fn read_interface_config() -> InterfaceState {
     let paginator_tab_margin_y = parse_u16_from(&content, "paginator_tab_margin_y", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 10 });
     let paginator_tab_padding_x = parse_u16_from(&content, "paginator_tab_padding_x", 10);
     let paginator_tab_padding_y = parse_u16_from(&content, "paginator_tab_padding_y", 14);
+    let section_padding = parse_u16_from(&content, "section_padding", 8);
+    let plate_padding = parse_u16_from(&content, "plate_padding", 20);
+    let page_margin = parse_u16_from(&content, "page_margin", 20);
+    let grid_min_col_width = parse_u16_from(&content, "grid_min_col_width", 260);
+    let spinbox_height = parse_u16_from(&content, "spinbox_height", 26);
+    let toggle_height = parse_u16_from(&content, "toggle_height", 44);
+    let color_selector_height = parse_u16_from(&content, "color_selector_height", 22);
+    let color_selector_preview_corner_radius = parse_u16_from(&content, "color_selector_preview_corner_radius", 4);
+    let color_selector_preview_margin = parse_u16_from(&content, "color_selector_preview_margin", 0);
+    let textbox_height = parse_u16_from(&content, "textbox_height", 44);
+    let slider_height = parse_u16_from(&content, "slider_height", 28);
+    let font_selector_height = parse_u16_from(&content, "font_selector_height", 44);
+    let dropdown_height = parse_u16_from(&content, "dropdown_height", 44);
+    let color_selector_font = parse_string_from(&content, "color_selector_font", "monospace");
+    let menubar_font = parse_string_from(&content, "menubar_font", "Outfit");
+    let section_label_font = parse_string_from(&content, "section_label_font", "Outfit");
+    let nested_section_label_font = parse_string_from(&content, "nested_section_label_font", "Outfit");
+    let nested_section_label_alignment = parse_u16_from(&content, "nested_section_label_alignment", 0) as u8;
+    let nested_section_label_offset = parse_i16_from(&content, "nested_section_label_offset", 0);
+    let label_margin = parse_u16_from(&content, "label_margin", 6);
+    let graph_show_grid = parse_bool_from(&content, "graph_show_grid", true);
+    let graph_snap_enabled = parse_bool_from(&content, "graph_snap_enabled", true);
+    let graph_uniform_background = parse_bool_from(&content, "graph_uniform_background", false);
+    let graph_network_opacity = parse_f32_from(&content, "graph_network_opacity", 0.95);
     
     InterfaceState {
         low_color: bg,
@@ -277,20 +403,20 @@ pub fn read_interface_config() -> InterfaceState {
         toggle_enabled_color: toggle_enabled,
         toggle_disabled_color: toggle_disabled,
         color_selectors: vec![
-            ColorSelector::new(page_low).with_label("Low Color"), // 0: Pages - Low Color
-            ColorSelector::new(border).with_label("High Color"), // 1: Layout - High Color
-            ColorSelector::new(visual_guides).with_label("Visual Guides"), // 2: Layout - Visual Guides
-            ColorSelector::new(disabled).with_label("Disabled"), // 3: Status - Disabled
-            ColorSelector::new(separator).with_label("Separators"), // 4: Status - Separators
-            ColorSelector::new(slider_track).with_label("Slider Track"), // 5: Controls - Slider Track
-            ColorSelector::new(color_borders).with_label("Borders"), // 6: Controls - Borders
-            ColorSelector::new(bg).with_label("Low Color"), // 7: Layout - Low Color
-            ColorSelector::new(normal).with_label("Normal"), // 8: Status - Normal
-            ColorSelector::new(paginator_sidebar).with_label("Paginator Sidebar"), // 9: Controls - Paginator Sidebar
-            ColorSelector::new(primary_highlight).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
-            ColorSelector::new(paginator_tab_label).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
-            ColorSelector::new(toggle_enabled).with_label("Enabled"), // 12: Toggles - Enabled
-            ColorSelector::new(toggle_disabled).with_label("Disabled"), // 13: Toggles - Disabled
+            ColorSelector::new(page_low).with_label("Low Color").with_font_family(&color_selector_font), // 0: Plate - Low Color
+            ColorSelector::new(border).with_label("High Color").with_font_family(&color_selector_font), // 1: Layout - High Color
+            ColorSelector::new(visual_guides).with_label("Visual Guides").with_font_family(&color_selector_font), // 2: Layout - Visual Guides
+            ColorSelector::new(disabled).with_label("Disabled").with_font_family(&color_selector_font), // 3: Status - Disabled
+            ColorSelector::new(separator).with_label("Separators").with_font_family(&color_selector_font), // 4: Status - Separators
+            ColorSelector::new(slider_track).with_label("Slider Track").with_font_family(&color_selector_font), // 5: Controls - Slider Track
+            ColorSelector::new(color_borders).with_label("Borders").with_font_family(&color_selector_font), // 6: Controls - Borders
+            ColorSelector::new(bg).with_label("Low Color").with_font_family(&color_selector_font), // 7: Layout - Low Color
+            ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font), // 8: Status - Normal
+            ColorSelector::new(paginator_sidebar).with_label("Paginator Sidebar").with_font_family(&color_selector_font), // 9: Controls - Paginator Sidebar
+            ColorSelector::new(primary_highlight).with_label("Primary Highlight").with_font_family(&color_selector_font), // 10: Controls - Primary Highlight
+            ColorSelector::new(paginator_tab_label).with_label("Paginator Tab Label").with_font_family(&color_selector_font), // 11: Controls - Paginator Tab Label
+            ColorSelector::new(toggle_enabled).with_label("Enabled").with_font_family(&color_selector_font), // 12: Toggles - Enabled
+            ColorSelector::new(toggle_disabled).with_label("Disabled").with_font_family(&color_selector_font), // 13: Toggles - Disabled
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -300,6 +426,41 @@ pub fn read_interface_config() -> InterfaceState {
         paginator_tab_padding_y,
         tab_padding_spinbox_x: Spinbox::new(paginator_tab_padding_x as i32, 0, 100, 1).with_label("Tab Padding X").with_unit("px"),
         tab_padding_spinbox_y: Spinbox::new(paginator_tab_padding_y as i32, 0, 100, 1).with_label("Tab Padding Y").with_unit("px"),
+        section_padding,
+        section_padding_spinbox: Spinbox::new(section_padding as i32, 0, 100, 1).with_label("Padding").with_unit("px"),
+        plate_padding,
+        plate_padding_spinbox: Spinbox::new(plate_padding as i32, 0, 100, 1).with_label("Padding").with_unit("px"),
+        page_margin,
+        page_margin_spinbox: Spinbox::new(page_margin as i32, 0, 100, 1).with_label("Page Margin").with_unit("px"),
+        grid_min_col_width,
+        grid_min_col_width_spinbox: Spinbox::new(grid_min_col_width as i32, 100, 1000, 10).with_label("Minimum Width").with_unit("px"),
+        spinbox_height,
+        spinbox_height_spinbox: Spinbox::new(spinbox_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        toggle_height,
+        toggle_height_spinbox: Spinbox::new(toggle_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        color_selector_height,
+        color_selector_height_spinbox: Spinbox::new(color_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        color_selector_preview_corner_radius,
+        color_selector_preview_corner_radius_spinbox: Spinbox::new(color_selector_preview_corner_radius as i32, 0, 50, 1).with_label("Preview Corner Radius").with_unit("px"),
+        color_selector_preview_margin,
+        color_selector_preview_margin_spinbox: Spinbox::new(color_selector_preview_margin as i32, 0, 20, 1).with_label("Preview Margin").with_unit("px"),
+        textbox_height,
+        textbox_height_spinbox: Spinbox::new(textbox_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        slider_height,
+        slider_height_spinbox: Spinbox::new(slider_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        font_selector_height,
+        font_selector_height_spinbox: Spinbox::new(font_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        dropdown_height,
+        dropdown_height_spinbox: Spinbox::new(dropdown_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        nested_section_label_alignment,
+        label_alignment_menu: Dropdown::new(
+            vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
+            nested_section_label_alignment as usize,
+        ).with_label("Label Alignment"),
+        nested_section_label_offset,
+        label_offset_spinbox: Spinbox::new(nested_section_label_offset as i32, -100, 100, 1).with_label("Label Offset").with_unit("px"),
+        label_margin,
+        label_margin_spinbox: Spinbox::new(label_margin as i32, 0, 100, 1).with_label("Label Margin").with_unit("px"),
         typeface_loaded: false,
         sans_serif: String::new(),
         serif: String::new(),
@@ -318,23 +479,48 @@ pub fn read_interface_config() -> InterfaceState {
         status_box: TextBox::default(),
         fuzzel_box: TextBox::default(),
         terminal_box: TextBox::default(),
-        paginator_box: TextBox::default(),
-        search_box: TextBox::default(),
-        selected_font: None,
-        list_box: ScrollingList::new(24.0, 4.0),
         borders_menu: Dropdown::default(),
         status_menu: Dropdown::default(),
         fuzzel_menu: Dropdown::default(),
         terminal_menu: Dropdown::default(),
-        paginator_menu: Dropdown::default(),
         borders_size_box: Spinbox::new(11, 6, 72, 1),
         status_size_box: Spinbox::new(11, 6, 72, 1),
         fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
         terminal_size_box: Spinbox::new(12, 6, 72, 1),
-        paginator_size_box: Spinbox::new(12, 6, 72, 1),
-        font_buttons: Vec::new(),
-        copy_buttons: Vec::new(),
+        color_selector_font: color_selector_font.clone(),
+        color_selector_font_selector: FontSelector::new(color_selector_font.clone()).with_label("Value"),
+        menubar_font: menubar_font.clone(),
+        menubar_font_selector: FontSelector::new(menubar_font.clone()).with_label("Font"),
+        section_label_font: section_label_font.clone(),
+        section_label_font_selector: FontSelector::new(section_label_font.clone()).with_label("Label"),
+        nested_section_label_font: nested_section_label_font.clone(),
+        nested_section_label_font_selector: FontSelector::new(nested_section_label_font.clone()).with_label("Label"),
+        graph_show_grid,
+        graph_show_grid_toggle: Toggle::new().with_label("Show Grid"),
+        graph_snap_enabled,
+        graph_snap_enabled_toggle: Toggle::new().with_label("Grid Snapping"),
+        graph_uniform_background,
+        graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
+        graph_network_opacity,
+        graph_network_opacity_slider: Slider::new().with_label("Network Opacity").with_value(graph_network_opacity),
     }
+}
+
+pub fn parse_string_from(content: &str, key: &str, default: &str) -> String {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=');
+            let rest = rest.trim();
+            let val_str = if rest.starts_with('"') && rest.ends_with('"') && rest.len() >= 2 {
+                &rest[1..rest.len() - 1]
+            } else {
+                rest
+            };
+            return val_str.trim().to_string();
+        }
+    }
+    default.to_string()
 }
 
 fn parse_color_from_key(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
@@ -408,6 +594,21 @@ fn send_ipc_command(cmd: &str) {
     }
 }
 
+fn cce_graph_reload() {
+    let is_running = std::process::Command::new("pgrep")
+        .args(["-f", "cce-graph"])
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+    if is_running {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "cce-graph"])
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        send_ipc_command("spawn cce-graph");
+    }
+}
+
 fn apply_background(rgb: [u8; 3]) {
     let _ = std::process::Command::new("pkill").args(["-x", "swaybg"]).status();
     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -431,10 +632,10 @@ fn apply_disabled_color(rgb: [u8; 3]) {
 
 fn status_interface_reload() {
     let _ = std::process::Command::new("pkill")
-        .args(["-f", "clear-status-interface"])
+        .args(["-f", "cce-status-interface"])
         .status();
     std::thread::sleep(std::time::Duration::from_millis(150));
-    send_ipc_command("spawn clear-status-interface");
+    send_ipc_command("spawn cce-status-interface");
 }
 
 fn apply_separator_color(rgb: [u8; 3]) {
@@ -530,21 +731,126 @@ fn apply_toggle_disabled_color(rgb: [u8; 3]) {
 fn apply_paginator_tab_margin_x(margin: u16) {
     write_config_value("paginator_tab_margin_x", &margin.to_string());
     send_ipc_command(&format!("layout paginator_tab_margin_x {}", margin));
+    clear_ui::layout::set_paginator_tab_margin_x(margin as f32);
 }
 
 fn apply_paginator_tab_margin_y(margin: u16) {
     write_config_value("paginator_tab_margin_y", &margin.to_string());
     send_ipc_command(&format!("layout paginator_tab_margin_y {}", margin));
+    clear_ui::layout::set_paginator_tab_margin_y(margin as f32);
 }
 
 fn apply_paginator_tab_padding_x(padding: u16) {
     write_config_value("paginator_tab_padding_x", &padding.to_string());
     send_ipc_command(&format!("layout paginator_tab_padding_x {}", padding));
+    clear_ui::layout::set_paginator_tab_padding_x(padding as f32);
 }
 
 fn apply_paginator_tab_padding_y(padding: u16) {
     write_config_value("paginator_tab_padding_y", &padding.to_string());
     send_ipc_command(&format!("layout paginator_tab_padding_y {}", padding));
+    clear_ui::layout::set_paginator_tab_padding_y(padding as f32);
+}
+
+fn apply_plate_padding(padding: u16) {
+    write_config_value("plate_padding", &padding.to_string());
+    clear_ui::layout::set_plate_padding(padding as f32);
+}
+
+fn apply_page_margin(margin: u16) {
+    write_config_value("page_margin", &margin.to_string());
+    clear_ui::layout::set_page_margin(margin as f32);
+}
+
+fn apply_grid_min_col_width(width: u16) {
+    write_config_value("grid_min_col_width", &width.to_string());
+    clear_ui::layout::set_grid_min_col_width(width as f32);
+}
+
+fn apply_section_padding(padding: u16) {
+    write_config_value("section_padding", &padding.to_string());
+    clear_ui::layout::set_section_padding(padding as f32);
+}
+
+fn apply_spinbox_height(height: u16) {
+    write_config_value("spinbox_height", &height.to_string());
+    clear_ui::layout::set_spinbox_height(height as f32);
+}
+
+fn apply_toggle_height(height: u16) {
+    write_config_value("toggle_height", &height.to_string());
+    clear_ui::layout::set_toggle_height(height as f32);
+}
+
+fn apply_color_selector_height(height: u16) {
+    write_config_value("color_selector_height", &height.to_string());
+    clear_ui::layout::set_color_selector_height(height as f32);
+}
+
+fn apply_color_selector_preview_corner_radius(radius: u16) {
+    write_config_value("color_selector_preview_corner_radius", &radius.to_string());
+    clear_ui::layout::set_color_selector_preview_corner_radius(radius as f32);
+}
+
+fn apply_color_selector_preview_margin(margin: u16) {
+    write_config_value("color_selector_preview_margin", &margin.to_string());
+    clear_ui::layout::set_color_selector_preview_margin(margin as f32);
+}
+
+fn apply_textbox_height(height: u16) {
+    write_config_value("textbox_height", &height.to_string());
+    clear_ui::layout::set_textbox_height(height as f32);
+}
+
+fn apply_slider_height(height: u16) {
+    write_config_value("slider_height", &height.to_string());
+    clear_ui::layout::set_slider_height(height as f32);
+}
+
+
+fn apply_font_selector_height(height: u16) {
+    write_config_value("font_selector_height", &height.to_string());
+    clear_ui::layout::set_font_selector_height(height as f32);
+}
+
+fn apply_dropdown_height(height: u16) {
+    write_config_value("dropdown_height", &height.to_string());
+    clear_ui::layout::set_dropdown_height(height as f32);
+}
+
+fn apply_color_selector_font(font: &str) {
+    write_config_value("color_selector_font", &format!("\"{}\"", font));
+    clear_ui::layout::set_color_selector_font(font);
+}
+
+fn apply_menubar_font(font: &str) {
+    write_config_value("menubar_font", &format!("\"{}\"", font));
+    clear_ui::layout::set_menubar_font(font);
+}
+
+fn apply_section_label_font(font: &str) {
+    write_config_value("section_label_font", &format!("\"{}\"", font));
+    clear_ui::layout::set_section_label_font(font);
+}
+
+fn apply_nested_section_label_font(font: &str) {
+    write_config_value("nested_section_label_font", &format!("\"{}\"", font));
+    clear_ui::layout::set_nested_section_label_font(font);
+}
+
+fn apply_nested_section_label_alignment(align: u8) {
+    write_config_value("nested_section_label_alignment", &align.to_string());
+    clear_ui::layout::set_nested_section_label_alignment(align);
+}
+
+fn apply_nested_section_label_offset(offset: i16) {
+    write_config_value("nested_section_label_offset", &offset.to_string());
+    clear_ui::layout::set_nested_section_label_offset(offset as f32);
+}
+
+fn apply_label_margin(margin: u16) {
+    write_config_value("label_margin", &margin.to_string());
+    clear_ui::layout::set_label_margin(margin as f32);
 }
 
 const FONTS_CONF_PATH: &str = "/home/lsgalante/.config/fontconfig/fonts.conf";
@@ -691,6 +997,20 @@ pub fn save_preferred_fonts(
     let _ = fs::write(FONTS_CONF_PATH, new_content);
 }
 
+pub fn parse_i16_from(content: &str, key: &str, default: i16) -> i16 {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+            let val_str = rest.trim_end_matches('"').trim();
+            if let Ok(val) = val_str.parse::<i16>() {
+                return val;
+            }
+        }
+    }
+    default
+}
+
 pub fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
     for line in content.lines() {
         let trimmed = line.trim();
@@ -705,20 +1025,48 @@ pub fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
     default
 }
 
+pub fn parse_bool_from(content: &str, key: &str, default: bool) -> bool {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+            let val_str = rest.trim_end_matches('"').trim();
+            if let Ok(val) = val_str.parse::<bool>() {
+                return val;
+            }
+        }
+    }
+    default
+}
+
+pub fn parse_f32_from(content: &str, key: &str, default: f32) -> f32 {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+            let val_str = rest.trim_end_matches('"').trim();
+            if let Ok(val) = val_str.parse::<f32>() {
+                return val;
+            }
+        }
+    }
+    default
+}
+
 fn read_border_font_size() -> Option<u16> {
-    let content = fs::read_to_string("/home/lsgalante/.config/ccec/config.toml").ok()?;
+    let content = fs::read_to_string("/home/lsgalante/.config/cce/config.toml").ok()?;
     Some(parse_u16_from(&content, "border_font_size", 11))
 }
 
 fn read_status_size() -> Option<u16> {
-    let content = fs::read_to_string("/home/lsgalante/.config/ccec/config.toml").ok()?;
+    let content = fs::read_to_string("/home/lsgalante/.config/cce/config.toml").ok()?;
     Some(parse_u16_from(&content, "status_font_size", 11))
 }
 
 fn write_status_size(size: u16) {
     write_config_value("status_font_size", &size.to_string());
     let _ = std::process::Command::new("pkill")
-        .args(["-f", "clear-status-interface"])
+        .args(["-f", "cce-status-interface"])
         .spawn();
 }
 
@@ -800,14 +1148,7 @@ fn write_terminal_size(size: u16) {
     let _ = fs::write(path, new_lines.join("\n"));
 }
 
-fn read_paginator_size() -> Option<u16> {
-    let content = fs::read_to_string("/home/lsgalante/.config/ccec/config.toml").ok()?;
-    Some(parse_u16_from(&content, "paginator_font_size", 12))
-}
 
-fn write_paginator_size(size: u16) {
-    write_config_value("paginator_font_size", &size.to_string());
-}
 
 fn parse_families(output: Option<std::process::Output>) -> Vec<String> {
     let mut families = Vec::new();
@@ -840,7 +1181,7 @@ pub async fn fetch_typeface_state() -> InterfaceState {
         .output().await.ok();
     let mono_fonts = parse_families(mono_output);
     
-    let selected_font = all_fonts.first().cloned();
+
 
     let determine_dropdown_index = |font: &str, sans: &str, serif: &str, mono: &str| -> usize {
         if font == sans {
@@ -858,8 +1199,6 @@ pub async fn fetch_typeface_state() -> InterfaceState {
     let status_idx = determine_dropdown_index(&status, &sans, &serif, &mono);
     let fuzzel_idx = determine_dropdown_index(&fuzzel_font, &sans, &serif, &mono);
     let terminal_idx = determine_dropdown_index(&term, &sans, &serif, &mono);
-    let paginator_idx = determine_dropdown_index(&paginator_font, &sans, &serif, &mono);
-
     let menu_options = vec![
         "Sans-Serif".to_string(),
         "Serif".to_string(),
@@ -867,26 +1206,23 @@ pub async fn fetch_typeface_state() -> InterfaceState {
         "Other".to_string(),
     ];
 
-    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders").with_width(300.0);
+    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders");
     borders_box.disabled = borders_idx != 3;
 
-    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface").with_width(300.0);
+    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface");
     status_box.disabled = status_idx != 3;
 
-    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel").with_width(300.0);
+    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel");
     fuzzel_box.disabled = fuzzel_idx != 3;
 
-    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal").with_width(300.0);
+    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal");
     terminal_box.disabled = terminal_idx != 3;
 
-    let mut paginator_box = TextBox::new(paginator_font.clone()).with_label("Paginator Tab Labels").with_width(300.0);
-    paginator_box.disabled = paginator_idx != 3;
 
     let borders_size = read_border_font_size().unwrap_or(11);
     let status_size = read_status_size().unwrap_or(11);
     let fuzzel_size = read_fuzzel_size().unwrap_or(14);
     let terminal_size = read_terminal_size().unwrap_or(12);
-    let paginator_size = read_paginator_size().unwrap_or(12);
 
     let mut state = InterfaceState::default();
     state.typeface_loaded = true;
@@ -907,47 +1243,101 @@ pub async fn fetch_typeface_state() -> InterfaceState {
     state.status_box = status_box;
     state.fuzzel_box = fuzzel_box;
     state.terminal_box = terminal_box;
-    state.paginator_box = paginator_box;
-    state.search_box = TextBox::new(String::new()).with_label("Filter Fonts");
-    state.selected_font = selected_font;
-    state.list_box = ScrollingList::new(24.0, 4.0);
     state.borders_menu = Dropdown::new(menu_options.clone(), borders_idx);
     state.status_menu = Dropdown::new(menu_options.clone(), status_idx);
     state.fuzzel_menu = Dropdown::new(menu_options.clone(), fuzzel_idx);
-    state.terminal_menu = Dropdown::new(menu_options.clone(), terminal_idx);
-    state.paginator_menu = Dropdown::new(menu_options, paginator_idx);
+    state.terminal_menu = Dropdown::new(menu_options, terminal_idx);
     state.borders_size_box = Spinbox::new(borders_size as i32, 6, 72, 1);
     state.status_size_box = Spinbox::new(status_size as i32, 6, 72, 1);
     state.fuzzel_size_box = Spinbox::new(fuzzel_size as i32, 6, 72, 1);
     state.terminal_size_box = Spinbox::new(terminal_size as i32, 6, 72, 1);
-    state.paginator_size_box = Spinbox::new(paginator_size as i32, 6, 72, 1);
     state
 }
 
-pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
-    let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(10);
+    let sec_w = 260.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
 
-    // 1. Pages Section
-    builder.add_section(&mut final_pc, "Pages", false, |sec| {
-        sec.spacing(8.0);
-        state.color_selectors[0].color = state.page_low_color;
-        sec.widget(&mut state.color_selectors[0], 12.0, 220.0, 40.0);
-        sec.spacing(8.0);
-    });
-
-    // 2. Layout Section
+    // 1. Layout Section
     builder.add_section(&mut final_pc, "Layout", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[7].color = state.low_color;
-        sec.widget(&mut state.color_selectors[7], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
         sec.spacing(8.0);
         state.color_selectors[1].color = state.high_color;
-        sec.widget(&mut state.color_selectors[1], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[1], 40.0, ctx);
         sec.spacing(8.0);
         state.color_selectors[2].color = state.visual_guides_color;
-        sec.widget(&mut state.color_selectors[2], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[2], 40.0, ctx);
+        sec.spacing(12.0);
+
+        // Plate child section
+        sec.add_section("Plate", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[0].color = state.page_low_color;
+            subsec.widget_full(&mut state.color_selectors[0], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.plate_padding_spinbox.value = state.plate_padding as i32;
+            subsec.widget_full(&mut state.plate_padding_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Section child section
+        sec.add_section("Section", false, |subsec| {
+            subsec.spacing(8.0);
+            state.section_padding_spinbox.value = state.section_padding as i32;
+            subsec.widget_full(&mut state.section_padding_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.page_margin_spinbox.value = state.page_margin as i32;
+            subsec.widget_full(&mut state.page_margin_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.section_label_font_selector.font_family = state.section_label_font.clone();
+            subsec.widget_full(&mut state.section_label_font_selector, 44.0, ctx);
+            subsec.spacing(12.0);
+
+            // Nested Section child section
+            subsec.add_section("Nested Section", false, |subsubsec| {
+                subsubsec.spacing(8.0);
+                subsubsec.widget_full(&mut state.label_alignment_menu, 44.0, ctx);
+                subsubsec.spacing(8.0);
+                state.label_offset_spinbox.value = state.nested_section_label_offset as i32;
+                subsubsec.widget_full(&mut state.label_offset_spinbox, 44.0, ctx);
+                subsubsec.spacing(8.0);
+                state.nested_section_label_font_selector.font_family = state.nested_section_label_font.clone();
+                subsubsec.widget_full(&mut state.nested_section_label_font_selector, 44.0, ctx);
+                subsubsec.spacing(8.0);
+            });
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Grid Layout child section
+        sec.add_section("Grid Layout", false, |subsec| {
+            subsec.spacing(8.0);
+            state.grid_min_col_width_spinbox.value = state.grid_min_col_width as i32;
+            subsec.widget_full(&mut state.grid_min_col_width_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Graph child section
+        sec.add_section("Graph", false, |subsec| {
+            subsec.spacing(8.0);
+            state.graph_show_grid_toggle.set_toggled(state.graph_show_grid);
+            subsec.widget_full(&mut state.graph_show_grid_toggle, state.toggle_height as f32, ctx);
+            subsec.spacing(8.0);
+            state.graph_snap_enabled_toggle.set_toggled(state.graph_snap_enabled);
+            subsec.widget_full(&mut state.graph_snap_enabled_toggle, state.toggle_height as f32, ctx);
+            subsec.spacing(8.0);
+            state.graph_uniform_background_toggle.set_toggled(state.graph_uniform_background);
+            subsec.widget_full(&mut state.graph_uniform_background_toggle, state.toggle_height as f32, ctx);
+            subsec.spacing(12.0);
+            state.graph_network_opacity_slider.set_value(state.graph_network_opacity);
+            subsec.widget_full(&mut state.graph_network_opacity_slider, state.slider_height as f32, ctx);
+            subsec.spacing(8.0);
+        });
         sec.spacing(8.0);
     });
 
@@ -955,273 +1345,249 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     builder.add_section(&mut final_pc, "Status", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[8].color = state.normal_color;
-        sec.widget(&mut state.color_selectors[8], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[8], 40.0, ctx);
         sec.spacing(8.0);
         state.color_selectors[3].color = state.disabled_color;
-        sec.widget(&mut state.color_selectors[3], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[3], 40.0, ctx);
         sec.spacing(8.0);
         state.color_selectors[4].color = state.separator_color;
-        sec.widget(&mut state.color_selectors[4], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[4], 40.0, ctx);
         sec.spacing(8.0);
     });
 
     // 4. Controls Section
     builder.add_section(&mut final_pc, "Controls", false, |sec| {
         sec.spacing(8.0);
-        state.color_selectors[5].color = state.slider_track_color;
-        sec.widget(&mut state.color_selectors[5], 12.0, 220.0, 40.0);
-        sec.spacing(8.0);
         state.color_selectors[6].color = state.color_borders_color;
-        sec.widget(&mut state.color_selectors[6], 12.0, 220.0, 40.0);
+        sec.widget_full(&mut state.color_selectors[6], 40.0, ctx);
+        sec.spacing(12.0);
+
+        // Slider Section
+        sec.add_section("Slider", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[5].color = state.slider_track_color;
+            subsec.widget_full(&mut state.color_selectors[5], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.slider_height_spinbox.value = state.slider_height as i32;
+            subsec.widget_full(&mut state.slider_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+
+        // MenuBar Section
+        sec.add_section("MenuBar", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[9].color = state.paginator_sidebar_color;
+            subsec.widget_full(&mut state.color_selectors[9], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.color_selectors[11].color = state.paginator_tab_label_color;
+            subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
+            state.tab_margin_spinbox_x.value = state.paginator_tab_margin_x as i32;
+            subsec.widget_full(&mut state.tab_margin_spinbox_x, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.tab_margin_spinbox_y.value = state.paginator_tab_margin_y as i32;
+            subsec.widget_full(&mut state.tab_margin_spinbox_y, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.tab_padding_spinbox_x.value = state.paginator_tab_padding_x as i32;
+            subsec.widget_full(&mut state.tab_padding_spinbox_x, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.tab_padding_spinbox_y.value = state.paginator_tab_padding_y as i32;
+            subsec.widget_full(&mut state.tab_padding_spinbox_y, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.menubar_font_selector.font_family = state.menubar_font.clone();
+            subsec.widget_full(&mut state.menubar_font_selector, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Toggles Section
+        sec.add_section("Toggles", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[12].color = state.toggle_enabled_color;
+            subsec.widget_full(&mut state.color_selectors[12], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.color_selectors[13].color = state.toggle_disabled_color;
+            subsec.widget_full(&mut state.color_selectors[13], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.toggle_height_spinbox.value = state.toggle_height as i32;
+            subsec.widget_full(&mut state.toggle_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Spinbox Section
+        sec.add_section("Spinbox", false, |subsec| {
+            subsec.spacing(8.0);
+            state.spinbox_height_spinbox.value = state.spinbox_height as i32;
+            subsec.widget_full(&mut state.spinbox_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // ColorSelector Section
+        sec.add_section("ColorSelector", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selector_height_spinbox.value = state.color_selector_height as i32;
+            subsec.widget_full(&mut state.color_selector_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+
+            state.color_selector_preview_corner_radius_spinbox.value = state.color_selector_preview_corner_radius as i32;
+            subsec.widget_full(&mut state.color_selector_preview_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(12.0);
+
+            state.color_selector_preview_margin_spinbox.value = state.color_selector_preview_margin as i32;
+            subsec.widget_full(&mut state.color_selector_preview_margin_spinbox, 44.0, ctx);
+            subsec.spacing(12.0);
+
+            state.color_selector_font_selector.font_family = state.color_selector_font.clone();
+            subsec.widget_full(&mut state.color_selector_font_selector, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Textbox Section
+        sec.add_section("Textbox", false, |subsec| {
+            subsec.spacing(8.0);
+            state.textbox_height_spinbox.value = state.textbox_height as i32;
+            subsec.widget_full(&mut state.textbox_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // FontSelector Section
+        sec.add_section("FontSelector", false, |subsec| {
+            subsec.spacing(8.0);
+            state.font_selector_height_spinbox.value = state.font_selector_height as i32;
+            subsec.widget_full(&mut state.font_selector_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Dropdown Section
+        sec.add_section("Dropdown", false, |subsec| {
+            subsec.spacing(8.0);
+            state.dropdown_height_spinbox.value = state.dropdown_height as i32;
+            subsec.widget_full(&mut state.dropdown_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Labels Section
+        sec.add_section("Labels", false, |subsec| {
+            subsec.spacing(8.0);
+            state.label_margin_spinbox.value = state.label_margin as i32;
+            subsec.widget_full(&mut state.label_margin_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
         sec.spacing(8.0);
     });
 
-    // 5. Primary Highlight Section
-    builder.add_section(&mut final_pc, "Primary Highlight", false, |sec| {
+    // 5. Indicators Section
+    builder.add_section(&mut final_pc, "Indicators", false, |sec| {
         sec.spacing(8.0);
-        state.color_selectors[10].color = state.primary_highlight_color;
-        sec.widget(&mut state.color_selectors[10], 12.0, 220.0, 40.0);
-        sec.spacing(8.0);
-    });
-
-    // 5. Paginator Section
-    builder.add_section(&mut final_pc, "Paginator", false, |sec| {
-        sec.spacing(8.0);
-        state.color_selectors[9].color = state.paginator_sidebar_color;
-        sec.widget(&mut state.color_selectors[9], 12.0, 220.0, 40.0);
-        sec.spacing(8.0);
-        state.color_selectors[11].color = state.paginator_tab_label_color;
-        sec.widget(&mut state.color_selectors[11], 12.0, 220.0, 40.0);
-        state.tab_margin_spinbox_x.value = state.paginator_tab_margin_x as i32;
-        sec.widget(&mut state.tab_margin_spinbox_x, 12.0, 200.0, 44.0);
-        sec.spacing(8.0);
-        state.tab_margin_spinbox_y.value = state.paginator_tab_margin_y as i32;
-        sec.widget(&mut state.tab_margin_spinbox_y, 12.0, 200.0, 44.0);
-        sec.spacing(8.0);
-        state.tab_padding_spinbox_x.value = state.paginator_tab_padding_x as i32;
-        sec.widget(&mut state.tab_padding_spinbox_x, 12.0, 200.0, 44.0);
-        sec.spacing(8.0);
-        state.tab_padding_spinbox_y.value = state.paginator_tab_padding_y as i32;
-        sec.widget(&mut state.tab_padding_spinbox_y, 12.0, 200.0, 44.0);
+        sec.add_section("Primary Highlight", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[10].color = state.primary_highlight_color;
+            subsec.widget_full(&mut state.color_selectors[10], 40.0, ctx);
+            subsec.spacing(8.0);
+        });
         sec.spacing(8.0);
     });
 
-    // 6. Toggles Section
-    builder.add_section(&mut final_pc, "Toggles", false, |sec| {
-        sec.spacing(8.0);
-        state.color_selectors[12].color = state.toggle_enabled_color;
-        sec.widget(&mut state.color_selectors[12], 12.0, 220.0, 40.0);
-        sec.spacing(8.0);
-        state.color_selectors[13].color = state.toggle_disabled_color;
-        sec.widget(&mut state.color_selectors[13], 12.0, 220.0, 40.0);
-        sec.spacing(8.0);
-    });
 
     let widget_h = 26.0;
     const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-    // 7. System Typefaces Section
-    builder.add_section(&mut final_pc, "System Typefaces", sec_focused.get(7).copied().unwrap_or(false), |sec| {
+    // 5. Fonts Section
+    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(4).copied().unwrap_or(false), |sec| {
         sec.spacing(8.0);
 
-        if !state.typeface_loaded {
-            sec.text("Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
-        } else {
-            let inner_w = sec_w - 24.0;
-            // Sans-Serif
-            sec.widget(&mut state.sans_box, 12.0, inner_w, 44.0);
-            sec.spacing(12.0);
+        // System Fonts Section
+        sec.add_section("System Fonts", false, |subsec| {
+            subsec.spacing(8.0);
 
-            // Serif
-            sec.widget(&mut state.serif_box, 12.0, inner_w, 44.0);
-            sec.spacing(12.0);
+            if !state.typeface_loaded {
+                subsec.text("Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+                subsec.spacing(18.0);
+            } else {
+                // Sans-Serif
+                subsec.widget_full(&mut state.sans_box, 44.0, ctx);
+                subsec.spacing(12.0);
 
-            // Monospace
-            sec.widget(&mut state.mono_box, 12.0, inner_w, 44.0);
-            sec.spacing(8.0);
-        }
-    });
+                // Serif
+                subsec.widget_full(&mut state.serif_box, 44.0, ctx);
+                subsec.spacing(12.0);
 
-    // 8. Program Typefaces Section
-    builder.add_section(&mut final_pc, "Program Typefaces", sec_focused.get(8).copied().unwrap_or(false), |sec| {
-        sec.spacing(8.0);
-
-        if !state.typeface_loaded {
-            sec.text("Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
-        } else {
-            let inner_w = sec_w - 24.0;
-
-            // Window Borders
-            let start_y = sec.ay();
-            let cols = sec.row_layout(2, 10.0);
-            if cols.len() == 2 {
-                state.borders_menu.set_row_rect(cols[0].0, cols[0].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.borders_menu, cols[0].0, start_y, cols[0].1, widget_h);
-                state.borders_size_box.set_row_rect(cols[1].0, cols[1].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.borders_size_box, cols[1].0, start_y, cols[1].1, widget_h);
+                // Monospace
+                subsec.widget_full(&mut state.mono_box, 44.0, ctx);
+                subsec.spacing(8.0);
             }
-            sec.spacing(widget_h);
-            sec.widget(&mut state.borders_box, 12.0, inner_w, 44.0);
-            sec.spacing(16.0);
-
-            // Status Interface
-            let start_y = sec.ay();
-            let cols = sec.row_layout(2, 10.0);
-            if cols.len() == 2 {
-                state.status_menu.set_row_rect(cols[0].0, cols[0].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.status_menu, cols[0].0, start_y, cols[0].1, widget_h);
-                state.status_size_box.set_row_rect(cols[1].0, cols[1].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.status_size_box, cols[1].0, start_y, cols[1].1, widget_h);
-            }
-            sec.spacing(widget_h);
-            sec.widget(&mut state.status_box, 12.0, inner_w, 44.0);
-            sec.spacing(16.0);
-
-            // Fuzzel
-            let start_y = sec.ay();
-            let cols = sec.row_layout(2, 10.0);
-            if cols.len() == 2 {
-                state.fuzzel_menu.set_row_rect(cols[0].0, cols[0].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.fuzzel_menu, cols[0].0, start_y, cols[0].1, widget_h);
-                state.fuzzel_size_box.set_row_rect(cols[1].0, cols[1].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.fuzzel_size_box, cols[1].0, start_y, cols[1].1, widget_h);
-            }
-            sec.spacing(widget_h);
-            sec.widget(&mut state.fuzzel_box, 12.0, inner_w, 44.0);
-            sec.spacing(16.0);
-
-            // Terminal
-            let start_y = sec.ay();
-            let cols = sec.row_layout(2, 10.0);
-            if cols.len() == 2 {
-                state.terminal_menu.set_row_rect(cols[0].0, cols[0].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.terminal_menu, cols[0].0, start_y, cols[0].1, widget_h);
-                state.terminal_size_box.set_row_rect(cols[1].0, cols[1].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.terminal_size_box, cols[1].0, start_y, cols[1].1, widget_h);
-            }
-            sec.spacing(widget_h);
-            sec.widget(&mut state.terminal_box, 12.0, inner_w, 44.0);
-            sec.spacing(16.0);
-
-            // Paginator Tab Labels
-            let start_y = sec.ay();
-            let cols = sec.row_layout(2, 10.0);
-            if cols.len() == 2 {
-                state.paginator_menu.set_row_rect(cols[0].0, cols[0].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.paginator_menu, cols[0].0, start_y, cols[0].1, widget_h);
-                state.paginator_size_box.set_row_rect(cols[1].0, cols[1].1);
-                clear_ui::layout::render_widget(sec.pc, &mut state.paginator_size_box, cols[1].0, start_y, cols[1].1, widget_h);
-            }
-            sec.spacing(widget_h);
-            sec.widget(&mut state.paginator_box, 12.0, inner_w, 44.0);
-            sec.spacing(8.0);
-        }
-    });
-
-    // 9. Typefaces Section (List & Preview)
-    builder.add_section(&mut final_pc, "Typefaces", sec_focused.get(9).copied().unwrap_or(false), |sec| {
+        });
         sec.spacing(12.0);
 
-        if !state.typeface_loaded {
-            sec.text("Loading installed fonts...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
-        } else {
-            let inner_w = sec_w - 24.0;
+        // Program Fonts Section
+        sec.add_section("Program Fonts", false, |subsec| {
+            subsec.spacing(8.0);
 
-            // 1. Search Box
-            let search_x = sec.left + 12.0;
-            state.search_box.set_row_rect(search_x, inner_w);
-            let search_y = sec.ay();
-            clear_ui::layout::render_widget(
-                sec.pc,
-                &mut state.search_box,
-                search_x,
-                search_y,
-                inner_w,
-                44.0,
-            );
-            sec.spacing(44.0 + 12.0);
-
-            // 2. Scrolling List Box
-            let list_box_x = sec.left + 12.0;
-            let list_box_y = sec.ay();
-            let list_box_h = 200.0;
-            
-            clear_ui::layout::render_widget(sec.pc, &mut state.list_box, list_box_x, list_box_y, inner_w, list_box_h);
-
-            let query = state.search_box.text.to_lowercase();
-            let matching_fonts: Vec<&String> = state.all_fonts.iter()
-                .filter(|font| font.to_lowercase().contains(&query))
-                .collect();
-
-            if state.font_buttons.len() != matching_fonts.len() {
-                state.font_buttons.clear();
-                state.copy_buttons.clear();
-                for _ in 0..matching_fonts.len() {
-                    state.font_buttons.push(InteractiveListItem::new(""));
-                    state.copy_buttons.push(Button::new_copy_icon(0.0, 0.0, 0.0, 0.0));
-                }
-            }
-
-            let btn_h = 24.0;
-            let list_inner_x = sec.left + 16.0;
-            let list_inner_w = inner_w - 16.0;
-
-            state.list_box.update_bounds(matching_fonts.len(), list_box_y, list_box_h);
-
-            for (idx, font_name) in matching_fonts.iter().enumerate() {
-                if let Some(draw_y) = state.list_box.get_item_draw_y(idx, 0.0) {
-                    let is_selected = state.selected_font.as_ref() == Some(*font_name);
-                    
-                    let font_btn = &mut state.font_buttons[idx];
-                    font_btn.title = font_name.to_string();
-                    font_btn.selected = is_selected;
-                    clear_ui::layout::render_widget(sec.pc, font_btn, list_inner_x, draw_y, list_inner_w - 44.0, btn_h);
-
-                    let copy_btn = &mut state.copy_buttons[idx];
-                    copy_btn.set_text("📋");
-                    copy_btn.selected = is_selected;
-                    clear_ui::layout::render_widget(sec.pc, copy_btn, list_inner_x + list_inner_w - 40.0, draw_y, 40.0, btn_h);
-                }
-            }
-
-            if matching_fonts.is_empty() {
-                sec.pc.text("No fonts match query", list_inner_x + 8.0, list_box_y + 16.0, 12.0, TEXT_DIM);
-            }
-
-            sec.spacing(list_box_h + 12.0);
-
-            // 3. Info Box
-            let info_h = 96.0;
-            let info_y = sec.ay();
-            let info_x = sec.left + 12.0;
-            let mut info_box = InfoBox::new(
-                "Font Directories & Installation",
-                vec![
-                    "• Active Directory: ~/Dropbox/Fonts".to_string(),
-                    "• Place TTF/OTF files there to install new fonts.".to_string(),
-                    "• Changes will be cached automatically by fontconfig.".to_string(),
-                ],
-            );
-            clear_ui::layout::render_widget(sec.pc, &mut info_box, info_x, info_y, inner_w, info_h);
-            sec.spacing(info_h + 12.0);
-
-            // 4. Preview Card
-            let card_x = sec.left + 12.0;
-            if let Some(ref font_name) = state.selected_font {
-                let card_h = 240.0;
-                let card_y = sec.ay();
-                let mut font_preview = FontPreview::new(font_name.clone());
-                clear_ui::layout::render_widget(sec.pc, &mut font_preview, card_x, card_y, inner_w, card_h);
-                sec.spacing(card_h + 8.0);
+            if !state.typeface_loaded {
+                subsec.text("Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+                subsec.spacing(18.0);
             } else {
-                let text_y = sec.ay() + 20.0;
-                sec.pc.text("Select a font to preview", card_x + 12.0, text_y, 13.0, TEXT_DIM);
-                sec.spacing(40.0);
+                // Window Borders
+                let start_y = subsec.ay();
+                let cols = subsec.row_layout(2, 10.0);
+                if cols.len() == 2 {
+                    state.borders_menu.set_row_rect(cols[0].0, cols[0].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.borders_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    state.borders_size_box.set_row_rect(cols[1].0, cols[1].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.borders_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                }
+                subsec.spacing(widget_h);
+                subsec.widget_full(&mut state.borders_box, 44.0, ctx);
+                subsec.spacing(16.0);
+
+                // Status Interface
+                let start_y = subsec.ay();
+                let cols = subsec.row_layout(2, 10.0);
+                if cols.len() == 2 {
+                    state.status_menu.set_row_rect(cols[0].0, cols[0].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.status_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    state.status_size_box.set_row_rect(cols[1].0, cols[1].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.status_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                }
+                subsec.spacing(widget_h);
+                subsec.widget_full(&mut state.status_box, 44.0, ctx);
+                subsec.spacing(16.0);
+
+                // Fuzzel
+                let start_y = subsec.ay();
+                let cols = subsec.row_layout(2, 10.0);
+                if cols.len() == 2 {
+                    state.fuzzel_menu.set_row_rect(cols[0].0, cols[0].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    state.fuzzel_size_box.set_row_rect(cols[1].0, cols[1].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                }
+                subsec.spacing(widget_h);
+                subsec.widget_full(&mut state.fuzzel_box, 44.0, ctx);
+                subsec.spacing(16.0);
+
+                // Terminal
+                let start_y = subsec.ay();
+                let cols = subsec.row_layout(2, 10.0);
+                if cols.len() == 2 {
+                    state.terminal_menu.set_row_rect(cols[0].0, cols[0].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.terminal_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    state.terminal_size_box.set_row_rect(cols[1].0, cols[1].1);
+                    clear_ui::layout::render_widget(subsec.pc, &mut state.terminal_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                }
+                subsec.spacing(widget_h);
+                subsec.widget_full(&mut state.terminal_box, 44.0, ctx);
+                subsec.spacing(8.0);
             }
-        }
+        });
+        sec.spacing(8.0);
     });
 
     final_pc
@@ -1302,12 +1668,140 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.paginator_tab_padding_y = padding;
             apply_paginator_tab_padding_y(padding);
         }
+        InterfaceMessage::SetSectionPadding(padding) => {
+            state.section_padding = padding;
+            apply_section_padding(padding);
+        }
+        InterfaceMessage::SetPlatePadding(padding) => {
+            state.plate_padding = padding;
+            apply_plate_padding(padding);
+        }
+        InterfaceMessage::SetPageMargin(margin) => {
+            state.page_margin = margin;
+            apply_page_margin(margin);
+        }
+        InterfaceMessage::SetGridMinColWidth(width) => {
+            state.grid_min_col_width = width;
+            apply_grid_min_col_width(width);
+        }
+        InterfaceMessage::SetSpinboxHeight(height) => {
+            state.spinbox_height = height;
+            apply_spinbox_height(height);
+        }
+        InterfaceMessage::SetToggleHeight(height) => {
+            state.toggle_height = height;
+            apply_toggle_height(height);
+        }
+        InterfaceMessage::SetColorSelectorHeight(height) => {
+            state.color_selector_height = height;
+            apply_color_selector_height(height);
+        }
+        InterfaceMessage::SetColorSelectorPreviewCornerRadius(radius) => {
+            state.color_selector_preview_corner_radius = radius;
+            apply_color_selector_preview_corner_radius(radius);
+        }
+        InterfaceMessage::SetColorSelectorPreviewMargin(margin) => {
+            state.color_selector_preview_margin = margin;
+            apply_color_selector_preview_margin(margin);
+        }
+        InterfaceMessage::SetTextboxHeight(height) => {
+            state.textbox_height = height;
+            apply_textbox_height(height);
+        }
+        InterfaceMessage::SetSliderHeight(height) => {
+            state.slider_height = height;
+            apply_slider_height(height);
+        }
+        InterfaceMessage::SetFontSelectorHeight(height) => {
+            state.font_selector_height = height;
+            apply_font_selector_height(height);
+        }
+        InterfaceMessage::SetDropdownHeight(height) => {
+            state.dropdown_height = height;
+            apply_dropdown_height(height);
+        }
+        InterfaceMessage::SetColorSelectorFont(font) => {
+            state.color_selector_font = font.clone();
+            state.color_selector_font_selector.font_family = font.clone();
+            for cs in &mut state.color_selectors {
+                cs.font_family = font.clone();
+            }
+            apply_color_selector_font(&font);
+        }
+        InterfaceMessage::SetMenubarFont(font) => {
+            state.menubar_font = font.clone();
+            state.menubar_font_selector.font_family = font.clone();
+            apply_menubar_font(&font);
+        }
+        InterfaceMessage::SetSectionLabelFont(font) => {
+            state.section_label_font = font.clone();
+            state.section_label_font_selector.font_family = font.clone();
+            apply_section_label_font(&font);
+        }
+        InterfaceMessage::SetNestedSectionLabelFont(font) => {
+            state.nested_section_label_font = font.clone();
+            state.nested_section_label_font_selector.font_family = font.clone();
+            apply_nested_section_label_font(&font);
+        }
+        InterfaceMessage::SetNestedSectionLabelAlignment(idx) => {
+            state.nested_section_label_alignment = idx as u8;
+            state.label_alignment_menu.selected = idx;
+            apply_nested_section_label_alignment(idx as u8);
+        }
+        InterfaceMessage::SetNestedSectionLabelOffset(offset) => {
+            state.nested_section_label_offset = offset;
+            state.label_offset_spinbox.value = offset as i32;
+            apply_nested_section_label_offset(offset);
+        }
+        InterfaceMessage::SetLabelMargin(margin) => {
+            state.label_margin = margin;
+            state.label_margin_spinbox.value = margin as i32;
+            apply_label_margin(margin);
+        }
+        InterfaceMessage::SetGraphShowGrid(show) => {
+            state.graph_show_grid = show;
+            state.graph_show_grid_toggle.set_toggled(show);
+            write_config_value("graph_show_grid", &show.to_string());
+            cce_graph_reload();
+        }
+        InterfaceMessage::SetGraphSnapEnabled(snap) => {
+            state.graph_snap_enabled = snap;
+            state.graph_snap_enabled_toggle.set_toggled(snap);
+            write_config_value("graph_snap_enabled", &snap.to_string());
+            cce_graph_reload();
+        }
+        InterfaceMessage::SetGraphUniformBackground(uniform) => {
+            state.graph_uniform_background = uniform;
+            state.graph_uniform_background_toggle.set_toggled(uniform);
+            write_config_value("graph_uniform_background", &uniform.to_string());
+            cce_graph_reload();
+        }
+        InterfaceMessage::SetGraphOpacity(opacity) => {
+            state.graph_network_opacity = opacity;
+            state.graph_network_opacity_slider.set_value(opacity);
+            write_config_value("graph_network_opacity", &format!("{:.2}", opacity));
+            cce_graph_reload();
+        }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickPaginatorTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
             let was_px_hovered = state.tab_padding_spinbox_x.hovered();
             let was_py_hovered = state.tab_padding_spinbox_y.hovered();
+            let was_sp_hovered = state.section_padding_spinbox.hovered();
+            let was_pp_hovered = state.plate_padding_spinbox.hovered();
+            let was_pm_hovered = state.page_margin_spinbox.hovered();
+            let was_gm_hovered = state.grid_min_col_width_spinbox.hovered();
+            let was_sh_hovered = state.spinbox_height_spinbox.hovered();
+            let was_th_hovered = state.toggle_height_spinbox.hovered();
+            let was_gsg_hovered = state.graph_show_grid_toggle.hovered();
+            let was_gse_hovered = state.graph_snap_enabled_toggle.hovered();
+            let was_gub_hovered = state.graph_uniform_background_toggle.hovered();
+            let was_gno_hovered = state.graph_network_opacity_slider.hovered();
+            let was_csh_hovered = state.color_selector_height_spinbox.hovered();
+            let was_tbh_hovered = state.textbox_height_spinbox.hovered();
+            let was_fsh_hovered = state.font_selector_height_spinbox.hovered();
+            let was_lm_hovered = state.label_margin_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
             let sans_serif = state.sans_serif.clone();
@@ -1327,22 +1821,14 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let status_box = state.status_box.clone();
             let fuzzel_box = state.fuzzel_box.clone();
             let terminal_box = state.terminal_box.clone();
-            let paginator_box = state.paginator_box.clone();
-            let search_box = state.search_box.clone();
-            let selected_font = state.selected_font.clone();
-            let list_box = state.list_box.clone();
             let borders_menu = state.borders_menu.clone();
             let status_menu = state.status_menu.clone();
             let fuzzel_menu = state.fuzzel_menu.clone();
             let terminal_menu = state.terminal_menu.clone();
-            let paginator_menu = state.paginator_menu.clone();
             let borders_size_box = state.borders_size_box.clone();
             let status_size_box = state.status_size_box.clone();
             let fuzzel_size_box = state.fuzzel_size_box.clone();
             let terminal_size_box = state.terminal_size_box.clone();
-            let paginator_size_box = state.paginator_size_box.clone();
-            let font_buttons = state.font_buttons.clone();
-            let copy_buttons = state.copy_buttons.clone();
 
             *state = new;
 
@@ -1350,49 +1836,54 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.tab_margin_spinbox_y.set_hovered(was_my_hovered);
             state.tab_padding_spinbox_x.set_hovered(was_px_hovered);
             state.tab_padding_spinbox_y.set_hovered(was_py_hovered);
+            state.section_padding_spinbox.set_hovered(was_sp_hovered);
+            state.plate_padding_spinbox.set_hovered(was_pp_hovered);
+            state.page_margin_spinbox.set_hovered(was_pm_hovered);
+            state.grid_min_col_width_spinbox.set_hovered(was_gm_hovered);
+            state.spinbox_height_spinbox.set_hovered(was_sh_hovered);
+            state.toggle_height_spinbox.set_hovered(was_th_hovered);
+            state.graph_show_grid_toggle.set_hovered(was_gsg_hovered);
+            state.graph_snap_enabled_toggle.set_hovered(was_gse_hovered);
+            state.graph_uniform_background_toggle.set_hovered(was_gub_hovered);
+            state.graph_network_opacity_slider.set_hovered(was_gno_hovered);
+            state.color_selector_height_spinbox.set_hovered(was_csh_hovered);
+            state.textbox_height_spinbox.set_hovered(was_tbh_hovered);
+            state.font_selector_height_spinbox.set_hovered(was_fsh_hovered);
+            state.label_margin_spinbox.set_hovered(was_lm_hovered);
 
-            state.typeface_loaded = typeface_loaded;
-            state.sans_serif = sans_serif;
-            state.serif = serif;
-            state.monospace = monospace;
-            state.window_borders = window_borders;
-            state.status_interface = status_interface;
-            state.fuzzel = fuzzel;
-            state.terminal = terminal;
-            state.paginator = paginator;
-            state.all_fonts = all_fonts;
-            state.mono_fonts = mono_fonts;
-            state.sans_box = sans_box;
-            state.serif_box = serif_box;
-            state.mono_box = mono_box;
-            state.borders_box = borders_box;
-            state.status_box = status_box;
-            state.fuzzel_box = fuzzel_box;
-            state.terminal_box = terminal_box;
-            state.paginator_box = paginator_box;
-            state.search_box = search_box;
-            state.selected_font = selected_font;
-            state.list_box = list_box;
-            state.borders_menu = borders_menu;
-            state.status_menu = status_menu;
-            state.fuzzel_menu = fuzzel_menu;
-            state.terminal_menu = terminal_menu;
-            state.paginator_menu = paginator_menu;
-            state.borders_size_box = borders_size_box;
-            state.status_size_box = status_size_box;
-            state.fuzzel_size_box = fuzzel_size_box;
-            state.terminal_size_box = terminal_size_box;
-            state.paginator_size_box = paginator_size_box;
-            state.font_buttons = font_buttons;
-            state.copy_buttons = copy_buttons;
+            if typeface_loaded {
+                state.typeface_loaded = typeface_loaded;
+                state.sans_serif = sans_serif;
+                state.serif = serif;
+                state.monospace = monospace;
+                state.window_borders = window_borders;
+                state.status_interface = status_interface;
+                state.fuzzel = fuzzel;
+                state.terminal = terminal;
+                state.paginator = paginator;
+                state.all_fonts = all_fonts;
+                state.mono_fonts = mono_fonts;
+                state.sans_box = sans_box;
+                state.serif_box = serif_box;
+                state.mono_box = mono_box;
+                state.borders_box = borders_box;
+                state.status_box = status_box;
+                state.fuzzel_box = fuzzel_box;
+                state.terminal_box = terminal_box;
+                state.borders_menu = borders_menu;
+                state.status_menu = status_menu;
+                state.fuzzel_menu = fuzzel_menu;
+                state.terminal_menu = terminal_menu;
+                state.borders_size_box = borders_size_box;
+                state.status_size_box = status_size_box;
+                state.fuzzel_size_box = fuzzel_size_box;
+                state.terminal_size_box = terminal_size_box;
+            }
         }
         InterfaceMessage::TypefaceRefreshed(new) => {
             state.typeface_loaded = new.typeface_loaded;
             state.all_fonts = new.all_fonts;
             state.mono_fonts = new.mono_fonts;
-            if state.selected_font.is_none() {
-                state.selected_font = new.selected_font.clone();
-            }
             if !state.sans_box.editing {
                 state.sans_serif = new.sans_serif.clone();
                 state.sans_box = new.sans_box;
@@ -1425,24 +1916,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 state.terminal_box = new.terminal_box;
                 state.terminal_menu = new.terminal_menu;
             }
-            if !state.paginator_box.editing {
-                state.paginator = new.paginator.clone();
-                state.paginator_box = new.paginator_box;
-                state.paginator_menu = new.paginator_menu;
-            }
-            if !state.search_box.editing {
-                state.search_box = new.search_box;
-            }
             state.borders_size_box = new.borders_size_box;
             state.status_size_box = new.status_size_box;
             state.fuzzel_size_box = new.fuzzel_size_box;
             state.terminal_size_box = new.terminal_size_box;
-            state.paginator_size_box = new.paginator_size_box;
-            state.font_buttons = new.font_buttons;
-            state.copy_buttons = new.copy_buttons;
-            let old_scroll = state.list_box.scroll_y();
-            state.list_box = new.list_box;
-            state.list_box.set_scroll_y(old_scroll);
         }
         InterfaceMessage::SetSans(sans) => {
             state.sans_serif = sans.clone();
@@ -1462,10 +1939,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             if state.terminal_menu.selected == 0 {
                 state.terminal = state.sans_serif.clone();
                 state.terminal_box.text = state.sans_serif.clone();
-            }
-            if state.paginator_menu.selected == 0 {
-                state.paginator = state.sans_serif.clone();
-                state.paginator_box.text = state.sans_serif.clone();
             }
             save_preferred_fonts(
                 &state.sans_serif,
@@ -1497,10 +1970,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 state.terminal = state.serif.clone();
                 state.terminal_box.text = state.serif.clone();
             }
-            if state.paginator_menu.selected == 1 {
-                state.paginator = state.serif.clone();
-                state.paginator_box.text = state.serif.clone();
-            }
             save_preferred_fonts(
                 &state.sans_serif,
                 &state.serif,
@@ -1530,10 +1999,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             if state.terminal_menu.selected == 2 {
                 state.terminal = state.monospace.clone();
                 state.terminal_box.text = state.monospace.clone();
-            }
-            if state.paginator_menu.selected == 2 {
-                state.paginator = state.monospace.clone();
-                state.paginator_box.text = state.monospace.clone();
             }
             save_preferred_fonts(
                 &state.sans_serif,
@@ -1602,75 +2067,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.paginator,
             );
         }
-        InterfaceMessage::SetPaginator(paginator) => {
-            state.paginator = paginator.clone();
-            state.paginator_box.text = paginator;
-            save_preferred_fonts(
-                &state.sans_serif,
-                &state.serif,
-                &state.monospace,
-                &state.window_borders,
-                &state.status_interface,
-                &state.fuzzel,
-                &state.terminal,
-                &state.paginator,
-            );
-        }
-        InterfaceMessage::SetSearch(search) => {
-            state.search_box.text = search;
-        }
-        InterfaceMessage::SelectFont(font) => {
-            state.selected_font = Some(font);
-        }
-        InterfaceMessage::CopyFontName(font) => {
-            use std::io::Write;
-            std::thread::spawn({
-                let text = font.clone();
-                move || {
-                    let mut copied = false;
-                    let child = std::process::Command::new("wl-copy")
-                        .stdin(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped())
-                        .spawn();
-                    match child {
-                        Ok(mut child) => {
-                            if let Some(mut stdin) = child.stdin.take() {
-                                let _ = stdin.write_all(text.as_bytes());
-                            }
-                            match child.wait_with_output() {
-                                Ok(output) => {
-                                    if output.status.success() {
-                                        copied = true;
-                                    } else {
-                                        let err_msg = String::from_utf8_lossy(&output.stderr);
-                                        eprintln!("wl-copy exited with error status: {:?}, stderr: {}", output.status, err_msg);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("wl-copy wait failed: {:?}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("wl-copy spawn failed: {:?}", e);
-                        }
-                    }
-                    if !copied {
-                        if let Ok(mut child) = std::process::Command::new("xclip")
-                            .arg("-selection")
-                            .arg("clipboard")
-                            .stdin(std::process::Stdio::piped())
-                            .spawn()
-                        {
-                            if let Some(mut stdin) = child.stdin.take() {
-                                let _ = stdin.write_all(text.as_bytes());
-                            }
-                            let _ = child.wait();
-                        }
-                    }
-                }
-            });
-        }
+
         InterfaceMessage::SetBordersMenu(idx) => {
             state.borders_menu.selected = idx;
             state.borders_box.disabled = idx != 3;
@@ -1767,30 +2164,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.paginator,
             );
         }
-        InterfaceMessage::SetPaginatorMenu(idx) => {
-            state.paginator_menu.selected = idx;
-            state.paginator_box.disabled = idx != 3;
-            if idx == 0 {
-                state.paginator = state.sans_serif.clone();
-                state.paginator_box.text = state.sans_serif.clone();
-            } else if idx == 1 {
-                state.paginator = state.serif.clone();
-                state.paginator_box.text = state.serif.clone();
-            } else if idx == 2 {
-                state.paginator = state.monospace.clone();
-                state.paginator_box.text = state.monospace.clone();
-            }
-            save_preferred_fonts(
-                &state.sans_serif,
-                &state.serif,
-                &state.monospace,
-                &state.window_borders,
-                &state.status_interface,
-                &state.fuzzel,
-                &state.terminal,
-                &state.paginator,
-            );
-        }
         InterfaceMessage::SetBordersSize(val) => {
             state.borders_size_box.value = val;
             write_config_value("border_font_size", &val.to_string());
@@ -1807,10 +2180,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::SetTerminalSize(val) => {
             state.terminal_size_box.value = val;
             write_terminal_size(val as u16);
-        }
-        InterfaceMessage::SetPaginatorSize(val) => {
-            state.paginator_size_box.value = val;
-            write_paginator_size(val as u16);
         }
     }
 }
@@ -1909,4 +2278,603 @@ mod tests {
         assert_eq!(parse_font_for_alias(content, "monospace"), Some("Berkeley Mono".to_string()));
         assert_eq!(parse_font_for_alias(content, "serif"), None);
     }
+
+    #[test]
+    fn test_read_write_section_padding() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_section_padding_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse section_padding when missing (should return default 8)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "section_padding", 8);
+        assert_eq!(val, 8);
+
+        // 3. Write section_padding config
+        assert!(write_config_value_path(path_str, "section_padding", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("section_padding = 12"));
+
+        // 4. Parse section_padding when present (should return written value 12)
+        let val2 = parse_u16_from(&updated, "section_padding", 8);
+        assert_eq!(val2, 12);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_plate_padding() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_plate_padding_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse plate_padding when missing (should return default 20)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "plate_padding", 20);
+        assert_eq!(val, 20);
+
+        // 3. Write plate_padding config
+        assert!(write_config_value_path(path_str, "plate_padding", "15"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("plate_padding = 15"));
+
+        // 4. Parse plate_padding when present (should return written value 15)
+        let val2 = parse_u16_from(&updated, "plate_padding", 20);
+        assert_eq!(val2, 15);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_page_margin() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_page_margin_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse page_margin when missing (should return default 20)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "page_margin", 20);
+        assert_eq!(val, 20);
+
+        // 3. Write page_margin config
+        assert!(write_config_value_path(path_str, "page_margin", "15"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("page_margin = 15"));
+
+        // 4. Parse page_margin when present (should return written value 15)
+        let val2 = parse_u16_from(&updated, "page_margin", 20);
+        assert_eq!(val2, 15);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_spinbox_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_spinbox_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse spinbox_height when missing (should return default 26)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "spinbox_height", 26);
+        assert_eq!(val, 26);
+
+        // 3. Write spinbox_height config
+        assert!(write_config_value_path(path_str, "spinbox_height", "30"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("spinbox_height = 30"));
+
+        // 4. Parse spinbox_height when present (should return written value 30)
+        let val2 = parse_u16_from(&updated, "spinbox_height", 26);
+        assert_eq!(val2, 30);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_toggle_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_toggle_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse toggle_height when missing (should return default 44)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "toggle_height", 44);
+        assert_eq!(val, 44);
+
+        // 3. Write toggle_height config
+        assert!(write_config_value_path(path_str, "toggle_height", "52"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("toggle_height = 52"));
+
+        // 4. Parse toggle_height when present (should return written value 52)
+        let val2 = parse_u16_from(&updated, "toggle_height", 44);
+        assert_eq!(val2, 52);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_color_selector_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_color_selector_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse color_selector_height when missing (should return default 22)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "color_selector_height", 22);
+        assert_eq!(val, 22);
+
+        // 3. Write color_selector_height config
+        assert!(write_config_value_path(path_str, "color_selector_height", "28"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("color_selector_height = 28"));
+
+        // 4. Parse color_selector_height when present (should return written value 28)
+        let val2 = parse_u16_from(&updated, "color_selector_height", 22);
+        assert_eq!(val2, 28);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_textbox_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_textbox_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse textbox_height when missing (should return default 44)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "textbox_height", 44);
+        assert_eq!(val, 44);
+
+        // 3. Write textbox_height config
+        assert!(write_config_value_path(path_str, "textbox_height", "48"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("textbox_height = 48"));
+
+        // 4. Parse textbox_height when present (should return written value 48)
+        let val2 = parse_u16_from(&updated, "textbox_height", 44);
+        assert_eq!(val2, 48);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_color_selector_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_color_selector_font_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse color_selector_font when missing (should return default "monospace")
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "color_selector_font", "monospace");
+        assert_eq!(val, "monospace");
+
+        // 3. Write color_selector_font config
+        assert!(write_config_value_path(path_str, "color_selector_font", "\"Berkeley Mono\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("color_selector_font = \"Berkeley Mono\""));
+
+        // 4. Parse color_selector_font when present (should return written value)
+        let val2 = parse_string_from(&updated, "color_selector_font", "monospace");
+        assert_eq!(val2, "Berkeley Mono");
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_menubar_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_menubar_font_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse menubar_font when missing (should return default "Outfit")
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "menubar_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        // 3. Write menubar_font config
+        assert!(write_config_value_path(path_str, "menubar_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("menubar_font = \"Inter\""));
+
+        // 4. Parse menubar_font when present (should return written value)
+        let val2 = parse_string_from(&updated, "menubar_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_font_selector_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_font_selector_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse font_selector_height when missing (should return default 44)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "font_selector_height", 44);
+        assert_eq!(val, 44);
+
+        // 3. Write font_selector_height config
+        assert!(write_config_value_path(path_str, "font_selector_height", "48"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("font_selector_height = 48"));
+
+        // 4. Parse font_selector_height when present (should return written value 48)
+        let val2 = parse_u16_from(&updated, "font_selector_height", 44);
+        assert_eq!(val2, 48);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_grid_min_col_width() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_grid_min_col_width_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse grid_min_col_width when missing (should return default 260)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "grid_min_col_width", 260);
+        assert_eq!(val, 260);
+
+        // 3. Write grid_min_col_width config
+        assert!(write_config_value_path(path_str, "grid_min_col_width", "280"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("grid_min_col_width = 280"));
+
+        // 4. Parse grid_min_col_width when present (should return written value 280)
+        let val2 = parse_u16_from(&updated, "grid_min_col_width", 260);
+        assert_eq!(val2, 280);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_color_selector_preview_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_color_selector_preview_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse color_selector_preview_corner_radius when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "color_selector_preview_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write color_selector_preview_corner_radius config
+        assert!(write_config_value_path(path_str, "color_selector_preview_corner_radius", "8"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("color_selector_preview_corner_radius = 8"));
+
+        // 4. Parse color_selector_preview_corner_radius when present (should return written value 8)
+        let val2 = parse_u16_from(&updated, "color_selector_preview_corner_radius", 4);
+        assert_eq!(val2, 8);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_color_selector_preview_margin() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_color_selector_preview_margin_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse color_selector_preview_margin when missing (should return default 0)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "color_selector_preview_margin", 0);
+        assert_eq!(val, 0);
+
+        // 3. Write color_selector_preview_margin config
+        assert!(write_config_value_path(path_str, "color_selector_preview_margin", "3"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("color_selector_preview_margin = 3"));
+
+        // 4. Parse color_selector_preview_margin when present (should return written value 3)
+        let val2 = parse_u16_from(&updated, "color_selector_preview_margin", 0);
+        assert_eq!(val2, 3);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_paginator_tab_margin_x() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_paginator_tab_margin_x_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "paginator_tab_margin_x", 5);
+        assert_eq!(val, 5);
+
+        assert!(write_config_value_path(path_str, "paginator_tab_margin_x", "8"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("paginator_tab_margin_x = 8"));
+
+        let val2 = parse_u16_from(&updated, "paginator_tab_margin_x", 5);
+        assert_eq!(val2, 8);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_paginator_tab_margin_y() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_paginator_tab_margin_y_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "paginator_tab_margin_y", 10);
+        assert_eq!(val, 10);
+
+        assert!(write_config_value_path(path_str, "paginator_tab_margin_y", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("paginator_tab_margin_y = 12"));
+
+        let val2 = parse_u16_from(&updated, "paginator_tab_margin_y", 10);
+        assert_eq!(val2, 12);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_paginator_tab_padding_x() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_paginator_tab_padding_x_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "paginator_tab_padding_x", 10);
+        assert_eq!(val, 10);
+
+        assert!(write_config_value_path(path_str, "paginator_tab_padding_x", "15"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("paginator_tab_padding_x = 15"));
+
+        let val2 = parse_u16_from(&updated, "paginator_tab_padding_x", 10);
+        assert_eq!(val2, 15);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_paginator_tab_padding_y() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_paginator_tab_padding_y_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "paginator_tab_padding_y", 14);
+        assert_eq!(val, 14);
+
+        assert!(write_config_value_path(path_str, "paginator_tab_padding_y", "20"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("paginator_tab_padding_y = 20"));
+
+        let val2 = parse_u16_from(&updated, "paginator_tab_padding_y", 14);
+        assert_eq!(val2, 20);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_slider_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_slider_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse slider_height when missing (should return default 28)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "slider_height", 28);
+        assert_eq!(val, 28);
+
+        // 3. Write slider_height config
+        assert!(write_config_value_path(path_str, "slider_height", "32"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("slider_height = 32"));
+
+        // 4. Parse slider_height when present (should return written value 32)
+        let val2 = parse_u16_from(&updated, "slider_height", 28);
+        assert_eq!(val2, 32);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_nested_section_label_alignment() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_nested_section_label_alignment_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse when missing (should return default 0)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "nested_section_label_alignment", 0);
+        assert_eq!(val, 0);
+
+        // 3. Write alignment config
+        assert!(write_config_value_path(path_str, "nested_section_label_alignment", "2"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("nested_section_label_alignment = 2"));
+
+        // 4. Parse when present (should return written value 2)
+        let val2 = parse_u16_from(&updated, "nested_section_label_alignment", 0);
+        assert_eq!(val2, 2);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_nested_section_label_offset() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_nested_section_label_offset_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse when missing (should return default 0)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_i16_from(&content, "nested_section_label_offset", 0);
+        assert_eq!(val, 0);
+
+        // 3. Write alignment config
+        assert!(write_config_value_path(path_str, "nested_section_label_offset", "-15"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("nested_section_label_offset = -15"));
+
+        // 4. Parse when present (should return written value -15)
+        let val2 = parse_i16_from(&updated, "nested_section_label_offset", 0);
+        assert_eq!(val2, -15);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_dropdown_height() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_dropdown_height_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse dropdown_height when missing (should return default 44)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "dropdown_height", 44);
+        assert_eq!(val, 44);
+
+        // 3. Write dropdown_height config
+        assert!(write_config_value_path(path_str, "dropdown_height", "48"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("dropdown_height = 48"));
+
+        // 4. Parse dropdown_height when present (should return written value 48)
+        let val2 = parse_u16_from(&updated, "dropdown_height", 44);
+        assert_eq!(val2, 48);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_label_margin() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_label_margin_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse when missing (should return default 6)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "label_margin", 6);
+        assert_eq!(val, 6);
+
+        // 3. Write label_margin config
+        assert!(write_config_value_path(path_str, "label_margin", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("label_margin = 12"));
+
+        // 4. Parse when present (should return written value 12)
+        let val2 = parse_u16_from(&updated, "label_margin", 6);
+        assert_eq!(val2, 12);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
 }
+
+
+

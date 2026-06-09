@@ -6,12 +6,12 @@ use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Spinbox, Dropdown, LayoutPreview, PreviewLayoutMode};
 
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/ccec-{}.sock", display),
-        Err(_) => "/tmp/ccec.sock".to_string(),
+        Ok(display) => format!("/tmp/cce-client-{}.sock", display),
+        Err(_) => "/tmp/cce-client.sock".to_string(),
     }
 }
 
@@ -403,8 +403,8 @@ fn read_current_layout_status() -> LayoutStatusInfo {
 
     let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
     
-    let tags_path = format!("/tmp/ccec-tags-{}", display);
-    let tags_fallback = "/tmp/ccec-tags".to_string();
+    let tags_path = format!("/tmp/cce-client-tags-{}", display);
+    let tags_fallback = "/tmp/cce-client-tags".to_string();
     let tags_content = fs::read_to_string(&tags_path)
         .or_else(|_| fs::read_to_string(&tags_fallback))
         .unwrap_or_default();
@@ -418,24 +418,24 @@ fn read_current_layout_status() -> LayoutStatusInfo {
         }
     }
 
-    let title_path = format!("/tmp/ccec-title-{}", display);
-    let title_fallback = "/tmp/ccec-title".to_string();
+    let title_path = format!("/tmp/cce-client-title-{}", display);
+    let title_fallback = "/tmp/cce-client-title".to_string();
     let focused_title = fs::read_to_string(&title_path)
         .or_else(|_| fs::read_to_string(&title_fallback))
         .unwrap_or_default()
         .trim()
         .to_string();
 
-    let layout_path = format!("/tmp/ccec-layout-{}", display);
-    let layout_fallback = "/tmp/ccec-layout".to_string();
+    let layout_path = format!("/tmp/cce-client-layout-{}", display);
+    let layout_fallback = "/tmp/cce-client-layout".to_string();
     let focused_layout_mode = fs::read_to_string(&layout_path)
         .or_else(|_| fs::read_to_string(&layout_fallback))
         .unwrap_or_else(|_| "Cascade".to_string())
         .trim()
         .to_string();
 
-    let windows_path = format!("/tmp/ccec-windows-{}", display);
-    let windows_fallback = "/tmp/ccec-windows".to_string();
+    let windows_path = format!("/tmp/cce-client-windows-{}", display);
+    let windows_fallback = "/tmp/cce-client-windows".to_string();
     let windows_content = fs::read_to_string(&windows_path)
         .or_else(|_| fs::read_to_string(&windows_fallback))
         .unwrap_or_default();
@@ -513,7 +513,7 @@ fn read_current_layout_status() -> LayoutStatusInfo {
     }
 }
 
-pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
@@ -551,7 +551,7 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
             let mut preview = LayoutPreview::new(mode)
                 .with_active(is_active)
                 .with_label(&format!("TAG {}", tag_idx + 1));
-            render_widget(sec_cl.pc, &mut preview, tx, ty, card_w, card_h);
+            render_widget(sec_cl.pc, &mut preview, tx, ty, card_w, card_h, ctx);
         }
         
         sec_cl.content_y += 2.0 * (card_h + 8.0) + 4.0;
@@ -561,7 +561,7 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     builder.add_section(&mut final_pc, "Fullscreen", sec_focused.get(0).copied().unwrap_or(false), |sec_fs| {
         sec_fs.spacing(8.0);
         state.spinboxes[0].set_label("Border Width");
-        sec_fs.widget(&mut state.spinboxes[0], 14.0, 200.0, 44.0);
+        sec_fs.widget_full(&mut state.spinboxes[0], 44.0, ctx);
         sec_fs.spacing(8.0);
     });
 
@@ -569,16 +569,16 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     builder.add_section(&mut final_pc, "Cascade", sec_focused.get(1).copied().unwrap_or(false), |sec_cascade| {
         sec_cascade.spacing(8.0);
         state.spinboxes[1].set_label("Border Width");
-        sec_cascade.widget(&mut state.spinboxes[1], 14.0, 200.0, 44.0);
+        sec_cascade.widget_full(&mut state.spinboxes[1], 44.0, ctx);
         sec_cascade.spacing(8.0);
         state.cascade_offset_spinbox.set_label("Offset");
-        sec_cascade.widget(&mut state.cascade_offset_spinbox, 14.0, 200.0, 44.0);
+        sec_cascade.widget_full(&mut state.cascade_offset_spinbox, 44.0, ctx);
         sec_cascade.spacing(8.0);
         state.edge_gap_spinbox.set_label("Edge Gap");
-        sec_cascade.widget(&mut state.edge_gap_spinbox, 14.0, 200.0, 44.0);
+        sec_cascade.widget_full(&mut state.edge_gap_spinbox, 44.0, ctx);
         sec_cascade.spacing(8.0);
         state.top_gap_spinbox.set_label("Top Gap");
-        sec_cascade.widget(&mut state.top_gap_spinbox, 14.0, 200.0, 44.0);
+        sec_cascade.widget_full(&mut state.top_gap_spinbox, 44.0, ctx);
         sec_cascade.spacing(8.0);
     });
 
@@ -586,10 +586,10 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     builder.add_section(&mut final_pc, "Grid", sec_focused.get(2).copied().unwrap_or(false), |sec_grid| {
         sec_grid.spacing(8.0);
         state.spinboxes[2].set_label("Border Width");
-        sec_grid.widget(&mut state.spinboxes[2], 14.0, 200.0, 44.0);
+        sec_grid.widget_full(&mut state.spinboxes[2], 44.0, ctx);
         sec_grid.spacing(8.0);
         state.grid_gap_spinbox.set_label("Gap");
-        sec_grid.widget(&mut state.grid_gap_spinbox, 14.0, 200.0, 44.0);
+        sec_grid.widget_full(&mut state.grid_gap_spinbox, 44.0, ctx);
         sec_grid.spacing(8.0);
     });
 
@@ -597,7 +597,7 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     builder.add_section(&mut final_pc, "Floating", sec_focused.get(3).copied().unwrap_or(false), |sec_float| {
         sec_float.spacing(8.0);
         state.spinboxes[3].set_label("Border Width");
-        sec_float.widget(&mut state.spinboxes[3], 14.0, 200.0, 44.0);
+        sec_float.widget_full(&mut state.spinboxes[3], 44.0, ctx);
         sec_float.spacing(8.0);
     });
 
@@ -605,7 +605,7 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     builder.add_section(&mut final_pc, "Movement", sec_focused.get(4).copied().unwrap_or(false), |movement_sec| {
         movement_sec.spacing(8.0);
         state.transition_duration_spinbox.set_label("Duration (ms)");
-        movement_sec.widget(&mut state.transition_duration_spinbox, 14.0, 200.0, 44.0);
+        movement_sec.widget_full(&mut state.transition_duration_spinbox, 44.0, ctx);
         movement_sec.spacing(8.0);
     });
 
@@ -613,7 +613,7 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     builder.add_section(&mut final_pc, "Default Layouts", sec_focused.get(5).copied().unwrap_or(false), |default_layouts_sec| {
         default_layouts_sec.spacing(8.0);
         for i in 0..4 {
-            default_layouts_sec.widget(&mut state.tag_layout_menus[i], 14.0, 200.0, 44.0);
+            default_layouts_sec.widget_full(&mut state.tag_layout_menus[i], 44.0, ctx);
             default_layouts_sec.spacing(8.0);
         }
     });
@@ -621,12 +621,13 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     // 7. Side Panel Section
     builder.add_section(&mut final_pc, "Side Panel", sec_focused.get(6).copied().unwrap_or(false), |side_panel_sec| {
         side_panel_sec.spacing(8.0);
-        side_panel_sec.widget(&mut state.side_panel_behavior_menu, 14.0, 200.0, 44.0);
+        side_panel_sec.widget_full(&mut state.side_panel_behavior_menu, 44.0, ctx);
         side_panel_sec.spacing(8.0);
         state.side_panel_width_spinbox.set_label("Default Width");
-        side_panel_sec.widget(&mut state.side_panel_width_spinbox, 14.0, 200.0, 44.0);
+        side_panel_sec.widget_full(&mut state.side_panel_width_spinbox, 44.0, ctx);
         side_panel_sec.spacing(8.0);
     });
+
 
     final_pc
 }
@@ -792,7 +793,7 @@ mode = "popup"
     fn test_view_layout_grid() {
         let mut state = LayoutState::default();
         let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false], &mut layout);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false], &mut layout, &mut clear_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

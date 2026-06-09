@@ -5,12 +5,12 @@ use crate::app::PageContent;
 use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/ccec-{}.sock", display),
-        Err(_) => "/tmp/ccec.sock".to_string(),
+        Ok(display) => format!("/tmp/cce-client-{}.sock", display),
+        Err(_) => "/tmp/cce-client.sock".to_string(),
     }
 }
 
@@ -154,8 +154,8 @@ impl Default for InputState {
 }
 
 impl InputState {
-    pub fn is_over_trackpad(&self, lx: f32, ly: f32) -> bool {
-        self.trackpad.hit_test(lx, ly)
+    pub fn is_over_trackpad(&self, lx: f32, ly: f32, ctx: &clear_ui::context::UiContext) -> bool {
+        self.trackpad.hit_test(lx, ly, ctx)
     }
 }
 
@@ -389,95 +389,87 @@ fn apply_repeat_config(rate: u16, delay: u16) {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
 
     // ── Touchpad ──
     builder.add_section(&mut final_pc, "Touchpad", false, |sec| {
-        let toggle_w = 48.0;
-        let toggle_h = 42.0;
         state.tap_toggle.set_toggled(state.tap_to_click);
-        sec.widget(&mut state.tap_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.tap_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(8.0);
 
         // Built-in trackpad visualizer widget
         let pad_w = 280.0;
         let pad_h = 158.0;
         state.trackpad.set_fingers(state.fingers.clone());
-        sec.widget(&mut state.trackpad, 14.0, pad_w, pad_h);
+        sec.widget(&mut state.trackpad, 14.0, pad_w, pad_h, ctx);
         sec.spacing(12.0);
     });
 
     // ── Trackpoint ──
     builder.add_section(&mut final_pc, "Trackpoint", sec_focused.first().copied().unwrap_or(false), |sec| {
-        let toggle_w = 48.0;
-        let toggle_h = 42.0;
         state.dwtp_toggle.set_toggled(state.dwtp);
-        sec.widget(&mut state.dwtp_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.dwtp_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.trackpoint_accel_speed_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.trackpoint_accel_speed_spinbox, 44.0, ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.trackpoint_accel_profile_menu, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.trackpoint_accel_profile_menu, 44.0, ctx);
         sec.spacing(8.0);
     });
 
     // ── Keyboard ──
     builder.add_section(&mut final_pc, "Keyboard", sec_focused.get(1).copied().unwrap_or(false), |sec| {
-        sec.widget(&mut state.rate_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.rate_spinbox, 44.0, ctx);
         sec.spacing(8.0);
 
-        sec.widget(&mut state.delay_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.delay_spinbox, 44.0, ctx);
         sec.spacing(8.0);
     });
 
     // ── Cursor ──
     builder.add_section(&mut final_pc, "Cursor", sec_focused.get(2).copied().unwrap_or(false), |sec| {
-        sec.widget(&mut state.cursor_theme_menu, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.cursor_theme_menu, 44.0, ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.cursor_size_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.cursor_size_spinbox, 44.0, ctx);
         sec.spacing(8.0);
     });
 
     // ── Scrolling ──
     builder.add_section(&mut final_pc, "Scrolling", sec_focused.get(3).copied().unwrap_or(false), |sec| {
-        let toggle_w = 48.0;
-        let toggle_h = 42.0;
         state.scroll_toggle.set_toggled(state.inertial_scroll);
-        sec.widget(&mut state.scroll_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.scroll_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.scroll_friction_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.scroll_friction_spinbox, 44.0, ctx);
         sec.spacing(12.0);
 
         state.natural_toggle.set_toggled(state.natural_scroll);
-        sec.widget(&mut state.natural_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.natural_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.scroll_speed_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.scroll_speed_spinbox, 44.0, ctx);
         sec.spacing(8.0);
     });
 
     // ── Inertial Input ──
     builder.add_section(&mut final_pc, "Inertial Input", sec_focused.get(4).copied().unwrap_or(false), |sec| {
-        let toggle_w = 48.0;
-        let toggle_h = 42.0;
         state.pointer_toggle.set_toggled(state.inertial_pointer);
-        sec.widget(&mut state.pointer_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.pointer_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.pointer_friction_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.pointer_friction_spinbox, 44.0, ctx);
         sec.spacing(16.0);
 
         state.trackpad_toggle.set_toggled(state.inertial_trackpad);
-        sec.widget(&mut state.trackpad_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.trackpad_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
-        sec.widget(&mut state.trackpad_friction_spinbox, 14.0, 200.0, 44.0);
+        sec.widget_full(&mut state.trackpad_friction_spinbox, 44.0, ctx);
         sec.spacing(8.0);
     });
 
@@ -610,19 +602,20 @@ mod tests {
     fn test_is_over_trackpad() {
         let mut state = InputState::default();
         state.trackpad.set_rect(100.0, 200.0, 300.0, 150.0);
+        let ctx = clear_ui::context::UiContext::new();
 
         // Inside
-        assert!(state.is_over_trackpad(150.0, 250.0));
-        assert!(state.is_over_trackpad(100.0, 200.0));
-        assert!(state.is_over_trackpad(400.0, 350.0));
+        assert!(state.is_over_trackpad(150.0, 250.0, &ctx));
+        assert!(state.is_over_trackpad(100.0, 200.0, &ctx));
+        assert!(state.is_over_trackpad(400.0, 350.0, &ctx));
 
         // Outside X
-        assert!(!state.is_over_trackpad(99.0, 250.0));
-        assert!(!state.is_over_trackpad(401.0, 250.0));
+        assert!(!state.is_over_trackpad(99.0, 250.0, &ctx));
+        assert!(!state.is_over_trackpad(401.0, 250.0, &ctx));
 
         // Outside Y
-        assert!(!state.is_over_trackpad(150.0, 199.0));
-        assert!(!state.is_over_trackpad(150.0, 351.0));
+        assert!(!state.is_over_trackpad(150.0, 199.0, &ctx));
+        assert!(!state.is_over_trackpad(150.0, 351.0, &ctx));
     }
 
     #[test]
@@ -640,7 +633,7 @@ mod tests {
     fn test_view_layout_grid() {
         let mut state = InputState::default();
         let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false, false], &mut layout);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false, false], &mut layout, &mut clear_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

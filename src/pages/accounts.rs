@@ -83,7 +83,7 @@ pub enum AccountsMessage {
 }
 
 pub fn get_accounts_path() -> std::path::PathBuf {
-    let p = std::path::PathBuf::from("/home/lsgalante/.config/ccec");
+    let p = std::path::PathBuf::from("/home/lsgalante/.config/cce");
     if !p.exists() {
         let _ = std::fs::create_dir_all(&p);
         #[cfg(unix)]
@@ -155,7 +155,7 @@ pub struct GoogleClientConfig {
 }
 
 pub fn load_google_client_config() -> GoogleClientConfig {
-    let p = std::path::PathBuf::from("/home/lsgalante/.config/ccec/google_client.json");
+    let p = std::path::PathBuf::from("/home/lsgalante/.config/cce/google_client.json");
     if p.exists() {
         if let Ok(content) = std::fs::read_to_string(&p) {
             if let Ok(config) = serde_json::from_str::<GoogleClientConfig>(&content) {
@@ -303,7 +303,7 @@ pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Se
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
@@ -316,7 +316,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
         } else {
             let row_h = 28.0;
             let row_gap = 8.0;
-            let item_w = sec_w - 40.0;
+            let item_w = sec_accounts.cw - 2.0 * (sec_accounts.padding() + 12.0);
 
             if state.accounts.is_empty() {
                 sec_accounts.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -411,7 +411,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
 
     // ── Modify Accounts Section ──
     builder.add_section(&mut final_pc, "Modify Accounts", false, |sec_modify| {
-        let item_w = sec_w - 40.0;
+        let item_w = sec_modify.cw - 2.0 * (sec_modify.padding() + 12.0);
         let row_h = 28.0;
         let rx = sec_modify.left;
 
@@ -428,22 +428,22 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
 
                 // Email Address textbox
                 state.email_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.email_box, 12.0, item_w, widget_h);
+                sec_modify.widget(&mut state.email_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
                 // Password textbox
                 state.password_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.password_box, 12.0, item_w, widget_h);
+                sec_modify.widget(&mut state.password_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
                 // IMAP Server textbox
                 state.imap_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.imap_box, 12.0, item_w, widget_h);
+                sec_modify.widget(&mut state.imap_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
                 // SMTP Server textbox
                 state.smtp_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.smtp_box, 12.0, item_w, widget_h);
+                sec_modify.widget(&mut state.smtp_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
                 let helper_w = (item_w - 8.0) / 2.0;
@@ -508,12 +508,12 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
 
                 // Client ID textbox
                 state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.oauth_client_id_box, 12.0, item_w, widget_h);
+                sec_modify.widget(&mut state.oauth_client_id_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
                 // Client Secret textbox
                 state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.oauth_client_secret_box, 12.0, item_w, widget_h);
+                sec_modify.widget(&mut state.oauth_client_secret_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
                 let helper_w = (item_w - 8.0) / 2.0;
@@ -565,7 +565,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                             "Click to Login (Browser)",
                             sec_modify.ax(12.0),
                             sec_modify.ay(),
-                            200.0,
+                            item_w,
                             row_h,
                             [0.15, 0.15, 0.25, 1.0],
                             [0.25, 0.25, 0.35, 1.0],
@@ -722,7 +722,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                 client_id,
                 client_secret,
             };
-            let p = std::path::PathBuf::from("/home/lsgalante/.config/ccec/google_client.json");
+            let p = std::path::PathBuf::from("/home/lsgalante/.config/cce/google_client.json");
             if let Some(parent) = p.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }

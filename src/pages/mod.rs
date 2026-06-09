@@ -10,6 +10,7 @@ pub mod hardware;
 pub mod services;
 pub mod interface;
 pub mod accounts;
+pub mod packages;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -24,17 +25,19 @@ pub enum Page {
     Hardware,
     Input,
     Interface,
+    Packages,
 }
 
 impl Page {
-    pub const ALL: [Page; 11] = [
+    pub const ALL: [Page; 12] = [
         Page::Accounts,
         Page::Audio,
-        Page::Interface,
         Page::Display,
-        Page::Input,
-        Page::Layout,
         Page::Hardware,
+        Page::Input,
+        Page::Interface,
+        Page::Layout,
+        Page::Packages,
         Page::Radios,
         Page::Services,
         Page::Storage,
@@ -54,6 +57,7 @@ impl Page {
             Page::Hardware => "Hardware",
             Page::Input => "Input",
             Page::Interface => "Interface",
+            Page::Packages => "Packages",
         }
     }
 
@@ -61,4 +65,5 @@ impl Page {
         ""
     }
 }
+
 

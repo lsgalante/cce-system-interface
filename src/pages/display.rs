@@ -1,8 +1,8 @@
 use crate::app::{PageContent, SectionContextExt};
 use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown};
+use clear_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/ccec/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -51,6 +51,7 @@ pub struct DisplayState {
     pub max_brightness: f32,
     pub outputs: Vec<DisplayOutput>,
     pub night_light: bool,
+    pub brightness_slider: Slider,
     pub brightness_spinbox: Spinbox,
     pub night_light_label: Label,
     // screensaver fields:
@@ -72,6 +73,7 @@ impl Default for DisplayState {
             max_brightness: 0.0,
             outputs: Vec::new(),
             night_light: false,
+            brightness_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true),
             brightness_spinbox: Spinbox::new(50, 0, 100, 5).with_unit("%"),
             night_light_label: Label::new("Night Light: OFF").with_font_size(13.0).with_color([0xd4, 0xd4, 0xd4]),
             screensaver_enable: true,
@@ -274,6 +276,7 @@ pub async fn fetch_display_state() -> DisplayState {
     DisplayState {
         loaded: true,
         brightness, max_brightness, outputs, night_light,
+        brightness_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(pct.max(1) as f32 / 100.0),
         brightness_spinbox: Spinbox::new(pct.max(1), 1, 100, 5).with_unit("%"),
         night_light_label: Label::new(if night_light { "Night Light: ON" } else { "Night Light: OFF" })
             .with_font_size(13.0)
@@ -378,7 +381,7 @@ const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
 const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(4);
@@ -393,24 +396,18 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
                 (state.brightness / state.max_brightness * 100.0).round() as i32
             } else { 0 };
 
-            let bar_w = sec_w - 100.0;
+            let pad = sec.padding();
+            let bar_w = sec.cw - 2.0 * pad - 12.0 - 45.0;
             let yt = sec.ay();
-            let usage_bar_x = sec.ax(12.0);
-            let mut usage_bar = clear_ui::widget::UsageBar::new(bright_pct as f32 / 100.0)
-                .with_colors(FILL_BAR, BLANK_BAR);
-            render_widget(sec.pc, &mut usage_bar, usage_bar_x, yt, bar_w, 8.0);
-            sec.text(&format!("{}%", bright_pct), 16.0 + bar_w, -2.0, 11.0, TEXT_DIM);
-            sec.spacing(14.0);
+            state.brightness_slider.set_value(bright_pct as f32 / 100.0);
+                        let slider_x = sec.ax(12.0);
+            render_widget(sec.pc, &mut state.brightness_slider, slider_x, yt, bar_w, clear_ui::layout::slider_height(), ctx);
+            sec.text(&format!("{}%", bright_pct), 12.0 + bar_w + 8.0, 7.0, 11.0, TEXT_DIM);
+            sec.spacing(34.0);
 
-            let yt = sec.ay();
-            let sb_w = 100.0;
-            let sb_h = 26.0;
             state.brightness_spinbox.value = bright_pct;
-            let row_rect_x = sec.ax(8.0);
-            state.brightness_spinbox.set_row_rect(row_rect_x, sec_w - 16.0);
-            let sb_x = sec.ax(12.0);
-            render_widget(sec.pc, &mut state.brightness_spinbox, sb_x, yt, sb_w, sb_h);
-            sec.spacing(sb_h + 12.0);
+            sec.widget_full(&mut state.brightness_spinbox, clear_ui::layout::spinbox_height(), ctx);
+            sec.spacing(12.0);
         }
     });
 
@@ -422,7 +419,7 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
         } else {
             let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
             state.night_light_label.set_text(nl_label);
-            sec.widget(&mut state.night_light_label, 12.0, sec_w - 24.0, 20.0);
+            sec.widget(&mut state.night_light_label, 12.0, sec_w - 24.0, 20.0, ctx);
             sec.spacing(8.0);
         }
     });
@@ -434,10 +431,10 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
             sec.spacing(18.0);
         } else {
             for out in &mut state.outputs {
-                sec.add_subsection(&out.name, false, |subsec| {
-                    subsec.widget(&mut out.resolution_label, 12.0, 240.0, 20.0);
+                sec.add_section(&out.name, false, |subsec| {
+                    subsec.widget(&mut out.resolution_label, 12.0, 240.0, 20.0, ctx);
                     if let Some(ref mut scale_lbl) = out.scale_label {
-                        subsec.widget(scale_lbl, 12.0, 240.0, 20.0);
+                        subsec.widget(scale_lbl, 12.0, 240.0, 20.0, ctx);
                     }
                 });
             }
@@ -446,34 +443,30 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
 
     // ── Screensaver Settings ──
     builder.add_section(&mut final_pc, "Screensaver Settings", false, |sec| {
-        let toggle_w = 48.0;
-        let toggle_h = 24.0;
-        
         state.screensaver_enable_toggle.set_toggled(state.screensaver_enable);
-        sec.widget(&mut state.screensaver_enable_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.screensaver_enable_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(8.0);
 
         state.screensaver_lock_screen_toggle.set_toggled(state.screensaver_lock_screen);
-        sec.widget(&mut state.screensaver_lock_screen_toggle, 14.0, toggle_w, toggle_h);
+        sec.widget_full(&mut state.screensaver_lock_screen_toggle, clear_ui::layout::toggle_height(), ctx);
         sec.spacing(16.0);
 
-        state.screensaver_timeout_spinbox.value = state.screensaver_timeout;
-        sec.widget(&mut state.screensaver_timeout_spinbox, 14.0, 200.0, 26.0);
+                state.screensaver_timeout_spinbox.value = state.screensaver_timeout;
+        sec.widget_full(&mut state.screensaver_timeout_spinbox, clear_ui::layout::spinbox_height(), ctx);
         sec.spacing(16.0);
 
-        sec.widget(&mut state.screensaver_style_menu, 14.0, 200.0, 26.0);
+        sec.widget_full(&mut state.screensaver_style_menu, clear_ui::layout::dropdown_height(), ctx);
         sec.spacing(24.0);
 
-        let btn_w = 160.0;
         let btn_h = 32.0;
         let btn_y = sec.ay();
         let cols = sec.row_layout(1, 0.0);
-        if let Some(&(x, _)) = cols.first() {
+        if let Some(&(x, w)) = cols.first() {
             sec.button(
                 "Preview Screensaver",
                 x,
                 btn_y,
-                btn_w,
+                w,
                 btn_h,
                 BTN_BG,
                 BTN_HOVER,
@@ -506,9 +499,11 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
             let lock_hover = state.screensaver_lock_screen_toggle.hovered();
             let timeout_hover = state.screensaver_timeout_spinbox.hovered();
             let style_hover = state.screensaver_style_menu.hovered();
+            let brightness_slider_hover = state.brightness_slider.hovered();
             
             *state = new;
             state.night_light_label.set_hovered(was_nl_hovered);
+            state.brightness_slider.set_hovered(brightness_slider_hover);
             
             state.screensaver_enable_toggle.set_hovered(enable_hover);
             state.screensaver_lock_screen_toggle.set_hovered(lock_hover);
@@ -530,6 +525,7 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
             state.brightness = pct as f32 / 100.0 * state.max_brightness;
             spawn_brightness(pct);
             state.brightness_spinbox.value = pct as i32;
+            state.brightness_slider.set_value(pct as f32 / 100.0);
         }
         DisplayMessage::ToggleScreensaverEnable => {
             state.screensaver_enable = !state.screensaver_enable;
@@ -583,8 +579,8 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = DisplayState::default();
-        let mut layout = clear_ui::layout::GridLayout::new(320.0, 20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout);
+        let mut layout = clear_ui::layout::GridLayout::new(260.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut clear_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

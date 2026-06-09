@@ -48,7 +48,7 @@ fn spawn_systemctl(action: &str) {
     let _ = tokio::process::Command::new("systemctl").arg(action).spawn();
 }
 
-pub fn view(state: &SystemState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy) -> PageContent {
+pub fn view(state: &SystemState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, _ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
