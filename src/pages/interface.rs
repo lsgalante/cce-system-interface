@@ -32,6 +32,8 @@ pub struct InterfaceState {
     pub toggle_enabled_color: [u8; 3],
     pub toggle_disabled_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
+    pub menubar_opacity: f32,
+    pub menubar_opacity_spinbox: Spinbox,
     pub paginator_tab_margin_x: u16,
     pub paginator_tab_margin_y: u16,
     pub tab_margin_spinbox_x: Spinbox,
@@ -116,6 +118,8 @@ pub struct InterfaceState {
     pub graph_uniform_background_toggle: Toggle,
     pub graph_network_opacity: f32,
     pub graph_network_opacity_slider: Slider,
+    pub graph_gap_width: u16,
+    pub graph_gap_width_spinbox: Spinbox,
 }
 
 impl Default for InterfaceState {
@@ -145,7 +149,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([124, 124, 137]).with_label("Borders"), // 6: Controls - Borders
                 ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Low Color"), // 7: Layout - Low Color
                 ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal"), // 8: Status - Normal
-                ColorSelector::new([90, 90, 101]).with_label("Paginator Sidebar"), // 9: Controls - Paginator Sidebar
+                ColorSelector::new([90, 90, 101]).with_label("Background"), // 9: Controls - Paginator Sidebar (now Background)
                 ColorSelector::new([255, 255, 255]).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
                 ColorSelector::new([230, 230, 242]).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
                 ColorSelector::new([104, 217, 165]).with_label("Enabled"), // 12: Toggles - Enabled
@@ -236,6 +240,10 @@ impl Default for InterfaceState {
             graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
             graph_network_opacity: 0.95,
             graph_network_opacity_slider: Slider::new().with_label("Network Opacity").with_value(0.95),
+            graph_gap_width: 35,
+            graph_gap_width_spinbox: Spinbox::new(35, 0, 100, 1).with_label("Gap Width").with_unit("px"),
+            menubar_opacity: 0.9,
+            menubar_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
         }
     }
 }
@@ -284,6 +292,8 @@ pub enum InterfaceMessage {
     SetGraphSnapEnabled(bool),
     SetGraphUniformBackground(bool),
     SetGraphOpacity(f32),
+    SetGraphGapWidth(u16),
+    SetMenubarOpacity(f32),
     PickLowColor,
     PickHighColor,
     PickDisabledColor,
@@ -386,6 +396,8 @@ pub fn read_interface_config() -> InterfaceState {
     let graph_snap_enabled = parse_bool_from(&content, "graph_snap_enabled", true);
     let graph_uniform_background = parse_bool_from(&content, "graph_uniform_background", false);
     let graph_network_opacity = parse_f32_from(&content, "graph_network_opacity", 0.95);
+    let graph_gap_width = parse_u16_from(&content, "graph_gap_width", 35);
+    let opacity = parse_transparency_opacity(&content);
     
     InterfaceState {
         low_color: bg,
@@ -412,7 +424,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(color_borders).with_label("Borders").with_font_family(&color_selector_font), // 6: Controls - Borders
             ColorSelector::new(bg).with_label("Low Color").with_font_family(&color_selector_font), // 7: Layout - Low Color
             ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font), // 8: Status - Normal
-            ColorSelector::new(paginator_sidebar).with_label("Paginator Sidebar").with_font_family(&color_selector_font), // 9: Controls - Paginator Sidebar
+            ColorSelector::new(paginator_sidebar).with_label("Background").with_font_family(&color_selector_font), // 9: Controls - Paginator Sidebar (now Background)
             ColorSelector::new(primary_highlight).with_label("Primary Highlight").with_font_family(&color_selector_font), // 10: Controls - Primary Highlight
             ColorSelector::new(paginator_tab_label).with_label("Paginator Tab Label").with_font_family(&color_selector_font), // 11: Controls - Paginator Tab Label
             ColorSelector::new(toggle_enabled).with_label("Enabled").with_font_family(&color_selector_font), // 12: Toggles - Enabled
@@ -503,6 +515,10 @@ pub fn read_interface_config() -> InterfaceState {
         graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
         graph_network_opacity,
         graph_network_opacity_slider: Slider::new().with_label("Network Opacity").with_value(graph_network_opacity),
+        graph_gap_width,
+        graph_gap_width_spinbox: Spinbox::new(graph_gap_width as i32, 0, 100, 1).with_label("Gap Width").with_unit("px"),
+        menubar_opacity: opacity,
+        menubar_opacity_spinbox: Spinbox::new((opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
     }
 }
 
@@ -1337,6 +1353,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.graph_network_opacity_slider.set_value(state.graph_network_opacity);
             subsec.widget_full(&mut state.graph_network_opacity_slider, state.slider_height as f32, ctx);
             subsec.spacing(8.0);
+            state.graph_gap_width_spinbox.value = state.graph_gap_width as i32;
+            subsec.widget_full(&mut state.graph_gap_width_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
         sec.spacing(8.0);
     });
@@ -1397,6 +1416,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.menubar_font_selector.font_family = state.menubar_font.clone();
             subsec.widget_full(&mut state.menubar_font_selector, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.menubar_opacity_spinbox.value = (state.menubar_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.menubar_opacity_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -1782,6 +1804,18 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             write_config_value("graph_network_opacity", &format!("{:.2}", opacity));
             cce_graph_reload();
         }
+        InterfaceMessage::SetGraphGapWidth(gap) => {
+            state.graph_gap_width = gap;
+            state.graph_gap_width_spinbox.value = gap as i32;
+            write_config_value("graph_gap_width", &gap.to_string());
+            cce_graph_reload();
+        }
+        InterfaceMessage::SetMenubarOpacity(opacity) => {
+            state.menubar_opacity = opacity;
+            state.menubar_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            write_transparency_config_value("opacity", &format!("{:.2}", opacity));
+            send_ipc_command("reload");
+        }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickPaginatorTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
@@ -1798,10 +1832,12 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_gse_hovered = state.graph_snap_enabled_toggle.hovered();
             let was_gub_hovered = state.graph_uniform_background_toggle.hovered();
             let was_gno_hovered = state.graph_network_opacity_slider.hovered();
+            let was_ggw_hovered = state.graph_gap_width_spinbox.hovered();
             let was_csh_hovered = state.color_selector_height_spinbox.hovered();
             let was_tbh_hovered = state.textbox_height_spinbox.hovered();
             let was_fsh_hovered = state.font_selector_height_spinbox.hovered();
             let was_lm_hovered = state.label_margin_spinbox.hovered();
+            let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
             let sans_serif = state.sans_serif.clone();
@@ -1846,10 +1882,12 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.graph_snap_enabled_toggle.set_hovered(was_gse_hovered);
             state.graph_uniform_background_toggle.set_hovered(was_gub_hovered);
             state.graph_network_opacity_slider.set_hovered(was_gno_hovered);
+            state.graph_gap_width_spinbox.set_hovered(was_ggw_hovered);
             state.color_selector_height_spinbox.set_hovered(was_csh_hovered);
             state.textbox_height_spinbox.set_hovered(was_tbh_hovered);
             state.font_selector_height_spinbox.set_hovered(was_fsh_hovered);
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
+            state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
 
             if typeface_loaded {
                 state.typeface_loaded = typeface_loaded;
@@ -2182,6 +2220,94 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             write_terminal_size(val as u16);
         }
     }
+}
+
+fn parse_transparency_opacity(content: &str) -> f32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[transparency]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("opacity") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(o) = val.trim().parse::<f32>() {
+                    return o.clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
+    0.9 // default to 0.9
+}
+
+fn write_transparency_config_value(key: &str, value: &str) {
+    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[transparency]" {
+            in_section = true;
+            updated_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            in_section = false;
+        }
+        if in_section && trimmed.starts_with(key) {
+            found = true;
+            updated_lines.push(new_line.clone());
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let mut updated = updated_lines.join("\n");
+
+    if !found {
+        let mut result = String::new();
+        let has_section = content.lines().any(|l| l.trim() == "[transparency]");
+        if has_section {
+            let mut in_section = false;
+            let mut inserted = false;
+            for line in updated.lines() {
+                if line.trim() == "[transparency]" {
+                    in_section = true;
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+                if line.trim().starts_with('[') && in_section {
+                    if !inserted {
+                        result.push_str(&new_line);
+                        result.push('\n');
+                        inserted = true;
+                    }
+                    in_section = false;
+                }
+                result.push_str(line);
+                result.push('\n');
+            }
+            if !inserted {
+                result.push_str(&new_line);
+                result.push('\n');
+            }
+            updated = result;
+        } else {
+            updated.push_str("\n[transparency]\n");
+            updated.push_str(&new_line);
+            updated.push_str("\n");
+        }
+    }
+    let _ = fs::write(CONFIG_PATH, updated);
 }
 
 #[cfg(test)]
@@ -2870,6 +2996,25 @@ mod tests {
         // 4. Parse when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "label_margin", 6);
         assert_eq!(val2, 12);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_menubar_opacity() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_menubar_opacity_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[transparency]\nopacity = 0.85\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse when present (should return 0.85)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_transparency_opacity(&content);
+        assert_eq!(val, 0.85);
 
         // Clean up
         let _ = fs::remove_file(path_str);

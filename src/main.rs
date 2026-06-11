@@ -1,4 +1,4 @@
-use clear_ui::widget::{Finger, hover_animation, TextItem, Element};
+use clear_ui::widget::{Finger, hover_animation, TextItem, Element, PageSelector};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use cce_system_interface::app::{AppAction, AppState, ContentButton, PageContent};
@@ -161,9 +161,10 @@ struct SystemInterface {
     audio_sink_dragging: Option<usize>,
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
-    page_root_container: clear_ui::widget::Container,
     page_sec_containers: Vec<clear_ui::widget::Container>,
-    paginator: clear_ui::widget::Paginator,
+    menubar: clear_ui::widget::MenuBar,
+    switcher: clear_ui::widget::Switcher,
+    plates: Vec<clear_ui::widget::Plate>,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -404,9 +405,20 @@ impl clear_ui::engine::Application for SystemInterface {
         let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::interface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
-        let paginator = clear_ui::widget::Paginator::new(56.0, pages_names)
-            .with_tabs_rotated(true)
-            .with_sidebar_label("SYSTEM");
+        let mut menubar = clear_ui::widget::MenuBar::new(0.0, 0.0, 180.0, 680.0)
+            .with_vertical(true)
+            .with_title("SYSTEM");
+        menubar.set_pages(pages_names);
+        let sidebar_width = menubar.sidebar_w();
+
+        let switcher = clear_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
+        let mut plates = Vec::new();
+        for page in Page::ALL.iter() {
+            let plate = clear_ui::widget::Plate::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
+                .with_label(page.label())
+                .with_draggable(false);
+            plates.push(plate);
+        }
 
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
@@ -419,7 +431,7 @@ impl clear_ui::engine::Application for SystemInterface {
             widgets: Vec::new(),
             text_items: Vec::new(),
             page_buttons: Vec::new(),
-            sidebar_width: paginator.sidebar_w(),
+            sidebar_width,
             header_height: 0.0,
             status_height: 0.0,
             cursor_x: 0.0,
@@ -457,9 +469,10 @@ impl clear_ui::engine::Application for SystemInterface {
             audio_sink_dragging: None,
             audio_source_dragging: None,
             display_brightness_dragging: false,
-            page_root_container: clear_ui::widget::Container::new(),
             page_sec_containers: Vec::new(),
-            paginator,
+            menubar,
+            switcher,
+            plates,
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -467,6 +480,11 @@ impl clear_ui::engine::Application for SystemInterface {
             sender,
             ui_context: clear_ui::context::UiContext::new(),
         };
+
+        for plate in &mut this.plates {
+            this.switcher.add_child(plate.as_ptr(), &mut this.ui_context);
+        }
+
         this.rebuild_layout(820.0, 680.0);
         this
     }
@@ -575,60 +593,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 }
 
     fn rebuild_layout(&mut self, sw: f32, sh: f32) {
-        self.sidebar_width = self.paginator.sidebar_w();
-        let s = 1.0f32;
-        let mut widgets = Vec::new();
-        let mut text_items = Vec::new();
-        let mut page_buttons = Vec::new();
-
-        clear_ui::widget::hover_animation::reset_frame_registration();
-        clear_ui::widget::popovers::clear();
-        clear_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
-        clear_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
-
-        let lcx = self.sidebar_width;
-        let lcy = self.header_height;
-        let lcw = sw / s - self.sidebar_width;
-        let lch = sh / s - self.header_height - self.status_height;
+        self.switcher.clear_children(&mut self.ui_context);
+        for plate in &mut self.plates {
+            self.switcher.add_child(plate.as_ptr(), &mut self.ui_context);
+        }
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        self.paginator.set_selected_page(page_idx);
-
-        let mut paginator_pc = PageContent::new();
-        clear_ui::layout::render_widget(&mut paginator_pc, &mut self.paginator, 0.0, 0.0, sw / s, sh / s, &mut self.ui_context);
-
-        for (c, x, y, w, h) in &paginator_pc.rects {
-            widgets.push(AppWidget {
-                x: *x * s, y: *y * s, w: *w * s, h: *h * s,
-                color: *c, hover_color: *c,
-                hovering: false,
-            });
-        }
-        for (t, size, x, y, tc, font_opt, bounds) in &paginator_pc.texts {
-            text_items.push(TextItem {
-                buffer: make_text_buffer_with_font(
-                    &mut self.font_system,
-                    t,
-                    *size * s,
-                    font_opt.as_deref(),
-                    &self.sans_serif_family,
-                    &self.serif_family,
-                    &self.monospace_family,
-                ),
-                x: *x * s, y: *y * s,
-                color: glyphon::Color::rgb(
-                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
-                ),
-                bounds: *bounds,
-            });
-        }
-
-        // Page content in LOGICAL coordinates, then scale to physical
-        let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
 
         // ── Rebuild Element Focus Hierarchy ──
-        self.page_root_container.clear_children(&mut self.ui_context);
-        self.page_root_container.set_parent(None, &mut self.ui_context);
+        for plate in &mut self.plates {
+            plate.clear_children(&mut self.ui_context);
+        }
+        let page_root = &mut self.plates[page_idx];
         self.page_sec_containers.clear();
 
         // Clear all widgets' hierarchy links
@@ -666,6 +642,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
         self.app.interface.tab_margin_spinbox_x.clear_children(&mut self.ui_context);
         self.app.interface.tab_margin_spinbox_x.set_parent(None, &mut self.ui_context);
+        self.app.interface.menubar_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.menubar_opacity_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.tab_margin_spinbox_y.clear_children(&mut self.ui_context);
         self.app.interface.tab_margin_spinbox_y.set_parent(None, &mut self.ui_context);
         self.app.interface.tab_padding_spinbox_x.clear_children(&mut self.ui_context);
@@ -690,6 +668,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.interface.graph_uniform_background_toggle.set_parent(None, &mut self.ui_context);
         self.app.interface.graph_network_opacity_slider.clear_children(&mut self.ui_context);
         self.app.interface.graph_network_opacity_slider.set_parent(None, &mut self.ui_context);
+        self.app.interface.graph_gap_width_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.graph_gap_width_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.page_margin_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.page_margin_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.grid_min_col_width_spinbox.clear_children(&mut self.ui_context);
@@ -733,7 +713,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.interface.terminal_menu.clear_children(&mut self.ui_context); self.app.interface.terminal_menu.set_parent(None, &mut self.ui_context);
         self.app.interface.terminal_box.clear_children(&mut self.ui_context); self.app.interface.terminal_box.set_parent(None, &mut self.ui_context);
 
-
         self.app.services.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.services.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.services.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.services.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
@@ -774,6 +753,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
         self.app.display.brightness_spinbox.clear_children(&mut self.ui_context); self.app.display.brightness_spinbox.set_parent(None, &mut self.ui_context);
         self.app.display.brightness_slider.clear_children(&mut self.ui_context); self.app.display.brightness_slider.set_parent(None, &mut self.ui_context);
+        self.app.display.night_light_label.clear_children(&mut self.ui_context); self.app.display.night_light_label.set_parent(None, &mut self.ui_context);
+        self.app.display.screensaver_enable_toggle.clear_children(&mut self.ui_context); self.app.display.screensaver_enable_toggle.set_parent(None, &mut self.ui_context);
+        self.app.display.screensaver_lock_screen_toggle.clear_children(&mut self.ui_context); self.app.display.screensaver_lock_screen_toggle.set_parent(None, &mut self.ui_context);
+        self.app.display.screensaver_timeout_spinbox.clear_children(&mut self.ui_context); self.app.display.screensaver_timeout_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.display.screensaver_style_menu.clear_children(&mut self.ui_context); self.app.display.screensaver_style_menu.set_parent(None, &mut self.ui_context);
+        for out in &mut self.app.display.outputs {
+            out.name_label.clear_children(&mut self.ui_context); out.name_label.set_parent(None, &mut self.ui_context);
+            out.resolution_label.clear_children(&mut self.ui_context); out.resolution_label.set_parent(None, &mut self.ui_context);
+            if let Some(ref mut scale_lbl) = out.scale_label {
+                scale_lbl.clear_children(&mut self.ui_context); scale_lbl.set_parent(None, &mut self.ui_context);
+            }
+        }
         self.app.services.status_separators_toggle.clear_children(&mut self.ui_context); self.app.services.status_separators_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.status_underline_toggle.clear_children(&mut self.ui_context); self.app.services.status_underline_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.services.status_padding_spinbox.set_parent(None, &mut self.ui_context);
@@ -791,20 +782,20 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         match self.app.current_page {
             Page::Accounts => {
                 if self.app.accounts.editing_oauth_creds {
-                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.oauth_client_id_box, &mut self.ui_context);
-                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.oauth_client_secret_box, &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.app.accounts.oauth_client_id_box, &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.app.accounts.oauth_client_secret_box, &mut self.ui_context);
                 } else {
-                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.email_box, &mut self.ui_context);
-                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.password_box, &mut self.ui_context);
-                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.imap_box, &mut self.ui_context);
-                    link_parent_child(&mut self.page_root_container, &mut self.app.accounts.smtp_box, &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.app.accounts.email_box, &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.app.accounts.password_box, &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.app.accounts.imap_box, &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.app.accounts.smtp_box, &mut self.ui_context);
                 }
             }
 
             Page::Services => {
                 self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
                 for i in 0..3 {
-                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i], &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.services.search_box, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.services.list_box.scroll_box, &mut self.ui_context);
@@ -819,18 +810,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_padding_spinbox, &mut self.ui_context);
             }
             Page::Hardware => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.cpu_gov_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.hardware.gpu_gov_menu, &mut self.ui_context);
+                link_parent_child(page_root, &mut self.app.hardware.cpu_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(page_root, &mut self.app.hardware.cpu_gov_menu, &mut self.ui_context);
+                link_parent_child(page_root, &mut self.app.hardware.gpu_gov_menu, &mut self.ui_context);
             }
             Page::Radios => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(page_root, &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
             }
             Page::Layout => {
                 self.page_sec_containers.resize_with(7, clear_ui::widget::Container::new);
                 
                 for i in 0..7 {
-                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i], &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
                 // Fullscreen (Section 0)
@@ -843,7 +834,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox, &mut self.ui_context);
                 
                 // Grid (Section 2)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.spinboxes[2], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.grid_gap_spinbox, &mut self.ui_context);
                 
                 // Floating (Section 3)
@@ -865,7 +855,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
                 
                 for i in 0..5 {
-                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i], &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
                 // Section 0: Layout (parent of Plate, Sections, Grid Layout)
@@ -880,6 +870,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_network_opacity_slider, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
                 // (Sections child widgets)
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.page_margin_spinbox, &mut self.ui_context);
@@ -908,6 +899,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_margin_spinbox_y, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_padding_spinbox_x, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_padding_spinbox_y, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
                 
                 // (Toggles child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[12], &mut self.ui_context);
@@ -958,11 +950,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
             Page::Input => {
                 self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0], &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1], &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[2], &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[3], &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[4], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[3], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[4], &mut self.ui_context);
                 
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.dwtp_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox, &mut self.ui_context);
@@ -986,8 +978,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
             Page::Audio => {
                 self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[0], &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[1], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 
                 for sb in &mut self.app.audio.sink_spinboxes {
                     link_parent_child(&mut self.page_sec_containers[0], sb, &mut self.ui_context);
@@ -1003,17 +995,38 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
             }
             Page::Display => {
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.brightness_slider, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_enable_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_lock_screen_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_timeout_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_root_container, &mut self.app.display.screensaver_style_menu, &mut self.ui_context);
+                self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
+                link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[3], &mut self.ui_context);
+
+                // Section 0: Brightness
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.display.brightness_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.display.brightness_slider, &mut self.ui_context);
+
+                // Section 1: Night Light
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.display.night_light_label, &mut self.ui_context);
+
+                // Section 2: Outputs
+                for out in &mut self.app.display.outputs {
+                    link_parent_child(&mut self.page_sec_containers[2], &mut out.name_label, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[2], &mut out.resolution_label, &mut self.ui_context);
+                    if let Some(ref mut scale_lbl) = out.scale_label {
+                        link_parent_child(&mut self.page_sec_containers[2], scale_lbl, &mut self.ui_context);
+                    }
+                }
+
+                // Section 3: Screensaver Settings
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.display.screensaver_enable_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.display.screensaver_lock_screen_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.display.screensaver_timeout_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.display.screensaver_style_menu, &mut self.ui_context);
             }
             Page::Packages => {
                 self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
                 for i in 0..2 {
-                    link_parent_child(&mut self.page_root_container, &mut self.page_sec_containers[i], &mut self.ui_context);
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.packages.search_box, &mut self.ui_context);
                 match self.app.packages.active_tab {
@@ -1028,8 +1041,67 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             _ => {}
         }
 
+        self.sidebar_width = self.menubar.sidebar_w();
+        self.header_height = 0.0;
+        let s = 1.0f32;
+        let mut widgets = Vec::new();
+        let mut text_items = Vec::new();
+        let mut page_buttons = Vec::new();
+
+
+        clear_ui::widget::hover_animation::reset_frame_registration();
+        clear_ui::widget::popovers::clear();
+        clear_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
+        clear_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
+
+        let lcx = self.sidebar_width;
+        let lcy = self.header_height;
+        let lcw = sw / s - self.sidebar_width;
+        let lch = sh / s - self.header_height - self.status_height;
+
+        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+        self.menubar.set_selected_page(page_idx);
+        self.switcher.set_active_index(Some(page_idx));
+
+        let mut menubar_pc = PageContent::new();
+        clear_ui::layout::render_widget(&mut menubar_pc, &mut self.menubar, 0.0, 0.0, self.sidebar_width, sh / s, &mut self.ui_context);
+
+        let mut switcher_pc = PageContent::new();
+        clear_ui::layout::render_widget(&mut switcher_pc, &mut self.switcher, self.sidebar_width, 0.0, sw / s - self.sidebar_width, sh / s, &mut self.ui_context);
+
+        for pc_part in &[menubar_pc, switcher_pc] {
+            for (c, x, y, w, h) in &pc_part.rects {
+                widgets.push(AppWidget {
+                    x: *x * s, y: *y * s, w: *w * s, h: *h * s,
+                    color: *c, hover_color: *c,
+                    hovering: false,
+                });
+            }
+            for (t, size, x, y, tc, font_opt, bounds) in &pc_part.texts {
+                text_items.push(TextItem {
+                    buffer: make_text_buffer_with_font(
+                        &mut self.font_system,
+                        t,
+                        *size * s,
+                        font_opt.as_deref(),
+                        &self.sans_serif_family,
+                        &self.serif_family,
+                        &self.monospace_family,
+                    ),
+                    x: *x * s, y: *y * s,
+                    color: glyphon::Color::rgb(
+                        (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
+                    ),
+                    bounds: *bounds,
+                });
+            }
+        }
+
+        // Page content in LOGICAL coordinates, then scale to physical
+        let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
+
         let mut popovers = Vec::new();
-        Self::collect_popover_rects(&self.page_root_container, &mut popovers, &self.ui_context);
+        Self::collect_popover_rects(&self.plates[page_idx], &mut popovers, &self.ui_context);
 
         if !popovers.is_empty() {
             pc.texts.retain(|(text, size, tx, ty, _, _, _)| {
@@ -1162,6 +1234,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             let cy = clear_ui::widget::context_menu::y();
             let cw = clear_ui::widget::context_menu::w();
             let ch = clear_ui::widget::context_menu::h();
+
             
             // Border
             widgets.push(AppWidget {
@@ -1189,7 +1262,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             // Texts
             for (idx, opt) in clear_ui::widget::context_menu::options().iter().enumerate() {
                 let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
-                let text_color = if clear_ui::widget::context_menu::hovered_item() == Some(idx) {
+                let text_color = if idx == 0 {
+                    glyphon::Color::rgb(0x70, 0x70, 0x78)
+                } else if clear_ui::widget::context_menu::hovered_item() == Some(idx) {
                     glyphon::Color::rgb(0xff, 0xff, 0xff)
                 } else {
                     glyphon::Color::rgb(0xcc, 0xcc, 0xd4)
@@ -1220,7 +1295,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         let cw = (cw - 2.0 * margin).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
         let mut layout = GridLayout::new(260.0, 20.0);
-        let root_focused = clear_ui::widget::focus::is_focused(&self.page_root_container);
+        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+        let root_focused = clear_ui::widget::focus::is_focused(&self.plates[page_idx]);
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()
             .map(|c| clear_ui::widget::focus::is_focused(c))
             .collect();
@@ -1247,7 +1323,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             needs_redraw = true;
             self.needs_rebuild = true;
         }
-        if self.paginator.tick(dt, &mut self.ui_context) {
+        let menubar_changed = self.menubar.tick(dt, &mut self.ui_context);
+        let switcher_changed = self.switcher.tick(dt, &mut self.ui_context);
+        if menubar_changed || switcher_changed {
             needs_redraw = true;
             self.needs_rebuild = true;
         }
@@ -1564,7 +1642,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         clear_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
         if lx_no_scroll < self.sidebar_width {
-            if self.paginator.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+            if self.menubar.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+                changed = true;
+            }
+        } else {
+            if self.switcher.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
                 changed = true;
             }
         }
@@ -1622,6 +1704,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if self.app.interface.tab_margin_spinbox_x.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.menubar_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
             if self.app.interface.tab_margin_spinbox_y.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
@@ -1656,6 +1741,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 changed = true;
             }
             if self.app.interface.graph_network_opacity_slider.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.graph_gap_width_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
             if self.app.interface.page_margin_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2037,17 +2125,24 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         let lx_no_scroll = self.cursor_x / s;
         let ly_no_scroll = self.cursor_y / s;
 
+
+
         if clear_ui::widget::context_menu::is_visible() {
             if clear_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
+                let mut actions = Vec::new();
+                self.propagate_widget_changes(&mut actions);
+                for action in actions {
+                    self.handle_action(&action);
+                }
                 self.needs_rebuild = true;
                 return true;
             }
         }
 
         if lx_no_scroll < self.sidebar_width {
-            if self.paginator.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                if self.paginator.take_click() {
-                    let idx = self.paginator.selected_page();
+            if self.menubar.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+                use clear_ui::widget::MenuController;
+                if let Some((idx, _)) = self.menubar.menu_click() {
                     if idx < Page::ALL.len() {
                         clear_ui::widget::focus::clear_focus();
                         let new_page = Page::ALL[idx];
@@ -2057,6 +2152,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         pages::interface::write_config_value("last_page", &format!("\"{}\"", new_page.label().to_lowercase()));
                     }
                 }
+                self.needs_rebuild = true;
+                return true;
+            }
+        } else {
+            if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
                 self.needs_rebuild = true;
                 return true;
             }
@@ -2147,6 +2247,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         if cp.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     }
                     if self.app.interface.tab_margin_spinbox_x.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.menubar_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.tab_margin_spinbox_y.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.tab_padding_spinbox_x.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.tab_padding_spinbox_y.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2159,6 +2260,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if self.app.interface.graph_snap_enabled_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.graph_uniform_background_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.graph_network_opacity_slider.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.graph_gap_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.page_margin_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.grid_min_col_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.spinbox_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2397,6 +2499,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     }));
                 }
             }
+            let sb = &mut self.app.interface.menubar_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(sb.value as f32 / 100.0)));
+            }
             let sb = &mut self.app.interface.tab_margin_spinbox_x;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
@@ -2467,6 +2575,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             toggle.mouse_input(button, state, lx, ly, &mut self.ui_context);
             if toggle.take_click() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphUniformBackground(toggle.toggled())));
+            }
+            let sb = &mut self.app.interface.graph_gap_width_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapWidth(sb.value as u16)));
             }
             let slider = &mut self.app.interface.graph_network_opacity_slider;
             if button == clear_ui::widget::MouseButton::Left {
@@ -3184,6 +3298,354 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         true
     }
 
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
+        match self.app.current_page {
+            Page::Layout => {
+                for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
+                    if sb.take_change() {
+                        actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetWidth(pages::layout::WidthParam::ALL[i], sb.value as u16)));
+                    }
+                }
+                if self.app.layout.cascade_offset_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetCascadeOffset(self.app.layout.cascade_offset_spinbox.value as u16)));
+                }
+                if self.app.layout.edge_gap_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetEdgeGap(self.app.layout.edge_gap_spinbox.value as u16)));
+                }
+                if self.app.layout.top_gap_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTopGap(self.app.layout.top_gap_spinbox.value as u16)));
+                }
+                if self.app.layout.grid_gap_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetGridGap(self.app.layout.grid_gap_spinbox.value as u16)));
+                }
+                if self.app.layout.transition_duration_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTransitionDuration(self.app.layout.transition_duration_spinbox.value as u16)));
+                }
+                if self.app.layout.status_height_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetStatusHeight(self.app.layout.status_height_spinbox.value as u16)));
+                }
+                for (idx, menu) in self.app.layout.tag_layout_menus.iter_mut().enumerate() {
+                    if menu.take_change() {
+                        actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTagLayout(idx + 1, menu.selected)));
+                    }
+                }
+                if self.app.layout.side_panel_behavior_menu.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(self.app.layout.side_panel_behavior_menu.selected)));
+                }
+                if self.app.layout.side_panel_width_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelWidth(self.app.layout.side_panel_width_spinbox.value as u16)));
+                }
+            }
+            Page::Interface => {
+                for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
+                    if cp.take_change() {
+                        actions.push(AppAction::Interface(match i {
+                            0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
+                            1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
+                            2 => pages::interface::InterfaceMessage::SetVisualGuidesColor(cp.color),
+                            3 => pages::interface::InterfaceMessage::SetDisabledColor(cp.color),
+                            4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
+                            5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
+                            6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
+                            7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                            8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
+                            9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
+                            10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
+                            11 => pages::interface::InterfaceMessage::SetPaginatorTabLabelColor(cp.color),
+                            12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
+                            13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                            _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                        }));
+                    }
+                }
+                if self.app.interface.menubar_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(self.app.interface.menubar_opacity_spinbox.value as f32 / 100.0)));
+                }
+                if self.app.interface.tab_margin_spinbox_x.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(self.app.interface.tab_margin_spinbox_x.value as u16)));
+                }
+                if self.app.interface.tab_margin_spinbox_y.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(self.app.interface.tab_margin_spinbox_y.value as u16)));
+                }
+                if self.app.interface.tab_padding_spinbox_x.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(self.app.interface.tab_padding_spinbox_x.value as u16)));
+                }
+                if self.app.interface.tab_padding_spinbox_y.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(self.app.interface.tab_padding_spinbox_y.value as u16)));
+                }
+                if self.app.interface.section_padding_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSectionPadding(self.app.interface.section_padding_spinbox.value as u16)));
+                }
+                if self.app.interface.label_alignment_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNestedSectionLabelAlignment(self.app.interface.label_alignment_menu.selected)));
+                }
+                if self.app.interface.label_offset_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNestedSectionLabelOffset(self.app.interface.label_offset_spinbox.value as i16)));
+                }
+                if self.app.interface.label_margin_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetLabelMargin(self.app.interface.label_margin_spinbox.value as u16)));
+                }
+                if self.app.interface.plate_padding_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlatePadding(self.app.interface.plate_padding_spinbox.value as u16)));
+                }
+                if self.app.interface.graph_show_grid_toggle.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphShowGrid(self.app.interface.graph_show_grid_toggle.toggled())));
+                }
+                if self.app.interface.graph_snap_enabled_toggle.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphSnapEnabled(self.app.interface.graph_snap_enabled_toggle.toggled())));
+                }
+                if self.app.interface.graph_uniform_background_toggle.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphUniformBackground(self.app.interface.graph_uniform_background_toggle.toggled())));
+                }
+                if self.app.interface.graph_network_opacity_slider.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphOpacity(self.app.interface.graph_network_opacity_slider.value())));
+                }
+                if self.app.interface.page_margin_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPageMargin(self.app.interface.page_margin_spinbox.value as u16)));
+                }
+                if self.app.interface.grid_min_col_width_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGridMinColWidth(self.app.interface.grid_min_col_width_spinbox.value as u16)));
+                }
+                if self.app.interface.spinbox_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSpinboxHeight(self.app.interface.spinbox_height_spinbox.value as u16)));
+                }
+                if self.app.interface.toggle_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetToggleHeight(self.app.interface.toggle_height_spinbox.value as u16)));
+                }
+                if self.app.interface.color_selector_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetColorSelectorHeight(self.app.interface.color_selector_height_spinbox.value as u16)));
+                }
+                if self.app.interface.color_selector_preview_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetColorSelectorPreviewCornerRadius(self.app.interface.color_selector_preview_corner_radius_spinbox.value as u16)));
+                }
+                if self.app.interface.color_selector_preview_margin_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetColorSelectorPreviewMargin(self.app.interface.color_selector_preview_margin_spinbox.value as u16)));
+                }
+                if self.app.interface.textbox_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTextboxHeight(self.app.interface.textbox_height_spinbox.value as u16)));
+                }
+                if self.app.interface.slider_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSliderHeight(self.app.interface.slider_height_spinbox.value as u16)));
+                }
+                if self.app.interface.font_selector_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorHeight(self.app.interface.font_selector_height_spinbox.value as u16)));
+                }
+                if self.app.interface.dropdown_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetDropdownHeight(self.app.interface.dropdown_height_spinbox.value as u16)));
+                }
+                if self.app.interface.sans_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSans(self.app.interface.sans_box.text.clone())));
+                }
+                if self.app.interface.serif_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSerif(self.app.interface.serif_box.text.clone())));
+                }
+                if self.app.interface.mono_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMono(self.app.interface.mono_box.text.clone())));
+                }
+                if self.app.interface.borders_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBordersMenu(self.app.interface.borders_menu.selected)));
+                }
+                if self.app.interface.borders_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBorders(self.app.interface.borders_box.text.clone())));
+                }
+                if self.app.interface.status_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusMenu(self.app.interface.status_menu.selected)));
+                }
+                if self.app.interface.status_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatus(self.app.interface.status_box.text.clone())));
+                }
+                if self.app.interface.fuzzel_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzelMenu(self.app.interface.fuzzel_menu.selected)));
+                }
+                if self.app.interface.fuzzel_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzel(self.app.interface.fuzzel_box.text.clone())));
+                }
+                if self.app.interface.terminal_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminalMenu(self.app.interface.terminal_menu.selected)));
+                }
+                if self.app.interface.terminal_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminal(self.app.interface.terminal_box.text.clone())));
+                }
+                if self.app.interface.color_selector_font_selector.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetColorSelectorFont(self.app.interface.color_selector_font_selector.font_family.clone())));
+                }
+                if self.app.interface.menubar_font_selector.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarFont(self.app.interface.menubar_font_selector.font_family.clone())));
+                }
+                if self.app.interface.section_label_font_selector.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSectionLabelFont(self.app.interface.section_label_font_selector.font_family.clone())));
+                }
+                if self.app.interface.nested_section_label_font_selector.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNestedSectionLabelFont(self.app.interface.nested_section_label_font_selector.font_family.clone())));
+                }
+                if self.app.interface.borders_size_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBordersSize(self.app.interface.borders_size_box.value)));
+                }
+                if self.app.interface.status_size_box.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusSize(self.app.interface.status_size_box.value)));
+                }
+            }
+            Page::Input => {
+                if self.app.input.rate_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                }
+                if self.app.input.delay_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyRepeat));
+                }
+                if self.app.input.scroll_friction_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollFriction));
+                }
+                if self.app.input.scroll_speed_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyScrollSpeed));
+                }
+                if self.app.input.pointer_friction_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyPointerFriction));
+                }
+                if self.app.input.trackpad_friction_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpadFriction));
+                }
+                if self.app.input.trackpoint_accel_speed_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelSpeed));
+                }
+                if self.app.input.cursor_size_spinbox.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
+                }
+                if self.app.input.tap_toggle.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ToggleTapToClick));
+                }
+                if self.app.input.scroll_toggle.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialScroll));
+                }
+                if self.app.input.natural_toggle.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ToggleNaturalScroll));
+                }
+                if self.app.input.pointer_toggle.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialPointer));
+                }
+                if self.app.input.trackpad_toggle.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ToggleInertialTrackpad));
+                }
+                if self.app.input.dwtp_toggle.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ToggleDwtp));
+                }
+                if self.app.input.trackpoint_accel_profile_menu.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelProfile(self.app.input.trackpoint_accel_profile_menu.selected)));
+                }
+                if self.app.input.cursor_theme_menu.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorTheme(self.app.input.cursor_theme_menu.selected)));
+                }
+            }
+            Page::Services => {
+                if self.app.services.notifications_duration_spinbox.take_change() {
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::SetNotificationsDuration(self.app.services.notifications_duration_spinbox.value)));
+                }
+                if self.app.services.status_padding_spinbox.take_change() {
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::StatusSetPadding(self.app.services.status_padding_spinbox.value as u16)));
+                }
+                if self.app.services.notifications_enable_toggle.take_change() {
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsEnable));
+                }
+                if self.app.services.notifications_bell_toggle.take_change() {
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsBell));
+                }
+                if self.app.services.notifications_opacity_slider.take_change() {
+                    let val = self.app.services.notifications_opacity_slider.value() as f32 / 100.0;
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::SetNotificationsOpacity(val)));
+                }
+                if self.app.services.status_separators_toggle.take_change() {
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::StatusToggleSeparators));
+                }
+                if self.app.services.status_underline_toggle.take_change() {
+                    actions.push(AppAction::Services(pages::services::ServicesMessage::StatusToggleUnderline));
+                }
+            }
+            Page::Display => {
+                if self.app.display.screensaver_enable_toggle.take_change() {
+                    actions.push(AppAction::Display(pages::display::DisplayMessage::ToggleScreensaverEnable));
+                }
+                if self.app.display.screensaver_lock_screen_toggle.take_change() {
+                    actions.push(AppAction::Display(pages::display::DisplayMessage::ToggleScreensaverLockScreen));
+                }
+                if self.app.display.screensaver_style_menu.take_change() {
+                    actions.push(AppAction::Display(pages::display::DisplayMessage::SetScreensaverStyle(self.app.display.screensaver_style_menu.selected)));
+                }
+                if self.app.display.brightness_spinbox.take_change() {
+                    actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet(self.app.display.brightness_spinbox.value as u32)));
+                }
+                if self.app.display.brightness_slider.take_change() {
+                    actions.push(AppAction::Display(pages::display::DisplayMessage::BrightnessSet((self.app.display.brightness_slider.value() * 100.0).round() as u32)));
+                }
+                if self.app.display.screensaver_timeout_spinbox.take_change() {
+                    actions.push(AppAction::Display(pages::display::DisplayMessage::SetScreensaverTimeout(self.app.display.screensaver_timeout_spinbox.value)));
+                }
+            }
+            Page::Hardware => {
+                if self.app.hardware.cpu_gov_menu.take_change() {
+                    if self.app.hardware.cpu_gov_menu.selected == 0 {
+                        actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPerformance));
+                    } else {
+                        actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPowersave));
+                    }
+                }
+                if self.app.hardware.gpu_gov_menu.take_change() {
+                    if self.app.hardware.gpu_gov_menu.selected == 0 {
+                        actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuDefault));
+                    } else {
+                        actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuPowersave));
+                    }
+                }
+            }
+            Page::Accounts => {
+                if self.app.accounts.email_box.take_change() {
+                    let email_val = self.app.accounts.email_box.text.trim().to_lowercase();
+                    if email_val.ends_with("@gmail.com") {
+                        self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.gmail.com:465".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+                    } else if email_val.ends_with("@icloud.com") {
+                        self.app.accounts.imap_box.text = "imap.mail.me.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.mail.me.com:587".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+                    } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
+                        self.app.accounts.imap_box.text = "outlook.office365.com:993".to_string();
+                        self.app.accounts.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
+                        self.app.accounts.smtp_box.text = "smtp.office365.com:587".to_string();
+                        self.app.accounts.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+                    }
+                }
+            }
+            Page::Audio => {
+                for (i, sb) in self.app.audio.sink_spinboxes.iter_mut().enumerate() {
+                    if sb.take_change() {
+                        let id = self.app.audio.sinks[i].id;
+                        actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
+                    }
+                }
+                for (i, sb) in self.app.audio.source_spinboxes.iter_mut().enumerate() {
+                    if sb.take_change() {
+                        let id = self.app.audio.sources[i].id;
+                        actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
+                    }
+                }
+                for (i, slider) in self.app.audio.sink_sliders.iter_mut().enumerate() {
+                    if slider.take_change() {
+                        let id = self.app.audio.sinks[i].id;
+                        actions.push(AppAction::Audio(pages::audio::AudioMessage::SinkVolume(id, slider.value() as f32 / 100.0)));
+                    }
+                }
+                for (i, slider) in self.app.audio.source_sliders.iter_mut().enumerate() {
+                    if slider.take_change() {
+                        let id = self.app.audio.sources[i].id;
+                        actions.push(AppAction::Audio(pages::audio::AudioMessage::SourceVolume(id, slider.value() as f32 / 100.0)));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn handle_mouse_wheel_internal(&mut self, delta: &clear_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
         if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/clear-scroll-debug.txt") {
             use std::io::Write;
@@ -3357,7 +3819,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         } else {
             let lx = px / s;
             let ly = py / s;
-            if self.paginator.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+            if self.menubar.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
                 return true;
             }
@@ -3366,18 +3828,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
     }
 
     fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Element + 'static)> {
-        match self.app.current_page {
-            Page::Services | Page::Hardware | Page::Radios |
-            Page::Layout | Page::Interface | Page::Input |
-            Page::Audio | Page::Display => {
-                let ptr = &mut self.page_root_container as &mut dyn clear_ui::widget::Element as *mut dyn clear_ui::widget::Element;
-                let static_ptr = unsafe {
-                    std::mem::transmute::<*mut dyn clear_ui::widget::Element, *mut (dyn clear_ui::widget::Element + 'static)>(ptr)
-                };
-                Some(static_ptr)
-            }
-            _ => None,
-        }
+        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+        let ptr = &mut self.plates[page_idx] as &mut dyn clear_ui::widget::Element as *mut dyn clear_ui::widget::Element;
+        let static_ptr = unsafe {
+            std::mem::transmute::<*mut dyn clear_ui::widget::Element, *mut (dyn clear_ui::widget::Element + 'static)>(ptr)
+        };
+        Some(static_ptr)
     }
 
     fn handle_key_input_internal(&mut self, event: &clear_ui::widget::KeyEvent) -> bool {
@@ -3545,6 +4001,26 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 self.handle_action(a);
             }
             if changed {
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.menubar_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(new_val as f32 / 100.0)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.graph_gap_width_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapWidth(new_val as u16)));
+                }
                 self.needs_rebuild = true;
                 return true;
             }
