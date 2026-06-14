@@ -73,8 +73,13 @@ pub struct LayoutState {
     pub transition_duration_spinbox: Spinbox,
     pub tag_layout_menus: Vec<Dropdown>,
     pub side_panel_behavior_menu: Dropdown,
+    pub side_panel_position_menu: Dropdown,
     pub side_panel_width: u16,
     pub side_panel_width_spinbox: Spinbox,
+    pub side_panel_border_gap: u16,
+    pub side_panel_border_gap_spinbox: Spinbox,
+    pub side_panel_border_opacity: u16,
+    pub side_panel_border_opacity_spinbox: Spinbox,
 }
 
 impl Default for LayoutState {
@@ -113,8 +118,16 @@ impl Default for LayoutState {
                 vec!["Above".to_string(), "Inline".to_string()],
                 1,
             ).with_label("Behavior"),
+            side_panel_position_menu: Dropdown::new(
+                vec!["Left".to_string(), "Right".to_string()],
+                0,
+            ).with_label("Position"),
             side_panel_width: 360,
             side_panel_width_spinbox: Spinbox::new(360, 0, 2000, 10),
+            side_panel_border_gap: 0,
+            side_panel_border_gap_spinbox: Spinbox::new(0, 0, 500, 1),
+            side_panel_border_opacity: 100,
+            side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5),
         }
     }
 }
@@ -130,7 +143,10 @@ pub enum LayoutMessage {
     SetStatusHeight(u16),
     SetTagLayout(usize, usize),
     SetSidePanelBehavior(usize),
+    SetSidePanelPosition(usize),
     SetSidePanelWidth(u16),
+    SetSidePanelBorderGap(u16),
+    SetSidePanelBorderOpacity(u16),
     Refreshed(LayoutState),
 }
 
@@ -168,7 +184,16 @@ pub fn read_layout_config() -> LayoutState {
         side_panel_behavior_idx,
     ).with_label("Behavior");
 
+    let side_panel_position = parse_string_from(&content, "side_panel_position", "left");
+    let side_panel_position_idx = if side_panel_position == "right" { 1 } else { 0 };
+    let side_panel_position_menu = Dropdown::new(
+        vec!["Left".to_string(), "Right".to_string()],
+        side_panel_position_idx,
+    ).with_label("Position");
+
     let spw = parse_u16_from(&content, "side_panel_width", 360);
+    let spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
+    let spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
 
     LayoutState {
         fullscreen_border_width: fs,
@@ -190,8 +215,13 @@ pub fn read_layout_config() -> LayoutState {
         transition_duration_spinbox: Spinbox::new(td as i32, 0, 2000, 50),
         tag_layout_menus,
         side_panel_behavior_menu,
+        side_panel_position_menu,
         side_panel_width: spw,
         side_panel_width_spinbox: Spinbox::new(spw as i32, 0, 2000, 10),
+        side_panel_border_gap: spbg,
+        side_panel_border_gap_spinbox: Spinbox::new(spbg as i32, 0, 500, 1),
+        side_panel_border_opacity: spbo,
+        side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5),
     }
 }
 
@@ -610,7 +640,7 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     });
 
     // 6. Default Layouts Section
-    builder.add_section(&mut final_pc, "Default Layouts", sec_focused.get(5).copied().unwrap_or(false), |default_layouts_sec| {
+    builder.add_section(&mut final_pc, "Default Layouts", true, |default_layouts_sec| {
         default_layouts_sec.spacing(8.0);
         for i in 0..4 {
             default_layouts_sec.widget_full(&mut state.tag_layout_menus[i], 44.0, ctx);
@@ -619,12 +649,20 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
     });
 
     // 7. Side Panel Section
-    builder.add_section(&mut final_pc, "Side Panel", sec_focused.get(6).copied().unwrap_or(false), |side_panel_sec| {
+    builder.add_section(&mut final_pc, "Side Panel", true, |side_panel_sec| {
         side_panel_sec.spacing(8.0);
         side_panel_sec.widget_full(&mut state.side_panel_behavior_menu, 44.0, ctx);
         side_panel_sec.spacing(8.0);
+        side_panel_sec.widget_full(&mut state.side_panel_position_menu, 44.0, ctx);
+        side_panel_sec.spacing(8.0);
         state.side_panel_width_spinbox.set_label("Default Width");
         side_panel_sec.widget_full(&mut state.side_panel_width_spinbox, 44.0, ctx);
+        side_panel_sec.spacing(8.0);
+        state.side_panel_border_gap_spinbox.set_label("Border Gap");
+        side_panel_sec.widget_full(&mut state.side_panel_border_gap_spinbox, 44.0, ctx);
+        side_panel_sec.spacing(8.0);
+        state.side_panel_border_opacity_spinbox.set_label("Border Opacity");
+        side_panel_sec.widget_full(&mut state.side_panel_border_opacity_spinbox, 44.0, ctx);
         side_panel_sec.spacing(8.0);
     });
 
@@ -709,12 +747,34 @@ pub fn update(state: &mut LayoutState, msg: LayoutMessage) {
                 send_ipc_command(&format!("layout side_panel_behavior {}", val));
             }
         }
+        LayoutMessage::SetSidePanelPosition(idx) => {
+            if idx < 2 {
+                state.side_panel_position_menu.selected = idx;
+                let val = if idx == 1 { "right" } else { "left" };
+                write_config_value("side_panel_position", &format!("\"{}\"", val));
+                send_ipc_command(&format!("layout side_panel_position {}", val));
+            }
+        }
         LayoutMessage::SetSidePanelWidth(v) => {
             let val = v.min(2000);
             state.side_panel_width = val;
             state.side_panel_width_spinbox.value = val as i32;
             write_config_value("side_panel_width", &val.to_string());
             send_ipc_command(&format!("layout side_panel_width {}", val));
+        }
+        LayoutMessage::SetSidePanelBorderGap(v) => {
+            let val = v.min(500);
+            state.side_panel_border_gap = val;
+            state.side_panel_border_gap_spinbox.value = val as i32;
+            write_config_value("side_panel_border_gap", &val.to_string());
+            send_ipc_command(&format!("layout side_panel_border_gap {}", val));
+        }
+        LayoutMessage::SetSidePanelBorderOpacity(v) => {
+            let val = v.min(100);
+            state.side_panel_border_opacity = val;
+            state.side_panel_border_opacity_spinbox.value = val as i32;
+            write_config_value("side_panel_border_opacity", &val.to_string());
+            send_ipc_command(&format!("layout side_panel_border_opacity {}", val));
         }
         LayoutMessage::Refreshed(new) => { *state = new; }
     }
@@ -743,6 +803,20 @@ mod tests {
         let content = "side_panel_width = 450";
         let width = parse_u16_from(content, "side_panel_width", 360);
         assert_eq!(width, 450);
+    }
+
+    #[test]
+    fn test_parse_side_panel_border_opacity_default() {
+        let content = "";
+        let opacity = parse_u16_from(content, "side_panel_border_opacity", 100);
+        assert_eq!(opacity, 100);
+    }
+
+    #[test]
+    fn test_parse_side_panel_border_opacity_explicit() {
+        let content = "side_panel_border_opacity = 75";
+        let opacity = parse_u16_from(content, "side_panel_border_opacity", 100);
+        assert_eq!(opacity, 75);
     }
 
     #[test]

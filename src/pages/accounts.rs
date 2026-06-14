@@ -147,6 +147,8 @@ pub async fn fetch_accounts() -> Vec<AccountInfo> {
 
 const GOOGLE_CLIENT_ID: &str = "REDACTED.apps.googleusercontent.com";
 const GOOGLE_CLIENT_SECRET: &str = "GOCSPX-REDACTED";
+const PKCE_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+const PKCE_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GoogleClientConfig {
@@ -154,43 +156,55 @@ pub struct GoogleClientConfig {
     pub client_secret: String,
 }
 
-pub fn load_google_client_config() -> GoogleClientConfig {
-    let p = std::path::PathBuf::from("/home/lsgalante/.config/cce/google_client.json");
-    if p.exists() {
-        if let Ok(content) = std::fs::read_to_string(&p) {
-            if let Ok(config) = serde_json::from_str::<GoogleClientConfig>(&content) {
-                return config;
+fn write_google_client_config(p: &std::path::Path, config: &GoogleClientConfig) -> std::io::Result<()> {
+    if let Some(parent) = p.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(content) = serde_json::to_string_pretty(config) {
+        std::fs::write(p, content)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(p) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(p, perms);
             }
         }
     }
+    Ok(())
+}
+
+pub fn load_google_client_config() -> GoogleClientConfig {
+    let p = std::path::PathBuf::from("/home/lsgalante/.config/cce/google_client.json");
     let default_config = GoogleClientConfig {
         client_id: GOOGLE_CLIENT_ID.to_string(),
         client_secret: GOOGLE_CLIENT_SECRET.to_string(),
     };
-    if let Some(parent) = p.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(content) = serde_json::to_string_pretty(&default_config) {
-        let _ = std::fs::write(&p, content);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = std::fs::metadata(&p) {
-                let mut perms = metadata.permissions();
-                perms.set_mode(0o600);
-                let _ = std::fs::set_permissions(&p, perms);
+    if p.exists() {
+        if let Ok(content) = std::fs::read_to_string(&p) {
+            if let Ok(config) = serde_json::from_str::<GoogleClientConfig>(&content) {
+                // If it is the old dummy client ID, or if it is the new client ID but the secret is empty, overwrite/migrate it
+                if config.client_id == "REDACTED.apps.googleusercontent.com"
+                    || (config.client_id == GOOGLE_CLIENT_ID && config.client_secret.is_empty())
+                {
+                    let _ = write_google_client_config(&p, &default_config);
+                    return default_config;
+                }
+                return config;
             }
         }
     }
+    let _ = write_google_client_config(&p, &default_config);
     default_config
 }
 
 pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
     let client_config = load_google_client_config();
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:8080").await {
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:36137").await {
         Ok(l) => l,
         Err(e) => {
-            let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(format!("Failed to bind port 8080: {}", e))));
+            let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(format!("Failed to bind port 36137: {}", e))));
             return;
         }
     };
@@ -198,8 +212,9 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
     let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("Waiting for browser login...".to_string())));
     
     let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2F127.0.0.1%3A8080&response_type=code&scope=https%3A%2F%2Fmail.google.com%2F&access_type=offline&prompt=consent",
-        client_config.client_id
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
+        client_config.client_id,
+        PKCE_CHALLENGE
     );
     let _ = std::process::Command::new("xdg-open").arg(&auth_url).spawn();
 
@@ -236,13 +251,16 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
 pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Sender<AppAction>) {
     let client_config = load_google_client_config();
     let client = reqwest::Client::new();
-    let params = [
+    let mut params = vec![
         ("code", code.as_str()),
         ("client_id", client_config.client_id.as_str()),
-        ("client_secret", client_config.client_secret.as_str()),
-        ("redirect_uri", "http://127.0.0.1:8080"),
+        ("redirect_uri", "http://localhost:36137/auth/callback"),
         ("grant_type", "authorization_code"),
+        ("code_verifier", PKCE_VERIFIER),
     ];
+    if !client_config.client_secret.is_empty() {
+        params.push(("client_secret", client_config.client_secret.as_str()));
+    }
     
     match client.post("https://oauth2.googleapis.com/token")
         .form(&params)
@@ -278,11 +296,31 @@ pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Se
                                     password: String::new(),
                                     is_oauth: true,
                                     access_token: Some(access_token),
-                                    refresh_token: Some(refresh_token),
+                                    refresh_token: Some(refresh_token.clone()),
                                     token_expiry: Some(expiry),
-                                    client_id: Some(client_config.client_id),
-                                    client_secret: Some(client_config.client_secret),
+                                    client_id: Some(client_config.client_id.clone()),
+                                    client_secret: Some(client_config.client_secret.clone()),
                                 };
+                                
+                                // Save standard Google Application Default Credentials (ADC)
+                                if !refresh_token.is_empty() {
+                                    if let Ok(home) = std::env::var("HOME") {
+                                        let adc_path = std::path::PathBuf::from(home).join(".config/gcloud/application_default_credentials.json");
+                                        if let Some(parent) = adc_path.parent() {
+                                            let _ = std::fs::create_dir_all(parent);
+                                        }
+                                        let adc_json = serde_json::json!({
+                                            "client_id": client_config.client_id,
+                                            "client_secret": client_config.client_secret,
+                                            "refresh_token": refresh_token,
+                                            "type": "authorized_user"
+                                        });
+                                        if let Ok(content) = serde_json::to_string_pretty(&adc_json) {
+                                            let _ = std::fs::write(adc_path, content);
+                                        }
+                                    }
+                                }
+                                
                                 let _ = sender.send(AppAction::Accounts(AccountsMessage::GoogleLoginSuccess(new_acc)));
                                 return;
                             }
@@ -308,19 +346,24 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
+    let lm = clear_ui::layout::label_margin();
+    let row_h = clear_ui::layout::spinbox_height();
+    let row_gap = lm * 1.0;
+    let widget_h = clear_ui::layout::spinbox_height();
+    let field_gap = lm * 1.5;
+    let btn_gap = lm * 1.0;
+
     // ── Accounts Section ──
     builder.add_section(&mut final_pc, "Accounts", false, |sec_accounts| {
         if !state.loaded {
             sec_accounts.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec_accounts.spacing(18.0);
+            sec_accounts.spacing(lm * 1.5);
         } else {
-            let row_h = 28.0;
-            let row_gap = 8.0;
             let item_w = sec_accounts.cw - 2.0 * (sec_accounts.padding() + 12.0);
 
             if state.accounts.is_empty() {
                 sec_accounts.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
-                sec_accounts.spacing(20.0);
+                sec_accounts.spacing(lm * 1.5);
             } else {
                 for (idx, acc) in state.accounts.iter().enumerate() {
                     let label = if acc.is_default {
@@ -341,25 +384,38 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                         [0.90, 0.90, 0.95, 1.0],
                         AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
                     );
-                    sec_accounts.spacing(row_h + row_gap);
+                    sec_accounts.spacing(row_gap);
                 }
             }
 
-            sec_accounts.spacing(12.0);
+            sec_accounts.spacing(lm * 1.2);
 
+            let half_btn_w = (item_w - btn_gap) / 2.0;
             let add_bg = if state.adding_new { [0.20, 0.40, 0.65, 0.4] } else { [0.13, 0.18, 0.14, 1.0] };
+            let btn_y = sec_accounts.ay();
             sec_accounts.button(
                 "Add Account",
                 sec_accounts.ax(12.0),
-                sec_accounts.ay(),
-                item_w,
+                btn_y,
+                half_btn_w,
                 row_h,
                 add_bg,
                 [0.25, 0.30, 0.26, 1.0],
                 [1.0, 1.0, 1.0, 1.0],
                 AppAction::Accounts(AccountsMessage::AddAccountStart),
             );
-            sec_accounts.spacing(row_h + row_gap);
+            sec_accounts.button(
+                "Sign in with Google",
+                sec_accounts.ax(12.0) + half_btn_w + btn_gap,
+                btn_y,
+                half_btn_w,
+                row_h,
+                [0.15, 0.15, 0.25, 1.0],
+                [0.25, 0.25, 0.35, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                AppAction::Accounts(AccountsMessage::GoogleLoginInit),
+            );
+            sec_accounts.spacing(row_gap);
 
             let oauth_bg = if state.editing_oauth_creds { [0.20, 0.40, 0.65, 0.4] } else { [0.15, 0.15, 0.20, 1.0] };
             sec_accounts.button(
@@ -373,7 +429,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                 [1.0, 1.0, 1.0, 1.0],
                 AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
             );
-            sec_accounts.spacing(row_h + row_gap);
+            sec_accounts.spacing(row_gap);
 
             if let Some(selected_idx) = state.selected_idx {
                 if selected_idx < state.accounts.len() && !state.adding_new && !state.editing_oauth_creds {
@@ -390,7 +446,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                             [1.0, 1.0, 1.0, 1.0],
                             AppAction::Accounts(AccountsMessage::MakeDefault(selected_idx)),
                         );
-                        sec_accounts.spacing(row_h + row_gap);
+                        sec_accounts.spacing(row_gap);
                     }
                     sec_accounts.button(
                         "Delete Account",
@@ -403,7 +459,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                         [1.0, 0.33, 0.33, 1.0],
                         AppAction::Accounts(AccountsMessage::DeleteAccount(selected_idx)),
                     );
-                    sec_accounts.spacing(row_h + row_gap);
+                    sec_accounts.spacing(row_gap);
                 }
             }
         }
@@ -412,19 +468,15 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
     // ── Modify Accounts Section ──
     builder.add_section(&mut final_pc, "Modify Accounts", false, |sec_modify| {
         let item_w = sec_modify.cw - 2.0 * (sec_modify.padding() + 12.0);
-        let row_h = 28.0;
         let rx = sec_modify.left;
 
         if state.loaded {
             if state.adding_new {
                 sec_modify.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-                sec_modify.spacing(24.0);
+                sec_modify.spacing(lm * 2.5);
 
                 sec_modify.text("Note: Gmail uses Google Login. iCloud requires App PW.", 12.0, 0.0, 11.0, TEXT_DIM);
-                sec_modify.spacing(18.0);
-
-                let widget_h = 26.0;
-                let field_gap = 14.0;
+                sec_modify.spacing(lm * 1.8);
 
                 // Email Address textbox
                 state.email_box.set_row_rect(rx + 12.0, item_w);
@@ -446,11 +498,12 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                 sec_modify.widget(&mut state.smtp_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
-                let helper_w = (item_w - 8.0) / 2.0;
+                let helper_w = (item_w - btn_gap) / 2.0;
+                let btn_y = sec_modify.ay();
                 sec_modify.button(
                     "Login (Google)",
                     sec_modify.ax(12.0),
-                    sec_modify.ay(),
+                    btn_y,
                     helper_w,
                     row_h,
                     [0.15, 0.15, 0.25, 1.0],
@@ -460,8 +513,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                 );
                 sec_modify.button(
                     "Login (iCloud)",
-                    sec_modify.ax(12.0) + helper_w + 8.0,
-                    sec_modify.ay(),
+                    sec_modify.ax(12.0) + helper_w + btn_gap,
+                    btn_y,
                     helper_w,
                     row_h,
                     [0.15, 0.15, 0.25, 1.0],
@@ -469,12 +522,13 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                     [1.0, 1.0, 1.0, 1.0],
                     AppAction::Accounts(AccountsMessage::ICloudLoginHelp),
                 );
-                sec_modify.spacing(row_h + 16.0);
+                sec_modify.spacing(lm * 1.8);
 
+                let btn_y2 = sec_modify.ay();
                 sec_modify.button(
                     "Save Account",
                     sec_modify.ax(12.0),
-                    sec_modify.ay(),
+                    btn_y2,
                     helper_w,
                     row_h,
                     [0.13, 0.18, 0.14, 1.0],
@@ -484,8 +538,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                 );
                 sec_modify.button(
                     "Cancel",
-                    sec_modify.ax(12.0) + helper_w + 8.0,
-                    sec_modify.ay(),
+                    sec_modify.ax(12.0) + helper_w + btn_gap,
+                    btn_y2,
                     helper_w,
                     row_h,
                     [0.33, 0.20, 0.20, 1.0],
@@ -493,18 +547,15 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                     [1.0, 1.0, 1.0, 1.0],
                     AppAction::Accounts(AccountsMessage::AddAccountCancel),
                 );
-                sec_modify.spacing(row_h + 12.0);
+                sec_modify.spacing(lm * 1.5);
             } else if state.editing_oauth_creds {
                 sec_modify.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-                sec_modify.spacing(24.0);
+                sec_modify.spacing(lm * 2.5);
 
                 sec_modify.text("Configures client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
-                sec_modify.spacing(18.0);
+                sec_modify.spacing(lm * 1.5);
                 sec_modify.text("Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", 12.0, 0.0, 11.0, TEXT_DIM);
-                sec_modify.spacing(18.0);
-
-                let widget_h = 26.0;
-                let field_gap = 14.0;
+                sec_modify.spacing(lm * 1.8);
 
                 // Client ID textbox
                 state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
@@ -516,11 +567,12 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                 sec_modify.widget(&mut state.oauth_client_secret_box, 12.0, item_w, widget_h, ctx);
                 sec_modify.spacing(field_gap);
 
-                let helper_w = (item_w - 8.0) / 2.0;
+                let helper_w = (item_w - btn_gap) / 2.0;
+                let btn_y3 = sec_modify.ay();
                 sec_modify.button(
                     "Save Credentials",
                     sec_modify.ax(12.0),
-                    sec_modify.ay(),
+                    btn_y3,
                     helper_w,
                     row_h,
                     [0.13, 0.18, 0.14, 1.0],
@@ -530,8 +582,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                 );
                 sec_modify.button(
                     "Cancel",
-                    sec_modify.ax(12.0) + helper_w + 8.0,
-                    sec_modify.ay(),
+                    sec_modify.ax(12.0) + helper_w + btn_gap,
+                    btn_y3,
                     helper_w,
                     row_h,
                     [0.33, 0.20, 0.20, 1.0],
@@ -539,26 +591,26 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                     [1.0, 1.0, 1.0, 1.0],
                     AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
                 );
-                sec_modify.spacing(row_h + 12.0);
+                sec_modify.spacing(lm * 1.5);
             } else if let Some(selected_idx) = state.selected_idx {
                 if selected_idx < state.accounts.len() {
                     let acc = &state.accounts[selected_idx];
 
                     sec_modify.text("Account Details", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-                    sec_modify.spacing(28.0);
+                    sec_modify.spacing(lm * 2.5);
 
                     sec_modify.text(&format!("Email Address:   {}", acc.email), 12.0, 0.0, 12.0, [0.90, 0.90, 0.95, 1.0]);
-                    sec_modify.spacing(18.0);
+                    sec_modify.spacing(lm * 1.8);
 
                     let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password-based" };
                     sec_modify.text(&format!("Authentication:  {}", auth_type), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-                    sec_modify.spacing(18.0);
+                    sec_modify.spacing(lm * 1.8);
 
                     sec_modify.text(&format!("IMAP Server:     {}", acc.imap), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-                    sec_modify.spacing(18.0);
+                    sec_modify.spacing(lm * 1.8);
 
                     sec_modify.text(&format!("SMTP Server:     {}", acc.smtp), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-                    sec_modify.spacing(24.0);
+                    sec_modify.spacing(lm * 2.2);
 
                     if acc.is_oauth {
                         sec_modify.button(
@@ -572,18 +624,18 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                             [1.0, 1.0, 1.0, 1.0],
                             AppAction::Accounts(AccountsMessage::GoogleLoginInit),
                         );
-                        sec_modify.spacing(row_h + 12.0);
+                        sec_modify.spacing(lm * 1.5);
                     }
                 }
             } else {
                 sec_modify.text("Select an account to view details, or click Add Account.", 12.0, 0.0, 12.0, TEXT_DIM);
-                sec_modify.spacing(20.0);
+                sec_modify.spacing(lm * 1.8);
             }
 
             if let Some(ref msg) = state.status_msg {
-                sec_modify.spacing(12.0);
+                sec_modify.spacing(lm * 1.2);
                 sec_modify.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
-                sec_modify.spacing(24.0);
+                sec_modify.spacing(lm * 2.0);
             }
         }
     });

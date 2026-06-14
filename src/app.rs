@@ -69,21 +69,9 @@ pub enum AppAction {
 
 #[derive(Default)]
 pub struct PageContent {
-    pub rects: Vec<([f32; 4], f32, f32, f32, f32)>,
+    pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32)>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
-    pub buttons: Vec<ContentButton>,
-}
-
-#[derive(Clone)]
-pub struct ContentButton {
-    pub x: f32, pub y: f32, pub w: f32, pub h: f32,
-    pub bg: [f32; 4],
-    pub hover_bg: [f32; 4],
-    pub label: String,
-    pub label_size: f32,
-    pub label_color: [f32; 4],
-    pub action: AppAction,
-    pub left_align: bool,
+    pub buttons: Vec<(clear_ui::widget::Button, AppAction)>,
 }
 
 impl PageContent {
@@ -92,7 +80,7 @@ impl PageContent {
     }
 
     pub fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.rects.push((color, x, y, w, h));
+        self.rects.push((color, x, y, w, h, 0.0));
     }
 
     pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
@@ -106,29 +94,34 @@ impl PageContent {
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                   bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                   action: AppAction) {
-        self.buttons.push(ContentButton {
-            x, y, w, h, bg, hover_bg,
-            label: label.to_string(), label_size: 12.0, label_color,
-            action,
-            left_align: false,
-        });
+        let btn = clear_ui::widget::Button::new(x, y, w, h)
+            .with_label(label)
+            .with_bg(bg)
+            .with_hover_bg(hover_bg)
+            .with_label_color(label_color);
+        self.buttons.push((btn, action));
     }
 
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                        bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                        action: AppAction) {
-        self.buttons.push(ContentButton {
-            x, y, w, h, bg, hover_bg,
-            label: label.to_string(), label_size: 12.0, label_color,
-            action,
-            left_align: true,
-        });
+        let btn = clear_ui::widget::Button::new(x, y, w, h)
+            .with_label(label)
+            .with_bg(bg)
+            .with_hover_bg(hover_bg)
+            .with_label_color(label_color)
+            .with_left_align(true);
+        self.buttons.push((btn, action));
     }
 }
 
 impl RenderTarget for PageContent {
     fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.rects.push((color, x, y, w, h));
+        self.rects.push((color, x, y, w, h, 0.0));
+    }
+
+    fn rect_with_radius(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32) {
+        self.rects.push((color, x, y, w, h, radius));
     }
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {

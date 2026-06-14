@@ -1,7 +1,7 @@
 use clear_ui::widget::{Finger, hover_animation, TextItem, Element, PageSelector};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
-use cce_system_interface::app::{AppAction, AppState, ContentButton, PageContent};
+use cce_system_interface::app::{AppAction, AppState, PageContent};
 use cce_system_interface::pages::{self, Page};
 
 fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
@@ -69,7 +69,7 @@ fn make_text_buffer_with_font(
                         glyphon::Family::Name(mono_fallback)
                     }
                 } else {
-                    glyphon::Family::Monospace
+                    glyphon::Family::Name(clear_ui::layout::get_system_monospace_font())
                 }
             }
             "sans-serif" => {
@@ -109,6 +109,7 @@ struct AppWidget {
     color: [f32; 4],
     hover_color: [f32; 4],
     hovering: bool,
+    radius: f32,
 }
 
 static INITIAL_PAGE_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -118,7 +119,7 @@ struct SystemInterface {
     font_system: FontSystem,
     widgets: Vec<AppWidget>,
     text_items: Vec<clear_ui::widget::TextItem>,
-    page_buttons: Vec<ContentButton>,
+    page_buttons: Vec<(clear_ui::widget::Button, AppAction)>,
 
     sidebar_width: f32,
     header_height: f32,
@@ -157,7 +158,6 @@ struct SystemInterface {
     scroll_y: f32,
     max_scroll_y: f32,
     opacity_dragging: bool,
-    graph_opacity_dragging: bool,
     audio_sink_dragging: Option<usize>,
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
@@ -423,7 +423,8 @@ impl clear_ui::engine::Application for SystemInterface {
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
 
-        let font_system = FontSystem::new();
+        let mut font_system = FontSystem::new();
+        font_system.db_mut().load_fonts_dir("/home/lsgalante/Dropbox/Fonts");
 
         let mut this = Self {
             app: app_state,
@@ -459,13 +460,12 @@ impl clear_ui::engine::Application for SystemInterface {
             rx_update,
 
             scale_factor: 1.0,
-            width: 820,
-            height: 680,
+            width: 552,
+            height: 1128,
             needs_rebuild: true,
-            scroll_y: 0.0,
+            scroll_y: 4000.0,
             max_scroll_y: 0.0,
             opacity_dragging: false,
-            graph_opacity_dragging: false,
             audio_sink_dragging: None,
             audio_source_dragging: None,
             display_brightness_dragging: false,
@@ -527,7 +527,25 @@ impl clear_ui::engine::Application for SystemInterface {
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
-            quads.push((w.x, w.y, w.w, w.h, w.color));
+            if w.radius <= 0.1 {
+                quads.push((w.x, w.y, w.w, w.h, w.color));
+            }
+        }
+    }
+
+    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4])>, size: clear_ui::engine::LogicalSize, scale: f64) {
+        let (width, height) = (size.width, size.height);
+        if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
+            self.width = width as u32;
+            self.height = height as u32;
+            self.scale_factor = scale;
+            clear_ui::scale::set_scale_factor(scale as f32);
+            self.rebuild_layout(width, height);
+        }
+        for w in &self.widgets {
+            if w.radius > 0.1 {
+                quads.push((w.x, w.y, w.w, w.h, w.radius, w.color));
+            }
         }
     }
 
@@ -666,8 +684,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.interface.graph_snap_enabled_toggle.set_parent(None, &mut self.ui_context);
         self.app.interface.graph_uniform_background_toggle.clear_children(&mut self.ui_context);
         self.app.interface.graph_uniform_background_toggle.set_parent(None, &mut self.ui_context);
-        self.app.interface.graph_network_opacity_slider.clear_children(&mut self.ui_context);
-        self.app.interface.graph_network_opacity_slider.set_parent(None, &mut self.ui_context);
+        self.app.interface.graph_cell_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.graph_cell_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.graph_gap_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.graph_gap_opacity_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.graph_gap_width_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.graph_gap_width_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.page_margin_spinbox.clear_children(&mut self.ui_context);
@@ -700,6 +720,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.interface.font_selector_height_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.dropdown_height_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.dropdown_height_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.button_corner_radius_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.button_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
 
         self.app.interface.sans_box.clear_children(&mut self.ui_context); self.app.interface.sans_box.set_parent(None, &mut self.ui_context);
         self.app.interface.serif_box.clear_children(&mut self.ui_context); self.app.interface.serif_box.set_parent(None, &mut self.ui_context);
@@ -775,20 +797,30 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
         self.app.layout.side_panel_behavior_menu.clear_children(&mut self.ui_context);
         self.app.layout.side_panel_behavior_menu.set_parent(None, &mut self.ui_context);
+        self.app.layout.side_panel_position_menu.clear_children(&mut self.ui_context);
+        self.app.layout.side_panel_position_menu.set_parent(None, &mut self.ui_context);
         self.app.layout.side_panel_width_spinbox.clear_children(&mut self.ui_context);
         self.app.layout.side_panel_width_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.layout.side_panel_border_gap_spinbox.clear_children(&mut self.ui_context);
+        self.app.layout.side_panel_border_gap_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.layout.side_panel_border_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.layout.side_panel_border_opacity_spinbox.set_parent(None, &mut self.ui_context);
 
         use clear_ui::widget::focus::link_parent_child;
         match self.app.current_page {
             Page::Accounts => {
+                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                for i in 0..2 {
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
+                }
                 if self.app.accounts.editing_oauth_creds {
-                    link_parent_child(page_root, &mut self.app.accounts.oauth_client_id_box, &mut self.ui_context);
-                    link_parent_child(page_root, &mut self.app.accounts.oauth_client_secret_box, &mut self.ui_context);
-                } else {
-                    link_parent_child(page_root, &mut self.app.accounts.email_box, &mut self.ui_context);
-                    link_parent_child(page_root, &mut self.app.accounts.password_box, &mut self.ui_context);
-                    link_parent_child(page_root, &mut self.app.accounts.imap_box, &mut self.ui_context);
-                    link_parent_child(page_root, &mut self.app.accounts.smtp_box, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.accounts.oauth_client_id_box, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.accounts.oauth_client_secret_box, &mut self.ui_context);
+                } else if self.app.accounts.adding_new {
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.accounts.email_box, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.accounts.password_box, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.accounts.imap_box, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut self.app.accounts.smtp_box, &mut self.ui_context);
                 }
             }
 
@@ -810,12 +842,20 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_padding_spinbox, &mut self.ui_context);
             }
             Page::Hardware => {
-                link_parent_child(page_root, &mut self.app.hardware.cpu_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(page_root, &mut self.app.hardware.cpu_gov_menu, &mut self.ui_context);
-                link_parent_child(page_root, &mut self.app.hardware.gpu_gov_menu, &mut self.ui_context);
+                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                for i in 0..5 {
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
+                }
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.hardware.cpu_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.hardware.cpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.hardware.gpu_gov_menu, &mut self.ui_context);
             }
             Page::Radios => {
-                link_parent_child(page_root, &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
+                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                for i in 0..2 {
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
+                }
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
             }
             Page::Layout => {
                 self.page_sec_containers.resize_with(7, clear_ui::widget::Container::new);
@@ -849,7 +889,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
                 // Side Panel (Section 6)
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_behavior_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_position_menu, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_width_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_gap_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
             }
             Page::Interface => {
                 self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
@@ -869,7 +912,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_network_opacity_slider, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_cell_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_gap_opacity_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
                 // (Sections child widgets)
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
@@ -924,6 +968,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 
                 // (Dropdown child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.dropdown_height_spinbox, &mut self.ui_context);
+                
+                // (Button child widgets)
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.button_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (Labels child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.label_margin_spinbox, &mut self.ui_context);
@@ -1070,11 +1117,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         clear_ui::layout::render_widget(&mut switcher_pc, &mut self.switcher, self.sidebar_width, 0.0, sw / s - self.sidebar_width, sh / s, &mut self.ui_context);
 
         for pc_part in &[menubar_pc, switcher_pc] {
-            for (c, x, y, w, h) in &pc_part.rects {
+            for (c, x, y, w, h, r) in &pc_part.rects {
                 widgets.push(AppWidget {
                     x: *x * s, y: *y * s, w: *w * s, h: *h * s,
                     color: *c, hover_color: *c,
                     hovering: false,
+                    radius: *r * s,
                 });
             }
             for (t, size, x, y, tc, font_opt, bounds) in &pc_part.texts {
@@ -1117,28 +1165,35 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             });
         }
 
-        clear_ui::layout::render_popovers(&mut pc, &mut self.ui_context);
-
         let mut max_y = 0.0f32;
-        for (_, _, y, _, h) in &pc.rects {
+        for (_, _, y, _, h, _) in &pc.rects {
             max_y = max_y.max(y + h);
         }
         for (_, size, _, y, _, _, _) in &pc.texts {
             max_y = max_y.max(y + size);
         }
-        for btn in &pc.buttons {
-            max_y = max_y.max(btn.y + btn.h);
+        for (btn, _) in &pc.buttons {
+            let base = btn.base().unwrap();
+            max_y = max_y.max(base.y + base.h);
         }
         self.max_scroll_y = (max_y - lch).max(0.0);
-        self.scroll_y = self.scroll_y.min(self.max_scroll_y);
+        eprintln!("SCROLL_DEBUG: max_y={}, lch={}, max_scroll_y={}, scroll_y={}", max_y, lch, self.max_scroll_y, self.scroll_y);
+        static mut FRAME_COUNT: usize = 0;
+        unsafe {
+            FRAME_COUNT += 1;
+            if FRAME_COUNT > 5 {
+                self.scroll_y = self.scroll_y.min(self.max_scroll_y);
+            }
+        }
 
         let scroll_offset_y = self.scroll_y;
 
-        for (c, x, y, w, h) in &pc.rects {
+        for (c, x, y, w, h, r) in &pc.rects {
             widgets.push(AppWidget {
                 x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
                 color: *c, hover_color: *c,
                 hovering: false,
+                radius: *r * s,
             });
         }
         for (t, size, x, y, tc, font_opt, bounds) in &pc.texts {
@@ -1162,56 +1217,120 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 bounds: shifted_bounds,
             });
         }
-        for btn in &pc.buttons {
+        for (btn, action) in &pc.buttons {
+            let base = btn.base().unwrap();
+            let bg = btn.bg.unwrap_or([0.16, 0.16, 0.24, 1.0]);
+            let hover_bg = btn.hover_bg.unwrap_or([0.25, 0.30, 0.26, 1.0]);
             widgets.push(AppWidget {
-                x: btn.x * s, y: (btn.y - scroll_offset_y) * s, w: btn.w * s, h: btn.h * s,
-                color: btn.bg, hover_color: btn.hover_bg,
+                x: base.x * s, y: (base.y - scroll_offset_y) * s, w: base.w * s, h: base.h * s,
+                color: bg, hover_color: hover_bg,
                 hovering: false,
+                radius: clear_ui::layout::button_corner_radius() * s,
             });
-            let buf = make_text_buffer(&mut self.font_system, &btn.label, btn.label_size * s);
+            let label = base.label.as_deref().unwrap_or("");
+            let label_size = 12.0;
+            let buf = make_text_buffer(&mut self.font_system, label, label_size * s);
             let scale = clear_ui::scale::scale_factor();
             let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0) / scale;
-            let lh = btn.label_size * s * 1.4;
+            let lh = label_size * s * 1.4;
             let mut left_align = btn.left_align;
 
             // Auto-detect if inside a ScrollBox to apply left alignment by default
-            if !left_align && btn.w >= 60.0 {
+            if !left_align && base.w >= 60.0 {
                 if self.app.current_page == Page::Hardware {
                     let sb = &self.app.hardware.cpu_list_box;
                     let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
-                    if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
-                       && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
+                    if base.x >= sb_x - 1.0 && base.x + base.w <= sb_x + sb_w + 1.0
+                       && base.y >= sb_y - 1.0 && base.y + base.h <= sb_y + sb_h + 1.0 {
                         left_align = true;
                     }
                 } else if self.app.current_page == Page::Services {
                     let sb = &self.app.services.list_box;
                     let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
-                    if btn.x >= sb_x - 1.0 && btn.x + btn.w <= sb_x + sb_w + 1.0
-                       && btn.y >= sb_y - 1.0 && btn.y + btn.h <= sb_y + sb_h + 1.0 {
+                    if base.x >= sb_x - 1.0 && base.x + base.w <= sb_x + sb_w + 1.0
+                       && base.y >= sb_y - 1.0 && base.y + base.h <= sb_y + sb_h + 1.0 {
                         left_align = true;
                     }
                 }
             }
 
             let text_x = if left_align {
-                btn.x * s + 8.0 * s
+                base.x * s + 8.0 * s
             } else {
-                btn.x * s + (btn.w * s - tw) / 2.0
+                base.x * s + (base.w * s - tw) / 2.0
             };
 
-            text_items.push(TextItem {
-                buffer: buf,
-                x: text_x, y: (btn.y - scroll_offset_y) * s + (btn.h * s - lh) / 2.0,
-                color: glyphon::Color::rgb(
-                    (btn.label_color[0] * 255.0) as u8,
-                    (btn.label_color[1] * 255.0) as u8,
-                    (btn.label_color[2] * 255.0) as u8,
-                ),
-                bounds: None,
+            let mut overlaps = false;
+            let tx_logical = if left_align {
+                base.x + 8.0
+            } else {
+                base.x + (base.w - tw) / 2.0
+            };
+            let ty_logical = base.y + (base.h - lh) / 2.0;
+            for &(px, py, pw, ph) in &popovers {
+                let x_overlap = tx_logical <= px + pw && (tx_logical + tw) >= px;
+                let y_overlap = ty_logical <= py + ph && (ty_logical + lh) >= py;
+                if x_overlap && y_overlap {
+                    overlaps = true;
+                    break;
+                }
+            }
+
+            let label_color = btn.label_color.unwrap_or([0.83, 0.83, 0.83, 1.0]);
+            if !overlaps {
+                text_items.push(TextItem {
+                    buffer: buf,
+                    x: text_x, y: (base.y - scroll_offset_y) * s + (base.h * s - lh) / 2.0,
+                    color: glyphon::Color::rgb(
+                        (label_color[0] * 255.0) as u8,
+                        (label_color[1] * 255.0) as u8,
+                        (label_color[2] * 255.0) as u8,
+                    ),
+                    bounds: None,
+                });
+            }
+            let mut btn_clone = btn.clone();
+            if let Some(base_mut) = btn_clone.base_mut() {
+                base_mut.x *= s;
+                base_mut.y = (base_mut.y - scroll_offset_y) * s;
+                base_mut.w *= s;
+                base_mut.h *= s;
+            }
+            page_buttons.push((btn_clone, action.clone()));
+        }
+
+        // Render popovers on top of everything (both backgrounds and texts)
+        let mut popover_pc = PageContent::new();
+        clear_ui::layout::render_popovers(&mut popover_pc, &mut self.ui_context);
+
+        for (c, x, y, w, h, r) in &popover_pc.rects {
+            widgets.push(AppWidget {
+                x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
+                color: *c, hover_color: *c,
+                hovering: false,
+                radius: *r * s,
             });
-            let mut cb = btn.clone();
-            cb.x *= s; cb.y = (cb.y - scroll_offset_y) * s; cb.w *= s; cb.h *= s;
-            page_buttons.push(cb);
+        }
+        for (t, size, x, y, tc, font_opt, bounds) in &popover_pc.texts {
+            let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
+                [bl, bt - scroll_offset_y, br, bb - scroll_offset_y]
+            });
+            text_items.push(TextItem {
+                buffer: make_text_buffer_with_font(
+                    &mut self.font_system,
+                    t,
+                    *size * s,
+                    font_opt.as_deref(),
+                    &self.sans_serif_family,
+                    &self.serif_family,
+                    &self.monospace_family,
+                ),
+                x: *x * s, y: (*y - scroll_offset_y) * s,
+                color: glyphon::Color::rgb(
+                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
+                ),
+                bounds: shifted_bounds,
+            });
         }
 
         // Draw global hover highlight if active
@@ -1225,6 +1344,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 color: qc,
                 hover_color: qc,
                 hovering: false,
+                radius: 0.0,
             });
         }
 
@@ -1241,12 +1361,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 x: cx * s, y: cy * s, w: cw * s, h: ch * s,
                 color: [0.22, 0.22, 0.28, 1.0], hover_color: [0.22, 0.22, 0.28, 1.0],
                 hovering: false,
+                radius: 0.0,
             });
             // Bg
             widgets.push(AppWidget {
                 x: (cx + 1.0) * s, y: (cy + 1.0) * s, w: (cw - 2.0) * s, h: (ch - 2.0) * s,
                 color: [0.06, 0.06, 0.09, 1.0], hover_color: [0.06, 0.06, 0.09, 1.0],
                 hovering: false,
+                radius: 0.0,
             });
             
             // Hover highlight
@@ -1256,6 +1378,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     x: (cx + 2.0) * s, y: (iy + 2.0) * s, w: (cw - 4.0) * s, h: 20.0 * s,
                     color: [0.20, 0.40, 0.65, 0.6], hover_color: [0.20, 0.40, 0.65, 0.6],
                     hovering: false,
+                    radius: 0.0,
                 });
             }
             
@@ -1691,7 +1814,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if self.app.layout.side_panel_behavior_menu.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.layout.side_panel_position_menu.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
             if self.app.layout.side_panel_width_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.layout.side_panel_border_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.layout.side_panel_border_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
         }
@@ -1740,7 +1872,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if self.app.interface.graph_uniform_background_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
-            if self.app.interface.graph_network_opacity_slider.cursor_moved(lx, ly, &mut self.ui_context) {
+            if self.app.interface.graph_cell_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.graph_gap_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
             if self.app.interface.graph_gap_width_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -1789,6 +1924,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 changed = true;
             }
             if self.app.interface.dropdown_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.button_corner_radius_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
             if self.app.interface.sans_box.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2045,13 +2183,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
         }
 
-        if self.app.current_page == Page::Interface {
-            if self.graph_opacity_dragging {
-                if self.app.interface.graph_network_opacity_slider.drag_update(lx, ly) {
-                    changed = true;
-                }
-            }
-        }
+
 
         if self.app.current_page == Page::Services {
             if self.opacity_dragging {
@@ -2109,7 +2241,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if self.app.accounts.editing_oauth_creds {
                 if self.app.accounts.oauth_client_id_box.cursor_moved(lx, ly, &mut self.ui_context) { changed = true; }
                 if self.app.accounts.oauth_client_secret_box.cursor_moved(lx, ly, &mut self.ui_context) { changed = true; }
-            } else {
+            } else if self.app.accounts.adding_new {
                 if self.app.accounts.email_box.cursor_moved(lx, ly, &mut self.ui_context) { changed = true; }
                 if self.app.accounts.password_box.cursor_moved(lx, ly, &mut self.ui_context) { changed = true; }
                 if self.app.accounts.imap_box.cursor_moved(lx, ly, &mut self.ui_context) { changed = true; }
@@ -2191,17 +2323,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     self.needs_rebuild = true;
                 }
             }
-            if self.app.current_page == Page::Interface {
-                if self.graph_opacity_dragging {
-                    self.app.interface.graph_network_opacity_slider.drag_end();
-                    self.graph_opacity_dragging = false;
-                    self.needs_rebuild = true;
-                }
-            }
+
             let (px, py) = (self.cursor_x, self.cursor_y);
-            for btn in &self.page_buttons.clone() {
-                if px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h {
-                    self.handle_action(&btn.action);
+            for (btn, action) in &self.page_buttons.clone() {
+                let base = btn.base().unwrap();
+                if px >= base.x && px <= base.x + base.w && py >= base.y && py <= base.y + base.h {
+                    self.handle_action(action);
                     self.needs_rebuild = true;
                     return true;
                 }
@@ -2219,7 +2346,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if accs.editing_oauth_creds {
                         if accs.oauth_client_id_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                         if accs.oauth_client_secret_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    } else {
+                    } else if accs.adding_new {
                         if accs.email_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                         if accs.password_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                         if accs.imap_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2240,7 +2367,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         if menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     }
                     if self.app.layout.side_panel_behavior_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.layout.side_panel_position_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.layout.side_panel_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.layout.side_panel_border_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.layout.side_panel_border_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
                 Page::Interface => {
                     for cp in &mut self.app.interface.color_selectors {
@@ -2259,7 +2389,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if self.app.interface.graph_show_grid_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.graph_snap_enabled_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.graph_uniform_background_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.interface.graph_network_opacity_slider.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.graph_cell_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.graph_gap_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.graph_gap_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.page_margin_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.grid_min_col_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2276,6 +2407,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if self.app.interface.slider_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.font_selector_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.dropdown_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.button_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     let tf = &mut self.app.interface;
                     if tf.sans_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if tf.serif_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2446,12 +2578,36 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(menu.selected)));
             }
+            let menu = &mut self.app.layout.side_panel_position_menu;
+            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(menu.selected)));
+            }
             let sb = &mut self.app.layout.side_panel_width_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Layout(
                     pages::layout::LayoutMessage::SetSidePanelWidth(sb.value as u16)
+                ));
+            }
+            let sb = &mut self.app.layout.side_panel_border_gap_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetSidePanelBorderGap(sb.value as u16)
+                ));
+            }
+            let sb = &mut self.app.layout.side_panel_border_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Layout(
+                    pages::layout::LayoutMessage::SetSidePanelBorderOpacity(sb.value as u16)
                 ));
             }
         }
@@ -2582,23 +2738,17 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapWidth(sb.value as u16)));
             }
-            let slider = &mut self.app.interface.graph_network_opacity_slider;
-            if button == clear_ui::widget::MouseButton::Left {
-                if state == clear_ui::widget::ElementState::Pressed {
-                    if slider.hit_test(lx, ly, &self.ui_context) {
-                        slider.drag_begin(lx, ly);
-                        self.graph_opacity_dragging = true;
-                        self.needs_rebuild = true;
-                    }
-                } else if state == clear_ui::widget::ElementState::Released {
-                    if self.graph_opacity_dragging {
-                        self.graph_opacity_dragging = false;
-                        slider.drag_end();
-                        let val = slider.value();
-                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphOpacity(val)));
-                        self.needs_rebuild = true;
-                    }
-                }
+            let sb = &mut self.app.interface.graph_cell_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphCellOpacity(sb.value as f32 / 100.0)));
+            }
+            let sb = &mut self.app.interface.graph_gap_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapOpacity(sb.value as f32 / 100.0)));
             }
             let sb = &mut self.app.interface.page_margin_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
@@ -2665,6 +2815,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetDropdownHeight(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.button_corner_radius_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonCornerRadius(sb.value as u16)));
             }
         }
         if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Input {
@@ -2963,7 +3119,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
-            } else {
+            } else if self.app.accounts.adding_new {
                 let tb = &mut self.app.accounts.email_box;
                 if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
@@ -3286,6 +3442,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if net.wifi_list_box.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
+            net.wifi_toggle.mouse_input(button, state, lx, ly, &mut self.ui_context);
+            if net.wifi_toggle.take_click() {
+                actions.push(AppAction::Radios(pages::network::NetworkMessage::ToggleWifi));
+            }
+            net.bt_toggle.mouse_input(button, state, lx, ly, &mut self.ui_context);
+            if net.bt_toggle.take_click() {
+                actions.push(AppAction::Radios(pages::network::NetworkMessage::ToggleBluetooth));
+            }
         }
         for a in &actions {
             self.handle_action(a);
@@ -3332,8 +3496,17 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 if self.app.layout.side_panel_behavior_menu.take_change() {
                     actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(self.app.layout.side_panel_behavior_menu.selected)));
                 }
+                if self.app.layout.side_panel_position_menu.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(self.app.layout.side_panel_position_menu.selected)));
+                }
                 if self.app.layout.side_panel_width_spinbox.take_change() {
                     actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelWidth(self.app.layout.side_panel_width_spinbox.value as u16)));
+                }
+                if self.app.layout.side_panel_border_gap_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBorderGap(self.app.layout.side_panel_border_gap_spinbox.value as u16)));
+                }
+                if self.app.layout.side_panel_border_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBorderOpacity(self.app.layout.side_panel_border_opacity_spinbox.value as u16)));
                 }
             }
             Page::Interface => {
@@ -3397,8 +3570,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 if self.app.interface.graph_uniform_background_toggle.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphUniformBackground(self.app.interface.graph_uniform_background_toggle.toggled())));
                 }
-                if self.app.interface.graph_network_opacity_slider.take_change() {
-                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphOpacity(self.app.interface.graph_network_opacity_slider.value())));
+                if self.app.interface.graph_cell_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphCellOpacity(self.app.interface.graph_cell_opacity_spinbox.value as f32 / 100.0)));
+                }
+                if self.app.interface.graph_gap_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapOpacity(self.app.interface.graph_gap_opacity_spinbox.value as f32 / 100.0)));
                 }
                 if self.app.interface.page_margin_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPageMargin(self.app.interface.page_margin_spinbox.value as u16)));
@@ -3432,6 +3608,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
                 if self.app.interface.dropdown_height_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetDropdownHeight(self.app.interface.dropdown_height_spinbox.value as u16)));
+                }
+                if self.app.interface.button_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonCornerRadius(self.app.interface.button_corner_radius_spinbox.value as u16)));
                 }
                 if self.app.interface.sans_box.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSans(self.app.interface.sans_box.text.clone())));
@@ -3596,7 +3775,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
             }
             Page::Accounts => {
-                if self.app.accounts.email_box.take_change() {
+                if self.app.accounts.adding_new && self.app.accounts.email_box.take_change() {
                     let email_val = self.app.accounts.email_box.text.trim().to_lowercase();
                     if email_val.ends_with("@gmail.com") {
                         self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
@@ -3642,6 +3821,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     }
                 }
             }
+            Page::Radios => {
+                let net = &mut self.app.network;
+                if net.wifi_toggle.take_change() {
+                    actions.push(AppAction::Radios(pages::network::NetworkMessage::ToggleWifi));
+                }
+                if net.bt_toggle.take_change() {
+                    actions.push(AppAction::Radios(pages::network::NetworkMessage::ToggleBluetooth));
+                }
+            }
             _ => {}
         }
     }
@@ -3649,7 +3837,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
     fn handle_mouse_wheel_internal(&mut self, delta: &clear_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
         if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/clear-scroll-debug.txt") {
             use std::io::Write;
-            let _ = writeln!(file, "handle_mouse_wheel_internal: px={}, py={}, sidebar_w={}", px, py, self.sidebar_width);
+            let _ = writeln!(file, "handle_mouse_wheel_internal: px={}, py={}, delta={:?}, sidebar_w={}", px, py, delta, self.sidebar_width);
         }
         let s = 1.0f32;
         if px >= self.sidebar_width * s {
@@ -3754,15 +3942,27 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
 
             if self.app.current_page == Page::Interface {
-                let slider = &mut self.app.interface.graph_network_opacity_slider;
-                let old_val = slider.value();
-                if slider.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
-                    let new_val = slider.value();
-                    if new_val != old_val {
-                        self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetGraphOpacity(new_val)));
-                        self.needs_rebuild = true;
-                        return true;
+                let mut actions = Vec::new();
+                let sb = &mut self.app.interface.graph_cell_opacity_spinbox;
+                let old = sb.value;
+                if sb.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphCellOpacity(sb.value as f32 / 100.0)));
                     }
+                }
+                let sb2 = &mut self.app.interface.graph_gap_opacity_spinbox;
+                let old2 = sb2.value;
+                if sb2.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb2.value != old2 {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapOpacity(sb2.value as f32 / 100.0)));
+                    }
+                }
+                for a in &actions {
+                    self.handle_action(a);
+                }
+                if !actions.is_empty() {
+                    self.needs_rebuild = true;
+                    return true;
                 }
             }
 
@@ -3951,12 +4151,44 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
                 changed = true;
             }
+            let (menu_changed, old_selected, new_selected) = {
+                let menu = &mut self.app.layout.side_panel_position_menu;
+                let old = menu.selected;
+                let changed = menu.keyboard_input(event, &mut self.ui_context);
+                (changed, old, menu.selected)
+            };
+            if menu_changed {
+                if new_selected != old_selected {
+                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(new_selected)));
+                }
+                changed = true;
+            }
             let sb = &mut self.app.layout.side_panel_width_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event, &mut self.ui_context) {
                 if sb.value != old {
                     actions.push(AppAction::Layout(
                         pages::layout::LayoutMessage::SetSidePanelWidth(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
+            let sb = &mut self.app.layout.side_panel_border_gap_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetSidePanelBorderGap(sb.value as u16)
+                    ));
+                }
+                changed = true;
+            }
+            let sb = &mut self.app.layout.side_panel_border_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                if sb.value != old {
+                    actions.push(AppAction::Layout(
+                        pages::layout::LayoutMessage::SetSidePanelBorderOpacity(sb.value as u16)
                     ));
                 }
                 changed = true;
@@ -4227,6 +4459,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 self.needs_rebuild = true;
                 return true;
             }
+            let sb = &mut self.app.interface.button_corner_radius_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetButtonCornerRadius(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
 
 
 
@@ -4399,7 +4641,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 if tb.keyboard_input(event, &mut self.ui_context) { consumed = true; }
                 let tb = &mut self.app.accounts.oauth_client_secret_box;
                 if tb.keyboard_input(event, &mut self.ui_context) { consumed = true; }
-            } else {
+            } else if self.app.accounts.adding_new {
                 let tb = &mut self.app.accounts.email_box;
                 if tb.keyboard_input(event, &mut self.ui_context) {
                     consumed = true;

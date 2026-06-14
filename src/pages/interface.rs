@@ -3,7 +3,7 @@ use std::io::Write;
 use crate::app::PageContent;
 use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{
-    ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle, Slider
+    ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle
 };
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
@@ -68,6 +68,8 @@ pub struct InterfaceState {
     pub font_selector_height_spinbox: Spinbox,
     pub dropdown_height: u16,
     pub dropdown_height_spinbox: Spinbox,
+    pub button_corner_radius: u16,
+    pub button_corner_radius_spinbox: Spinbox,
     pub nested_section_label_alignment: u8,
     pub label_alignment_menu: Dropdown,
     pub nested_section_label_offset: i16,
@@ -116,8 +118,10 @@ pub struct InterfaceState {
     pub graph_snap_enabled_toggle: Toggle,
     pub graph_uniform_background: bool,
     pub graph_uniform_background_toggle: Toggle,
-    pub graph_network_opacity: f32,
-    pub graph_network_opacity_slider: Slider,
+    pub graph_cell_opacity: f32,
+    pub graph_cell_opacity_spinbox: Spinbox,
+    pub graph_gap_opacity: f32,
+    pub graph_gap_opacity_spinbox: Spinbox,
     pub graph_gap_width: u16,
     pub graph_gap_width_spinbox: Spinbox,
 }
@@ -189,6 +193,8 @@ impl Default for InterfaceState {
             font_selector_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
             dropdown_height: 44,
             dropdown_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            button_corner_radius: 4,
+            button_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px"),
             nested_section_label_alignment: 0,
             label_alignment_menu: Dropdown::new(
                 vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
@@ -238,8 +244,10 @@ impl Default for InterfaceState {
             graph_snap_enabled_toggle: Toggle::new().with_label("Grid Snapping"),
             graph_uniform_background: false,
             graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
-            graph_network_opacity: 0.95,
-            graph_network_opacity_slider: Slider::new().with_label("Network Opacity").with_value(0.95),
+            graph_cell_opacity: 0.95,
+            graph_cell_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Cell Opacity").with_unit("%"),
+            graph_gap_opacity: 0.95,
+            graph_gap_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Gap Opacity").with_unit("%"),
             graph_gap_width: 35,
             graph_gap_width_spinbox: Spinbox::new(35, 0, 100, 1).with_label("Gap Width").with_unit("px"),
             menubar_opacity: 0.9,
@@ -281,6 +289,7 @@ pub enum InterfaceMessage {
     SetSliderHeight(u16),
     SetFontSelectorHeight(u16),
     SetDropdownHeight(u16),
+    SetButtonCornerRadius(u16),
     SetColorSelectorFont(String),
     SetMenubarFont(String),
     SetSectionLabelFont(String),
@@ -291,7 +300,8 @@ pub enum InterfaceMessage {
     SetGraphShowGrid(bool),
     SetGraphSnapEnabled(bool),
     SetGraphUniformBackground(bool),
-    SetGraphOpacity(f32),
+    SetGraphCellOpacity(f32),
+    SetGraphGapOpacity(f32),
     SetGraphGapWidth(u16),
     SetMenubarOpacity(f32),
     PickLowColor,
@@ -385,6 +395,7 @@ pub fn read_interface_config() -> InterfaceState {
     let slider_height = parse_u16_from(&content, "slider_height", 28);
     let font_selector_height = parse_u16_from(&content, "font_selector_height", 44);
     let dropdown_height = parse_u16_from(&content, "dropdown_height", 44);
+    let button_corner_radius = parse_u16_from(&content, "button_corner_radius", 4);
     let color_selector_font = parse_string_from(&content, "color_selector_font", "monospace");
     let menubar_font = parse_string_from(&content, "menubar_font", "Outfit");
     let section_label_font = parse_string_from(&content, "section_label_font", "Outfit");
@@ -395,7 +406,9 @@ pub fn read_interface_config() -> InterfaceState {
     let graph_show_grid = parse_bool_from(&content, "graph_show_grid", true);
     let graph_snap_enabled = parse_bool_from(&content, "graph_snap_enabled", true);
     let graph_uniform_background = parse_bool_from(&content, "graph_uniform_background", false);
-    let graph_network_opacity = parse_f32_from(&content, "graph_network_opacity", 0.95);
+    let legacy_opacity = parse_f32_from(&content, "graph_network_opacity", 0.95);
+    let graph_cell_opacity = parse_f32_from(&content, "graph_cell_opacity", legacy_opacity);
+    let graph_gap_opacity = parse_f32_from(&content, "graph_gap_opacity", legacy_opacity);
     let graph_gap_width = parse_u16_from(&content, "graph_gap_width", 35);
     let opacity = parse_transparency_opacity(&content);
     
@@ -464,6 +477,8 @@ pub fn read_interface_config() -> InterfaceState {
         font_selector_height_spinbox: Spinbox::new(font_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
         dropdown_height,
         dropdown_height_spinbox: Spinbox::new(dropdown_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        button_corner_radius,
+        button_corner_radius_spinbox: Spinbox::new(button_corner_radius as i32, 0, 50, 1).with_label("Radius").with_unit("px"),
         nested_section_label_alignment,
         label_alignment_menu: Dropdown::new(
             vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
@@ -513,8 +528,10 @@ pub fn read_interface_config() -> InterfaceState {
         graph_snap_enabled_toggle: Toggle::new().with_label("Grid Snapping"),
         graph_uniform_background,
         graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
-        graph_network_opacity,
-        graph_network_opacity_slider: Slider::new().with_label("Network Opacity").with_value(graph_network_opacity),
+        graph_cell_opacity,
+        graph_cell_opacity_spinbox: Spinbox::new((graph_cell_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Cell Opacity").with_unit("%"),
+        graph_gap_opacity,
+        graph_gap_opacity_spinbox: Spinbox::new((graph_gap_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Gap Opacity").with_unit("%"),
         graph_gap_width,
         graph_gap_width_spinbox: Spinbox::new(graph_gap_width as i32, 0, 100, 1).with_label("Gap Width").with_unit("px"),
         menubar_opacity: opacity,
@@ -832,6 +849,11 @@ fn apply_font_selector_height(height: u16) {
 fn apply_dropdown_height(height: u16) {
     write_config_value("dropdown_height", &height.to_string());
     clear_ui::layout::set_dropdown_height(height as f32);
+}
+
+fn apply_button_corner_radius(radius: u16) {
+    write_config_value("button_corner_radius", &radius.to_string());
+    clear_ui::layout::set_button_corner_radius(radius as f32);
 }
 
 fn apply_color_selector_font(font: &str) {
@@ -1349,9 +1371,12 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.graph_uniform_background_toggle.set_toggled(state.graph_uniform_background);
             subsec.widget_full(&mut state.graph_uniform_background_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(12.0);
-            state.graph_network_opacity_slider.set_value(state.graph_network_opacity);
-            subsec.widget_full(&mut state.graph_network_opacity_slider, state.slider_height as f32, ctx);
+            subsec.spacing(8.0);
+            state.graph_cell_opacity_spinbox.value = (state.graph_cell_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.graph_cell_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.graph_gap_opacity_spinbox.value = (state.graph_gap_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.graph_gap_opacity_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
             state.graph_gap_width_spinbox.value = state.graph_gap_width as i32;
             subsec.widget_full(&mut state.graph_gap_width_spinbox, 44.0, ctx);
@@ -1491,6 +1516,15 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.dropdown_height_spinbox.value = state.dropdown_height as i32;
             subsec.widget_full(&mut state.dropdown_height_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Button Section
+        sec.add_section("Button", false, |subsec| {
+            subsec.spacing(8.0);
+            state.button_corner_radius_spinbox.value = state.button_corner_radius as i32;
+            subsec.widget_full(&mut state.button_corner_radius_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -1742,6 +1776,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.dropdown_height = height;
             apply_dropdown_height(height);
         }
+        InterfaceMessage::SetButtonCornerRadius(radius) => {
+            state.button_corner_radius = radius;
+            apply_button_corner_radius(radius);
+        }
         InterfaceMessage::SetColorSelectorFont(font) => {
             state.color_selector_font = font.clone();
             state.color_selector_font_selector.font_family = font.clone();
@@ -1798,10 +1836,16 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             write_config_value("graph_uniform_background", &uniform.to_string());
             cce_graph_reload();
         }
-        InterfaceMessage::SetGraphOpacity(opacity) => {
-            state.graph_network_opacity = opacity;
-            state.graph_network_opacity_slider.set_value(opacity);
-            write_config_value("graph_network_opacity", &format!("{:.2}", opacity));
+        InterfaceMessage::SetGraphCellOpacity(opacity) => {
+            state.graph_cell_opacity = opacity;
+            state.graph_cell_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            write_config_value("graph_cell_opacity", &format!("{:.2}", opacity));
+            cce_graph_reload();
+        }
+        InterfaceMessage::SetGraphGapOpacity(opacity) => {
+            state.graph_gap_opacity = opacity;
+            state.graph_gap_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            write_config_value("graph_gap_opacity", &format!("{:.2}", opacity));
             cce_graph_reload();
         }
         InterfaceMessage::SetGraphGapWidth(gap) => {
@@ -1815,6 +1859,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.menubar_opacity_spinbox.value = (opacity * 100.0).round() as i32;
             write_transparency_config_value("opacity", &format!("{:.2}", opacity));
             send_ipc_command("reload");
+            status_interface_reload();
         }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickPaginatorTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
         InterfaceMessage::Refreshed(new) => {
@@ -1831,7 +1876,8 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_gsg_hovered = state.graph_show_grid_toggle.hovered();
             let was_gse_hovered = state.graph_snap_enabled_toggle.hovered();
             let was_gub_hovered = state.graph_uniform_background_toggle.hovered();
-            let was_gno_hovered = state.graph_network_opacity_slider.hovered();
+            let was_gco_hovered = state.graph_cell_opacity_spinbox.hovered();
+            let was_ggo_hovered = state.graph_gap_opacity_spinbox.hovered();
             let was_ggw_hovered = state.graph_gap_width_spinbox.hovered();
             let was_csh_hovered = state.color_selector_height_spinbox.hovered();
             let was_tbh_hovered = state.textbox_height_spinbox.hovered();
@@ -1881,7 +1927,8 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.graph_show_grid_toggle.set_hovered(was_gsg_hovered);
             state.graph_snap_enabled_toggle.set_hovered(was_gse_hovered);
             state.graph_uniform_background_toggle.set_hovered(was_gub_hovered);
-            state.graph_network_opacity_slider.set_hovered(was_gno_hovered);
+            state.graph_cell_opacity_spinbox.set_hovered(was_gco_hovered);
+            state.graph_gap_opacity_spinbox.set_hovered(was_ggo_hovered);
             state.graph_gap_width_spinbox.set_hovered(was_ggw_hovered);
             state.color_selector_height_spinbox.set_hovered(was_csh_hovered);
             state.textbox_height_spinbox.set_hovered(was_tbh_hovered);
@@ -3015,6 +3062,34 @@ mod tests {
         let content = fs::read_to_string(path_str).unwrap();
         let val = parse_transparency_opacity(&content);
         assert_eq!(val, 0.85);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_button_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_button_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "button_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write button_corner_radius config
+        assert!(write_config_value_path(path_str, "button_corner_radius", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("button_corner_radius = 12"));
+
+        // 4. Parse when present (should return written value 12)
+        let val2 = parse_u16_from(&updated, "button_corner_radius", 4);
+        assert_eq!(val2, 12);
 
         // Clean up
         let _ = fs::remove_file(path_str);

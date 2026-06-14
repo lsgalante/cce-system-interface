@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent};
 use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use clear_ui::widget::{Label, ScrollingList, Dropdown, InfoBox};
 
@@ -384,7 +384,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
 
     // ── CPU Section ──
-    builder.add_section_with_width(&mut final_pc, sec_w * 2.0 + 20.0, "CPU", root_focused, |sec| {
+    builder.add_section(&mut final_pc, "CPU", root_focused, |sec| {
         let rx = sec.left;
         if !state.loaded {
             sec.text("Loading CPU model and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
@@ -428,7 +428,7 @@ pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_
             for (idx, (pid, cpu, comm)) in state.processes.iter().enumerate() {
                 if let Some(draw_y) = state.cpu_list_box.get_item_draw_y(idx, 4.0) {
                     // Standard row action button (transparent background, highlights on hover)
-                    sec.button(
+                    sec.pc.button(
                         "",
                         list_box_x + 2.0,
                         draw_y,

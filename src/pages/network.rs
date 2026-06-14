@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::ScrollingList;
+use clear_ui::widget::{ScrollingList, Toggle, Element};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -18,7 +18,7 @@ pub struct BluetoothDevice {
     pub connected: bool,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NetworkState {
     pub loaded: bool,
     pub wifi_enabled: bool,
@@ -33,6 +33,30 @@ pub struct NetworkState {
     pub bt_devices: Vec<BluetoothDevice>,
     pub bt_scanning: bool,
     pub wifi_list_box: ScrollingList,
+    pub wifi_toggle: Toggle,
+    pub bt_toggle: Toggle,
+}
+
+impl Default for NetworkState {
+    fn default() -> Self {
+        Self {
+            loaded: false,
+            wifi_enabled: false,
+            connected_ssid: String::new(),
+            signal_strength: 0,
+            ip_address: String::new(),
+            device: String::new(),
+            available: Vec::new(),
+            bt_installed: false,
+            bt_service_active: false,
+            bt_enabled: false,
+            bt_devices: Vec::new(),
+            bt_scanning: false,
+            wifi_list_box: ScrollingList::new(26.0, 4.0),
+            wifi_toggle: Toggle::new(),
+            bt_toggle: Toggle::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -55,17 +79,19 @@ pub async fn fetch_network_state() -> NetworkState {
         .unwrap_or(false);
 
     let active = tokio::process::Command::new("nmcli")
-        .args(["-t", "-f", "NAME,DEVICE,SIGNAL", "con", "show", "--active"])
+        .args(["-t", "-f", "NAME,DEVICE,TYPE", "con", "show", "--active"])
         .output().await.ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
 
     let (connected_ssid, device) = active.lines()
-        .filter(|l| !l.contains(":lo:"))
         .filter_map(|l| {
-            let parts: Vec<&str> = l.splitn(3, ':').collect();
-            if parts.len() >= 2 && !parts[0].is_empty() {
-                Some((parts[0].to_string(), parts[1].to_string()))
+            let parts: Vec<&str> = l.split(':').collect();
+            if parts.len() >= 3 && parts[parts.len() - 1] == "802-11-wireless" {
+                let ssid = parts[..parts.len() - 2].join(":");
+                let ssid_unescaped = ssid.replace("\\:", ":");
+                let device = parts[parts.len() - 2].to_string();
+                Some((ssid_unescaped, device))
             } else { None }
         }).next().unwrap_or_default();
 
@@ -85,7 +111,10 @@ pub async fn fetch_network_state() -> NetworkState {
         .and_then(|o| {
             String::from_utf8_lossy(&o.stdout).lines()
                 .find(|l| !l.is_empty())
-                .map(|l| l.split('/').next().unwrap_or(l).to_string())
+                .map(|l| {
+                    let val = l.split(':').nth(1).unwrap_or(l);
+                    val.split('/').next().unwrap_or(val).to_string()
+                })
         }).unwrap_or_default();
 
     let available = if wifi_enabled { fetch_wifi_list().await } else { Vec::new() };
@@ -98,6 +127,8 @@ pub async fn fetch_network_state() -> NetworkState {
         bt_installed, bt_service_active,
         bt_enabled, bt_devices, bt_scanning: false,
         wifi_list_box: ScrollingList::new(26.0, 4.0),
+        wifi_toggle: Toggle::new(),
+        bt_toggle: Toggle::new(),
     }
 }
 
@@ -251,60 +282,67 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
 
     // ── WiFi ──
     builder.add_section(&mut final_pc, "WiFi", root_focused, |sec| {
+        let sec_w = sec.cw;
         let rx = sec.left;
+        let padding = sec.padding();
+        let row_gap = clear_ui::layout::label_margin();
+        let margin = padding.max(12.0);
 
         if !state.loaded {
-            sec.text("Loading WiFi interfaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
+            sec.text("Loading WiFi interfaces...", margin, 0.0, 12.0, TEXT_DIM);
+            sec.spacing(12.0 + row_gap);
         } else {
-            let yt = sec.ay();
             let wifi_btn_w = if sec_w < 200.0 { 40.0 } else { 60.0 };
-            let wifi_btn_x = sec_w - wifi_btn_w - 12.0;
+            let wifi_btn_x = margin;
 
-            sec.button(if state.wifi_enabled { "ON" } else { "OFF" },
-                sec.ax(wifi_btn_x), yt, wifi_btn_w, 28.0,
-                if state.wifi_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
-                AppAction::Radios(NetworkMessage::ToggleWifi));
-            sec.content_y += 34.0;
+            state.wifi_toggle.set_toggled(state.wifi_enabled);
+            state.wifi_toggle.set_label(if state.wifi_enabled { "ON" } else { "OFF" });
+            sec.widget(&mut state.wifi_toggle, wifi_btn_x, wifi_btn_w, 28.0, ctx);
+            sec.spacing(row_gap);
 
-            if !state.connected_ssid.is_empty() {
-                let ssid_max_chars = ((sec_w - 24.0) / 7.0) as usize;
-                let ssid_truncated = if state.connected_ssid.len() > ssid_max_chars {
-                    format!("{}...", &state.connected_ssid[..ssid_max_chars.saturating_sub(3)])
-                } else {
-                    state.connected_ssid.clone()
-                };
-                sec.text(&format!("Connected: {}", ssid_truncated), 14.0, 0.0, 13.0, ACCENT);
-                sec.spacing(18.0);
+            if state.wifi_enabled {
+                let status_y = sec.ay();
+                let font_size_1 = 13.0;
+                let font_size_2 = 12.0;
+                let status_area_h;
 
-                if sec_w < 220.0 {
-                    sec.text(&format!("Signal: {}%", state.signal_strength), 14.0, 0.0, 12.0, TEXT_DIM);
-                    sec.spacing(16.0);
-                    if !state.ip_address.is_empty() {
-                        sec.text(&format!("IP: {}", state.ip_address), 14.0, 0.0, 12.0, TEXT_DIM);
-                        sec.spacing(16.0);
+                if !state.connected_ssid.is_empty() {
+                    let y1 = 0.0;
+                    let y2 = font_size_1 + row_gap;
+                    status_area_h = y2 + font_size_2 + row_gap;
+
+                    let ssid_max_chars = ((sec_w - 2.0 * margin) / 7.0) as usize;
+                    let ssid_truncated = if state.connected_ssid.len() > ssid_max_chars {
+                        format!("{}...", &state.connected_ssid[..ssid_max_chars.saturating_sub(3)])
+                    } else {
+                        state.connected_ssid.clone()
+                    };
+                    sec.text(&format!("Connected: {}", ssid_truncated), margin, y1, font_size_1, ACCENT);
+
+                    if sec_w < 220.0 {
+                        sec.text(&format!("Signal: {}%", state.signal_strength), margin, y2, font_size_2, TEXT_DIM);
+                    } else {
+                        sec.text(&format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
+                            margin, y2, font_size_2, TEXT_DIM);
                     }
                 } else {
-                    sec.text(&format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
-                        14.0, 0.0, 12.0, TEXT_DIM);
-                    sec.spacing(16.0);
+                    status_area_h = font_size_2 + row_gap;
+                    sec.text("Not connected", margin, 0.0, font_size_2, TEXT_DIM);
                 }
-            } else if state.wifi_enabled {
-                sec.text("Not connected", 14.0, 0.0, 12.0, TEXT_DIM);
-                sec.spacing(16.0);
+                sec.content_y = status_y + status_area_h;
             }
 
             if state.wifi_enabled && !state.available.is_empty() {
-                let list_box_x = rx + 12.0;
+                let list_box_x = rx + margin;
                 let list_box_y = sec.ay();
-                let list_box_w = sec_w - 24.0;
+                let list_box_w = sec_w - 2.0 * margin;
                 let list_box_h = 160.0;
 
                 render_widget(sec.pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
                 state.wifi_list_box.update_bounds(state.available.len(), list_box_y, list_box_h);
 
-                let btn_w = list_box_w - 24.0;
+                let btn_w = list_box_w - 2.0 * margin;
                 let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
 
                 for (idx, net) in state.available.iter().enumerate() {
@@ -317,65 +355,70 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                         };
                         let label = format!("{}  {}  ({}%)", prefix, ssid_truncated, net.signal);
                         let active = net.in_use;
-                        sec.button(&label, list_box_x + 4.0, draw_y, btn_w, 26.0,
+                        sec.pc.button(&label, list_box_x + margin, draw_y, btn_w, 26.0,
                             if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
                             if active { ACCENT } else { TEXT_FG },
                             AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
                     }
                 }
-                sec.content_y += list_box_h + 8.0;
+                sec.content_y += list_box_h + row_gap;
             }
         }
     });
 
     // ── Bluetooth ──
-    builder.add_section_with_width(&mut final_pc, sec_w * 2.0, "Bluetooth", false, |sec| {
-        let bt_sec_w = sec_w * 2.0;
-        let rx = sec.left;
+    builder.add_section(&mut final_pc, "Bluetooth", false, |sec| {
+        let bt_sec_w = sec.cw;
+        let padding = sec.padding();
+        let row_gap = clear_ui::layout::label_margin();
+        let margin = padding.max(12.0);
+        let font_size = 12.0;
+        let btn_h = 28.0;
 
         if !state.loaded {
-            sec.text("Loading Bluetooth status...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
+            sec.text("Loading Bluetooth status...", margin, 0.0, font_size, TEXT_DIM);
+            sec.spacing(font_size + row_gap);
         } else if !state.bt_installed {
-            sec.text("Bluetooth tools (bluez) not installed", 14.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
+            sec.text("Bluetooth tools (bluez) not installed", margin, 0.0, font_size, TEXT_DIM);
+            sec.spacing(font_size + row_gap);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
             let yt = sec.ay();
-            sec.button("Install Tools", rx + 12.0, yt, btn_w, 28.0,
+            sec.button("Install Tools", sec.ax(margin), yt, btn_w, btn_h,
                 TOGGLE_ON, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::InstallBtTools));
-            sec.content_y += 34.0;
+            sec.content_y = yt + btn_h + row_gap;
         } else if !state.bt_service_active {
-            sec.text("Bluetooth service is stopped", 14.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
+            sec.text("Bluetooth service is stopped", margin, 0.0, font_size, TEXT_DIM);
+            sec.spacing(font_size + row_gap);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
             let yt = sec.ay();
-            sec.button("Start Service", rx + 12.0, yt, btn_w, 28.0,
+            sec.button("Start Service", sec.ax(margin), yt, btn_w, btn_h,
                 TOGGLE_ON, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::StartBtService));
-            sec.content_y += 34.0;
+            sec.content_y = yt + btn_h + row_gap;
         } else {
             let yt = sec.ay();
             let bt_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 60.0 };
             let scan_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 52.0 };
-            let bt_btn_x = bt_sec_w - bt_btn_w - scan_btn_w - 20.0;
-            let scan_btn_x = bt_sec_w - scan_btn_w - 12.0;
-
-            sec.button(if state.bt_enabled { "ON" } else { "OFF" },
-                sec.ax(bt_btn_x), yt, bt_btn_w, 28.0,
-                if state.bt_enabled { TOGGLE_ON } else { TOGGLE_OFF }, BTN_HOVER, WHITE,
-                AppAction::Radios(NetworkMessage::ToggleBluetooth));
-            sec.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, 28.0,
+            let bt_btn_x = margin;
+            let scan_btn_x = margin + bt_btn_w + row_gap;
+ 
+            state.bt_toggle.set_toggled(state.bt_enabled);
+            state.bt_toggle.set_label(if state.bt_enabled { "ON" } else { "OFF" });
+            sec.widget(&mut state.bt_toggle, bt_btn_x, bt_btn_w, btn_h, ctx);
+            sec.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, btn_h,
                 TOGGLE_OFF, BTN_HOVER, WHITE,
                 AppAction::Radios(NetworkMessage::BtScan));
-            sec.content_y += 34.0;
-
+            sec.content_y = yt + btn_h + row_gap;
+ 
             if state.bt_devices.is_empty() {
                 if state.bt_enabled {
                     let no_devices_msg = if bt_sec_w < 200.0 { "No paired devices" } else { "No paired devices found" };
-                    sec.text(no_devices_msg, 14.0, 0.0, 12.0, TEXT_DIM);
+                    sec.text(no_devices_msg, margin, 0.0, font_size, TEXT_DIM);
+                    sec.spacing(font_size + row_gap);
                 }
             } else {
+                let item_h = 22.0;
                 for dev in &state.bt_devices {
                     let status = if dev.connected { ">" } else { " " };
                     let btn_w = if bt_sec_w < 250.0 { 42.0 } else { 70.0 };
@@ -384,10 +427,10 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                     } else {
                         if bt_sec_w < 250.0 { "Conn" } else { "Connect" }
                     };
-
-                    let label_max_w = (bt_sec_w - btn_w - 20.0 - 14.0 - 8.0).max(20.0);
+ 
+                    let label_max_w = (bt_sec_w - btn_w - 2.0 * padding - margin - row_gap).max(20.0);
                     let label_max_chars = ((label_max_w / 6.0) as usize).max(5);
-
+ 
                     let is_unknown = dev.name.replace('-', ":").eq_ignore_ascii_case(&dev.mac);
                     let label = if is_unknown {
                         if bt_sec_w < 350.0 {
@@ -412,17 +455,20 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                             }
                         }
                     };
-
+ 
                     let yt = sec.ay();
-                    sec.text(&label, 14.0, 0.0, 12.0, if dev.connected { ACCENT } else { TEXT_FG });
-                    sec.button(action_label, sec.ax(bt_sec_w - btn_w - 20.0), yt - 2.0, btn_w, 22.0,
+                    let btn_x = margin;
+                    let text_x = margin + btn_w + row_gap;
+                    let text_y_offset = (item_h - font_size) / 2.0;
+                    sec.button(action_label, sec.ax(btn_x), yt, btn_w, item_h,
                         if dev.connected { TOGGLE_OFF } else { TOGGLE_ON }, BTN_HOVER, WHITE,
                         if dev.connected {
                             AppAction::Radios(NetworkMessage::BtDisconnect(dev.mac.clone()))
                         } else {
                             AppAction::Radios(NetworkMessage::BtConnect(dev.mac.clone()))
                         });
-                    sec.content_y += 24.0;
+                    sec.text(&label, text_x, text_y_offset, font_size, if dev.connected { ACCENT } else { TEXT_FG });
+                    sec.content_y = yt + item_h + row_gap;
                 }
             }
         }
@@ -435,8 +481,12 @@ pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
     match msg {
         NetworkMessage::Refreshed(new) => {
             let old_scroll = state.wifi_list_box.scroll_y();
+            let was_wifi_hovered = state.wifi_toggle.hovered();
+            let was_bt_hovered = state.bt_toggle.hovered();
             *state = new;
             state.wifi_list_box.set_scroll_y(old_scroll);
+            state.wifi_toggle.set_hovered(was_wifi_hovered);
+            state.bt_toggle.set_hovered(was_bt_hovered);
         }
         NetworkMessage::ToggleWifi => {
             state.wifi_enabled = !state.wifi_enabled;
@@ -470,6 +520,21 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = NetworkState::default();
+        state.loaded = true;
+        state.wifi_enabled = true;
+        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut clear_ui::context::UiContext::new());
+        assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
+    }
+
+    #[test]
+    fn test_view_layout_connected() {
+        let mut state = NetworkState::default();
+        state.loaded = true;
+        state.wifi_enabled = true;
+        state.connected_ssid = "MyHomeWiFi".to_string();
+        state.signal_strength = 80;
+        state.ip_address = "192.168.1.50".to_string();
         let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut clear_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
