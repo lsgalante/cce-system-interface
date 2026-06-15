@@ -222,7 +222,7 @@ impl clear_ui::engine::Application for SystemInterface {
 
         let rx_audio = spawn_bg_active(current_page_shared.clone(), 1, 3, || pages::audio::fetch_audio_state());
         let rx_display = spawn_bg_active(current_page_shared.clone(), 2, 10, || pages::display::fetch_display_state());
-        let rx_network = spawn_bg_active(current_page_shared.clone(), 8, 5, || pages::network::fetch_network_state());
+        let rx_network = spawn_bg_active(current_page_shared.clone(), 7, 5, || pages::network::fetch_network_state());
         let rx_layout = {
             let (tx, rx) = std::sync::mpsc::channel::<pages::layout::LayoutState>();
             let current_page_shared = current_page_shared.clone();
@@ -230,7 +230,7 @@ impl clear_ui::engine::Application for SystemInterface {
                 let mut last_fetch: Option<std::time::Instant> = None;
                 loop {
                     let current_page = current_page_shared.load(std::sync::atomic::Ordering::SeqCst);
-                    if current_page == 6 { // Layout is index 6
+                    if current_page == 11 { // Layout is index 11
                         let should_fetch = match last_fetch {
                             None => true,
                             Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
@@ -265,7 +265,7 @@ impl clear_ui::engine::Application for SystemInterface {
 
                 loop {
                     let current_page = current_page_shared.load(std::sync::atomic::Ordering::SeqCst);
-                    if current_page == 6 { // Layout is index 6
+                    if current_page == 11 { // Layout is index 11
                         let mut changed = false;
                         for p in &[&windows_path, &tags_path, &title_path] {
                             if let Some(mtime) = check_mtime(p) {
@@ -341,10 +341,10 @@ impl clear_ui::engine::Application for SystemInterface {
             });
             rx
         };
-        let rx_system = spawn_bg_active(current_page_shared.clone(), 11, 5, || pages::system_info::fetch_system_state());
+        let rx_system = spawn_bg_active(current_page_shared.clone(), 10, 5, || pages::system_info::fetch_system_state());
         let rx_hardware = spawn_bg_active(current_page_shared.clone(), 3, 3, || pages::hardware::fetch_hardware_state());
-        let rx_status = spawn_bg_active(current_page_shared.clone(), 9, 10, || pages::services::fetch_status_state());
-        let rx_storage = spawn_bg_active(current_page_shared.clone(), 10, 10, || pages::storage::fetch_storage_state());
+        let rx_status = spawn_bg_active(current_page_shared.clone(), 8, 10, || pages::services::fetch_status_state());
+        let rx_storage = spawn_bg_active(current_page_shared.clone(), 9, 10, || pages::storage::fetch_storage_state());
         let rx_notifications = {
             let (tx, rx) = std::sync::mpsc::channel::<pages::services::NotificationsConfig>();
             let current_page_shared = current_page_shared.clone();
@@ -352,7 +352,7 @@ impl clear_ui::engine::Application for SystemInterface {
                 let mut last_fetch: Option<std::time::Instant> = None;
                 loop {
                     let current_page = current_page_shared.load(std::sync::atomic::Ordering::SeqCst);
-                    if current_page == 9 { // Services is index 9
+                    if current_page == 8 { // Services is index 8
                         let should_fetch = match last_fetch {
                             None => true,
                             Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
@@ -371,7 +371,7 @@ impl clear_ui::engine::Application for SystemInterface {
             rx
         };
         let rx_typeface = spawn_bg_active(current_page_shared.clone(), 5, 30, || pages::interface::fetch_typeface_state());
-        let rx_services = spawn_bg_active(current_page_shared.clone(), 9, 3, || pages::services::fetch_services());
+        let rx_services = spawn_bg_active(current_page_shared.clone(), 8, 3, || pages::services::fetch_services());
         let rx_accounts = spawn_bg_active(current_page_shared.clone(), 0, 3, || pages::accounts::fetch_accounts());
         let rx_interface = {
             let (tx, rx) = std::sync::mpsc::channel::<pages::interface::InterfaceState>();
@@ -399,7 +399,7 @@ impl clear_ui::engine::Application for SystemInterface {
             rx
         };
         let (tx_backup, rx_backup) = std::sync::mpsc::channel();
-        let rx_packages = spawn_bg_active(current_page_shared.clone(), 7, 30, || pages::packages::fetch_packages_state());
+        let rx_packages = spawn_bg_active(current_page_shared.clone(), 6, 30, || pages::packages::fetch_packages_state());
         let (tx_update, rx_update) = std::sync::mpsc::channel();
 
         let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::interface::read_preferred_fonts();

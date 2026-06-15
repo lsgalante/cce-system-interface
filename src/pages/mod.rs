@@ -36,12 +36,12 @@ impl Page {
         Page::Hardware,
         Page::Input,
         Page::Interface,
-        Page::Layout,
         Page::Packages,
         Page::Radios,
         Page::Services,
         Page::Storage,
         Page::System,
+        Page::Layout,
     ];
 
     pub fn label(self) -> &'static str {
@@ -52,7 +52,7 @@ impl Page {
             Page::Services => "Services",
             Page::Storage => "Storage",
             Page::Display => "Display",
-            Page::Layout => "Layout",
+            Page::Layout => "Window Manager",
             Page::System => "System",
             Page::Hardware => "Hardware",
             Page::Input => "Input",
