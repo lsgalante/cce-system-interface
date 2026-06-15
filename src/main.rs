@@ -554,16 +554,12 @@ impl clear_ui::engine::Application for SystemInterface {
     }
 
     fn clear_color(&self) -> [f32; 4] {
-        let mut color = [
-            self.app.interface.page_low_color[0] as f32 / 255.0,
-            self.app.interface.page_low_color[1] as f32 / 255.0,
-            self.app.interface.page_low_color[2] as f32 / 255.0,
-            1.0,
-        ];
-        if let Some(opacity) = clear_ui::color::read_opacity_if_configured() {
-            color[3] = opacity;
-        }
-        color
+        [
+            self.app.interface.high_color[0] as f32 / 255.0,
+            self.app.interface.high_color[1] as f32 / 255.0,
+            self.app.interface.high_color[2] as f32 / 255.0,
+            self.app.layout.side_panel_border_opacity as f32 / 100.0,
+        ]
     }
 
     fn handle_pointer_move(&mut self, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
