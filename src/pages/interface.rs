@@ -28,7 +28,7 @@ pub struct InterfaceState {
     pub normal_color: [u8; 3],
     pub paginator_sidebar_color: [u8; 3],
     pub primary_highlight_color: [u8; 3],
-    pub paginator_tab_label_color: [u8; 3],
+    pub menubar_tab_label_color: [u8; 3],
     pub toggle_enabled_color: [u8; 3],
     pub toggle_disabled_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
@@ -140,7 +140,7 @@ impl Default for InterfaceState {
             normal_color: [0xcc, 0xcc, 0xd8],
             paginator_sidebar_color: [90, 90, 101],
             primary_highlight_color: [255, 255, 255],
-            paginator_tab_label_color: [230, 230, 242],
+            menubar_tab_label_color: [230, 230, 242],
             toggle_enabled_color: [104, 217, 165],
             toggle_disabled_color: [135, 135, 148],
             color_selectors: vec![
@@ -155,7 +155,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal"), // 8: Status - Normal
                 ColorSelector::new([90, 90, 101]).with_label("Background"), // 9: Controls - Paginator Sidebar (now Background)
                 ColorSelector::new([255, 255, 255]).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
-                ColorSelector::new([230, 230, 242]).with_label("Paginator Tab Label"), // 11: Controls - Paginator Tab Label
+                ColorSelector::new([230, 230, 242]).with_label("Tab Label"), // 11: Controls - Tab Label
                 ColorSelector::new([104, 217, 165]).with_label("Enabled"), // 12: Toggles - Enabled
                 ColorSelector::new([135, 135, 148]).with_label("Disabled"), // 13: Toggles - Disabled
             ],
@@ -269,7 +269,7 @@ pub enum InterfaceMessage {
     SetNormalColor([u8; 3]),
     SetPaginatorSidebarColor([u8; 3]),
     SetPrimaryHighlightColor([u8; 3]),
-    SetPaginatorTabLabelColor([u8; 3]),
+    SetMenubarTabLabelColor([u8; 3]),
     SetToggleEnabledColor([u8; 3]),
     SetToggleDisabledColor([u8; 3]),
     SetTabMarginX(u16),
@@ -315,7 +315,7 @@ pub enum InterfaceMessage {
     PickNormalColor,
     PickPaginatorSidebarColor,
     PickPrimaryHighlightColor,
-    PickPaginatorTabLabelColor,
+    PickMenubarTabLabelColor,
     PickToggleEnabledColor,
     PickToggleDisabledColor,
     Refreshed(InterfaceState),
@@ -371,7 +371,9 @@ pub fn read_interface_config() -> InterfaceState {
 
     let primary_highlight = parse_color_from_key(&content, "primary_highlight_color", [255, 255, 255]);
 
-    let paginator_tab_label = parse_color_from_key(&content, "paginator_tab_label_color", [230, 230, 242]);
+    let menubar_tab_label = parse_color_from_key(&content, "menubar_tab_label_color",
+        parse_color_from_key(&content, "paginator_tab_label_color", [230, 230, 242])
+    );
 
     let toggle_enabled = parse_color_from_key(&content, "toggle_enabled_color", [104, 217, 165]);
 
@@ -424,7 +426,7 @@ pub fn read_interface_config() -> InterfaceState {
         normal_color: normal,
         paginator_sidebar_color: paginator_sidebar,
         primary_highlight_color: primary_highlight,
-        paginator_tab_label_color: paginator_tab_label,
+        menubar_tab_label_color: menubar_tab_label,
         toggle_enabled_color: toggle_enabled,
         toggle_disabled_color: toggle_disabled,
         color_selectors: vec![
@@ -439,7 +441,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font), // 8: Status - Normal
             ColorSelector::new(paginator_sidebar).with_label("Background").with_font_family(&color_selector_font), // 9: Controls - Paginator Sidebar (now Background)
             ColorSelector::new(primary_highlight).with_label("Primary Highlight").with_font_family(&color_selector_font), // 10: Controls - Primary Highlight
-            ColorSelector::new(paginator_tab_label).with_label("Paginator Tab Label").with_font_family(&color_selector_font), // 11: Controls - Paginator Tab Label
+            ColorSelector::new(menubar_tab_label).with_label("Tab Label").with_font_family(&color_selector_font), // 11: Controls - Tab Label
             ColorSelector::new(toggle_enabled).with_label("Enabled").with_font_family(&color_selector_font), // 12: Toggles - Enabled
             ColorSelector::new(toggle_disabled).with_label("Disabled").with_font_family(&color_selector_font), // 13: Toggles - Disabled
         ],
@@ -734,13 +736,13 @@ fn apply_primary_highlight_color(rgb: [u8; 3]) {
     clear_ui::color::set_highlight_primary_color([r, g, b, 0.12]);
 }
 
-fn apply_paginator_tab_label_color(rgb: [u8; 3]) {
+fn apply_menubar_tab_label_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
-    write_config_value("paginator_tab_label_color", &hex);
+    write_config_value("menubar_tab_label_color", &hex);
     let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
     let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
     let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_paginator_tab_label_color([r, g, b, 1.0]);
+    clear_ui::color::set_menubar_tab_label_color([r, g, b, 1.0]);
 }
 
 fn apply_toggle_enabled_color(rgb: [u8; 3]) {
@@ -1425,7 +1427,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.color_selectors[9].color = state.paginator_sidebar_color;
             subsec.widget_full(&mut state.color_selectors[9], 40.0, ctx);
             subsec.spacing(8.0);
-            state.color_selectors[11].color = state.paginator_tab_label_color;
+            state.color_selectors[11].color = state.menubar_tab_label_color;
             subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
             state.tab_margin_spinbox_x.value = state.paginator_tab_margin_x as i32;
             subsec.widget_full(&mut state.tab_margin_spinbox_x, 44.0, ctx);
@@ -1696,9 +1698,9 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.primary_highlight_color = rgb;
             apply_primary_highlight_color(rgb);
         }
-        InterfaceMessage::SetPaginatorTabLabelColor(rgb) => {
-            state.paginator_tab_label_color = rgb;
-            apply_paginator_tab_label_color(rgb);
+        InterfaceMessage::SetMenubarTabLabelColor(rgb) => {
+            state.menubar_tab_label_color = rgb;
+            apply_menubar_tab_label_color(rgb);
         }
         InterfaceMessage::SetToggleEnabledColor(rgb) => {
             state.toggle_enabled_color = rgb;
@@ -1861,7 +1863,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             send_ipc_command("reload");
             status_interface_reload();
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickPaginatorTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
@@ -2371,7 +2373,7 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\npaginator_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\n";
+        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\nmenubar_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -2383,7 +2385,7 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "status_normal_color", [0, 0, 0]), [204, 204, 216]);
         assert_eq!(parse_color_from_key(content, "paginator_sidebar_color", [0, 0, 0]), [90, 90, 101]);
         assert_eq!(parse_color_from_key(content, "primary_highlight_color", [0, 0, 0]), [255, 255, 255]);
-        assert_eq!(parse_color_from_key(content, "paginator_tab_label_color", [0, 0, 0]), [230, 230, 242]);
+        assert_eq!(parse_color_from_key(content, "menubar_tab_label_color", [0, 0, 0]), [230, 230, 242]);
         assert_eq!(parse_color_from_key(content, "toggle_enabled_color", [0, 0, 0]), [104, 216, 165]);
         assert_eq!(parse_color_from_key(content, "toggle_disabled_color", [0, 0, 0]), [135, 135, 148]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
