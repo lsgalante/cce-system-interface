@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Slider, Element};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Spinbox, Slider, Element};
 
 #[derive(Debug, Clone)]
 pub struct AudioSink {
@@ -217,7 +217,7 @@ const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 
-pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
@@ -260,13 +260,13 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         state.sink_sliders[idx].set_value(sink.volume);
                         let slider_x = subsec.ax(bar_x);
                         
-                        let label_h = clear_ui::widget::label_offset(&state.sink_sliders[idx]);
-                        let slider_h = clear_ui::layout::slider_height() + label_h;
+                        let label_h = cce_ui::widget::label_offset(&state.sink_sliders[idx]);
+                        let slider_h = cce_ui::layout::slider_height() + label_h;
                         render_widget(subsec.pc, &mut state.sink_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
 
                         let row_y = subsec.ay() + slider_h + 8.0;
                         let sb_w = 100.0;
-                        let sb_h = clear_ui::layout::spinbox_height();
+                        let sb_h = cce_ui::layout::spinbox_height();
                         let mute_w = 60.0;
                         let gap = 8.0;
 
@@ -328,13 +328,13 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         state.source_sliders[idx].set_value(src.volume);
                         let slider_x = subsec.ax(bar_x);
                         
-                        let label_h = clear_ui::widget::label_offset(&state.source_sliders[idx]);
-                        let slider_h = clear_ui::layout::slider_height() + label_h;
+                        let label_h = cce_ui::widget::label_offset(&state.source_sliders[idx]);
+                        let slider_h = cce_ui::layout::slider_height() + label_h;
                         render_widget(subsec.pc, &mut state.source_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
 
                         let row_y = subsec.ay() + slider_h + 8.0;
                         let sb_w = 100.0;
-                        let sb_h = clear_ui::layout::spinbox_height();
+                        let sb_h = cce_ui::layout::spinbox_height();
                         let mute_w = 60.0;
                         let gap = 8.0;
 
@@ -401,13 +401,13 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clear_ui::layout::GridLayout;
+    use cce_ui::layout::GridLayout;
 
     #[test]
     fn test_view_layout_grid() {
         let mut state = AudioState::default();
         let mut layout = GridLayout::new(260.0, 20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut clear_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

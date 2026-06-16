@@ -1,11 +1,11 @@
-use clear_ui::widget::{Finger, hover_animation, TextItem, Element, PageSelector};
+use cce_ui::widget::{Finger, hover_animation, TextItem, Element, PageSelector};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use cce_system_interface::app::{AppAction, AppState, PageContent};
 use cce_system_interface::pages::{self, Page};
 
 fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
-    let scale = clear_ui::scale::scale_factor();
+    let scale = cce_ui::scale::scale_factor();
     let physical_size = size * scale;
     let metrics = Metrics::new(physical_size, physical_size * 1.4);
     let mut buf = Buffer::new(fs, metrics);
@@ -35,12 +35,12 @@ fn make_text_buffer_with_font(
     serif_fallback: &str,
     mono_fallback: &str,
 ) -> Buffer {
-    let scale = clear_ui::scale::scale_factor();
+    let scale = cce_ui::scale::scale_factor();
     let mut font_size = size;
     let mut family_name = None;
 
     if let Some(font_str) = font {
-        let (parsed_family, parsed_size) = clear_ui::layout::parse_font_string(font_str);
+        let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
         if let Some(ps) = parsed_size {
             font_size = ps;
         }
@@ -69,7 +69,7 @@ fn make_text_buffer_with_font(
                         glyphon::Family::Name(mono_fallback)
                     }
                 } else {
-                    glyphon::Family::Name(clear_ui::layout::get_system_monospace_font())
+                    glyphon::Family::Name(cce_ui::layout::get_system_monospace_font())
                 }
             }
             "sans-serif" => {
@@ -119,8 +119,8 @@ struct SystemInterface {
     app: AppState,
     font_system: FontSystem,
     widgets: Vec<AppWidget>,
-    text_items: Vec<clear_ui::widget::TextItem>,
-    page_buttons: Vec<(clear_ui::widget::Button, AppAction)>,
+    text_items: Vec<cce_ui::widget::TextItem>,
+    page_buttons: Vec<(cce_ui::widget::Button, AppAction)>,
 
     sidebar_width: f32,
     header_height: f32,
@@ -161,23 +161,23 @@ struct SystemInterface {
     audio_sink_dragging: Option<usize>,
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
-    page_sec_containers: Vec<clear_ui::widget::Container>,
-    menubar: clear_ui::widget::MenuBar,
-    switcher: clear_ui::widget::Switcher,
-    plates: Vec<clear_ui::widget::Plate>,
+    page_sec_containers: Vec<cce_ui::widget::Container>,
+    menubar: cce_ui::widget::MenuBar,
+    switcher: cce_ui::widget::Switcher,
+    plates: Vec<cce_ui::widget::Plate>,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
     current_page_shared: std::sync::Arc<std::sync::atomic::AtomicU8>,
     sender: calloop::channel::Sender<AppAction>,
-    ui_context: clear_ui::context::UiContext,
+    ui_context: cce_ui::context::UiContext,
 }
 
-impl clear_ui::engine::Application for SystemInterface {
+impl cce_ui::engine::Application for SystemInterface {
     type Message = AppAction;
 
-    fn new(_qh: &wayland_client::QueueHandle<clear_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
-        clear_ui::scale::set_scale_factor(1.0);
+    fn new(_qh: &wayland_client::QueueHandle<cce_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
+        cce_ui::scale::set_scale_factor(1.0);
         let app = AppState {
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
@@ -405,16 +405,16 @@ impl clear_ui::engine::Application for SystemInterface {
         let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::interface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
-        let mut menubar = clear_ui::widget::MenuBar::new(0.0, 0.0, 180.0, 680.0)
+        let mut menubar = cce_ui::widget::MenuBar::new(0.0, 0.0, 180.0, 680.0)
             .with_vertical(true)
             .with_title("SYSTEM");
         menubar.set_pages(pages_names);
         let sidebar_width = menubar.sidebar_w();
 
-        let switcher = clear_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
+        let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
         let mut plates = Vec::new();
         for page in Page::ALL.iter() {
-            let plate = clear_ui::widget::Plate::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
+            let plate = cce_ui::widget::Plate::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
                 .with_label(page.label())
                 .with_draggable(false);
             plates.push(plate);
@@ -477,7 +477,7 @@ impl clear_ui::engine::Application for SystemInterface {
             monospace_family,
             current_page_shared,
             sender,
-            ui_context: clear_ui::context::UiContext::new(),
+            ui_context: cce_ui::context::UiContext::new(),
         };
 
         for plate in &mut this.plates {
@@ -488,8 +488,8 @@ impl clear_ui::engine::Application for SystemInterface {
         this
     }
 
-    fn settings(&self) -> clear_ui::engine::WindowSettings {
-        clear_ui::engine::WindowSettings {
+    fn settings(&self) -> cce_ui::engine::WindowSettings {
+        cce_ui::engine::WindowSettings {
             title: "CCE System Interface".to_string(),
             app_id: "cce-system-interface".to_string(),
             width: 820,
@@ -516,13 +516,13 @@ impl clear_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn view(&mut self, quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: clear_ui::engine::LogicalSize, scale: f64) {
+    fn view(&mut self, quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: cce_ui::engine::LogicalSize, scale: f64) {
         let (width, height) = (size.width, size.height);
         if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
             self.height = height as u32;
             self.scale_factor = scale;
-            clear_ui::scale::set_scale_factor(scale as f32);
+            cce_ui::scale::set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
@@ -532,13 +532,13 @@ impl clear_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: clear_ui::engine::LogicalSize, scale: f64) {
+    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: cce_ui::engine::LogicalSize, scale: f64) {
         let (width, height) = (size.width, size.height);
         if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
             self.height = height as u32;
             self.scale_factor = scale;
-            clear_ui::scale::set_scale_factor(scale as f32);
+            cce_ui::scale::set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
@@ -548,7 +548,7 @@ impl clear_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn text_items(&self) -> &[clear_ui::widget::TextItem] {
+    fn text_items(&self) -> &[cce_ui::widget::TextItem] {
         &self.text_items
     }
 
@@ -561,13 +561,13 @@ impl clear_ui::engine::Application for SystemInterface {
         ]
     }
 
-    fn handle_pointer_move(&mut self, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
+    fn handle_pointer_move(&mut self, pos: cce_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
         if self.handle_cursor_moved(pos.x, pos.y) {
             *needs_rebuild = true;
         }
     }
 
-    fn handle_mouse_input(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) -> Option<Self::Message> {
+    fn handle_mouse_input(&mut self, button: cce_ui::widget::MouseButton, state: cce_ui::widget::ElementState, pos: cce_ui::engine::LogicalPosition, needs_rebuild: &mut bool) -> Option<Self::Message> {
         self.cursor_x = pos.x;
         self.cursor_y = pos.y;
         if self.handle_mouse_input_internal(button, state) {
@@ -576,13 +576,13 @@ impl clear_ui::engine::Application for SystemInterface {
         None
     }
 
-    fn handle_mouse_wheel(&mut self, delta: &clear_ui::widget::MouseScrollDelta, pos: clear_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, pos: cce_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
         if self.handle_mouse_wheel_internal(delta, pos.x, pos.y) {
             *needs_rebuild = true;
         }
     }
 
-    fn handle_key_input(&mut self, event: &clear_ui::widget::KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
+    fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         if self.handle_key_input_internal(event) {
             *needs_rebuild = true;
         }
@@ -592,7 +592,7 @@ impl clear_ui::engine::Application for SystemInterface {
 
 impl SystemInterface {
 
-fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(f32, f32, f32, f32)>, ctx: &clear_ui::context::UiContext) {
+fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f32, f32, f32, f32)>, ctx: &cce_ui::context::UiContext) {
     if let Some(rect) = w.popover_rect() {
         popovers.push(rect);
     }
@@ -806,10 +806,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.layout.side_panel_border_opacity_spinbox.clear_children(&mut self.ui_context);
         self.app.layout.side_panel_border_opacity_spinbox.set_parent(None, &mut self.ui_context);
 
-        use clear_ui::widget::focus::link_parent_child;
+        use cce_ui::widget::focus::link_parent_child;
         match self.app.current_page {
             Page::Accounts => {
-                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -825,7 +825,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             Page::Services => {
-                self.page_sec_containers.resize_with(3, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(3, cce_ui::widget::Container::new);
                 for i in 0..3 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -841,7 +841,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_padding_spinbox, &mut self.ui_context);
             }
             Page::Hardware => {
-                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(5, cce_ui::widget::Container::new);
                 for i in 0..5 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -850,14 +850,14 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[4], &mut self.app.hardware.gpu_gov_menu, &mut self.ui_context);
             }
             Page::Radios => {
-                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
             }
             Page::Layout => {
-                self.page_sec_containers.resize_with(7, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(7, cce_ui::widget::Container::new);
                 
                 for i in 0..7 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
@@ -894,7 +894,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
             }
             Page::Interface => {
-                self.page_sec_containers.resize_with(6, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(6, cce_ui::widget::Container::new);
                 
                 for i in 0..6 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
@@ -1009,7 +1009,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             Page::Input => {
-                self.page_sec_containers.resize_with(6, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(6, cce_ui::widget::Container::new);
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
@@ -1041,7 +1041,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_out_box, &mut self.ui_context);
             }
             Page::Audio => {
-                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 
@@ -1059,7 +1059,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
             }
             Page::Display => {
-                self.page_sec_containers.resize_with(4, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(4, cce_ui::widget::Container::new);
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
@@ -1088,7 +1088,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.display.screensaver_style_menu, &mut self.ui_context);
             }
             Page::Packages => {
-                self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -1113,10 +1113,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         let mut page_buttons = Vec::new();
 
 
-        clear_ui::widget::hover_animation::reset_frame_registration();
-        clear_ui::widget::popovers::clear();
-        clear_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
-        clear_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
+        cce_ui::widget::hover_animation::reset_frame_registration();
+        cce_ui::widget::popovers::clear();
+        cce_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
+        cce_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
 
         let lcx = self.sidebar_width;
         let lcy = self.header_height;
@@ -1128,10 +1128,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.switcher.set_active_index(Some(page_idx));
 
         let mut menubar_pc = PageContent::new();
-        clear_ui::layout::render_widget(&mut menubar_pc, &mut self.menubar, 0.0, 0.0, self.sidebar_width, sh / s, &mut self.ui_context);
+        cce_ui::layout::render_widget(&mut menubar_pc, &mut self.menubar, 0.0, 0.0, self.sidebar_width, sh / s, &mut self.ui_context);
 
         let mut switcher_pc = PageContent::new();
-        clear_ui::layout::render_widget(&mut switcher_pc, &mut self.switcher, self.sidebar_width, 0.0, sw / s - self.sidebar_width, sh / s, &mut self.ui_context);
+        cce_ui::layout::render_widget(&mut switcher_pc, &mut self.switcher, self.sidebar_width, 0.0, sw / s - self.sidebar_width, sh / s, &mut self.ui_context);
 
         for pc_part in &[menubar_pc, switcher_pc] {
             for (c, x, y, w, h, r, corners) in &pc_part.rects {
@@ -1244,13 +1244,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 x: base.x * s, y: (base.y - scroll_offset_y) * s, w: base.w * s, h: base.h * s,
                 color: bg, hover_color: hover_bg,
                 hovering: false,
-                radius: clear_ui::layout::button_corner_radius() * s,
+                radius: cce_ui::layout::button_corner_radius() * s,
                 corners: (true, true, true, true),
             });
             let label = base.label.as_deref().unwrap_or("");
             let label_size = 12.0;
             let buf = make_text_buffer(&mut self.font_system, label, label_size * s);
-            let scale = clear_ui::scale::scale_factor();
+            let scale = cce_ui::scale::scale_factor();
             let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0) / scale;
             let lh = label_size * s * 1.4;
             let mut left_align = btn.left_align;
@@ -1321,7 +1321,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
         // Render popovers on top of everything (both backgrounds and texts)
         let mut popover_pc = PageContent::new();
-        clear_ui::layout::render_popovers(&mut popover_pc, &mut self.ui_context);
+        cce_ui::layout::render_popovers(&mut popover_pc, &mut self.ui_context);
 
         for (c, x, y, w, h, r, corners) in &popover_pc.rects {
             widgets.push(AppWidget {
@@ -1355,8 +1355,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
 
         // Draw global hover highlight if active
-        clear_ui::widget::hover_animation::post_render_check();
-        if let Some((qx, qy, qw, qh, qc)) = clear_ui::widget::hover_animation::get_quad() {
+        cce_ui::widget::hover_animation::post_render_check();
+        if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             widgets.push(AppWidget {
                 x: qx * s,
                 y: (qy - self.scroll_y) * s,
@@ -1371,11 +1371,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
 
         // Render context menu overlay if visible
-        if clear_ui::widget::context_menu::is_visible() {
-            let cx = clear_ui::widget::context_menu::x();
-            let cy = clear_ui::widget::context_menu::y();
-            let cw = clear_ui::widget::context_menu::w();
-            let ch = clear_ui::widget::context_menu::h();
+        if cce_ui::widget::context_menu::is_visible() {
+            let cx = cce_ui::widget::context_menu::x();
+            let cy = cce_ui::widget::context_menu::y();
+            let cw = cce_ui::widget::context_menu::w();
+            let ch = cce_ui::widget::context_menu::h();
 
             
             // Border
@@ -1396,7 +1396,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             });
             
             // Hover highlight
-            if let Some(h_idx) = clear_ui::widget::context_menu::hovered_item() {
+            if let Some(h_idx) = cce_ui::widget::context_menu::hovered_item() {
                 let iy = cy + h_idx as f32 * 24.0;
                 widgets.push(AppWidget {
                     x: (cx + 2.0) * s, y: (iy + 2.0) * s, w: (cw - 4.0) * s, h: 20.0 * s,
@@ -1408,11 +1408,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
             
             // Texts
-            for (idx, opt) in clear_ui::widget::context_menu::options().iter().enumerate() {
+            for (idx, opt) in cce_ui::widget::context_menu::options().iter().enumerate() {
                 let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
                 let text_color = if idx == 0 {
                     glyphon::Color::rgb(0x70, 0x70, 0x78)
-                } else if clear_ui::widget::context_menu::hovered_item() == Some(idx) {
+                } else if cce_ui::widget::context_menu::hovered_item() == Some(idx) {
                     glyphon::Color::rgb(0xff, 0xff, 0xff)
                 } else {
                     glyphon::Color::rgb(0xcc, 0xcc, 0xd4)
@@ -1436,17 +1436,17 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
     fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use pages::*;
-        use clear_ui::layout::GridLayout;
-        let margin = clear_ui::layout::page_margin();
+        use cce_ui::layout::GridLayout;
+        let margin = cce_ui::layout::page_margin();
         let cx = cx + margin;
         let cy = cy + margin;
         let cw = (cw - 2.0 * margin).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
         let mut layout = GridLayout::new(260.0, 20.0);
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        let root_focused = clear_ui::widget::focus::is_focused(&self.plates[page_idx]);
+        let root_focused = cce_ui::widget::focus::is_focused(&self.plates[page_idx]);
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()
-            .map(|c| clear_ui::widget::focus::is_focused(c))
+            .map(|c| cce_ui::widget::focus::is_focused(c))
             .collect();
         match self.app.current_page {
             Page::Accounts => accounts::view(&mut self.app.accounts, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
@@ -1783,8 +1783,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         let lx_no_scroll = x / s;
         let ly_no_scroll = y / s;
         
-        if clear_ui::widget::context_menu::is_visible() {
-            if clear_ui::widget::context_menu::cursor_moved(lx_no_scroll, ly_no_scroll) {
+        if cce_ui::widget::context_menu::is_visible() {
+            if cce_ui::widget::context_menu::cursor_moved(lx_no_scroll, ly_no_scroll) {
                 self.needs_rebuild = true;
                 return true;
             }
@@ -1793,7 +1793,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
-        clear_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
+        cce_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
         if lx_no_scroll < self.sidebar_width {
             if self.menubar.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
@@ -1855,6 +1855,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 changed = true;
             }
             if self.app.layout.side_panel_border_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.layout.transparency_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.layout.blur_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
         }
@@ -2286,15 +2292,15 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         changed
     }
 
-    fn handle_mouse_input_internal(&mut self, button: clear_ui::widget::MouseButton, state: clear_ui::widget::ElementState) -> bool {
+    fn handle_mouse_input_internal(&mut self, button: cce_ui::widget::MouseButton, state: cce_ui::widget::ElementState) -> bool {
         let s = 1.0f32;
         let lx_no_scroll = self.cursor_x / s;
         let ly_no_scroll = self.cursor_y / s;
 
 
 
-        if clear_ui::widget::context_menu::is_visible() {
-            if clear_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
+        if cce_ui::widget::context_menu::is_visible() {
+            if cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
                 let mut actions = Vec::new();
                 self.propagate_widget_changes(&mut actions);
                 for action in actions {
@@ -2307,10 +2313,10 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
         if lx_no_scroll < self.sidebar_width {
             if self.menubar.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                use clear_ui::widget::MenuController;
+                use cce_ui::widget::MenuController;
                 if let Some((idx, _)) = self.menubar.menu_click() {
                     if idx < Page::ALL.len() {
-                        clear_ui::widget::focus::clear_focus();
+                        cce_ui::widget::focus::clear_focus();
                         let new_page = Page::ALL[idx];
                         self.app.current_page = new_page;
                         self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
@@ -2328,8 +2334,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
         }
 
-        if button != clear_ui::widget::MouseButton::Left && button != clear_ui::widget::MouseButton::Right { return false; }
-        if button == clear_ui::widget::MouseButton::Left && state == clear_ui::widget::ElementState::Released {
+        if button != cce_ui::widget::MouseButton::Left && button != cce_ui::widget::MouseButton::Right { return false; }
+        if button == cce_ui::widget::MouseButton::Left && state == cce_ui::widget::ElementState::Released {
             if self.app.current_page == Page::Audio {
                 let mut ended = false;
                 if let Some(idx) = self.audio_sink_dragging {
@@ -2372,7 +2378,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         let ly = self.cursor_y / s + self.scroll_y;
         let mut actions = Vec::new();
 
-        if state == clear_ui::widget::ElementState::Pressed {
+        if state == cce_ui::widget::ElementState::Pressed {
             let mut clicked_any_focusable = false;
             match self.app.current_page {
                 Page::Accounts => {
@@ -2405,6 +2411,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if self.app.layout.side_panel_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.layout.side_panel_border_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.layout.side_panel_border_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.layout.transparency_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.layout.blur_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
                 Page::Interface => {
                     for cp in &mut self.app.interface.color_selectors {
@@ -2531,11 +2539,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             if !clicked_any_focusable {
-                clear_ui::widget::focus::clear_focus();
+                cce_ui::widget::focus::clear_focus();
             }
         }
 
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Layout {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Layout {
             for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
                 if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
                 let old = sb.value;
@@ -2599,28 +2607,28 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
         if self.app.current_page == Page::Layout {
             for (idx, menu) in self.app.layout.tag_layout_menus.iter_mut().enumerate() {
-                if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
                 if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
-                if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+                if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                     actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTagLayout(idx + 1, menu.selected)));
                 }
             }
             let menu = &mut self.app.layout.side_panel_behavior_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(menu.selected)));
             }
             let menu = &mut self.app.layout.side_panel_position_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(menu.selected)));
             }
             let sb = &mut self.app.layout.side_panel_width_spinbox;
@@ -2647,8 +2655,18 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     pages::layout::LayoutMessage::SetSidePanelBorderOpacity(sb.value as u16)
                 ));
             }
+            let toggle = &mut self.app.layout.transparency_toggle;
+            toggle.mouse_input(button, state, lx, ly, &mut self.ui_context);
+            if toggle.take_click() {
+                actions.push(AppAction::Layout(pages::layout::LayoutMessage::ToggleTransparency));
+            }
+            let toggle2 = &mut self.app.layout.blur_toggle;
+            toggle2.mouse_input(button, state, lx, ly, &mut self.ui_context);
+            if toggle2.take_click() {
+                actions.push(AppAction::Layout(pages::layout::LayoutMessage::ToggleBlur));
+            }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
             for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
                 if !cp.hit_test(lx, ly, &self.ui_context) { cp.unfocus(); }
@@ -2743,11 +2761,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSectionPadding(sb.value as u16)));
             }
             let menu = &mut self.app.interface.label_alignment_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNestedSectionLabelAlignment(menu.selected)));
             }
             let sb = &mut self.app.interface.label_offset_spinbox;
@@ -2880,7 +2898,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonCornerRadius(sb.value as u16)));
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Input {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Input {
             let sb = &mut self.app.input.rate_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
@@ -2930,7 +2948,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
             let sb = &mut self.app.services.notifications_duration_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
@@ -2976,37 +2994,37 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 actions.push(AppAction::Input(pages::input::InputMessage::ToggleDwtp));
             }
             let menu = &mut self.app.input.trackpoint_accel_profile_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyTrackpointAccelProfile(menu.selected)));
             }
             let menu = &mut self.app.input.cursor_theme_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorTheme(menu.selected)));
             }
 
             let tb = &mut self.app.input.zoom_in_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomIn));
             }
 
             let tb = &mut self.app.input.zoom_out_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
             }
         }
@@ -3021,7 +3039,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if toggle.take_click() {
                 actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsBell));
             }
-            if state == clear_ui::widget::ElementState::Pressed {
+            if state == cce_ui::widget::ElementState::Pressed {
                 let lbl1 = &mut self.app.services.status_label;
                 if !lbl1.hit_test(lx, ly, &self.ui_context) { lbl1.unfocus(); }
                 lbl1.mouse_input(button, state, lx, ly, &mut self.ui_context);
@@ -3051,21 +3069,21 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let menu = &mut self.app.display.screensaver_style_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Display(pages::display::DisplayMessage::SetScreensaverStyle(menu.selected)));
             }
         }
         if self.app.current_page == Page::Hardware {
             let menu = &mut self.app.hardware.cpu_gov_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 if menu.selected == 0 {
                     actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetCpuPerformance));
                 } else {
@@ -3074,11 +3092,11 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let menu = &mut self.app.hardware.gpu_gov_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 if menu.selected == 0 {
                     actions.push(AppAction::Hardware(pages::hardware::HardwareMessage::SetGpuDefault));
                 } else {
@@ -3087,8 +3105,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
         }
 
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Audio {
-            if button == clear_ui::widget::MouseButton::Left {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Audio {
+            if button == cce_ui::widget::MouseButton::Left {
                 for (i, slider) in self.app.audio.sink_sliders.iter_mut().enumerate() {
                     if slider.hit_test(lx, ly, &self.ui_context) {
                         slider.drag_begin(lx, ly);
@@ -3121,8 +3139,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Display {
-            if button == clear_ui::widget::MouseButton::Left {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Display {
+            if button == cce_ui::widget::MouseButton::Left {
                 let slider = &mut self.app.display.brightness_slider;
                 if slider.hit_test(lx, ly, &self.ui_context) {
                     slider.drag_begin(lx, ly);
@@ -3166,23 +3184,23 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         if self.app.current_page == Page::Accounts {
             if self.app.accounts.editing_oauth_creds {
                 let tb = &mut self.app.accounts.oauth_client_id_box;
-                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
 
                 let tb = &mut self.app.accounts.oauth_client_secret_box;
-                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
             } else if self.app.accounts.adding_new {
                 let tb = &mut self.app.accounts.email_box;
-                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
-                if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+                if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                     let email_val = tb.text.trim().to_lowercase();
                     if email_val.ends_with("@gmail.com") {
                         self.app.accounts.imap_box.text = "imap.gmail.com:993".to_string();
@@ -3203,19 +3221,19 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
 
                 let tb = &mut self.app.accounts.password_box;
-                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
 
                 let tb = &mut self.app.accounts.imap_box;
-                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
 
                 let tb = &mut self.app.accounts.smtp_box;
-                if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+                if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
                 if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
@@ -3223,101 +3241,101 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
         if self.app.current_page == Page::Interface {
             let tb = &mut self.app.interface.sans_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSans(tb.text.clone())));
             }
 
             let tb = &mut self.app.interface.serif_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSerif(tb.text.clone())));
             }
 
             let tb = &mut self.app.interface.mono_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMono(tb.text.clone())));
             }
 
             let menu = &mut self.app.interface.borders_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBordersMenu(menu.selected)));
             }
 
             let tb = &mut self.app.interface.borders_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBorders(tb.text.clone())));
             }
 
             let menu = &mut self.app.interface.status_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusMenu(menu.selected)));
             }
 
             let tb = &mut self.app.interface.status_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatus(tb.text.clone())));
             }
 
             let menu = &mut self.app.interface.fuzzel_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzelMenu(menu.selected)));
             }
 
             let tb = &mut self.app.interface.fuzzel_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFuzzel(tb.text.clone())));
             }
 
             let menu = &mut self.app.interface.terminal_menu;
-            if state == clear_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminalMenu(menu.selected)));
             }
 
             let tb = &mut self.app.interface.terminal_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
-            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+            if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTerminal(tb.text.clone())));
             }
 
@@ -3326,7 +3344,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
 
             let fs = &mut self.app.interface.color_selector_font_selector;
-            if state == clear_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
             if fs.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
@@ -3335,7 +3353,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let fs = &mut self.app.interface.menubar_font_selector;
-            if state == clear_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
             if fs.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
@@ -3344,7 +3362,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let fs = &mut self.app.interface.section_label_font_selector;
-            if state == clear_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
             if fs.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
@@ -3353,7 +3371,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let fs = &mut self.app.interface.nested_section_label_font_selector;
-            if state == clear_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
             if fs.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
@@ -3362,7 +3380,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let sb = &mut self.app.interface.borders_size_box;
-            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
@@ -3372,7 +3390,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let sb = &mut self.app.interface.status_size_box;
-            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
@@ -3382,7 +3400,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let sb = &mut self.app.interface.fuzzel_size_box;
-            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
@@ -3392,7 +3410,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
 
             let sb = &mut self.app.interface.terminal_size_box;
-            if state == clear_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old_val = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
@@ -3407,7 +3425,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
         if self.app.current_page == Page::Services {
             let tb = &mut self.app.services.search_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
@@ -3433,7 +3451,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         if self.app.current_page == Page::Packages {
             let pkgs = &mut self.app.packages;
             let tb = &mut pkgs.search_box;
-            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) {
+            if state == cce_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) {
                 tb.unfocus();
             }
             if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
@@ -3488,13 +3506,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Hardware {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Hardware {
             let hw = &mut self.app.hardware;
             if hw.cpu_list_box.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
         }
-        if state == clear_ui::widget::ElementState::Pressed && self.app.current_page == Page::Radios {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Radios {
             let net = &mut self.app.network;
             if net.wifi_list_box.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
@@ -3903,7 +3921,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
     }
 
-    fn handle_mouse_wheel_internal(&mut self, delta: &clear_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
+    fn handle_mouse_wheel_internal(&mut self, delta: &cce_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
         if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/clear-scroll-debug.txt") {
             use std::io::Write;
             let _ = writeln!(file, "handle_mouse_wheel_internal: px={}, py={}, delta={:?}, sidebar_w={}", px, py, delta, self.sidebar_width);
@@ -4076,8 +4094,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
             let scroll_speed = 24.0;
             let dy = match delta {
-                clear_ui::widget::MouseScrollDelta::LineDelta(_, y) => -y * scroll_speed,
-                clear_ui::widget::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
+                cce_ui::widget::MouseScrollDelta::LineDelta(_, y) => -y * scroll_speed,
+                cce_ui::widget::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
             };
             let old_scroll = self.scroll_y;
             self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
@@ -4096,24 +4114,24 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         false
     }
 
-    fn get_page_root_widget(&mut self) -> Option<*mut (dyn clear_ui::widget::Element + 'static)> {
+    fn get_page_root_widget(&mut self) -> Option<*mut (dyn cce_ui::widget::Element + 'static)> {
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        let ptr = &mut self.plates[page_idx] as &mut dyn clear_ui::widget::Element as *mut dyn clear_ui::widget::Element;
+        let ptr = &mut self.plates[page_idx] as &mut dyn cce_ui::widget::Element as *mut dyn cce_ui::widget::Element;
         let static_ptr = unsafe {
-            std::mem::transmute::<*mut dyn clear_ui::widget::Element, *mut (dyn clear_ui::widget::Element + 'static)>(ptr)
+            std::mem::transmute::<*mut dyn cce_ui::widget::Element, *mut (dyn cce_ui::widget::Element + 'static)>(ptr)
         };
         Some(static_ptr)
     }
 
-    fn handle_key_input_internal(&mut self, event: &clear_ui::widget::KeyEvent) -> bool {
-        if event.state == clear_ui::widget::ElementState::Pressed && !event.repeat {
+    fn handle_key_input_internal(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
+        if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
             let is_nav_key = match (&event.logical_key, event.ctrl) {
-                (clear_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
+                (cce_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
                 _ => false,
             };
             if is_nav_key {
-                if clear_ui::widget::focus::has_focus() {
-                    if clear_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl) {
+                if cce_ui::widget::focus::has_focus() {
+                    if cce_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl) {
                         self.needs_rebuild = true;
                         return true;
                     }
@@ -4121,7 +4139,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if let Some(root_ptr) = self.get_page_root_widget() {
                         unsafe {
                             let root_ref = &mut *root_ptr;
-                            clear_ui::widget::focus::set_focused(root_ref);
+                            cce_ui::widget::focus::set_focused(root_ref);
                             root_ref.focus();
                             self.needs_rebuild = true;
                             return true;
@@ -5010,5 +5028,5 @@ fn main() {
     let initial_page_idx = Page::ALL.iter().position(|&p| p == initial_page).unwrap_or(0);
     INITIAL_PAGE_INDEX.store(initial_page_idx, std::sync::atomic::Ordering::SeqCst);
 
-    clear_ui::engine::run::<SystemInterface>();
+    cce_ui::engine::run::<SystemInterface>();
 }

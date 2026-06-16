@@ -1,4 +1,4 @@
-use clear_ui::layout::RenderTarget;
+use cce_ui::layout::RenderTarget;
 
 use crate::pages::audio;
 use crate::pages::display;
@@ -71,7 +71,7 @@ pub enum AppAction {
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
-    pub buttons: Vec<(clear_ui::widget::Button, AppAction)>,
+    pub buttons: Vec<(cce_ui::widget::Button, AppAction)>,
 }
 
 impl PageContent {
@@ -94,7 +94,7 @@ impl PageContent {
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                   bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                   action: AppAction) {
-        let btn = clear_ui::widget::Button::new(x, y, w, h)
+        let btn = cce_ui::widget::Button::new(x, y, w, h)
             .with_label(label)
             .with_bg(bg)
             .with_hover_bg(hover_bg)
@@ -105,7 +105,7 @@ impl PageContent {
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                        bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                        action: AppAction) {
-        let btn = clear_ui::widget::Button::new(x, y, w, h)
+        let btn = cce_ui::widget::Button::new(x, y, w, h)
             .with_label(label)
             .with_bg(bg)
             .with_hover_bg(hover_bg)
@@ -150,7 +150,7 @@ pub trait SectionContextExt {
     fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
 }
 
-impl<'a> SectionContextExt for clear_ui::layout::SectionContext<'a, PageContent> {
+impl<'a> SectionContextExt for cce_ui::layout::SectionContext<'a, PageContent> {
     fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
         self.pc.button(label, x, y, w, h, bg, hover_bg, label_color, action);
         self.content_y = self.content_y.max(y + h);

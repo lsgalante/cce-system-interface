@@ -1,8 +1,8 @@
 use std::fs;
 use std::io::Write;
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Element, ScrollingList, TextBox, StatusDot, DotStatus, InteractiveListItem, Toggle, Spinbox, Slider, Label};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Element, ScrollingList, TextBox, StatusDot, DotStatus, InteractiveListItem, Toggle, Spinbox, Slider, Label};
 use crate::pages::interface::parse_u16_from;
 
 // ── Notifications Data and Settings Configuration ──
@@ -212,7 +212,7 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
@@ -268,7 +268,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             let search_h = 46.0;
             
             state.search_box.set_row_rect(sec.left + 12.0, search_w);
-            clear_ui::layout::render_widget(
+            cce_ui::layout::render_widget(
                 sec.pc,
                 &mut state.search_box,
                 sec.left + 12.0,
@@ -285,7 +285,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             let list_box_w = sec_w - 24.0;
             let list_box_h = 360.0;
             
-            clear_ui::layout::render_widget(sec.pc, &mut state.list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
+            cce_ui::layout::render_widget(sec.pc, &mut state.list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
             // Filter services
             let query = if state.search_box.editing {
@@ -342,7 +342,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     let item_btn = &mut state.service_items[idx];
                     item_btn.title = service.name.clone();
                     item_btn.subtitle = Some(desc_truncated);
-                    clear_ui::layout::render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                    cce_ui::layout::render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
 
                     // Render StatusDot
                     let status_dot_state = if service.active_state == "failed" {
@@ -353,7 +353,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                         DotStatus::Inactive
                     };
                     let mut dot = StatusDot::new(status_dot_state);
-                    clear_ui::layout::render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
+                    cce_ui::layout::render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
                     let disabled_txt = [0.40, 0.40, 0.45, 1.0];
@@ -415,11 +415,11 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
     builder.add_section(&mut final_pc, "System Notifications", sec_focused.get(1).copied().unwrap_or(false), |sec2| {
         let sec_w = sec2.cw;
         state.notifications_enable_toggle.set_toggled(state.notifications_enable);
-        sec2.widget_full(&mut state.notifications_enable_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec2.widget_full(&mut state.notifications_enable_toggle, cce_ui::layout::toggle_height(), ctx);
         sec2.spacing(8.0);
 
         state.notifications_bell_toggle.set_toggled(state.notifications_bell);
-        sec2.widget_full(&mut state.notifications_bell_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec2.widget_full(&mut state.notifications_bell_toggle, cce_ui::layout::toggle_height(), ctx);
         sec2.spacing(16.0);
 
         state.notifications_duration_spinbox.value = state.notifications_duration;
@@ -469,12 +469,12 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
             // Separators toggle
             state.status_separators_toggle.set_toggled(state.status_separators);
-            sec3.widget_full(&mut state.status_separators_toggle, clear_ui::layout::toggle_height(), ctx);
+            sec3.widget_full(&mut state.status_separators_toggle, cce_ui::layout::toggle_height(), ctx);
             sec3.spacing(16.0);
 
             // Underline toggle
             state.status_underline_toggle.set_toggled(state.status_underline);
-            sec3.widget_full(&mut state.status_underline_toggle, clear_ui::layout::toggle_height(), ctx);
+            sec3.widget_full(&mut state.status_underline_toggle, cce_ui::layout::toggle_height(), ctx);
             sec3.spacing(16.0);
 
             // Padding spinbox
@@ -869,9 +869,9 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = ServicesState::default();
-        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
         let sec_focused = vec![false, false];
-        let mut ctx = clear_ui::context::UiContext::new();
+        let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &sec_focused, &mut layout, &mut ctx);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }

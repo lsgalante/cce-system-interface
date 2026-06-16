@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{ScrollingList, Toggle, Element};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{ScrollingList, Toggle, Element};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -275,7 +275,7 @@ const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
 const ACT_BTN: [f32; 4] = [0.16, 0.29, 0.18, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
@@ -285,7 +285,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
         let sec_w = sec.cw;
         let rx = sec.left;
         let padding = sec.padding();
-        let row_gap = clear_ui::layout::label_margin();
+        let row_gap = cce_ui::layout::label_margin();
         let margin = padding.max(12.0);
 
         if !state.loaded {
@@ -370,7 +370,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
     builder.add_section(&mut final_pc, "Bluetooth", false, |sec| {
         let bt_sec_w = sec.cw;
         let padding = sec.padding();
-        let row_gap = clear_ui::layout::label_margin();
+        let row_gap = cce_ui::layout::label_margin();
         let margin = padding.max(12.0);
         let font_size = 12.0;
         let btn_h = 28.0;
@@ -522,8 +522,8 @@ mod tests {
         let mut state = NetworkState::default();
         state.loaded = true;
         state.wifi_enabled = true;
-        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut clear_ui::context::UiContext::new());
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 
@@ -535,8 +535,8 @@ mod tests {
         state.connected_ssid = "MyHomeWiFi".to_string();
         state.signal_strength = 80;
         state.ip_address = "192.168.1.50".to_string();
-        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut clear_ui::context::UiContext::new());
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 }

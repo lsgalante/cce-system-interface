@@ -2,8 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::PageContent;
-use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
@@ -162,7 +162,7 @@ impl Default for InputState {
 }
 
 impl InputState {
-    pub fn is_over_trackpad(&self, lx: f32, ly: f32, ctx: &clear_ui::context::UiContext) -> bool {
+    pub fn is_over_trackpad(&self, lx: f32, ly: f32, ctx: &cce_ui::context::UiContext) -> bool {
         self.trackpad.hit_test(lx, ly, ctx)
     }
 }
@@ -409,7 +409,7 @@ fn apply_repeat_config(rate: u16, delay: u16) {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
@@ -417,7 +417,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     // ── Touchpad ──
     builder.add_section(&mut final_pc, "Touchpad", false, |sec| {
         state.tap_toggle.set_toggled(state.tap_to_click);
-        sec.widget_full(&mut state.tap_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.tap_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(8.0);
 
         // Built-in trackpad visualizer widget
@@ -431,7 +431,7 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     // ── Trackpoint ──
     builder.add_section(&mut final_pc, "Trackpoint", sec_focused.first().copied().unwrap_or(false), |sec| {
         state.dwtp_toggle.set_toggled(state.dwtp);
-        sec.widget_full(&mut state.dwtp_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.dwtp_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
         sec.widget_full(&mut state.trackpoint_accel_speed_spinbox, 44.0, ctx);
@@ -462,14 +462,14 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     // ── Scrolling ──
     builder.add_section(&mut final_pc, "Scrolling", sec_focused.get(3).copied().unwrap_or(false), |sec| {
         state.scroll_toggle.set_toggled(state.inertial_scroll);
-        sec.widget_full(&mut state.scroll_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.scroll_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
         sec.widget_full(&mut state.scroll_friction_spinbox, 44.0, ctx);
         sec.spacing(12.0);
 
         state.natural_toggle.set_toggled(state.natural_scroll);
-        sec.widget_full(&mut state.natural_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.natural_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
         sec.widget_full(&mut state.scroll_speed_spinbox, 44.0, ctx);
@@ -479,14 +479,14 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     // ── Inertial Input ──
     builder.add_section(&mut final_pc, "Inertial Input", sec_focused.get(4).copied().unwrap_or(false), |sec| {
         state.pointer_toggle.set_toggled(state.inertial_pointer);
-        sec.widget_full(&mut state.pointer_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.pointer_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
         sec.widget_full(&mut state.pointer_friction_spinbox, 44.0, ctx);
         sec.spacing(16.0);
 
         state.trackpad_toggle.set_toggled(state.inertial_trackpad);
-        sec.widget_full(&mut state.trackpad_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.trackpad_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(12.0);
 
         sec.widget_full(&mut state.trackpad_friction_spinbox, 44.0, ctx);
@@ -639,7 +639,7 @@ mod tests {
     fn test_is_over_trackpad() {
         let mut state = InputState::default();
         state.trackpad.set_rect(100.0, 200.0, 300.0, 150.0);
-        let ctx = clear_ui::context::UiContext::new();
+        let ctx = cce_ui::context::UiContext::new();
 
         // Inside
         assert!(state.is_over_trackpad(150.0, 250.0, &ctx));
@@ -669,8 +669,8 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = InputState::default();
-        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false, false], &mut layout, &mut clear_ui::context::UiContext::new());
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

@@ -2,8 +2,9 @@ use std::fs;
 use std::io::Write;
 
 use crate::app::PageContent;
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Dropdown, LayoutPreview, PreviewLayoutMode};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Spinbox, Dropdown, LayoutPreview, PreviewLayoutMode, Toggle, Element};
+use crate::pages::interface::{parse_bool_from, parse_transparency_opacity, write_transparency_config_value, status_interface_reload};
 
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
@@ -80,6 +81,10 @@ pub struct LayoutState {
     pub side_panel_border_gap_spinbox: Spinbox,
     pub side_panel_border_opacity: u16,
     pub side_panel_border_opacity_spinbox: Spinbox,
+    pub transparency_enabled: bool,
+    pub transparency_toggle: Toggle,
+    pub blur_enabled: bool,
+    pub blur_toggle: Toggle,
 }
 
 impl Default for LayoutState {
@@ -128,6 +133,10 @@ impl Default for LayoutState {
             side_panel_border_gap_spinbox: Spinbox::new(0, 0, 500, 1),
             side_panel_border_opacity: 100,
             side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5),
+            transparency_enabled: true,
+            transparency_toggle: Toggle::new().with_label("Transparency"),
+            blur_enabled: true,
+            blur_toggle: Toggle::new().with_label("Blur"),
         }
     }
 }
@@ -147,6 +156,8 @@ pub enum LayoutMessage {
     SetSidePanelWidth(u16),
     SetSidePanelBorderGap(u16),
     SetSidePanelBorderOpacity(u16),
+    ToggleTransparency,
+    ToggleBlur,
     Refreshed(LayoutState),
 }
 
@@ -195,6 +206,13 @@ pub fn read_layout_config() -> LayoutState {
     let spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
     let spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
 
+    let transparency_opacity = parse_transparency_opacity(&content);
+    let transparency_enabled = transparency_opacity < 1.0;
+
+    let window_blur = parse_bool_from(&content, "window_blur", false);
+    let border_blur = parse_bool_from(&content, "border_blur", false);
+    let blur_enabled = window_blur || border_blur;
+
     LayoutState {
         fullscreen_border_width: fs,
         cascade_border_width: ca,
@@ -222,6 +240,10 @@ pub fn read_layout_config() -> LayoutState {
         side_panel_border_gap_spinbox: Spinbox::new(spbg as i32, 0, 500, 1),
         side_panel_border_opacity: spbo,
         side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5),
+        transparency_enabled,
+        transparency_toggle: Toggle::new().with_label("Transparency"),
+        blur_enabled,
+        blur_toggle: Toggle::new().with_label("Blur"),
     }
 }
 
@@ -543,10 +565,10 @@ fn read_current_layout_status() -> LayoutStatusInfo {
     }
 }
 
-pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(9);
 
     // Current Layout Section (Read-only visual preview)
     builder.add_section(&mut final_pc, "Current Layout", false, |sec_cl| {
@@ -666,6 +688,17 @@ pub fn view(state: &mut LayoutState, cx: f32, cy: f32, cw: f32, ch: f32, sec_foc
         side_panel_sec.spacing(8.0);
     });
 
+    // 8. Effects Section
+    builder.add_section(&mut final_pc, "Effects", true, |effects_sec| {
+        effects_sec.spacing(8.0);
+        state.transparency_toggle.set_toggled(state.transparency_enabled);
+        effects_sec.widget_full(&mut state.transparency_toggle, cce_ui::layout::toggle_height(), ctx);
+        effects_sec.spacing(8.0);
+        state.blur_toggle.set_toggled(state.blur_enabled);
+        effects_sec.widget_full(&mut state.blur_toggle, cce_ui::layout::toggle_height(), ctx);
+        effects_sec.spacing(8.0);
+    });
+
 
     final_pc
 }
@@ -776,7 +809,30 @@ pub fn update(state: &mut LayoutState, msg: LayoutMessage) {
             write_config_value("side_panel_border_opacity", &val.to_string());
             send_ipc_command(&format!("layout side_panel_border_opacity {}", val));
         }
-        LayoutMessage::Refreshed(new) => { *state = new; }
+        LayoutMessage::ToggleTransparency => {
+            state.transparency_enabled = !state.transparency_enabled;
+            if state.transparency_enabled {
+                write_transparency_config_value("opacity", "0.85");
+            } else {
+                write_transparency_config_value("opacity", "1.00");
+            }
+            send_ipc_command("reload");
+            status_interface_reload();
+        }
+        LayoutMessage::ToggleBlur => {
+            state.blur_enabled = !state.blur_enabled;
+            let val = state.blur_enabled.to_string();
+            write_config_value("window_blur", &val);
+            write_config_value("border_blur", &val);
+            send_ipc_command("reload");
+        }
+        LayoutMessage::Refreshed(new) => {
+            let transparency_hover = state.transparency_toggle.hovered();
+            let blur_hover = state.blur_toggle.hovered();
+            *state = new;
+            state.transparency_toggle.set_hovered(transparency_hover);
+            state.blur_toggle.set_hovered(blur_hover);
+        }
     }
 }
 
@@ -866,8 +922,8 @@ mode = "popup"
     #[test]
     fn test_view_layout_grid() {
         let mut state = LayoutState::default();
-        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false], &mut layout, &mut clear_ui::context::UiContext::new());
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

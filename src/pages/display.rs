@@ -1,6 +1,6 @@
 use crate::app::{PageContent, SectionContextExt};
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
@@ -381,7 +381,7 @@ const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
 const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(4);
@@ -401,12 +401,12 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
             let yt = sec.ay();
             state.brightness_slider.set_value(bright_pct as f32 / 100.0);
                         let slider_x = sec.ax(12.0);
-            render_widget(sec.pc, &mut state.brightness_slider, slider_x, yt, bar_w, clear_ui::layout::slider_height(), ctx);
+            render_widget(sec.pc, &mut state.brightness_slider, slider_x, yt, bar_w, cce_ui::layout::slider_height(), ctx);
             sec.text(&format!("{}%", bright_pct), 12.0 + bar_w + 8.0, 7.0, 11.0, TEXT_DIM);
             sec.spacing(34.0);
 
             state.brightness_spinbox.value = bright_pct;
-            sec.widget_full(&mut state.brightness_spinbox, clear_ui::layout::spinbox_height(), ctx);
+            sec.widget_full(&mut state.brightness_spinbox, cce_ui::layout::spinbox_height(), ctx);
             sec.spacing(12.0);
         }
     });
@@ -444,18 +444,18 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
     // ── Screensaver Settings ──
     builder.add_section(&mut final_pc, "Screensaver Settings", false, |sec| {
         state.screensaver_enable_toggle.set_toggled(state.screensaver_enable);
-        sec.widget_full(&mut state.screensaver_enable_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.screensaver_enable_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(8.0);
 
         state.screensaver_lock_screen_toggle.set_toggled(state.screensaver_lock_screen);
-        sec.widget_full(&mut state.screensaver_lock_screen_toggle, clear_ui::layout::toggle_height(), ctx);
+        sec.widget_full(&mut state.screensaver_lock_screen_toggle, cce_ui::layout::toggle_height(), ctx);
         sec.spacing(16.0);
 
                 state.screensaver_timeout_spinbox.value = state.screensaver_timeout;
-        sec.widget_full(&mut state.screensaver_timeout_spinbox, clear_ui::layout::spinbox_height(), ctx);
+        sec.widget_full(&mut state.screensaver_timeout_spinbox, cce_ui::layout::spinbox_height(), ctx);
         sec.spacing(16.0);
 
-        sec.widget_full(&mut state.screensaver_style_menu, clear_ui::layout::dropdown_height(), ctx);
+        sec.widget_full(&mut state.screensaver_style_menu, cce_ui::layout::dropdown_height(), ctx);
         sec.spacing(24.0);
 
         let btn_h = 32.0;
@@ -579,8 +579,8 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = DisplayState::default();
-        let mut layout = clear_ui::layout::GridLayout::new(260.0, 20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut clear_ui::context::UiContext::new());
+        let mut layout = cce_ui::layout::GridLayout::new(260.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

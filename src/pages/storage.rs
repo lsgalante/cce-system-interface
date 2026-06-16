@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use std::fs;
 
 #[derive(Debug, Clone)]
@@ -166,7 +166,7 @@ const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
@@ -194,7 +194,7 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
             let bar_w = sec_w - 24.0;
             let yt = sec.ay();
             let disk_bar_x = sec.ax(12.0);
-            let mut disk_bar = clear_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
+            let mut disk_bar = cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
                 .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]);
             render_widget(sec.pc, &mut disk_bar, disk_bar_x, yt, bar_w, 8.0, ctx);
         }
@@ -223,7 +223,7 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
             let bar_w = sec_w - 24.0;
             let yt = sec.ay();
             let ram_bar_x = sec.ax(12.0);
-            let mut ram_bar = clear_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
+            let mut ram_bar = cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
                 .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]);
             render_widget(sec.pc, &mut ram_bar, ram_bar_x, yt, bar_w, 8.0, ctx);
         }

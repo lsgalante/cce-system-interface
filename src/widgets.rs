@@ -1,4 +1,4 @@
-use clear_ui::color;
+use cce_ui::color;
 
 pub struct SectionStyle {
     pub label: String,

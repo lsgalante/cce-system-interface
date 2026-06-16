@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent};
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Label, ScrollingList, Dropdown, InfoBox};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Label, ScrollingList, Dropdown, InfoBox};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -378,7 +378,7 @@ const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 const ORANGE: [f32; 4] = [1.0, 0.73, 0.20, 1.0];
 
-pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut HardwareState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);

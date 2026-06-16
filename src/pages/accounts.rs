@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{TextBox, Element};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{TextBox, Element};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct AccountInfo {
@@ -110,9 +110,9 @@ pub fn load_accounts() -> Vec<AccountInfo> {
     }
     vec![
         AccountInfo {
-            email: "lsgalante@clear-ui.org".to_string(),
-            imap: "imap.clear-ui.org:993".to_string(),
-            smtp: "smtp.clear-ui.org:465".to_string(),
+            email: "lsgalante@cce-ui.org".to_string(),
+            imap: "imap.cce-ui.org:993".to_string(),
+            smtp: "smtp.cce-ui.org:465".to_string(),
             is_default: true,
             password: "mock_password".to_string(),
             is_oauth: false,
@@ -341,15 +341,15 @@ pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Se
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
-    let lm = clear_ui::layout::label_margin();
-    let row_h = clear_ui::layout::spinbox_height();
+    let lm = cce_ui::layout::label_margin();
+    let row_h = cce_ui::layout::spinbox_height();
     let row_gap = lm * 1.0;
-    let widget_h = clear_ui::layout::spinbox_height();
+    let widget_h = cce_ui::layout::spinbox_height();
     let field_gap = lm * 1.5;
     let btn_gap = lm * 1.0;
 

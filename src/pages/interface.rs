@@ -1,8 +1,8 @@
 use std::fs;
 use std::io::Write;
 use crate::app::PageContent;
-use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{
     ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle
 };
 
@@ -716,7 +716,7 @@ fn apply_disabled_color(rgb: [u8; 3]) {
     send_ipc_command(&format!("layout disabled_color #{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]));
 }
 
-fn status_interface_reload() {
+pub fn status_interface_reload() {
     let _ = std::process::Command::new("pkill")
         .args(["-f", "cce-status-interface"])
         .status();
@@ -739,28 +739,28 @@ fn apply_visual_guides_color(rgb: [u8; 3]) {
 fn apply_slider_track_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("slider_track_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_slider_track([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_slider_track([r, g, b, 1.0]);
 }
 
 fn apply_page_low_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("page_low_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_page_low_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_page_low_color([r, g, b, 1.0]);
 }
 
 fn apply_color_borders_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("color_borders_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_color_borders_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_color_borders_color([r, g, b, 1.0]);
 }
 
 fn apply_normal_color(rgb: [u8; 3]) {
@@ -772,73 +772,73 @@ fn apply_normal_color(rgb: [u8; 3]) {
 fn apply_paginator_sidebar_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("paginator_sidebar_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_sidebar_bg_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_sidebar_bg_color([r, g, b, 1.0]);
 }
 
 fn apply_primary_highlight_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("primary_highlight_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_highlight_primary_color([r, g, b, 0.12]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_highlight_primary_color([r, g, b, 0.12]);
 }
 
 fn apply_menubar_tab_label_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("menubar_tab_label_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_menubar_tab_label_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_menubar_tab_label_color([r, g, b, 1.0]);
 }
 
 fn apply_toggle_enabled_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("toggle_enabled_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_toggle_on_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_toggle_on_color([r, g, b, 1.0]);
 }
 
 fn apply_toggle_disabled_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("toggle_disabled_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_toggle_off_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_toggle_off_color([r, g, b, 1.0]);
 }
 
 fn apply_scrollinglist_bg_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("scrollinglist_bg_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_scrollinglist_bg_color([r, g, b, 0.3]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_scrollinglist_bg_color([r, g, b, 0.3]);
 }
 
 fn apply_breadcrumb_bg_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("breadcrumb_bg_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_breadcrumb_bg_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_breadcrumb_bg_color([r, g, b, 1.0]);
 }
 
 fn apply_popover_bg_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("popover_bg_color", &hex);
-    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
-    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
-    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
-    clear_ui::color::set_popover_bg_color([r, g, b, 1.0]);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_popover_bg_color([r, g, b, 1.0]);
 }
 
 fn apply_notifications_bg_color(rgb: [u8; 3]) {
@@ -855,136 +855,136 @@ fn apply_notifications_opacity(opacity: f32) {
 fn apply_paginator_tab_margin_x(margin: u16) {
     write_config_value("paginator_tab_margin_x", &margin.to_string());
     send_ipc_command(&format!("layout paginator_tab_margin_x {}", margin));
-    clear_ui::layout::set_paginator_tab_margin_x(margin as f32);
+    cce_ui::layout::set_paginator_tab_margin_x(margin as f32);
 }
 
 fn apply_paginator_tab_margin_y(margin: u16) {
     write_config_value("paginator_tab_margin_y", &margin.to_string());
     send_ipc_command(&format!("layout paginator_tab_margin_y {}", margin));
-    clear_ui::layout::set_paginator_tab_margin_y(margin as f32);
+    cce_ui::layout::set_paginator_tab_margin_y(margin as f32);
 }
 
 fn apply_paginator_tab_padding_x(padding: u16) {
     write_config_value("paginator_tab_padding_x", &padding.to_string());
     send_ipc_command(&format!("layout paginator_tab_padding_x {}", padding));
-    clear_ui::layout::set_paginator_tab_padding_x(padding as f32);
+    cce_ui::layout::set_paginator_tab_padding_x(padding as f32);
 }
 
 fn apply_paginator_tab_padding_y(padding: u16) {
     write_config_value("paginator_tab_padding_y", &padding.to_string());
     send_ipc_command(&format!("layout paginator_tab_padding_y {}", padding));
-    clear_ui::layout::set_paginator_tab_padding_y(padding as f32);
+    cce_ui::layout::set_paginator_tab_padding_y(padding as f32);
 }
 
 fn apply_plate_padding(padding: u16) {
     write_config_value("plate_padding", &padding.to_string());
-    clear_ui::layout::set_plate_padding(padding as f32);
+    cce_ui::layout::set_plate_padding(padding as f32);
 }
 
 fn apply_page_margin(margin: u16) {
     write_config_value("page_margin", &margin.to_string());
-    clear_ui::layout::set_page_margin(margin as f32);
+    cce_ui::layout::set_page_margin(margin as f32);
 }
 
 fn apply_grid_min_col_width(width: u16) {
     write_config_value("grid_min_col_width", &width.to_string());
-    clear_ui::layout::set_grid_min_col_width(width as f32);
+    cce_ui::layout::set_grid_min_col_width(width as f32);
 }
 
 fn apply_section_padding(padding: u16) {
     write_config_value("section_padding", &padding.to_string());
-    clear_ui::layout::set_section_padding(padding as f32);
+    cce_ui::layout::set_section_padding(padding as f32);
 }
 
 fn apply_spinbox_height(height: u16) {
     write_config_value("spinbox_height", &height.to_string());
-    clear_ui::layout::set_spinbox_height(height as f32);
+    cce_ui::layout::set_spinbox_height(height as f32);
 }
 
 fn apply_spinbox_corner_radius(radius: u16) {
     write_config_value("spinbox_corner_radius", &radius.to_string());
-    clear_ui::layout::set_spinbox_corner_radius(radius as f32);
+    cce_ui::layout::set_spinbox_corner_radius(radius as f32);
 }
 
 fn apply_toggle_height(height: u16) {
     write_config_value("toggle_height", &height.to_string());
-    clear_ui::layout::set_toggle_height(height as f32);
+    cce_ui::layout::set_toggle_height(height as f32);
 }
 
 fn apply_color_selector_height(height: u16) {
     write_config_value("color_selector_height", &height.to_string());
-    clear_ui::layout::set_color_selector_height(height as f32);
+    cce_ui::layout::set_color_selector_height(height as f32);
 }
 
 fn apply_color_selector_preview_corner_radius(radius: u16) {
     write_config_value("color_selector_preview_corner_radius", &radius.to_string());
-    clear_ui::layout::set_color_selector_preview_corner_radius(radius as f32);
+    cce_ui::layout::set_color_selector_preview_corner_radius(radius as f32);
 }
 
 fn apply_color_selector_preview_margin(margin: u16) {
     write_config_value("color_selector_preview_margin", &margin.to_string());
-    clear_ui::layout::set_color_selector_preview_margin(margin as f32);
+    cce_ui::layout::set_color_selector_preview_margin(margin as f32);
 }
 
 fn apply_textbox_height(height: u16) {
     write_config_value("textbox_height", &height.to_string());
-    clear_ui::layout::set_textbox_height(height as f32);
+    cce_ui::layout::set_textbox_height(height as f32);
 }
 
 fn apply_slider_height(height: u16) {
     write_config_value("slider_height", &height.to_string());
-    clear_ui::layout::set_slider_height(height as f32);
+    cce_ui::layout::set_slider_height(height as f32);
 }
 
 
 fn apply_font_selector_height(height: u16) {
     write_config_value("font_selector_height", &height.to_string());
-    clear_ui::layout::set_font_selector_height(height as f32);
+    cce_ui::layout::set_font_selector_height(height as f32);
 }
 
 fn apply_dropdown_height(height: u16) {
     write_config_value("dropdown_height", &height.to_string());
-    clear_ui::layout::set_dropdown_height(height as f32);
+    cce_ui::layout::set_dropdown_height(height as f32);
 }
 
 fn apply_button_corner_radius(radius: u16) {
     write_config_value("button_corner_radius", &radius.to_string());
-    clear_ui::layout::set_button_corner_radius(radius as f32);
+    cce_ui::layout::set_button_corner_radius(radius as f32);
 }
 
 fn apply_color_selector_font(font: &str) {
     write_config_value("color_selector_font", &format!("\"{}\"", font));
-    clear_ui::layout::set_color_selector_font(font);
+    cce_ui::layout::set_color_selector_font(font);
 }
 
 fn apply_menubar_font(font: &str) {
     write_config_value("menubar_font", &format!("\"{}\"", font));
-    clear_ui::layout::set_menubar_font(font);
+    cce_ui::layout::set_menubar_font(font);
 }
 
 fn apply_section_label_font(font: &str) {
     write_config_value("section_label_font", &format!("\"{}\"", font));
-    clear_ui::layout::set_section_label_font(font);
+    cce_ui::layout::set_section_label_font(font);
 }
 
 fn apply_nested_section_label_font(font: &str) {
     write_config_value("nested_section_label_font", &format!("\"{}\"", font));
-    clear_ui::layout::set_nested_section_label_font(font);
+    cce_ui::layout::set_nested_section_label_font(font);
 }
 
 fn apply_nested_section_label_alignment(align: u8) {
     write_config_value("nested_section_label_alignment", &align.to_string());
-    clear_ui::layout::set_nested_section_label_alignment(align);
+    cce_ui::layout::set_nested_section_label_alignment(align);
 }
 
 fn apply_nested_section_label_offset(offset: i16) {
     write_config_value("nested_section_label_offset", &offset.to_string());
-    clear_ui::layout::set_nested_section_label_offset(offset as f32);
+    cce_ui::layout::set_nested_section_label_offset(offset as f32);
 }
 
 fn apply_label_margin(margin: u16) {
     write_config_value("label_margin", &margin.to_string());
-    clear_ui::layout::set_label_margin(margin as f32);
+    cce_ui::layout::set_label_margin(margin as f32);
 }
 
 const FONTS_CONF_PATH: &str = "/home/lsgalante/.config/fontconfig/fonts.conf";
@@ -1388,7 +1388,7 @@ pub async fn fetch_typeface_state() -> InterfaceState {
     state
 }
 
-pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
@@ -1732,9 +1732,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                 let cols = subsec.row_layout(2, 10.0);
                 if cols.len() == 2 {
                     state.borders_menu.set_row_rect(cols[0].0, cols[0].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.borders_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.borders_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
                     state.borders_size_box.set_row_rect(cols[1].0, cols[1].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.borders_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.borders_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
                 subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.borders_box, 44.0, ctx);
@@ -1745,9 +1745,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                 let cols = subsec.row_layout(2, 10.0);
                 if cols.len() == 2 {
                     state.status_menu.set_row_rect(cols[0].0, cols[0].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.status_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.status_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
                     state.status_size_box.set_row_rect(cols[1].0, cols[1].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.status_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.status_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
                 subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.status_box, 44.0, ctx);
@@ -1758,9 +1758,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                 let cols = subsec.row_layout(2, 10.0);
                 if cols.len() == 2 {
                     state.fuzzel_menu.set_row_rect(cols[0].0, cols[0].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
                     state.fuzzel_size_box.set_row_rect(cols[1].0, cols[1].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
                 subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.fuzzel_box, 44.0, ctx);
@@ -1771,9 +1771,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                 let cols = subsec.row_layout(2, 10.0);
                 if cols.len() == 2 {
                     state.terminal_menu.set_row_rect(cols[0].0, cols[0].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.terminal_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.terminal_menu, cols[0].0, start_y, cols[0].1, widget_h, ctx);
                     state.terminal_size_box.set_row_rect(cols[1].0, cols[1].1);
-                    clear_ui::layout::render_widget(subsec.pc, &mut state.terminal_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
+                    cce_ui::layout::render_widget(subsec.pc, &mut state.terminal_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
                 subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.terminal_box, 44.0, ctx);
@@ -2435,7 +2435,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
     }
 }
 
-fn parse_transparency_opacity(content: &str) -> f32 {
+pub fn parse_transparency_opacity(content: &str) -> f32 {
     let mut in_section = false;
     for line in content.lines() {
         let trimmed = line.trim();
@@ -2457,7 +2457,7 @@ fn parse_transparency_opacity(content: &str) -> f32 {
     0.9 // default to 0.9
 }
 
-fn write_transparency_config_value(key: &str, value: &str) {
+pub fn write_transparency_config_value(key: &str, value: &str) {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
     let new_line = format!("{} = {}", key, value);
 

@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use clear_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext};
-use clear_ui::widget::{Element, ScrollingList, TextBox, InteractiveListItem};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext};
+use cce_ui::widget::{Element, ScrollingList, TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
@@ -324,7 +324,7 @@ pub fn view(
     ch: f32,
     sec_focused: &[bool],
     layout: &mut dyn LayoutStrategy,
-    ctx: &mut clear_ui::context::UiContext,
+    ctx: &mut cce_ui::context::UiContext,
 ) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
@@ -747,8 +747,8 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = PackagesState::default();
-        let mut layout = clear_ui::layout::ColumnLayout::new(20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut clear_ui::context::UiContext::new());
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 }
