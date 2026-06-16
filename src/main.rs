@@ -659,10 +659,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.menubar_opacity_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.tab_margin_spinbox_y.clear_children(&mut self.ui_context);
         self.app.interface.tab_margin_spinbox_y.set_parent(None, &mut self.ui_context);
-        self.app.interface.tab_padding_spinbox_x.clear_children(&mut self.ui_context);
-        self.app.interface.tab_padding_spinbox_x.set_parent(None, &mut self.ui_context);
-        self.app.interface.tab_padding_spinbox_y.clear_children(&mut self.ui_context);
-        self.app.interface.tab_padding_spinbox_y.set_parent(None, &mut self.ui_context);
+        self.app.interface.button_padding_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.button_padding_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.section_padding_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.section_padding_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.label_alignment_menu.clear_children(&mut self.ui_context);
@@ -940,8 +938,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[11], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_margin_spinbox_x, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_margin_spinbox_y, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_padding_spinbox_x, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_padding_spinbox_y, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.button_padding_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
                 
                 // (Toggles child widgets)
@@ -1881,10 +1878,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.interface.tab_margin_spinbox_y.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
-            if self.app.interface.tab_padding_spinbox_x.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.interface.tab_padding_spinbox_y.cursor_moved(lx, ly, &mut self.ui_context) {
+            if self.app.interface.button_padding_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
             if self.app.interface.section_padding_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2423,8 +2417,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.interface.tab_margin_spinbox_x.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.menubar_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.tab_margin_spinbox_y.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.interface.tab_padding_spinbox_x.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.interface.tab_padding_spinbox_y.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.button_padding_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.section_padding_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.label_alignment_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.label_offset_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2744,17 +2737,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(sb.value as u16)));
             }
-            let sb = &mut self.app.interface.tab_padding_spinbox_x;
+            let sb = &mut self.app.interface.button_padding_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(sb.value as u16)));
-            }
-            let sb = &mut self.app.interface.tab_padding_spinbox_y;
-            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
-            let old = sb.value;
-            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(sb.value as u16)));
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonPadding(sb.value as u16)));
             }
             let sb = &mut self.app.interface.section_padding_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
@@ -3624,11 +3611,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 if self.app.interface.tab_margin_spinbox_y.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(self.app.interface.tab_margin_spinbox_y.value as u16)));
                 }
-                if self.app.interface.tab_padding_spinbox_x.take_change() {
-                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(self.app.interface.tab_padding_spinbox_x.value as u16)));
-                }
-                if self.app.interface.tab_padding_spinbox_y.take_change() {
-                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(self.app.interface.tab_padding_spinbox_y.value as u16)));
+                if self.app.interface.button_padding_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonPadding(self.app.interface.button_padding_spinbox.value as u16)));
                 }
                 if self.app.interface.section_padding_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetSectionPadding(self.app.interface.section_padding_spinbox.value as u16)));
@@ -4379,22 +4363,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
                 return true;
             }
-            let sb = &mut self.app.interface.tab_padding_spinbox_x;
+            let sb = &mut self.app.interface.button_padding_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event, &mut self.ui_context) {
                 let new_val = sb.value;
                 if new_val != old {
-                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingX(new_val as u16)));
-                }
-                self.needs_rebuild = true;
-                return true;
-            }
-            let sb = &mut self.app.interface.tab_padding_spinbox_y;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                let new_val = sb.value;
-                if new_val != old {
-                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabPaddingY(new_val as u16)));
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetButtonPadding(new_val as u16)));
                 }
                 self.needs_rebuild = true;
                 return true;

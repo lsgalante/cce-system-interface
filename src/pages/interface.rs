@@ -46,8 +46,8 @@ pub struct InterfaceState {
     pub tab_margin_spinbox_y: Spinbox,
     pub paginator_tab_padding_x: u16,
     pub paginator_tab_padding_y: u16,
-    pub tab_padding_spinbox_x: Spinbox,
-    pub tab_padding_spinbox_y: Spinbox,
+    pub button_padding: u16,
+    pub button_padding_spinbox: Spinbox,
     pub section_padding: u16,
     pub section_padding_spinbox: Spinbox,
     pub plate_padding: u16,
@@ -180,8 +180,8 @@ impl Default for InterfaceState {
             tab_margin_spinbox_y: Spinbox::new(10, 0, 100, 1).with_label("Tab Margin Y").with_unit("px"),
             paginator_tab_padding_x: 10,
             paginator_tab_padding_y: 14,
-            tab_padding_spinbox_x: Spinbox::new(10, 0, 100, 1).with_label("Tab Padding X").with_unit("px"),
-            tab_padding_spinbox_y: Spinbox::new(14, 0, 100, 1).with_label("Tab Padding Y").with_unit("px"),
+            button_padding: 14,
+            button_padding_spinbox: Spinbox::new(14, 0, 100, 1).with_label("Button Padding").with_unit("px"),
             section_padding: 8,
             section_padding_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Padding").with_unit("px"),
             plate_padding: 20,
@@ -299,8 +299,7 @@ pub enum InterfaceMessage {
     SetNotificationOpacity(f32),
     SetTabMarginX(u16),
     SetTabMarginY(u16),
-    SetTabPaddingX(u16),
-    SetTabPaddingY(u16),
+    SetButtonPadding(u16),
     SetSectionPadding(u16),
     SetPlatePadding(u16),
     SetPageMargin(u16),
@@ -420,6 +419,7 @@ pub fn read_interface_config() -> InterfaceState {
     let paginator_tab_margin_y = parse_u16_from(&content, "paginator_tab_margin_y", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 10 });
     let paginator_tab_padding_x = parse_u16_from(&content, "paginator_tab_padding_x", 10);
     let paginator_tab_padding_y = parse_u16_from(&content, "paginator_tab_padding_y", 14);
+    let button_padding = parse_u16_from(&content, "button_padding", paginator_tab_padding_y);
     let section_padding = parse_u16_from(&content, "section_padding", 8);
     let plate_padding = parse_u16_from(&content, "plate_padding", 20);
     let page_margin = parse_u16_from(&content, "page_margin", 20);
@@ -497,8 +497,8 @@ pub fn read_interface_config() -> InterfaceState {
         tab_margin_spinbox_y: Spinbox::new(paginator_tab_margin_y as i32, 0, 100, 1).with_label("Tab Margin Y").with_unit("px"),
         paginator_tab_padding_x,
         paginator_tab_padding_y,
-        tab_padding_spinbox_x: Spinbox::new(paginator_tab_padding_x as i32, 0, 100, 1).with_label("Tab Padding X").with_unit("px"),
-        tab_padding_spinbox_y: Spinbox::new(paginator_tab_padding_y as i32, 0, 100, 1).with_label("Tab Padding Y").with_unit("px"),
+        button_padding,
+        button_padding_spinbox: Spinbox::new(button_padding as i32, 0, 100, 1).with_label("Button Padding").with_unit("px"),
         section_padding,
         section_padding_spinbox: Spinbox::new(section_padding as i32, 0, 100, 1).with_label("Padding").with_unit("px"),
         plate_padding,
@@ -864,16 +864,10 @@ fn apply_paginator_tab_margin_y(margin: u16) {
     cce_ui::layout::set_paginator_tab_margin_y(margin as f32);
 }
 
-fn apply_paginator_tab_padding_x(padding: u16) {
-    write_config_value("paginator_tab_padding_x", &padding.to_string());
-    send_ipc_command(&format!("layout paginator_tab_padding_x {}", padding));
-    cce_ui::layout::set_paginator_tab_padding_x(padding as f32);
-}
-
-fn apply_paginator_tab_padding_y(padding: u16) {
-    write_config_value("paginator_tab_padding_y", &padding.to_string());
-    send_ipc_command(&format!("layout paginator_tab_padding_y {}", padding));
-    cce_ui::layout::set_paginator_tab_padding_y(padding as f32);
+fn apply_button_padding(padding: u16) {
+    write_config_value("button_padding", &padding.to_string());
+    send_ipc_command(&format!("layout button_padding {}", padding));
+    cce_ui::layout::set_button_padding(padding as f32);
 }
 
 fn apply_plate_padding(padding: u16) {
@@ -1529,12 +1523,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.tab_margin_spinbox_y.value = state.paginator_tab_margin_y as i32;
             subsec.widget_full(&mut state.tab_margin_spinbox_y, 44.0, ctx);
             subsec.spacing(8.0);
-            state.tab_padding_spinbox_x.value = state.paginator_tab_padding_x as i32;
-            subsec.widget_full(&mut state.tab_padding_spinbox_x, 44.0, ctx);
-            subsec.spacing(8.0);
-            state.tab_padding_spinbox_y.value = state.paginator_tab_padding_y as i32;
-            subsec.widget_full(&mut state.tab_padding_spinbox_y, 44.0, ctx);
-            subsec.spacing(8.0);
             state.menubar_font_selector.font_family = state.menubar_font.clone();
             subsec.widget_full(&mut state.menubar_font_selector, 44.0, ctx);
             subsec.spacing(8.0);
@@ -1652,6 +1640,15 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.button_corner_radius_spinbox.value = state.button_corner_radius as i32;
             subsec.widget_full(&mut state.button_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // ButtonStrip Section
+        sec.add_section("ButtonStrip", false, |subsec| {
+            subsec.spacing(8.0);
+            state.button_padding_spinbox.value = state.button_padding as i32;
+            subsec.widget_full(&mut state.button_padding_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -1874,13 +1871,9 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.paginator_tab_margin_y = margin;
             apply_paginator_tab_margin_y(margin);
         }
-        InterfaceMessage::SetTabPaddingX(padding) => {
-            state.paginator_tab_padding_x = padding;
-            apply_paginator_tab_padding_x(padding);
-        }
-        InterfaceMessage::SetTabPaddingY(padding) => {
-            state.paginator_tab_padding_y = padding;
-            apply_paginator_tab_padding_y(padding);
+        InterfaceMessage::SetButtonPadding(padding) => {
+            state.button_padding = padding;
+            apply_button_padding(padding);
         }
         InterfaceMessage::SetSectionPadding(padding) => {
             state.section_padding = padding;
@@ -2027,8 +2020,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
-            let was_px_hovered = state.tab_padding_spinbox_x.hovered();
-            let was_py_hovered = state.tab_padding_spinbox_y.hovered();
+            let was_bp_hovered = state.button_padding_spinbox.hovered();
             let was_sp_hovered = state.section_padding_spinbox.hovered();
             let was_pp_hovered = state.plate_padding_spinbox.hovered();
             let was_pm_hovered = state.page_margin_spinbox.hovered();
@@ -2080,8 +2072,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
 
             state.tab_margin_spinbox_x.set_hovered(was_mx_hovered);
             state.tab_margin_spinbox_y.set_hovered(was_my_hovered);
-            state.tab_padding_spinbox_x.set_hovered(was_px_hovered);
-            state.tab_padding_spinbox_y.set_hovered(was_py_hovered);
+            state.button_padding_spinbox.set_hovered(was_bp_hovered);
             state.section_padding_spinbox.set_hovered(was_sp_hovered);
             state.plate_padding_spinbox.set_hovered(was_pp_hovered);
             state.page_margin_spinbox.set_hovered(was_pm_hovered);
@@ -3175,46 +3166,23 @@ mod tests {
     }
 
     #[test]
-    fn test_read_write_paginator_tab_padding_x() {
+    fn test_read_write_button_padding() {
         let dir = std::env::temp_dir();
-        let path = dir.join("test_paginator_tab_padding_x_config.toml");
+        let path = dir.join("test_button_padding_config.toml");
         let path_str = path.to_str().unwrap();
 
         let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
         fs::write(path_str, initial_content).unwrap();
 
         let content = fs::read_to_string(path_str).unwrap();
-        let val = parse_u16_from(&content, "paginator_tab_padding_x", 10);
-        assert_eq!(val, 10);
-
-        assert!(write_config_value_path(path_str, "paginator_tab_padding_x", "15"));
-        let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("paginator_tab_padding_x = 15"));
-
-        let val2 = parse_u16_from(&updated, "paginator_tab_padding_x", 10);
-        assert_eq!(val2, 15);
-
-        let _ = fs::remove_file(path_str);
-    }
-
-    #[test]
-    fn test_read_write_paginator_tab_padding_y() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_paginator_tab_padding_y_config.toml");
-        let path_str = path.to_str().unwrap();
-
-        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
-        fs::write(path_str, initial_content).unwrap();
-
-        let content = fs::read_to_string(path_str).unwrap();
-        let val = parse_u16_from(&content, "paginator_tab_padding_y", 14);
+        let val = parse_u16_from(&content, "button_padding", 14);
         assert_eq!(val, 14);
 
-        assert!(write_config_value_path(path_str, "paginator_tab_padding_y", "20"));
+        assert!(write_config_value_path(path_str, "button_padding", "20"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("paginator_tab_padding_y = 20"));
+        assert!(updated.contains("button_padding = 20"));
 
-        let val2 = parse_u16_from(&updated, "paginator_tab_padding_y", 14);
+        let val2 = parse_u16_from(&updated, "button_padding", 14);
         assert_eq!(val2, 20);
 
         let _ = fs::remove_file(path_str);
