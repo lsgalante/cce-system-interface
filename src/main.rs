@@ -516,7 +516,7 @@ impl cce_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn view(&mut self, quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: cce_ui::engine::LogicalSize, scale: f64) {
+    fn view(&mut self, _quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: cce_ui::engine::LogicalSize, scale: f64) {
         let (width, height) = (size.width, size.height);
         if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
@@ -524,11 +524,6 @@ impl cce_ui::engine::Application for SystemInterface {
             self.scale_factor = scale;
             cce_ui::scale::set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
-        }
-        for w in &self.widgets {
-            if w.radius <= 0.1 {
-                quads.push((w.x, w.y, w.w, w.h, w.color));
-            }
         }
     }
 
@@ -542,9 +537,7 @@ impl cce_ui::engine::Application for SystemInterface {
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
-            if w.radius > 0.1 {
-                quads.push((w.x, w.y, w.w, w.h, w.radius, w.color, w.corners));
-            }
+            quads.push((w.x, w.y, w.w, w.h, w.radius, w.color, w.corners));
         }
     }
 
