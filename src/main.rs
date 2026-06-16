@@ -889,119 +889,121 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
             }
             Page::Interface => {
-                self.page_sec_containers.resize_with(6, cce_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(7, cce_ui::widget::Container::new);
                 
-                for i in 0..6 {
+                for i in 0..7 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
-                // Section 0: Layout (parent of Plate, Sections, Grid Layout)
+                // Section 0: Custom Parameters (empty top-level section)
+                
+                // Section 1: Layout (parent of Plate, Sections, Grid Layout)
                 // (Layout widgets)
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.color_selectors[1], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.color_selectors[2], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[1], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[2], &mut self.ui_context);
                 // (Plate child widgets)
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.color_selectors[0], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.plate_padding_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_cell_opacity_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_gap_opacity_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[0], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.plate_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_cell_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_gap_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
                 // (Sections child widgets)
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.page_margin_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.section_label_font_selector, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.label_alignment_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.label_offset_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.page_margin_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.section_label_font_selector, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.label_alignment_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.label_offset_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
                 // (Grid Layout child widgets)
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.grid_min_col_width_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.grid_min_col_width_spinbox, &mut self.ui_context);
                 
-                // Section 1: Status
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[8], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[3], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[4], &mut self.ui_context);
+                // Section 2: Status
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[8], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[3], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[4], &mut self.ui_context);
                 
-                // Section 2: Controls (parent of: Slider, MenuBar, Toggles, Spinbox, ColorSelector, Textbox, FontSelector)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[6], &mut self.ui_context);
+                // Section 3: Controls (parent of: Slider, MenuBar, Toggles, Spinbox, ColorSelector, Textbox, FontSelector)
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[6], &mut self.ui_context);
                 // (Slider child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[5], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.slider_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[5], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.slider_height_spinbox, &mut self.ui_context);
                 
                 // (MenuBar child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[9], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[11], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_margin_spinbox_x, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.tab_margin_spinbox_y, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.button_padding_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[9], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[11], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.tab_margin_spinbox_x, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.tab_margin_spinbox_y, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.button_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
                 
                 // (Toggles child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[12], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.toggle_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[12], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_height_spinbox, &mut self.ui_context);
                 
                 // (ScrollingList child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
  
                 // (Breadcrumb child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
  
                 // (Popover child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
  
                 // (Spinbox child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.spinbox_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.spinbox_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (ColorSelector child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selector_height_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selector_preview_corner_radius_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selector_preview_margin_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selector_corner_radius_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selector_font_selector, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.menubar_font_selector, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selector_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selector_preview_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selector_preview_margin_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selector_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selector_font_selector, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.menubar_font_selector, &mut self.ui_context);
                 
                 // (Textbox child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.textbox_height_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.textbox_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.textbox_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.textbox_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (FontSelector child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.font_selector_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.font_selector_height_spinbox, &mut self.ui_context);
                 
                 // (Dropdown child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.dropdown_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.dropdown_height_spinbox, &mut self.ui_context);
                 
                 // (Button child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.button_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.button_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (Labels child widgets)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.label_margin_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.label_margin_spinbox, &mut self.ui_context);
                 
-                // Section 3: Indicators (parent of Primary Highlight)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[10], &mut self.ui_context);
+                // Section 4: Indicators (parent of Primary Highlight)
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.color_selectors[10], &mut self.ui_context);
                 
-                // Section 4: Notification
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.notification_opacity_spinbox, &mut self.ui_context);
+                // Section 5: Notification
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.notification_opacity_spinbox, &mut self.ui_context);
                 
-                // Section 5: Fonts (parent of System Fonts and Program Fonts)
+                // Section 6: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.sans_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.serif_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.mono_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.sans_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.serif_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.mono_box, &mut self.ui_context);
                 
                 // (Program Fonts)
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.borders_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.borders_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.status_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.status_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.fuzzel_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.terminal_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.terminal_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.borders_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.borders_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.status_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.status_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.fuzzel_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.terminal_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.terminal_box, &mut self.ui_context);
             }
 
             Page::Input => {

@@ -1411,9 +1411,12 @@ pub async fn fetch_typeface_state() -> InterfaceState {
 pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
 
-    // 1. Layout Section
+    // 1. Custom Parameters Section
+    builder.add_section(&mut final_pc, "Custom Parameters", false, |_sec| {});
+
+    // 2. Layout Section
     builder.add_section(&mut final_pc, "Layout", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[7].color = state.low_color;
@@ -1722,8 +1725,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     let widget_h = 26.0;
     const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-    // 6. Fonts Section
-    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(5).copied().unwrap_or(false), |sec| {
+    // 7. Fonts Section
+    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(6).copied().unwrap_or(false), |sec| {
         sec.spacing(8.0);
 
         // System Fonts Section
