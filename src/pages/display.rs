@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = DisplayState::default();
-        let mut layout = cce_ui::layout::GridLayout::new(260.0, 20.0);
+        let mut layout = cce_ui::layout::AdaptiveGrid::new(260.0, 20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }

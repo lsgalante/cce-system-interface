@@ -1442,7 +1442,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(12.0);
 
         // Grid Layout child section
-        sec.add_section("Grid Layout", false, |subsec| {
+        sec.add_section("Adaptive Grid", false, |subsec| {
             subsec.spacing(8.0);
             state.grid_min_col_width_spinbox.value = state.grid_min_col_width as i32;
             subsec.widget_full(&mut state.grid_min_col_width_spinbox, 44.0, ctx);

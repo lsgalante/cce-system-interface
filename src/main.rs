@@ -1433,13 +1433,13 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
 
     fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use pages::*;
-        use cce_ui::layout::GridLayout;
+        use cce_ui::layout::AdaptiveGrid;
         let margin = cce_ui::layout::page_margin();
         let cx = cx + margin;
         let cy = cy + margin;
         let cw = (cw - 2.0 * margin).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
-        let mut layout = GridLayout::new(260.0, 20.0);
+        let mut layout = AdaptiveGrid::new(260.0, 20.0);
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
         let root_focused = cce_ui::widget::focus::is_focused(&self.plates[page_idx]);
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()

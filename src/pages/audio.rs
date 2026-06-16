@@ -401,12 +401,12 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cce_ui::layout::GridLayout;
+    use cce_ui::layout::AdaptiveGrid;
 
     #[test]
     fn test_view_layout_grid() {
         let mut state = AudioState::default();
-        let mut layout = GridLayout::new(260.0, 20.0);
+        let mut layout = AdaptiveGrid::new(260.0, 20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
