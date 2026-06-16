@@ -37,6 +37,9 @@ pub struct InterfaceState {
     pub color_selectors: Vec<ColorSelector>,
     pub menubar_opacity: f32,
     pub menubar_opacity_spinbox: Spinbox,
+    pub notification_bg_color: [u8; 3],
+    pub notification_opacity: f32,
+    pub notification_opacity_spinbox: Spinbox,
     pub paginator_tab_margin_x: u16,
     pub paginator_tab_margin_y: u16,
     pub tab_margin_spinbox_x: Spinbox,
@@ -167,6 +170,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 14: ScrollingList - Background
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 15: Breadcrumb - Background
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 16: Popover - Background
+                ColorSelector::new([0x08, 0x08, 0x0c]).with_label("Background"), // 17: Notification - Background
             ],
             paginator_tab_margin_x: 5,
             paginator_tab_margin_y: 10,
@@ -224,25 +228,25 @@ impl Default for InterfaceState {
             paginator: String::new(),
             all_fonts: Vec::new(),
             mono_fonts: Vec::new(),
-            sans_box: TextBox::default(),
-            serif_box: TextBox::default(),
-            mono_box: TextBox::default(),
-            borders_box: TextBox::default(),
-            status_box: TextBox::default(),
-            fuzzel_box: TextBox::default(),
-            terminal_box: TextBox::default(),
-            borders_menu: Dropdown::default(),
-            status_menu: Dropdown::default(),
-            fuzzel_menu: Dropdown::default(),
-            terminal_menu: Dropdown::default(),
-            borders_size_box: Spinbox::new(11, 6, 72, 1),
-            status_size_box: Spinbox::new(11, 6, 72, 1),
+            sans_box: TextBox::new(String::new()).with_label("Sans-Serif"),
+            serif_box: TextBox::new(String::new()).with_label("Serif"),
+            mono_box: TextBox::new(String::new()).with_label("Monospace"),
+            borders_box: TextBox::new(String::new()).with_label("Active Font"),
+            status_box: TextBox::new(String::new()).with_label("Active Font"),
+            fuzzel_box: TextBox::new(String::new()).with_label("Active Font"),
+            terminal_box: TextBox::new(String::new()).with_label("Active Font"),
+            borders_menu: Dropdown::new(Vec::new(), 0),
+            status_menu: Dropdown::new(Vec::new(), 0),
+            fuzzel_menu: Dropdown::new(Vec::new(), 0),
+            terminal_menu: Dropdown::new(Vec::new(), 0),
+            borders_size_box: Spinbox::new(14, 6, 72, 1),
+            status_size_box: Spinbox::new(14, 6, 72, 1),
             fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
-            terminal_size_box: Spinbox::new(12, 6, 72, 1),
+            terminal_size_box: Spinbox::new(14, 6, 72, 1),
             color_selector_font: "monospace".to_string(),
-            color_selector_font_selector: FontSelector::new("monospace".to_string()).with_label("Value"),
+            color_selector_font_selector: FontSelector::new("monospace".to_string()).with_label("Color Label"),
             menubar_font: "Outfit".to_string(),
-            menubar_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font"),
+            menubar_font_selector: FontSelector::new("Outfit".to_string()).with_label("Menu Label"),
             section_label_font: "Outfit".to_string(),
             section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
             nested_section_label_font: "Outfit".to_string(),
@@ -261,6 +265,9 @@ impl Default for InterfaceState {
             graph_gap_width_spinbox: Spinbox::new(35, 0, 100, 1).with_label("Gap Width").with_unit("px"),
             menubar_opacity: 0.9,
             menubar_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            notification_bg_color: [0x08, 0x08, 0x0c],
+            notification_opacity: 0.9,
+            notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
         }
     }
 }
@@ -284,6 +291,8 @@ pub enum InterfaceMessage {
     SetScrollingListBgColor([u8; 3]),
     SetBreadcrumbBgColor([u8; 3]),
     SetPopoverBgColor([u8; 3]),
+    SetNotificationBgColor([u8; 3]),
+    SetNotificationOpacity(f32),
     SetTabMarginX(u16),
     SetTabMarginY(u16),
     SetTabPaddingX(u16),
@@ -333,6 +342,7 @@ pub enum InterfaceMessage {
     PickScrollingListBgColor,
     PickBreadcrumbBgColor,
     PickPopoverBgColor,
+    PickNotificationBgColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
     SetSans(String),
@@ -434,6 +444,8 @@ pub fn read_interface_config() -> InterfaceState {
     let graph_gap_opacity = parse_f32_from(&content, "graph_gap_opacity", legacy_opacity);
     let graph_gap_width = parse_u16_from(&content, "graph_gap_width", 35);
     let opacity = parse_transparency_opacity(&content);
+    let notification_bg_color = parse_notifications_color(&content, "bg_color", [0x08, 0x08, 0x0c]);
+    let notification_opacity = parse_notifications_opacity(&content);
     
     InterfaceState {
         low_color: bg,
@@ -471,6 +483,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(scrollinglist_bg).with_label("Background").with_font_family(&color_selector_font), // 14: ScrollingList - Background
             ColorSelector::new(breadcrumb_bg).with_label("Background").with_font_family(&color_selector_font), // 15: Breadcrumb - Background
             ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font), // 16: Popover - Background
+            ColorSelector::new(notification_bg_color).with_label("Background").with_font_family(&color_selector_font), // 17: Notification - Background
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -565,6 +578,9 @@ pub fn read_interface_config() -> InterfaceState {
         graph_gap_width_spinbox: Spinbox::new(graph_gap_width as i32, 0, 100, 1).with_label("Gap Width").with_unit("px"),
         menubar_opacity: opacity,
         menubar_opacity_spinbox: Spinbox::new((opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        notification_bg_color,
+        notification_opacity,
+        notification_opacity_spinbox: Spinbox::new((notification_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
     }
 }
 
@@ -815,6 +831,17 @@ fn apply_popover_bg_color(rgb: [u8; 3]) {
     let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
     let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
     clear_ui::color::set_popover_bg_color([r, g, b, 1.0]);
+}
+
+fn apply_notifications_bg_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_notifications_config_value("bg_color", &hex);
+    send_ipc_command("reload");
+}
+
+fn apply_notifications_opacity(opacity: f32) {
+    write_notifications_config_value("opacity", &format!("{:.2}", opacity));
+    send_ipc_command("reload");
 }
 
 fn apply_paginator_tab_margin_x(margin: u16) {
@@ -1351,7 +1378,7 @@ pub async fn fetch_typeface_state() -> InterfaceState {
 pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
 
     // 1. Layout Section
     builder.add_section(&mut final_pc, "Layout", false, |sec| {
@@ -1634,12 +1661,22 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
     });
 
+    // 5. Notification Section
+    builder.add_section(&mut final_pc, "Notification", false, |sec| {
+        sec.spacing(8.0);
+        state.color_selectors[17].color = state.notification_bg_color;
+        sec.widget_full(&mut state.color_selectors[17], 40.0, ctx);
+        sec.spacing(8.0);
+        state.notification_opacity_spinbox.value = (state.notification_opacity * 100.0).round() as i32;
+        sec.widget_full(&mut state.notification_opacity_spinbox, 44.0, ctx);
+        sec.spacing(8.0);
+    });
 
     let widget_h = 26.0;
     const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-    // 5. Fonts Section
-    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(4).copied().unwrap_or(false), |sec| {
+    // 6. Fonts Section
+    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(5).copied().unwrap_or(false), |sec| {
         sec.spacing(8.0);
 
         // System Fonts Section
@@ -1803,6 +1840,15 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.popover_bg_color = rgb;
             apply_popover_bg_color(rgb);
         }
+        InterfaceMessage::SetNotificationBgColor(rgb) => {
+            state.notification_bg_color = rgb;
+            apply_notifications_bg_color(rgb);
+        }
+        InterfaceMessage::SetNotificationOpacity(opacity) => {
+            state.notification_opacity = opacity;
+            state.notification_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            apply_notifications_opacity(opacity);
+        }
         InterfaceMessage::SetTabMarginX(margin) => {
             state.paginator_tab_margin_x = margin;
             apply_paginator_tab_margin_x(margin);
@@ -1956,7 +2002,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             send_ipc_command("reload");
             status_interface_reload();
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
@@ -1979,6 +2025,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_fsh_hovered = state.font_selector_height_spinbox.hovered();
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
+            let was_no_hovered = state.notification_opacity_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
             let sans_serif = state.sans_serif.clone();
@@ -2030,6 +2077,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.font_selector_height_spinbox.set_hovered(was_fsh_hovered);
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
+            state.notification_opacity_spinbox.set_hovered(was_no_hovered);
 
             if typeface_loaded {
                 state.typeface_loaded = typeface_loaded;
@@ -2451,6 +2499,122 @@ fn write_transparency_config_value(key: &str, value: &str) {
     }
     let _ = fs::write(CONFIG_PATH, updated);
 }
+
+fn parse_notifications_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with(key) {
+            if let Some(rest) = trimmed.strip_prefix(key) {
+                let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+                let hex = rest.trim_end_matches('"').trim().trim_start_matches('#');
+                return parse_hex(hex);
+            }
+        }
+    }
+    default
+}
+
+fn parse_notifications_opacity(content: &str) -> f32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("opacity") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(o) = val.trim().parse::<f32>() {
+                    return o.clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
+    0.9 // default to 0.9
+}
+
+fn write_notifications_config_value(key: &str, value: &str) {
+    write_notifications_config_value_path(CONFIG_PATH, key, value);
+}
+
+fn write_notifications_config_value_path(path: &str, key: &str, value: &str) {
+    let content = fs::read_to_string(path).unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[notifications]" {
+            in_section = true;
+            updated_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            in_section = false;
+        }
+        if in_section && trimmed.starts_with(key) {
+            found = true;
+            updated_lines.push(new_line.clone());
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let mut updated = updated_lines.join("\n");
+
+    if !found {
+        let mut result = String::new();
+        let has_section = content.lines().any(|l| l.trim() == "[notifications]");
+        if has_section {
+            let mut in_section = false;
+            let mut inserted = false;
+            for line in updated.lines() {
+                if line.trim() == "[notifications]" {
+                    in_section = true;
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+                if line.trim().starts_with('[') && in_section {
+                    if !inserted {
+                        result.push_str(&new_line);
+                        result.push('\n');
+                        inserted = true;
+                    }
+                    in_section = false;
+                }
+                result.push_str(line);
+                result.push('\n');
+            }
+            if !inserted {
+                result.push_str(&new_line);
+                result.push('\n');
+            }
+            updated = result;
+        } else {
+            updated.push_str("\n[notifications]\n");
+            updated.push_str(&new_line);
+            updated.push_str("\n");
+        }
+    }
+    let _ = fs::write(path, updated);
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -3187,6 +3351,43 @@ mod tests {
         // 4. Parse when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "button_corner_radius", 4);
         assert_eq!(val2, 12);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_notifications_config() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_notifications_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[notifications]\nenable = true\n\n[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse opacity when missing (should return default 0.9)
+        let content = fs::read_to_string(path_str).unwrap();
+        let opacity = parse_notifications_opacity(&content);
+        assert_eq!(opacity, 0.9);
+
+        // 3. Write opacity config
+        write_notifications_config_value_path(path_str, "opacity", "0.85");
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("opacity = 0.85"));
+
+        // 4. Parse opacity when present (should return 0.85)
+        let opacity2 = parse_notifications_opacity(&updated);
+        assert_eq!(opacity2, 0.85);
+
+        // 5. Write bg_color config
+        write_notifications_config_value_path(path_str, "bg_color", "\"#112233\"");
+        let updated2 = fs::read_to_string(path_str).unwrap();
+        assert!(updated2.contains("bg_color = \"#112233\""));
+
+        // 6. Parse bg_color when present
+        let bg_color = parse_notifications_color(&updated2, "bg_color", [0, 0, 0]);
+        assert_eq!(bg_color, [17, 34, 51]);
 
         // Clean up
         let _ = fs::remove_file(path_str);

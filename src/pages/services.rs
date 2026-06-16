@@ -12,7 +12,6 @@ pub struct NotificationsConfig {
     pub enable: bool,
     pub bell: bool,
     pub duration: i32,
-    pub opacity: f32,
 }
 
 // ── Status Interface Data ──
@@ -64,8 +63,6 @@ pub struct ServicesState {
     pub notifications_bell_toggle: Toggle,
     pub notifications_duration: i32,
     pub notifications_duration_spinbox: Spinbox,
-    pub notifications_opacity: f32,
-    pub notifications_opacity_slider: Slider,
 
     // Status Interface fields
     pub status_loaded: bool,
@@ -98,10 +95,6 @@ impl Default for ServicesState {
             notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
                 .with_label("Notification Duration")
                 .with_unit("s"),
-            notifications_opacity: 0.9,
-            notifications_opacity_slider: Slider::new()
-                .with_label("Transparency")
-                .with_value(0.9),
 
             // Status Interface default initialization
             status_loaded: false,
@@ -128,7 +121,6 @@ pub enum ServicesMessage {
     ToggleNotificationsEnable,
     ToggleNotificationsBell,
     SetNotificationsDuration(i32),
-    SetNotificationsOpacity(f32),
     SendTestNotification,
     NotificationsRefreshed(NotificationsConfig),
 
@@ -435,11 +427,6 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         sec2.widget(&mut state.notifications_duration_spinbox, 14.0, sec_w - 28.0, 44.0, ctx);
         sec2.spacing(16.0);
 
-        // Opacity Slider (Transparency, moved here)
-        state.notifications_opacity_slider.set_value(state.notifications_opacity);
-        sec2.widget(&mut state.notifications_opacity_slider, 14.0, sec_w - 28.0, 38.0, ctx);
-        sec2.spacing(16.0);
-
         let btn_h = 32.0;
         let btn_y = sec2.ay();
         let white_color = [1.0, 1.0, 1.0, 1.0];
@@ -562,11 +549,6 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
             state.notifications_duration = d;
             write_config_value("duration", &state.notifications_duration.to_string());
         }
-        ServicesMessage::SetNotificationsOpacity(o) => {
-            state.notifications_opacity = o;
-            write_transparency_config_value("opacity", &format!("{:.2}", o));
-            send_ipc_command("reload");
-        }
         ServicesMessage::SendTestNotification => {
             send_ipc_command("notify \"cce-client\" \"System notifications are working correctly!\"");
         }
@@ -575,7 +557,6 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
             state.notifications_enable = new.enable;
             state.notifications_bell = new.bell;
             state.notifications_duration = new.duration;
-            state.notifications_opacity = new.opacity;
         }
         ServicesMessage::StatusRefreshed(new) => {
             let was_status_hovered = state.status_label.hovered();
@@ -631,12 +612,10 @@ pub fn read_notifications_config() -> NotificationsConfig {
     let enable = parse_notifications_enable(&content);
     let bell = parse_notifications_bell(&content);
     let duration = parse_notifications_duration(&content);
-    let opacity = parse_transparency_opacity(&content);
     NotificationsConfig {
         enable,
         bell,
         duration,
-        opacity,
     }
 }
 
@@ -700,28 +679,6 @@ fn parse_notifications_duration(content: &str) -> i32 {
         }
     }
     5 // default to 5 seconds
-}
-
-fn parse_transparency_opacity(content: &str) -> f32 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[transparency]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("opacity") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(o) = val.trim().parse::<f32>() {
-                    return o.clamp(0.0, 1.0);
-                }
-            }
-        }
-    }
-    0.9 // default to 0.9
 }
 
 fn send_ipc_command(cmd: &str) {
@@ -801,71 +758,6 @@ fn write_enable_notifications(enabled: bool) {
     send_ipc_command("reload");
 }
 
-fn write_transparency_config_value(key: &str, value: &str) {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let mut updated_lines = Vec::new();
-    let mut in_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[transparency]" {
-            in_section = true;
-            updated_lines.push(line.to_string());
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            in_section = false;
-        }
-        if in_section && trimmed.starts_with(key) {
-            found = true;
-            updated_lines.push(new_line.clone());
-        } else {
-            updated_lines.push(line.to_string());
-        }
-    }
-
-    let mut updated = updated_lines.join("\n");
-
-    if !found {
-        let mut result = String::new();
-        let has_section = content.lines().any(|l| l.trim() == "[transparency]");
-        if has_section {
-            let mut in_section = false;
-            let mut inserted = false;
-            for line in updated.lines() {
-                if line.trim() == "[transparency]" {
-                    in_section = true;
-                    result.push_str(line);
-                    result.push('\n');
-                    continue;
-                }
-                if line.trim().starts_with('[') && in_section {
-                    if !inserted {
-                        result.push_str(&new_line);
-                        result.push('\n');
-                        inserted = true;
-                    }
-                    in_section = false;
-                }
-                result.push_str(line);
-                result.push('\n');
-            }
-            if !inserted {
-                result.push_str(&new_line);
-                result.push('\n');
-            }
-            updated = result;
-        } else {
-            updated.push_str("\n[transparency]\n");
-            updated.push_str(&new_line);
-            updated.push_str("\n");
-        }
-    }
-    let _ = fs::write(CONFIG_PATH, updated);
-}
 
 thread_local! {
     static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);

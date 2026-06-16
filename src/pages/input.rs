@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::app::PageContent;
 use clear_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use clear_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element};
+use clear_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
@@ -70,6 +70,10 @@ pub struct InputState {
     pub cursor_theme_menu: Dropdown,
     pub cursor_size_spinbox: Spinbox,
     pub cursor_themes: Vec<String>,
+
+    // Graph settings
+    pub zoom_in_box: TextBox,
+    pub zoom_out_box: TextBox,
 }
 
 fn scan_cursor_themes() -> Vec<String> {
@@ -149,6 +153,10 @@ impl Default for InputState {
             cursor_theme_menu: Dropdown::new(cursor_themes.clone(), 0).with_label("Cursor Theme"),
             cursor_size_spinbox: Spinbox::new(24, 16, 64, 4).with_label("Cursor Size").with_unit("px"),
             cursor_themes,
+
+            // Graph defaults
+            zoom_in_box: TextBox::new("=".to_string()).with_label("Zoom In"),
+            zoom_out_box: TextBox::new("-".to_string()).with_label("Zoom Out"),
         }
     }
 }
@@ -181,6 +189,9 @@ pub enum InputMessage {
 
     ApplyCursorTheme(usize),
     ApplyCursorSize,
+
+    ApplyZoomIn,
+    ApplyZoomOut,
 }
 
 pub fn read_input_config() -> InputState {
@@ -211,6 +222,9 @@ pub fn read_input_config() -> InputState {
     let cursor_size = parse_u16_key(&content, "cursor_size", 24);
     let cursor_themes = scan_cursor_themes();
     let theme_idx = cursor_themes.iter().position(|t| t == &cursor_theme).unwrap_or(0);
+
+    let zoom_in = parse_string_key(&content, "zoom_in", "=");
+    let zoom_out = parse_string_key(&content, "zoom_out", "-");
 
     InputState {
         tap_to_click: tap,
@@ -256,6 +270,10 @@ pub fn read_input_config() -> InputState {
         cursor_theme_menu: Dropdown::new(cursor_themes.clone(), theme_idx).with_label("Cursor Theme"),
         cursor_size_spinbox: Spinbox::new(cursor_size as i32, 16, 64, 4).with_label("Cursor Size").with_unit("px"),
         cursor_themes,
+
+        // Graph settings
+        zoom_in_box: TextBox::new(zoom_in).with_label("Zoom In"),
+        zoom_out_box: TextBox::new(zoom_out).with_label("Zoom Out"),
     }
 }
 
@@ -340,7 +358,9 @@ fn write_config_value(key: &str, value: &str) {
         .join("\n");
 
     if !found {
-        let section = if key == "tap_to_click" || key == "dwtp"
+        let section = if key == "zoom_in" || key == "zoom_out" {
+            "[graph]"
+        } else if key == "tap_to_click" || key == "dwtp"
                 || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile"
                 || key == "cursor_theme" || key == "cursor_size" || key == "natural_scroll" {
             "[input]"
@@ -392,7 +412,7 @@ const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut clear_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
 
     // ── Touchpad ──
     builder.add_section(&mut final_pc, "Touchpad", false, |sec| {
@@ -473,7 +493,16 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         sec.spacing(8.0);
     });
 
-    // ── Keybindings ──
+    // ── Graph ──
+    builder.add_section(&mut final_pc, "Graph", sec_focused.get(5).copied().unwrap_or(false), |sec| {
+        sec.widget_full(&mut state.zoom_in_box, 44.0, ctx);
+        sec.spacing(12.0);
+
+        sec.widget_full(&mut state.zoom_out_box, 44.0, ctx);
+        sec.spacing(8.0);
+    });
+
+    // ── Keyboard Bindings ──
     builder.add_section(&mut final_pc, "Keyboard Bindings", false, |sec| {
         for kb in &state.keybinds {
             let binding = if kb.mods.is_empty() {
@@ -582,6 +611,14 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             state.cursor_size = size;
             write_config_value("cursor_size", &size.to_string());
             send_ipc_command(&format!("input cursor-size {}", size));
+        }
+        InputMessage::ApplyZoomIn => {
+            let val = state.zoom_in_box.text.clone();
+            write_config_value("zoom_in", &format!("\"{}\"", val));
+        }
+        InputMessage::ApplyZoomOut => {
+            let val = state.zoom_out_box.text.clone();
+            write_config_value("zoom_out", &format!("\"{}\"", val));
         }
         InputMessage::Refreshed(new) => {
             let fingers = state.fingers.clone();

@@ -157,7 +157,6 @@ struct SystemInterface {
     needs_rebuild: bool,
     scroll_y: f32,
     max_scroll_y: f32,
-    opacity_dragging: bool,
     audio_sink_dragging: Option<usize>,
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
@@ -465,7 +464,6 @@ impl clear_ui::engine::Application for SystemInterface {
             needs_rebuild: true,
             scroll_y: 4000.0,
             max_scroll_y: 0.0,
-            opacity_dragging: false,
             audio_sink_dragging: None,
             audio_source_dragging: None,
             display_brightness_dragging: false,
@@ -718,6 +716,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.interface.dropdown_height_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.button_corner_radius_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.button_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.notification_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.notification_opacity_spinbox.set_parent(None, &mut self.ui_context);
 
         self.app.interface.sans_box.clear_children(&mut self.ui_context); self.app.interface.sans_box.set_parent(None, &mut self.ui_context);
         self.app.interface.serif_box.clear_children(&mut self.ui_context); self.app.interface.serif_box.set_parent(None, &mut self.ui_context);
@@ -734,7 +734,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.services.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.services.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.services.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.services.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.services.notifications_opacity_slider.clear_children(&mut self.ui_context); self.app.services.notifications_opacity_slider.set_parent(None, &mut self.ui_context);
 
         self.app.input.rate_spinbox.clear_children(&mut self.ui_context); self.app.input.rate_spinbox.set_parent(None, &mut self.ui_context);
         self.app.input.delay_spinbox.clear_children(&mut self.ui_context); self.app.input.delay_spinbox.set_parent(None, &mut self.ui_context);
@@ -751,6 +750,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         self.app.input.trackpoint_accel_profile_menu.clear_children(&mut self.ui_context); self.app.input.trackpoint_accel_profile_menu.set_parent(None, &mut self.ui_context);
         self.app.input.cursor_theme_menu.clear_children(&mut self.ui_context); self.app.input.cursor_theme_menu.set_parent(None, &mut self.ui_context);
         self.app.input.cursor_size_spinbox.clear_children(&mut self.ui_context); self.app.input.cursor_size_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.input.zoom_in_box.clear_children(&mut self.ui_context); self.app.input.zoom_in_box.set_parent(None, &mut self.ui_context);
+        self.app.input.zoom_out_box.clear_children(&mut self.ui_context); self.app.input.zoom_out_box.set_parent(None, &mut self.ui_context);
 
         for sb in &mut self.app.audio.sink_spinboxes {
             sb.clear_children(&mut self.ui_context);
@@ -831,7 +832,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_enable_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_bell_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_duration_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_opacity_slider, &mut self.ui_context);
 
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_separators_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_underline_toggle, &mut self.ui_context);
@@ -891,9 +891,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
             }
             Page::Interface => {
-                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(6, clear_ui::widget::Container::new);
                 
-                for i in 0..5 {
+                for i in 0..6 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
@@ -948,13 +948,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 
                 // (ScrollingList child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
-
+ 
                 // (Breadcrumb child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
-
+ 
                 // (Popover child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
-
+ 
                 // (Spinbox child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
                 
@@ -983,30 +983,35 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 // Section 3: Indicators (parent of Primary Highlight)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[10], &mut self.ui_context);
                 
-                // Section 4: Fonts (parent of System Fonts and Program Fonts)
+                // Section 4: Notification
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.notification_opacity_spinbox, &mut self.ui_context);
+                
+                // Section 5: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.sans_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.serif_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.mono_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.sans_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.serif_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.mono_box, &mut self.ui_context);
                 
                 // (Program Fonts)
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.borders_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.borders_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.status_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.status_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.fuzzel_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.terminal_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.terminal_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.borders_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.borders_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.status_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.status_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.fuzzel_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.terminal_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.terminal_box, &mut self.ui_context);
             }
 
             Page::Input => {
-                self.page_sec_containers.resize_with(5, clear_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(6, clear_ui::widget::Container::new);
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[3], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[4], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[5], &mut self.ui_context);
                 
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.dwtp_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox, &mut self.ui_context);
@@ -1027,6 +1032,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.pointer_friction_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.trackpad_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.trackpad_friction_spinbox, &mut self.ui_context);
+
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_in_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_out_box, &mut self.ui_context);
             }
             Page::Audio => {
                 self.page_sec_containers.resize_with(2, clear_ui::widget::Container::new);
@@ -1940,6 +1948,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if self.app.interface.button_corner_radius_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.notification_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
             if self.app.interface.sans_box.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
@@ -2021,6 +2032,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 changed = true;
             }
             if self.app.input.trackpoint_accel_profile_menu.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.input.zoom_in_box.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.input.zoom_out_box.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
         }
@@ -2197,55 +2214,46 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
 
         if self.app.current_page == Page::Services {
-            if self.opacity_dragging {
-                if self.app.services.notifications_opacity_slider.drag_update(lx, ly) {
-                    changed = true;
-                }
+            if self.app.services.search_box.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.list_box.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            let query = if self.app.services.search_box.editing {
+                self.app.services.search_box.edit_buffer.to_lowercase()
             } else {
-                if self.app.services.search_box.cursor_moved(lx, ly, &mut self.ui_context) {
+                self.app.services.search_box.text.to_lowercase()
+            };
+            let matching_count = self.app.services.services.iter()
+                .filter(|s| s.is_system == (self.app.services.active_tab == pages::services::ServiceTab::System))
+                .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
+                .count();
+            for i in 0..matching_count.min(self.app.services.service_items.len()) {
+                if self.app.services.service_items[i].cursor_moved(lx, ly, &mut self.ui_context) {
                     changed = true;
                 }
-                if self.app.services.list_box.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                let query = if self.app.services.search_box.editing {
-                    self.app.services.search_box.edit_buffer.to_lowercase()
-                } else {
-                    self.app.services.search_box.text.to_lowercase()
-                };
-                let matching_count = self.app.services.services.iter()
-                    .filter(|s| s.is_system == (self.app.services.active_tab == pages::services::ServiceTab::System))
-                    .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
-                    .count();
-                for i in 0..matching_count.min(self.app.services.service_items.len()) {
-                    if self.app.services.service_items[i].cursor_moved(lx, ly, &mut self.ui_context) {
-                        changed = true;
-                    }
-                }
-                if self.app.services.notifications_enable_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.notifications_bell_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.notifications_duration_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.notifications_opacity_slider.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.status_label.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.status_separators_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.status_underline_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-                if self.app.services.status_padding_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
+            }
+            if self.app.services.notifications_enable_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.notifications_bell_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.notifications_duration_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.status_label.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.status_separators_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.status_underline_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.services.status_padding_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
             }
         }
         if self.app.current_page == Page::Accounts {
@@ -2419,6 +2427,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if self.app.interface.font_selector_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.dropdown_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.button_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.notification_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     let tf = &mut self.app.interface;
                     if tf.sans_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if tf.serif_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2440,6 +2449,8 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if self.app.input.trackpad_friction_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.input.trackpoint_accel_speed_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.input.trackpoint_accel_profile_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.input.zoom_in_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.input.zoom_out_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
 
                 Page::Audio => {
@@ -2475,7 +2486,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     if srv.search_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if srv.list_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if srv.notifications_duration_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if srv.notifications_opacity_slider.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if srv.status_label.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if srv.status_padding_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
@@ -2646,6 +2656,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         14 => pages::interface::InterfaceMessage::PickScrollingListBgColor,
                         15 => pages::interface::InterfaceMessage::PickBreadcrumbBgColor,
                         16 => pages::interface::InterfaceMessage::PickPopoverBgColor,
+                        17 => pages::interface::InterfaceMessage::PickNotificationBgColor,
                         _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
@@ -2668,6 +2679,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                         15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                         16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
+                        17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                         _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -2677,6 +2689,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(sb.value as f32 / 100.0)));
+            }
+            let sb = &mut self.app.interface.notification_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNotificationOpacity(sb.value as f32 / 100.0)));
             }
             let sb = &mut self.app.interface.tab_margin_spinbox_x;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
@@ -2951,6 +2969,24 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             if state == clear_ui::widget::ElementState::Pressed && menu.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorTheme(menu.selected)));
             }
+
+            let tb = &mut self.app.input.zoom_in_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomIn));
+            }
+
+            let tb = &mut self.app.input.zoom_out_box;
+            if state == clear_ui::widget::ElementState::Pressed && !tb.hit_test(lx, ly, &self.ui_context) { tb.unfocus(); }
+            if tb.mouse_input(button, state, lx, ly, &mut self.ui_context) {
+                self.needs_rebuild = true;
+            }
+            if state == clear_ui::widget::ElementState::Pressed && tb.take_change() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
+            }
         }
         if self.app.current_page == Page::Services {
             let toggle = &mut self.app.services.notifications_enable_toggle;
@@ -2962,24 +2998,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             toggle.mouse_input(button, state, lx, ly, &mut self.ui_context);
             if toggle.take_click() {
                 actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsBell));
-            }
-            let slider = &mut self.app.services.notifications_opacity_slider;
-            if button == clear_ui::widget::MouseButton::Left {
-                if state == clear_ui::widget::ElementState::Pressed {
-                    if slider.hit_test(lx, ly, &self.ui_context) {
-                        slider.drag_begin(lx, ly);
-                        self.opacity_dragging = true;
-                        self.needs_rebuild = true;
-                    }
-                } else if state == clear_ui::widget::ElementState::Released {
-                    if self.opacity_dragging {
-                        self.opacity_dragging = false;
-                        slider.drag_end();
-                        let val = slider.value() as f32 / 100.0;
-                        actions.push(AppAction::Services(pages::services::ServicesMessage::SetNotificationsOpacity(val)));
-                        self.needs_rebuild = true;
-                    }
-                }
             }
             if state == clear_ui::widget::ElementState::Pressed {
                 let lbl1 = &mut self.app.services.status_label;
@@ -3547,9 +3565,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                             14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                             15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                             16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
+                            17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
+                }
+                if self.app.interface.notification_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNotificationOpacity(self.app.interface.notification_opacity_spinbox.value as f32 / 100.0)));
                 }
                 if self.app.interface.menubar_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(self.app.interface.menubar_opacity_spinbox.value as f32 / 100.0)));
@@ -3733,6 +3755,12 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 if self.app.input.cursor_theme_menu.take_change() {
                     actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorTheme(self.app.input.cursor_theme_menu.selected)));
                 }
+                if self.app.input.zoom_in_box.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomIn));
+                }
+                if self.app.input.zoom_out_box.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
+                }
             }
             Page::Services => {
                 if self.app.services.notifications_duration_spinbox.take_change() {
@@ -3746,10 +3774,6 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 }
                 if self.app.services.notifications_bell_toggle.take_change() {
                     actions.push(AppAction::Services(pages::services::ServicesMessage::ToggleNotificationsBell));
-                }
-                if self.app.services.notifications_opacity_slider.take_change() {
-                    let val = self.app.services.notifications_opacity_slider.value() as f32 / 100.0;
-                    actions.push(AppAction::Services(pages::services::ServicesMessage::SetNotificationsOpacity(val)));
                 }
                 if self.app.services.status_separators_toggle.take_change() {
                     actions.push(AppAction::Services(pages::services::ServicesMessage::StatusToggleSeparators));
@@ -4246,6 +4270,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                             14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                             15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                             16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
+                            17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
@@ -4256,6 +4281,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 self.handle_action(a);
             }
             if changed {
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.notification_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetNotificationOpacity(new_val as f32 / 100.0)));
+                }
                 self.needs_rebuild = true;
                 return true;
             }
@@ -4653,6 +4688,16 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
             }
             if self.app.input.cursor_size_spinbox.keyboard_input(event, &mut self.ui_context) {
                 self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.zoom_in_box.keyboard_input(event, &mut self.ui_context) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyZoomIn));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.zoom_out_box.keyboard_input(event, &mut self.ui_context) {
+                self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
                 self.needs_rebuild = true;
                 return true;
             }
