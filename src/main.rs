@@ -1512,6 +1512,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 14 => self.app.interface.scrollinglist_bg_color,
                 15 => self.app.interface.breadcrumb_bg_color,
                 16 => self.app.interface.popover_bg_color,
+                17 => self.app.interface.notification_bg_color,
                 _ => self.app.interface.low_color,
             };
             if cp.color != state_color {
@@ -1533,6 +1534,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                     15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                     16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
+                    17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                 }));
                 color_changed = true;
