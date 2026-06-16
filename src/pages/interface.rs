@@ -64,6 +64,8 @@ pub struct InterfaceState {
     pub toggle_height_spinbox: Spinbox,
     pub color_selector_height: u16,
     pub color_selector_height_spinbox: Spinbox,
+    pub color_selector_corner_radius: u16,
+    pub color_selector_corner_radius_spinbox: Spinbox,
     pub color_selector_preview_corner_radius: u16,
     pub color_selector_preview_corner_radius_spinbox: Spinbox,
     pub color_selector_preview_margin: u16,
@@ -200,6 +202,8 @@ impl Default for InterfaceState {
             toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
             color_selector_height: 22,
             color_selector_height_spinbox: Spinbox::new(22, 10, 100, 1).with_label("Height").with_unit("px"),
+            color_selector_corner_radius: 4,
+            color_selector_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
             color_selector_preview_corner_radius: 4,
             color_selector_preview_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Preview Corner Radius").with_unit("px"),
             color_selector_preview_margin: 0,
@@ -312,6 +316,7 @@ pub enum InterfaceMessage {
     SetSpinboxCornerRadius(u16),
     SetToggleHeight(u16),
     SetColorSelectorHeight(u16),
+    SetColorSelectorCornerRadius(u16),
     SetColorSelectorPreviewCornerRadius(u16),
     SetColorSelectorPreviewMargin(u16),
     SetTextboxHeight(u16),
@@ -433,6 +438,7 @@ pub fn read_interface_config() -> InterfaceState {
     let spinbox_corner_radius = parse_u16_from(&content, "spinbox_corner_radius", 4);
     let toggle_height = parse_u16_from(&content, "toggle_height", 44);
     let color_selector_height = parse_u16_from(&content, "color_selector_height", 22);
+    let color_selector_corner_radius = parse_u16_from(&content, "color_selector_corner_radius", 4);
     let color_selector_preview_corner_radius = parse_u16_from(&content, "color_selector_preview_corner_radius", 4);
     let color_selector_preview_margin = parse_u16_from(&content, "color_selector_preview_margin", 0);
     let textbox_height = parse_u16_from(&content, "textbox_height", 44);
@@ -521,6 +527,8 @@ pub fn read_interface_config() -> InterfaceState {
         toggle_height_spinbox: Spinbox::new(toggle_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
         color_selector_height,
         color_selector_height_spinbox: Spinbox::new(color_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        color_selector_corner_radius,
+        color_selector_corner_radius_spinbox: Spinbox::new(color_selector_corner_radius as i32, 0, 50, 1).with_label("Border Radius").with_unit("px"),
         color_selector_preview_corner_radius,
         color_selector_preview_corner_radius_spinbox: Spinbox::new(color_selector_preview_corner_radius as i32, 0, 50, 1).with_label("Preview Corner Radius").with_unit("px"),
         color_selector_preview_margin,
@@ -916,6 +924,11 @@ fn apply_toggle_height(height: u16) {
 fn apply_color_selector_height(height: u16) {
     write_config_value("color_selector_height", &height.to_string());
     cce_ui::layout::set_color_selector_height(height as f32);
+}
+
+fn apply_color_selector_corner_radius(radius: u16) {
+    write_config_value("color_selector_corner_radius", &radius.to_string());
+    cce_ui::layout::set_color_selector_corner_radius(radius as f32);
 }
 
 fn apply_color_selector_preview_corner_radius(radius: u16) {
@@ -1615,6 +1628,10 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.color_selector_preview_margin_spinbox, 44.0, ctx);
             subsec.spacing(12.0);
 
+            state.color_selector_corner_radius_spinbox.value = state.color_selector_corner_radius as i32;
+            subsec.widget_full(&mut state.color_selector_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+
             state.color_selector_font_selector.font_family = state.color_selector_font.clone();
             subsec.widget_full(&mut state.color_selector_font_selector, 44.0, ctx);
             subsec.spacing(8.0);
@@ -1923,6 +1940,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.color_selector_height = height;
             apply_color_selector_height(height);
         }
+        InterfaceMessage::SetColorSelectorCornerRadius(radius) => {
+            state.color_selector_corner_radius = radius;
+            apply_color_selector_corner_radius(radius);
+        }
         InterfaceMessage::SetColorSelectorPreviewCornerRadius(radius) => {
             state.color_selector_preview_corner_radius = radius;
             apply_color_selector_preview_corner_radius(radius);
@@ -2055,6 +2076,9 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_ggo_hovered = state.graph_gap_opacity_spinbox.hovered();
             let was_ggw_hovered = state.graph_gap_width_spinbox.hovered();
             let was_csh_hovered = state.color_selector_height_spinbox.hovered();
+            let was_cspcr_hovered = state.color_selector_preview_corner_radius_spinbox.hovered();
+            let was_cspm_hovered = state.color_selector_preview_margin_spinbox.hovered();
+            let was_cscr_hovered = state.color_selector_corner_radius_spinbox.hovered();
             let was_tbh_hovered = state.textbox_height_spinbox.hovered();
             let was_tcr_hovered = state.textbox_corner_radius_spinbox.hovered();
             let was_fsh_hovered = state.font_selector_height_spinbox.hovered();
@@ -2108,6 +2132,9 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.graph_gap_opacity_spinbox.set_hovered(was_ggo_hovered);
             state.graph_gap_width_spinbox.set_hovered(was_ggw_hovered);
             state.color_selector_height_spinbox.set_hovered(was_csh_hovered);
+            state.color_selector_preview_corner_radius_spinbox.set_hovered(was_cspcr_hovered);
+            state.color_selector_preview_margin_spinbox.set_hovered(was_cspm_hovered);
+            state.color_selector_corner_radius_spinbox.set_hovered(was_cscr_hovered);
             state.textbox_height_spinbox.set_hovered(was_tbh_hovered);
             state.textbox_corner_radius_spinbox.set_hovered(was_tcr_hovered);
             state.font_selector_height_spinbox.set_hovered(was_fsh_hovered);
@@ -3136,6 +3163,34 @@ mod tests {
         // 4. Parse color_selector_preview_corner_radius when present (should return written value 8)
         let val2 = parse_u16_from(&updated, "color_selector_preview_corner_radius", 4);
         assert_eq!(val2, 8);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_color_selector_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_color_selector_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse color_selector_corner_radius when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "color_selector_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write color_selector_corner_radius config
+        assert!(write_config_value_path(path_str, "color_selector_corner_radius", "6"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("color_selector_corner_radius = 6"));
+
+        // 4. Parse color_selector_corner_radius when present (should return written value 6)
+        let val2 = parse_u16_from(&updated, "color_selector_corner_radius", 4);
+        assert_eq!(val2, 6);
 
         // Clean up
         let _ = fs::remove_file(path_str);
