@@ -58,6 +58,8 @@ pub struct InterfaceState {
     pub grid_min_col_width_spinbox: Spinbox,
     pub spinbox_height: u16,
     pub spinbox_height_spinbox: Spinbox,
+    pub spinbox_corner_radius: u16,
+    pub spinbox_corner_radius_spinbox: Spinbox,
     pub toggle_height: u16,
     pub toggle_height_spinbox: Spinbox,
     pub color_selector_height: u16,
@@ -190,6 +192,8 @@ impl Default for InterfaceState {
             grid_min_col_width_spinbox: Spinbox::new(260, 100, 1000, 10).with_label("Minimum Width").with_unit("px"),
             spinbox_height: 26,
             spinbox_height_spinbox: Spinbox::new(26, 10, 100, 1).with_label("Height").with_unit("px"),
+            spinbox_corner_radius: 4,
+            spinbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
             toggle_height: 44,
             toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
             color_selector_height: 22,
@@ -302,6 +306,7 @@ pub enum InterfaceMessage {
     SetPageMargin(u16),
     SetGridMinColWidth(u16),
     SetSpinboxHeight(u16),
+    SetSpinboxCornerRadius(u16),
     SetToggleHeight(u16),
     SetColorSelectorHeight(u16),
     SetColorSelectorPreviewCornerRadius(u16),
@@ -420,6 +425,7 @@ pub fn read_interface_config() -> InterfaceState {
     let page_margin = parse_u16_from(&content, "page_margin", 20);
     let grid_min_col_width = parse_u16_from(&content, "grid_min_col_width", 260);
     let spinbox_height = parse_u16_from(&content, "spinbox_height", 26);
+    let spinbox_corner_radius = parse_u16_from(&content, "spinbox_corner_radius", 4);
     let toggle_height = parse_u16_from(&content, "toggle_height", 44);
     let color_selector_height = parse_u16_from(&content, "color_selector_height", 22);
     let color_selector_preview_corner_radius = parse_u16_from(&content, "color_selector_preview_corner_radius", 4);
@@ -503,6 +509,8 @@ pub fn read_interface_config() -> InterfaceState {
         grid_min_col_width_spinbox: Spinbox::new(grid_min_col_width as i32, 100, 1000, 10).with_label("Minimum Width").with_unit("px"),
         spinbox_height,
         spinbox_height_spinbox: Spinbox::new(spinbox_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        spinbox_corner_radius,
+        spinbox_corner_radius_spinbox: Spinbox::new(spinbox_corner_radius as i32, 0, 50, 1).with_label("Border Radius").with_unit("px"),
         toggle_height,
         toggle_height_spinbox: Spinbox::new(toggle_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
         color_selector_height,
@@ -891,6 +899,11 @@ fn apply_section_padding(padding: u16) {
 fn apply_spinbox_height(height: u16) {
     write_config_value("spinbox_height", &height.to_string());
     clear_ui::layout::set_spinbox_height(height as f32);
+}
+
+fn apply_spinbox_corner_radius(radius: u16) {
+    write_config_value("spinbox_corner_radius", &radius.to_string());
+    clear_ui::layout::set_spinbox_corner_radius(radius as f32);
 }
 
 fn apply_toggle_height(height: u16) {
@@ -1579,6 +1592,10 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.spinbox_height_spinbox.value = state.spinbox_height as i32;
             subsec.widget_full(&mut state.spinbox_height_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
+
+            state.spinbox_corner_radius_spinbox.value = state.spinbox_corner_radius as i32;
+            subsec.widget_full(&mut state.spinbox_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
         sec.spacing(12.0);
 
@@ -1885,6 +1902,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.spinbox_height = height;
             apply_spinbox_height(height);
         }
+        InterfaceMessage::SetSpinboxCornerRadius(radius) => {
+            state.spinbox_corner_radius = radius;
+            apply_spinbox_corner_radius(radius);
+        }
         InterfaceMessage::SetToggleHeight(height) => {
             state.toggle_height = height;
             apply_toggle_height(height);
@@ -2013,6 +2034,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_pm_hovered = state.page_margin_spinbox.hovered();
             let was_gm_hovered = state.grid_min_col_width_spinbox.hovered();
             let was_sh_hovered = state.spinbox_height_spinbox.hovered();
+            let was_scr_hovered = state.spinbox_corner_radius_spinbox.hovered();
             let was_th_hovered = state.toggle_height_spinbox.hovered();
             let was_gsg_hovered = state.graph_show_grid_toggle.hovered();
             let was_gse_hovered = state.graph_snap_enabled_toggle.hovered();
@@ -2065,6 +2087,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.page_margin_spinbox.set_hovered(was_pm_hovered);
             state.grid_min_col_width_spinbox.set_hovered(was_gm_hovered);
             state.spinbox_height_spinbox.set_hovered(was_sh_hovered);
+            state.spinbox_corner_radius_spinbox.set_hovered(was_scr_hovered);
             state.toggle_height_spinbox.set_hovered(was_th_hovered);
             state.graph_show_grid_toggle.set_hovered(was_gsg_hovered);
             state.graph_snap_enabled_toggle.set_hovered(was_gse_hovered);
@@ -2792,6 +2815,34 @@ mod tests {
         // 4. Parse page_margin when present (should return written value 15)
         let val2 = parse_u16_from(&updated, "page_margin", 20);
         assert_eq!(val2, 15);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_spinbox_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_spinbox_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse spinbox_corner_radius when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "spinbox_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write spinbox_corner_radius config
+        assert!(write_config_value_path(path_str, "spinbox_corner_radius", "8"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("spinbox_corner_radius = 8"));
+
+        // 4. Parse spinbox_corner_radius when present (should return written value 8)
+        let val2 = parse_u16_from(&updated, "spinbox_corner_radius", 4);
+        assert_eq!(val2, 8);
 
         // Clean up
         let _ = fs::remove_file(path_str);
