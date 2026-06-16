@@ -952,6 +952,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 // (Breadcrumb child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
 
+                // (Popover child widgets)
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
+
                 // (Spinbox child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
                 
@@ -1488,6 +1491,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 13 => self.app.interface.toggle_disabled_color,
                 14 => self.app.interface.scrollinglist_bg_color,
                 15 => self.app.interface.breadcrumb_bg_color,
+                16 => self.app.interface.popover_bg_color,
                 _ => self.app.interface.low_color,
             };
             if cp.color != state_color {
@@ -1508,6 +1512,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
                     14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                     15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
+                    16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                 }));
                 color_changed = true;
@@ -2640,6 +2645,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         13 => pages::interface::InterfaceMessage::PickToggleDisabledColor,
                         14 => pages::interface::InterfaceMessage::PickScrollingListBgColor,
                         15 => pages::interface::InterfaceMessage::PickBreadcrumbBgColor,
+                        16 => pages::interface::InterfaceMessage::PickPopoverBgColor,
                         _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
@@ -2661,6 +2667,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
                         14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                         15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
+                        16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                         _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -3539,6 +3546,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                             13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
                             14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                             15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
+                            16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
@@ -4237,6 +4245,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                             13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
                             14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                             15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
+                            16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }

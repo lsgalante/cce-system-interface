@@ -33,6 +33,7 @@ pub struct InterfaceState {
     pub toggle_disabled_color: [u8; 3],
     pub scrollinglist_bg_color: [u8; 3],
     pub breadcrumb_bg_color: [u8; 3],
+    pub popover_bg_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
     pub menubar_opacity: f32,
     pub menubar_opacity_spinbox: Spinbox,
@@ -147,6 +148,7 @@ impl Default for InterfaceState {
             toggle_disabled_color: [135, 135, 148],
             scrollinglist_bg_color: [81, 81, 97],
             breadcrumb_bg_color: [81, 81, 97],
+            popover_bg_color: [81, 81, 97],
             color_selectors: vec![
                 ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Plate - Low Color
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
@@ -164,6 +166,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([135, 135, 148]).with_label("Disabled"), // 13: Toggles - Disabled
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 14: ScrollingList - Background
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 15: Breadcrumb - Background
+                ColorSelector::new([81, 81, 97]).with_label("Background"), // 16: Popover - Background
             ],
             paginator_tab_margin_x: 5,
             paginator_tab_margin_y: 10,
@@ -280,6 +283,7 @@ pub enum InterfaceMessage {
     SetToggleDisabledColor([u8; 3]),
     SetScrollingListBgColor([u8; 3]),
     SetBreadcrumbBgColor([u8; 3]),
+    SetPopoverBgColor([u8; 3]),
     SetTabMarginX(u16),
     SetTabMarginY(u16),
     SetTabPaddingX(u16),
@@ -328,6 +332,7 @@ pub enum InterfaceMessage {
     PickToggleDisabledColor,
     PickScrollingListBgColor,
     PickBreadcrumbBgColor,
+    PickPopoverBgColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
     SetSans(String),
@@ -392,6 +397,8 @@ pub fn read_interface_config() -> InterfaceState {
     let scrollinglist_bg = parse_color_from_key(&content, "scrollinglist_bg_color", [81, 81, 97]);
 
     let breadcrumb_bg = parse_color_from_key(&content, "breadcrumb_bg_color", scrollinglist_bg);
+
+    let popover_bg = parse_color_from_key(&content, "popover_bg_color", scrollinglist_bg);
     
     let paginator_tab_margin_general = parse_u16_from(&content, "paginator_tab_margin", 999);
     let paginator_tab_margin_x = parse_u16_from(&content, "paginator_tab_margin_x", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 5 });
@@ -445,6 +452,7 @@ pub fn read_interface_config() -> InterfaceState {
         toggle_disabled_color: toggle_disabled,
         scrollinglist_bg_color: scrollinglist_bg,
         breadcrumb_bg_color: breadcrumb_bg,
+        popover_bg_color: popover_bg,
         color_selectors: vec![
             ColorSelector::new(page_low).with_label("Low Color").with_font_family(&color_selector_font), // 0: Plate - Low Color
             ColorSelector::new(border).with_label("High Color").with_font_family(&color_selector_font), // 1: Layout - High Color
@@ -462,6 +470,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(toggle_disabled).with_label("Disabled").with_font_family(&color_selector_font), // 13: Toggles - Disabled
             ColorSelector::new(scrollinglist_bg).with_label("Background").with_font_family(&color_selector_font), // 14: ScrollingList - Background
             ColorSelector::new(breadcrumb_bg).with_label("Background").with_font_family(&color_selector_font), // 15: Breadcrumb - Background
+            ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font), // 16: Popover - Background
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -797,6 +806,15 @@ fn apply_breadcrumb_bg_color(rgb: [u8; 3]) {
     let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
     let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
     clear_ui::color::set_breadcrumb_bg_color([r, g, b, 1.0]);
+}
+
+fn apply_popover_bg_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("popover_bg_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_popover_bg_color([r, g, b, 1.0]);
 }
 
 fn apply_paginator_tab_margin_x(margin: u16) {
@@ -1519,6 +1537,15 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         });
         sec.spacing(12.0);
 
+        // Popover Section
+        sec.add_section("Popover", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[16].color = state.popover_bg_color;
+            subsec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
         // Spinbox Section
         sec.add_section("Spinbox", false, |subsec| {
             subsec.spacing(8.0);
@@ -1772,6 +1799,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.breadcrumb_bg_color = rgb;
             apply_breadcrumb_bg_color(rgb);
         }
+        InterfaceMessage::SetPopoverBgColor(rgb) => {
+            state.popover_bg_color = rgb;
+            apply_popover_bg_color(rgb);
+        }
         InterfaceMessage::SetTabMarginX(margin) => {
             state.paginator_tab_margin_x = margin;
             apply_paginator_tab_margin_x(margin);
@@ -1925,7 +1956,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             send_ipc_command("reload");
             status_interface_reload();
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
