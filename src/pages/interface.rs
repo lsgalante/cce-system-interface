@@ -31,6 +31,7 @@ pub struct InterfaceState {
     pub menubar_tab_label_color: [u8; 3],
     pub toggle_enabled_color: [u8; 3],
     pub toggle_disabled_color: [u8; 3],
+    pub scrollinglist_bg_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
     pub menubar_opacity: f32,
     pub menubar_opacity_spinbox: Spinbox,
@@ -143,6 +144,7 @@ impl Default for InterfaceState {
             menubar_tab_label_color: [230, 230, 242],
             toggle_enabled_color: [104, 217, 165],
             toggle_disabled_color: [135, 135, 148],
+            scrollinglist_bg_color: [81, 81, 97],
             color_selectors: vec![
                 ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Plate - Low Color
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
@@ -158,6 +160,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([230, 230, 242]).with_label("Tab Label"), // 11: Controls - Tab Label
                 ColorSelector::new([104, 217, 165]).with_label("Enabled"), // 12: Toggles - Enabled
                 ColorSelector::new([135, 135, 148]).with_label("Disabled"), // 13: Toggles - Disabled
+                ColorSelector::new([81, 81, 97]).with_label("Background"), // 14: ScrollingList - Background
             ],
             paginator_tab_margin_x: 5,
             paginator_tab_margin_y: 10,
@@ -272,6 +275,7 @@ pub enum InterfaceMessage {
     SetMenubarTabLabelColor([u8; 3]),
     SetToggleEnabledColor([u8; 3]),
     SetToggleDisabledColor([u8; 3]),
+    SetScrollingListBgColor([u8; 3]),
     SetTabMarginX(u16),
     SetTabMarginY(u16),
     SetTabPaddingX(u16),
@@ -318,6 +322,7 @@ pub enum InterfaceMessage {
     PickMenubarTabLabelColor,
     PickToggleEnabledColor,
     PickToggleDisabledColor,
+    PickScrollingListBgColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
     SetSans(String),
@@ -378,6 +383,8 @@ pub fn read_interface_config() -> InterfaceState {
     let toggle_enabled = parse_color_from_key(&content, "toggle_enabled_color", [104, 217, 165]);
 
     let toggle_disabled = parse_color_from_key(&content, "toggle_disabled_color", [135, 135, 148]);
+
+    let scrollinglist_bg = parse_color_from_key(&content, "scrollinglist_bg_color", [81, 81, 97]);
     
     let paginator_tab_margin_general = parse_u16_from(&content, "paginator_tab_margin", 999);
     let paginator_tab_margin_x = parse_u16_from(&content, "paginator_tab_margin_x", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 5 });
@@ -429,6 +436,7 @@ pub fn read_interface_config() -> InterfaceState {
         menubar_tab_label_color: menubar_tab_label,
         toggle_enabled_color: toggle_enabled,
         toggle_disabled_color: toggle_disabled,
+        scrollinglist_bg_color: scrollinglist_bg,
         color_selectors: vec![
             ColorSelector::new(page_low).with_label("Low Color").with_font_family(&color_selector_font), // 0: Plate - Low Color
             ColorSelector::new(border).with_label("High Color").with_font_family(&color_selector_font), // 1: Layout - High Color
@@ -444,6 +452,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(menubar_tab_label).with_label("Tab Label").with_font_family(&color_selector_font), // 11: Controls - Tab Label
             ColorSelector::new(toggle_enabled).with_label("Enabled").with_font_family(&color_selector_font), // 12: Toggles - Enabled
             ColorSelector::new(toggle_disabled).with_label("Disabled").with_font_family(&color_selector_font), // 13: Toggles - Disabled
+            ColorSelector::new(scrollinglist_bg).with_label("Background").with_font_family(&color_selector_font), // 14: ScrollingList - Background
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -761,6 +770,15 @@ fn apply_toggle_disabled_color(rgb: [u8; 3]) {
     let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
     let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
     clear_ui::color::set_toggle_off_color([r, g, b, 1.0]);
+}
+
+fn apply_scrollinglist_bg_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("scrollinglist_bg_color", &hex);
+    let r = clear_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = clear_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = clear_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    clear_ui::color::set_scrollinglist_bg_color([r, g, b, 0.3]);
 }
 
 fn apply_paginator_tab_margin_x(margin: u16) {
@@ -1465,6 +1483,15 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         });
         sec.spacing(12.0);
 
+        // ScrollingList Section
+        sec.add_section("ScrollingList", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[14].color = state.scrollinglist_bg_color;
+            subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
         // Spinbox Section
         sec.add_section("Spinbox", false, |subsec| {
             subsec.spacing(8.0);
@@ -1710,6 +1737,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.toggle_disabled_color = rgb;
             apply_toggle_disabled_color(rgb);
         }
+        InterfaceMessage::SetScrollingListBgColor(rgb) => {
+            state.scrollinglist_bg_color = rgb;
+            apply_scrollinglist_bg_color(rgb);
+        }
         InterfaceMessage::SetTabMarginX(margin) => {
             state.paginator_tab_margin_x = margin;
             apply_paginator_tab_margin_x(margin);
@@ -1863,7 +1894,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             send_ipc_command("reload");
             status_interface_reload();
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
@@ -2373,7 +2404,7 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\nmenubar_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\n";
+        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\nmenubar_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\nscrollinglist_bg_color = \"#515161\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -2388,6 +2419,7 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "menubar_tab_label_color", [0, 0, 0]), [230, 230, 242]);
         assert_eq!(parse_color_from_key(content, "toggle_enabled_color", [0, 0, 0]), [104, 216, 165]);
         assert_eq!(parse_color_from_key(content, "toggle_disabled_color", [0, 0, 0]), [135, 135, 148]);
+        assert_eq!(parse_color_from_key(content, "scrollinglist_bg_color", [0, 0, 0]), [81, 81, 97]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
     }
 

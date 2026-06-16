@@ -946,6 +946,9 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.toggle_height_spinbox, &mut self.ui_context);
                 
+                // (ScrollingList child widgets)
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
+
                 // (Spinbox child widgets)
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
                 
@@ -1480,6 +1483,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 11 => self.app.interface.menubar_tab_label_color,
                 12 => self.app.interface.toggle_enabled_color,
                 13 => self.app.interface.toggle_disabled_color,
+                14 => self.app.interface.scrollinglist_bg_color,
                 _ => self.app.interface.low_color,
             };
             if cp.color != state_color {
@@ -1498,6 +1502,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     11 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
                     12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
                     13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                    14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                 }));
                 color_changed = true;
@@ -2628,6 +2633,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         11 => pages::interface::InterfaceMessage::PickMenubarTabLabelColor,
                         12 => pages::interface::InterfaceMessage::PickToggleEnabledColor,
                         13 => pages::interface::InterfaceMessage::PickToggleDisabledColor,
+                        14 => pages::interface::InterfaceMessage::PickScrollingListBgColor,
                         _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
@@ -2647,6 +2653,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                         11 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
                         12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
                         13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                        14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                         _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -3523,6 +3530,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                             11 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
                             12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
                             13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                            14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
@@ -4219,6 +4227,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                             11 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
                             12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
                             13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                            14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
