@@ -69,7 +69,7 @@ pub enum AppAction {
 
 #[derive(Default)]
 pub struct PageContent {
-    pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32)>,
+    pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     pub buttons: Vec<(clear_ui::widget::Button, AppAction)>,
 }
@@ -80,7 +80,7 @@ impl PageContent {
     }
 
     pub fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.rects.push((color, x, y, w, h, 0.0));
+        self.rects.push((color, x, y, w, h, 0.0, (true, true, true, true)));
     }
 
     pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
@@ -117,11 +117,15 @@ impl PageContent {
 
 impl RenderTarget for PageContent {
     fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.rects.push((color, x, y, w, h, 0.0));
+        self.rects.push((color, x, y, w, h, 0.0, (true, true, true, true)));
     }
 
     fn rect_with_radius(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32) {
-        self.rects.push((color, x, y, w, h, radius));
+        self.rects.push((color, x, y, w, h, radius, (true, true, true, true)));
+    }
+
+    fn rect_with_radius_corners(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, corners: (bool, bool, bool, bool)) {
+        self.rects.push((color, x, y, w, h, radius, corners));
     }
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {

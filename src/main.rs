@@ -110,6 +110,7 @@ struct AppWidget {
     hover_color: [f32; 4],
     hovering: bool,
     radius: f32,
+    corners: (bool, bool, bool, bool),
 }
 
 static INITIAL_PAGE_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -531,7 +532,7 @@ impl clear_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4])>, size: clear_ui::engine::LogicalSize, scale: f64) {
+    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: clear_ui::engine::LogicalSize, scale: f64) {
         let (width, height) = (size.width, size.height);
         if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
@@ -542,7 +543,7 @@ impl clear_ui::engine::Application for SystemInterface {
         }
         for w in &self.widgets {
             if w.radius > 0.1 {
-                quads.push((w.x, w.y, w.w, w.h, w.radius, w.color));
+                quads.push((w.x, w.y, w.w, w.h, w.radius, w.color, w.corners));
             }
         }
     }
@@ -1133,12 +1134,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         clear_ui::layout::render_widget(&mut switcher_pc, &mut self.switcher, self.sidebar_width, 0.0, sw / s - self.sidebar_width, sh / s, &mut self.ui_context);
 
         for pc_part in &[menubar_pc, switcher_pc] {
-            for (c, x, y, w, h, r) in &pc_part.rects {
+            for (c, x, y, w, h, r, corners) in &pc_part.rects {
                 widgets.push(AppWidget {
                     x: *x * s, y: *y * s, w: *w * s, h: *h * s,
                     color: *c, hover_color: *c,
                     hovering: false,
                     radius: *r * s,
+                    corners: *corners,
                 });
             }
             for (t, size, x, y, tc, font_opt, bounds) in &pc_part.texts {
@@ -1182,7 +1184,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         }
 
         let mut max_y = 0.0f32;
-        for (_, _, y, _, h, _) in &pc.rects {
+        for (_, _, y, _, h, _, _) in &pc.rects {
             max_y = max_y.max(y + h);
         }
         for (_, size, _, y, _, _, _) in &pc.texts {
@@ -1204,12 +1206,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
 
         let scroll_offset_y = self.scroll_y;
 
-        for (c, x, y, w, h, r) in &pc.rects {
+        for (c, x, y, w, h, r, corners) in &pc.rects {
             widgets.push(AppWidget {
                 x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
                 color: *c, hover_color: *c,
                 hovering: false,
                 radius: *r * s,
+                corners: *corners,
             });
         }
         for (t, size, x, y, tc, font_opt, bounds) in &pc.texts {
@@ -1242,6 +1245,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 color: bg, hover_color: hover_bg,
                 hovering: false,
                 radius: clear_ui::layout::button_corner_radius() * s,
+                corners: (true, true, true, true),
             });
             let label = base.label.as_deref().unwrap_or("");
             let label_size = 12.0;
@@ -1319,12 +1323,13 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
         let mut popover_pc = PageContent::new();
         clear_ui::layout::render_popovers(&mut popover_pc, &mut self.ui_context);
 
-        for (c, x, y, w, h, r) in &popover_pc.rects {
+        for (c, x, y, w, h, r, corners) in &popover_pc.rects {
             widgets.push(AppWidget {
                 x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
                 color: *c, hover_color: *c,
                 hovering: false,
                 radius: *r * s,
+                corners: *corners,
             });
         }
         for (t, size, x, y, tc, font_opt, bounds) in &popover_pc.texts {
@@ -1361,6 +1366,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 hover_color: qc,
                 hovering: false,
                 radius: 0.0,
+                corners: (true, true, true, true),
             });
         }
 
@@ -1378,6 +1384,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 color: [0.22, 0.22, 0.28, 1.0], hover_color: [0.22, 0.22, 0.28, 1.0],
                 hovering: false,
                 radius: 0.0,
+                corners: (true, true, true, true),
             });
             // Bg
             widgets.push(AppWidget {
@@ -1385,6 +1392,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                 color: [0.06, 0.06, 0.09, 1.0], hover_color: [0.06, 0.06, 0.09, 1.0],
                 hovering: false,
                 radius: 0.0,
+                corners: (true, true, true, true),
             });
             
             // Hover highlight
@@ -1395,6 +1403,7 @@ fn collect_popover_rects(w: &dyn clear_ui::widget::Element, popovers: &mut Vec<(
                     color: [0.20, 0.40, 0.65, 0.6], hover_color: [0.20, 0.40, 0.65, 0.6],
                     hovering: false,
                     radius: 0.0,
+                    corners: (true, true, true, true),
                 });
             }
             
