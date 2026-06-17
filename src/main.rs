@@ -545,6 +545,41 @@ impl cce_ui::engine::Application for SystemInterface {
         &self.text_items
     }
 
+    fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
+        cce_ui::layout::render_popovers(pc, &self.ui_context);
+
+        if cce_ui::widget::context_menu::is_visible() {
+            let cx = cce_ui::widget::context_menu::x();
+            let cy = cce_ui::widget::context_menu::y();
+            let cw = cce_ui::widget::context_menu::w();
+            let ch = cce_ui::widget::context_menu::h();
+
+            // Border
+            pc.rect([0.22, 0.22, 0.28, 1.0], cx, cy, cw, ch);
+            // Bg
+            pc.rect([0.06, 0.06, 0.09, 1.0], cx + 1.0, cy + 1.0, cw - 2.0, ch - 2.0);
+
+            // Hover highlight
+            if let Some(h_idx) = cce_ui::widget::context_menu::hovered_item() {
+                let iy = cy + h_idx as f32 * 24.0;
+                pc.rect([0.20, 0.40, 0.65, 0.6], cx + 2.0, iy + 2.0, cw - 4.0, 20.0);
+            }
+
+            // Texts
+            for (idx, opt) in cce_ui::widget::context_menu::options().iter().enumerate() {
+                let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
+                let text_color = if idx == 0 {
+                    [0.44, 0.44, 0.47, 1.0]
+                } else if cce_ui::widget::context_menu::hovered_item() == Some(idx) {
+                    [1.0, 1.0, 1.0, 1.0]
+                } else {
+                    [0.80, 0.80, 0.83, 1.0]
+                };
+                pc.text_with_bounds(opt, cx + 8.0, iy, 12.0, text_color, Some([cx, cy, cx + cw, cy + ch]));
+            }
+        }
+    }
+
     fn clear_color(&self) -> [f32; 4] {
         [
             self.app.interface.high_color[0] as f32 / 255.0,
@@ -1345,61 +1380,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             });
         }
 
-        // Render context menu overlay if visible
-        if cce_ui::widget::context_menu::is_visible() {
-            let cx = cce_ui::widget::context_menu::x();
-            let cy = cce_ui::widget::context_menu::y();
-            let cw = cce_ui::widget::context_menu::w();
-            let ch = cce_ui::widget::context_menu::h();
 
-            
-            // Border
-            widgets.push(AppWidget {
-                x: cx * s, y: cy * s, w: cw * s, h: ch * s,
-                color: [0.22, 0.22, 0.28, 1.0], hover_color: [0.22, 0.22, 0.28, 1.0],
-                hovering: false,
-                radius: 0.0,
-                corners: (true, true, true, true),
-            });
-            // Bg
-            widgets.push(AppWidget {
-                x: (cx + 1.0) * s, y: (cy + 1.0) * s, w: (cw - 2.0) * s, h: (ch - 2.0) * s,
-                color: [0.06, 0.06, 0.09, 1.0], hover_color: [0.06, 0.06, 0.09, 1.0],
-                hovering: false,
-                radius: 0.0,
-                corners: (true, true, true, true),
-            });
-            
-            // Hover highlight
-            if let Some(h_idx) = cce_ui::widget::context_menu::hovered_item() {
-                let iy = cy + h_idx as f32 * 24.0;
-                widgets.push(AppWidget {
-                    x: (cx + 2.0) * s, y: (iy + 2.0) * s, w: (cw - 4.0) * s, h: 20.0 * s,
-                    color: [0.20, 0.40, 0.65, 0.6], hover_color: [0.20, 0.40, 0.65, 0.6],
-                    hovering: false,
-                    radius: 0.0,
-                    corners: (true, true, true, true),
-                });
-            }
-            
-            // Texts
-            for (idx, opt) in cce_ui::widget::context_menu::options().iter().enumerate() {
-                let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
-                let text_color = if idx == 0 {
-                    glyphon::Color::rgb(0x70, 0x70, 0x78)
-                } else if cce_ui::widget::context_menu::hovered_item() == Some(idx) {
-                    glyphon::Color::rgb(0xff, 0xff, 0xff)
-                } else {
-                    glyphon::Color::rgb(0xcc, 0xcc, 0xd4)
-                };
-                text_items.push(TextItem {
-                    buffer: make_text_buffer(&mut self.font_system, opt, 12.0 * s),
-                    x: (cx + 8.0) * s, y: iy * s,
-                    color: text_color,
-                    bounds: Some([cx, cy, cx + cw, cy + ch]),
-                });
-            }
-        }
 
 
 
