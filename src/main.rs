@@ -710,6 +710,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.nested_section_label_font_selector.set_parent(None, &mut self.ui_context);
         self.app.interface.font_selector_height_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.font_selector_height_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.font_selector_corner_radius_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.font_selector_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.dropdown_height_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.dropdown_height_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.button_corner_radius_spinbox.clear_children(&mut self.ui_context);
@@ -975,6 +977,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 
                 // (FontSelector child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.font_selector_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.font_selector_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (Dropdown child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.dropdown_height_spinbox, &mut self.ui_context);
@@ -1969,6 +1972,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.interface.font_selector_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.font_selector_corner_radius_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
             if self.app.interface.dropdown_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
@@ -2460,6 +2466,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.interface.textbox_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.slider_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.font_selector_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.font_selector_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.dropdown_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.button_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.notification_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2901,6 +2908,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorHeight(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.font_selector_corner_radius_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorCornerRadius(sb.value as u16)));
             }
             let sb = &mut self.app.interface.dropdown_height_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
@@ -3720,6 +3733,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 }
                 if self.app.interface.font_selector_height_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorHeight(self.app.interface.font_selector_height_spinbox.value as u16)));
+                }
+                if self.app.interface.font_selector_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorCornerRadius(self.app.interface.font_selector_corner_radius_spinbox.value as u16)));
                 }
                 if self.app.interface.dropdown_height_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetDropdownHeight(self.app.interface.dropdown_height_spinbox.value as u16)));
@@ -4601,6 +4617,16 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 let new_val = sb.value;
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorHeight(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.font_selector_corner_radius_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetFontSelectorCornerRadius(new_val as u16)));
                 }
                 self.needs_rebuild = true;
                 return true;
