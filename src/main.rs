@@ -1428,7 +1428,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     buffer: make_text_buffer(&mut self.font_system, opt, 12.0 * s),
                     x: (cx + 8.0) * s, y: iy * s,
                     color: text_color,
-                    bounds: None,
+                    bounds: Some([cx, cy, cx + cw, cy + ch]),
                 });
             }
         }
