@@ -1171,24 +1171,10 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         }
 
         // Page content in LOGICAL coordinates, then scale to physical
-        let mut pc = self.render_page_content(lcx, lcy, lcw, lch);
+        let pc = self.render_page_content(lcx, lcy, lcw, lch);
 
         let mut popovers = Vec::new();
         Self::collect_popover_rects(&self.plates[page_idx], &mut popovers, &self.ui_context);
-
-        if !popovers.is_empty() {
-            pc.texts.retain(|(text, size, tx, ty, _, _, _)| {
-                let text_w = text.chars().count() as f32 * *size * 0.65;
-                for &(px, py, pw, ph) in &popovers {
-                    let x_overlap = *tx <= px + pw && (*tx + text_w) >= px;
-                    let y_overlap = *ty <= py + ph && (*ty + *size) >= py;
-                    if x_overlap && y_overlap {
-                        return false;
-                    }
-                }
-                true
-            });
-        }
 
         let mut max_y = 0.0f32;
         for (_, _, y, _, h, _, _) in &pc.rects {
@@ -1287,35 +1273,17 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 base.x * s + (base.w * s - tw) / 2.0
             };
 
-            let mut overlaps = false;
-            let tx_logical = if left_align {
-                base.x + 8.0
-            } else {
-                base.x + (base.w - tw) / 2.0
-            };
-            let ty_logical = base.y + (base.h - lh) / 2.0;
-            for &(px, py, pw, ph) in &popovers {
-                let x_overlap = tx_logical <= px + pw && (tx_logical + tw) >= px;
-                let y_overlap = ty_logical <= py + ph && (ty_logical + lh) >= py;
-                if x_overlap && y_overlap {
-                    overlaps = true;
-                    break;
-                }
-            }
-
             let label_color = btn.label_color.unwrap_or([0.83, 0.83, 0.83, 1.0]);
-            if !overlaps {
-                text_items.push(TextItem {
-                    buffer: buf,
-                    x: text_x, y: (base.y - scroll_offset_y) * s + (base.h * s - lh) / 2.0,
-                    color: glyphon::Color::rgb(
-                        (label_color[0] * 255.0) as u8,
-                        (label_color[1] * 255.0) as u8,
-                        (label_color[2] * 255.0) as u8,
-                    ),
-                    bounds: None,
-                });
-            }
+            text_items.push(TextItem {
+                buffer: buf,
+                x: text_x, y: (base.y - scroll_offset_y) * s + (base.h * s - lh) / 2.0,
+                color: glyphon::Color::rgb(
+                    (label_color[0] * 255.0) as u8,
+                    (label_color[1] * 255.0) as u8,
+                    (label_color[2] * 255.0) as u8,
+                ),
+                bounds: None,
+            });
             let mut btn_clone = btn.clone();
             if let Some(base_mut) = btn_clone.base_mut() {
                 base_mut.x *= s;
