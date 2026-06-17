@@ -716,6 +716,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.button_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.notification_opacity_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.notification_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.custom_multicontrol.clear_children(&mut self.ui_context);
+        self.app.interface.custom_multicontrol.set_parent(None, &mut self.ui_context);
 
         self.app.interface.sans_box.clear_children(&mut self.ui_context); self.app.interface.sans_box.set_parent(None, &mut self.ui_context);
         self.app.interface.serif_box.clear_children(&mut self.ui_context); self.app.interface.serif_box.set_parent(None, &mut self.ui_context);
@@ -895,7 +897,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
-                // Section 0: Custom Parameters (empty top-level section)
+                // Section 0: Custom Parameters
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.custom_multicontrol, &mut self.ui_context);
                 
                 // Section 1: Layout (parent of Plate, Sections, Grid Layout)
                 // (Layout widgets)
@@ -2020,6 +2023,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.interface.terminal_size_box.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.custom_multicontrol.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
         }
         if self.app.current_page == Page::Input {
             if self.app.input.rate_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2418,6 +2424,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.layout.blur_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
                 Page::Interface => {
+                    if self.app.interface.custom_multicontrol.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     for cp in &mut self.app.interface.color_selectors {
                         if cp.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     }
@@ -2906,6 +2913,16 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonCornerRadius(sb.value as u16)));
+            }
+        }
+
+        if self.app.current_page == Page::Interface {
+            let mc = &mut self.app.interface.custom_multicontrol;
+            if state == cce_ui::widget::ElementState::Pressed && !mc.hit_test(lx, ly, &self.ui_context) {
+                mc.unfocus();
+            }
+            if mc.mouse_input(button, state, lx, ly, &mut self.ui_context) {
+                self.needs_rebuild = true;
             }
         }
         if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Input {
@@ -4302,6 +4319,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         if self.app.current_page == Page::Interface {
+            let mc = &mut self.app.interface.custom_multicontrol;
+            if mc.keyboard_input(event, &mut self.ui_context) {
+                self.needs_rebuild = true;
+                return true;
+            }
             let mut changed = false;
             let mut actions = Vec::new();
             for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {

@@ -3,7 +3,7 @@ use std::io::Write;
 use crate::app::PageContent;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{
-    ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle
+    ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle, MultiControl
 };
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
@@ -136,6 +136,7 @@ pub struct InterfaceState {
     pub graph_gap_opacity_spinbox: Spinbox,
     pub graph_gap_width: u16,
     pub graph_gap_width_spinbox: Spinbox,
+    pub custom_multicontrol: MultiControl,
 }
 
 impl Default for InterfaceState {
@@ -280,6 +281,7 @@ impl Default for InterfaceState {
             notification_bg_color: [0x08, 0x08, 0x0c],
             notification_opacity: 0.9,
             notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
         }
     }
 }
@@ -605,6 +607,7 @@ pub fn read_interface_config() -> InterfaceState {
         notification_bg_color,
         notification_opacity,
         notification_opacity_spinbox: Spinbox::new((notification_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
     }
 }
 
@@ -1414,7 +1417,12 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
 
     // 1. Custom Parameters Section
-    builder.add_section(&mut final_pc, "Custom Parameters", false, |_sec| {});
+    builder.add_section(&mut final_pc, "Custom Parameters", false, |sec| {
+        sec.spacing(8.0);
+        let h = state.custom_multicontrol.preferred_height().unwrap_or(100.0);
+        sec.widget_full(&mut state.custom_multicontrol, h, ctx);
+        sec.spacing(8.0);
+    });
 
     // 2. Layout Section
     builder.add_section(&mut final_pc, "Layout", false, |sec| {
@@ -3518,6 +3526,13 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_custom_multicontrol_initialization() {
+        let state = InterfaceState::default();
+        assert_eq!(state.custom_multicontrol.name, "custom_parameters");
+        assert_eq!(state.custom_multicontrol.base.label, Some("custom_parameters".to_string()));
     }
 }
 
