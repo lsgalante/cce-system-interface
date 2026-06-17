@@ -363,29 +363,7 @@ fn parse_string_from(content: &str, key: &str, default: &str) -> String {
 }
 
 fn write_config_value(key: &str, value: &str) -> bool {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-    let mut found = false;
-    let updated: String = content.lines()
-        .map(|line| {
-            if line.trim().starts_with(key) { found = true; new_line.clone() }
-            else { line.to_string() }
-        }).collect::<Vec<_>>().join("\n");
-    if !found {
-        let mut result = String::new();
-        let mut in_layout = false;
-        let mut inserted = false;
-        for line in updated.lines() {
-            if line.trim() == "[layout]" { in_layout = true; }
-            else if line.trim().starts_with('[') && in_layout {
-                if !inserted { result.push_str(&new_line); result.push('\n'); inserted = true; }
-                in_layout = false;
-            }
-            result.push_str(line); result.push('\n');
-        }
-        if in_layout && !inserted { result.push_str(&new_line); result.push('\n'); }
-        fs::write(CONFIG_PATH, result).is_ok()
-    } else { fs::write(CONFIG_PATH, updated).is_ok() }
+    super::interface::write_config_value_path(CONFIG_PATH, key, value)
 }
 
 fn send_ipc_command(cmd: &str) {
@@ -925,5 +903,22 @@ mode = "popup"
         let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false, false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
+
+    #[test]
+    fn test_spinbox_right_click() {
+        use cce_ui::widget::Element;
+        let mut state = LayoutState::default();
+        let mut ctx = cce_ui::context::UiContext::new();
+        let sb = &mut state.spinboxes[0];
+        sb.set_rect(0.0, 0.0, 100.0, 44.0);
+        let res = sb.mouse_input(
+            cce_ui::widget::MouseButton::Right,
+            cce_ui::widget::ElementState::Pressed,
+            50.0,
+            20.0,
+            &mut ctx,
+        );
+        assert!(res);
     }
 }

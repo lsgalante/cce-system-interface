@@ -7,6 +7,7 @@ use cce_ui::widget::{
 };
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
+const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-interface/links.json";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
@@ -670,43 +671,330 @@ pub fn write_config_value(key: &str, value: &str) -> bool {
     write_config_value_path(CONFIG_PATH, key, value)
 }
 
+pub fn get_links() -> Vec<(String, String)> {
+    get_links_path(LINKS_PATH)
+}
+
+pub fn get_links_path(path: &str) -> Vec<(String, String)> {
+    let content = fs::read_to_string(path).unwrap_or_default();
+    if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(&content) {
+        let mut links = Vec::new();
+        for (k, v) in map {
+            if let Some(v_str) = v.as_str() {
+                links.push((k, v_str.to_string()));
+            }
+        }
+        links
+    } else {
+        Vec::new()
+    }
+}
+
 pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
     let content = fs::read_to_string(path).unwrap_or_default();
-    let old_key = match key {
-        "low_color" => "background_color",
-        "high_color" => "border_color",
-        _ => "",
-    };
-    let new_line = format!("{} = {}", key, value);
-    let mut found = false;
-    let updated: String = content.lines()
-        .map(|line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with(key) {
-                found = true;
-                new_line.clone()
-            } else if !old_key.is_empty() && trimmed.starts_with(old_key) {
-                found = true;
-                new_line.clone()
-            } else {
-                line.to_string()
+    
+    // Resolve all linked keys transitively
+    let mut keys_to_update = vec![key.to_string()];
+    let links = get_links();
+    let mut i = 0;
+    while i < keys_to_update.len() {
+        let cur = keys_to_update[i].clone();
+        for (k, v) in &links {
+            if k == &cur && !keys_to_update.contains(v) {
+                keys_to_update.push(v.clone());
             }
-        }).collect::<Vec<_>>().join("\n");
-    if !found {
-        let mut result = String::new();
-        let mut in_layout = false;
-        let mut inserted = false;
-        for line in updated.lines() {
-            if line.trim() == "[layout]" { in_layout = true; }
-            else if line.trim().starts_with('[') && in_layout {
-                if !inserted { result.push_str(&new_line); result.push('\n'); inserted = true; }
-                in_layout = false;
+            if v == &cur && !keys_to_update.contains(k) {
+                keys_to_update.push(k.clone());
             }
-            result.push_str(line); result.push('\n');
         }
-        if in_layout && !inserted { result.push_str(&new_line); result.push('\n'); }
-        fs::write(path, result).is_ok()
-    } else { fs::write(path, updated).is_ok() }
+        i += 1;
+    }
+
+    let mut updated = content.clone();
+    for k in &keys_to_update {
+        let old_key = if k == key {
+            match key {
+                "low_color" => "background_color",
+                "high_color" => "border_color",
+                _ => "",
+            }
+        } else {
+            ""
+        };
+        let new_line = format!("{} = {}", k, value);
+        let mut found = false;
+        let next_update: String = updated.lines()
+            .map(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with(k) {
+                    let rest = trimmed.strip_prefix(k).unwrap_or("");
+                    let next_char = rest.trim_start().chars().next();
+                    if next_char == Some('=') {
+                        found = true;
+                        new_line.clone()
+                    } else {
+                        line.to_string()
+                    }
+                } else if !old_key.is_empty() && trimmed.starts_with(old_key) {
+                    let rest = trimmed.strip_prefix(old_key).unwrap_or("");
+                    let next_char = rest.trim_start().chars().next();
+                    if next_char == Some('=') {
+                        found = true;
+                        new_line.clone()
+                    } else {
+                        line.to_string()
+                    }
+                } else {
+                    line.to_string()
+                }
+            }).collect::<Vec<_>>().join("\n");
+        
+        if !found {
+            let mut result = String::new();
+            let mut in_layout = false;
+            let mut inserted = false;
+            for line in next_update.lines() {
+                if line.trim() == "[layout]" { in_layout = true; }
+                else if line.trim().starts_with('[') && in_layout {
+                    if !inserted { result.push_str(&new_line); result.push('\n'); inserted = true; }
+                    in_layout = false;
+                }
+                result.push_str(line); result.push('\n');
+            }
+            if in_layout && !inserted { result.push_str(&new_line); result.push('\n'); }
+            updated = result;
+        } else {
+            updated = next_update;
+        }
+    }
+    
+    fs::write(path, updated).is_ok()
+}
+
+pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
+    let links = get_links();
+    
+    let mut keys_to_update = Vec::new();
+    let mut visited = vec![key.to_string()];
+    let mut queue = vec![key.to_string()];
+    
+    while let Some(cur) = queue.pop() {
+        for (k, v) in &links {
+            if k == &cur && !visited.contains(v) {
+                visited.push(v.clone());
+                queue.push(v.clone());
+                keys_to_update.push(v.clone());
+            }
+            if v == &cur && !visited.contains(k) {
+                visited.push(k.clone());
+                queue.push(k.clone());
+                keys_to_update.push(k.clone());
+            }
+        }
+    }
+
+    for k in keys_to_update {
+        match k.as_str() {
+            "paginator_tab_margin_x" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.paginator_tab_margin_x = val;
+                    state.tab_margin_spinbox_x.value = val as i32;
+                    apply_paginator_tab_margin_x(val);
+                }
+            }
+            "paginator_tab_margin_y" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.paginator_tab_margin_y = val;
+                    state.tab_margin_spinbox_y.value = val as i32;
+                    apply_paginator_tab_margin_y(val);
+                }
+            }
+            "button_padding" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.button_padding = val;
+                    state.button_padding_spinbox.value = val as i32;
+                    apply_button_padding(val);
+                }
+            }
+            "section_padding" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.section_padding = val;
+                    state.section_padding_spinbox.value = val as i32;
+                    apply_section_padding(val);
+                }
+            }
+            "plate_padding" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.plate_padding = val;
+                    state.plate_padding_spinbox.value = val as i32;
+                    apply_plate_padding(val);
+                }
+            }
+            "page_margin" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.page_margin = val;
+                    state.page_margin_spinbox.value = val as i32;
+                    apply_page_margin(val);
+                }
+            }
+            "grid_min_col_width" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.grid_min_col_width = val;
+                    state.grid_min_col_width_spinbox.value = val as i32;
+                    apply_grid_min_col_width(val);
+                }
+            }
+            "spinbox_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.spinbox_height = val;
+                    state.spinbox_height_spinbox.value = val as i32;
+                    apply_spinbox_height(val);
+                }
+            }
+            "spinbox_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.spinbox_corner_radius = val;
+                    state.spinbox_corner_radius_spinbox.value = val as i32;
+                    apply_spinbox_corner_radius(val);
+                }
+            }
+            "toggle_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.toggle_height = val;
+                    state.toggle_height_spinbox.value = val as i32;
+                    apply_toggle_height(val);
+                }
+            }
+            "color_selector_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.color_selector_height = val;
+                    state.color_selector_height_spinbox.value = val as i32;
+                    apply_color_selector_height(val);
+                }
+            }
+            "color_selector_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.color_selector_corner_radius = val;
+                    state.color_selector_corner_radius_spinbox.value = val as i32;
+                    apply_color_selector_corner_radius(val);
+                }
+            }
+            "color_selector_preview_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.color_selector_preview_corner_radius = val;
+                    state.color_selector_preview_corner_radius_spinbox.value = val as i32;
+                    apply_color_selector_preview_corner_radius(val);
+                }
+            }
+            "color_selector_preview_margin" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.color_selector_preview_margin = val;
+                    state.color_selector_preview_margin_spinbox.value = val as i32;
+                    apply_color_selector_preview_margin(val);
+                }
+            }
+            "textbox_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.textbox_height = val;
+                    state.textbox_height_spinbox.value = val as i32;
+                    apply_textbox_height(val);
+                }
+            }
+            "textbox_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.textbox_corner_radius = val;
+                    state.textbox_corner_radius_spinbox.value = val as i32;
+                    apply_textbox_corner_radius(val);
+                }
+            }
+            "slider_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.slider_height = val;
+                    state.slider_height_spinbox.value = val as i32;
+                    apply_slider_height(val);
+                }
+            }
+            "font_selector_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.font_selector_height = val;
+                    state.font_selector_height_spinbox.value = val as i32;
+                    apply_font_selector_height(val);
+                }
+            }
+            "font_selector_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.font_selector_corner_radius = val;
+                    state.font_selector_corner_radius_spinbox.value = val as i32;
+                    apply_font_selector_corner_radius(val);
+                }
+            }
+            "dropdown_height" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.dropdown_height = val;
+                    state.dropdown_height_spinbox.value = val as i32;
+                    apply_dropdown_height(val);
+                }
+            }
+            "dropdown_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.dropdown_corner_radius = val;
+                    state.dropdown_corner_radius_spinbox.value = val as i32;
+                    apply_dropdown_corner_radius(val);
+                }
+            }
+            "button_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.button_corner_radius = val;
+                    state.button_corner_radius_spinbox.value = val as i32;
+                    apply_button_corner_radius(val);
+                }
+            }
+            "label_margin" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.label_margin = val;
+                    state.label_margin_spinbox.value = val as i32;
+                    apply_label_margin(val);
+                }
+            }
+            "nested_section_label_offset" => {
+                if let Ok(val) = val_str.parse::<i16>() {
+                    state.nested_section_label_offset = val;
+                    state.label_offset_spinbox.value = val as i32;
+                    apply_nested_section_label_offset(val);
+                }
+            }
+            "graph_gap_width" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.graph_gap_width = val;
+                    state.graph_gap_width_spinbox.value = val as i32;
+                    cce_graph_reload();
+                }
+            }
+            "graph_cell_opacity" => {
+                if let Ok(val) = val_str.parse::<f32>() {
+                    state.graph_cell_opacity = val;
+                    state.graph_cell_opacity_spinbox.value = (val * 100.0).round() as i32;
+                    cce_graph_reload();
+                }
+            }
+            "graph_gap_opacity" => {
+                if let Ok(val) = val_str.parse::<f32>() {
+                    state.graph_gap_opacity = val;
+                    state.graph_gap_opacity_spinbox.value = (val * 100.0).round() as i32;
+                    cce_graph_reload();
+                }
+            }
+            "menubar_opacity" => {
+                if let Ok(val) = val_str.parse::<f32>() {
+                    state.menubar_opacity = val;
+                    state.menubar_opacity_spinbox.value = (val * 100.0).round() as i32;
+                    send_ipc_command("reload");
+                    status_interface_reload();
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn send_ipc_command(cmd: &str) {
@@ -1942,90 +2230,112 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::SetTabMarginX(margin) => {
             state.paginator_tab_margin_x = margin;
             apply_paginator_tab_margin_x(margin);
+            propagate_links(state, "paginator_tab_margin_x", &margin.to_string());
         }
         InterfaceMessage::SetTabMarginY(margin) => {
             state.paginator_tab_margin_y = margin;
             apply_paginator_tab_margin_y(margin);
+            propagate_links(state, "paginator_tab_margin_y", &margin.to_string());
         }
         InterfaceMessage::SetButtonPadding(padding) => {
             state.button_padding = padding;
             apply_button_padding(padding);
+            propagate_links(state, "button_padding", &padding.to_string());
         }
         InterfaceMessage::SetSectionPadding(padding) => {
             state.section_padding = padding;
             apply_section_padding(padding);
+            propagate_links(state, "section_padding", &padding.to_string());
         }
         InterfaceMessage::SetPlatePadding(padding) => {
             state.plate_padding = padding;
             apply_plate_padding(padding);
+            propagate_links(state, "plate_padding", &padding.to_string());
         }
         InterfaceMessage::SetPageMargin(margin) => {
             state.page_margin = margin;
             apply_page_margin(margin);
+            propagate_links(state, "page_margin", &margin.to_string());
         }
         InterfaceMessage::SetGridMinColWidth(width) => {
             state.grid_min_col_width = width;
             apply_grid_min_col_width(width);
+            propagate_links(state, "grid_min_col_width", &width.to_string());
         }
         InterfaceMessage::SetSpinboxHeight(height) => {
             state.spinbox_height = height;
             apply_spinbox_height(height);
+            propagate_links(state, "spinbox_height", &height.to_string());
         }
         InterfaceMessage::SetSpinboxCornerRadius(radius) => {
             state.spinbox_corner_radius = radius;
             apply_spinbox_corner_radius(radius);
+            propagate_links(state, "spinbox_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetToggleHeight(height) => {
             state.toggle_height = height;
             apply_toggle_height(height);
+            propagate_links(state, "toggle_height", &height.to_string());
         }
         InterfaceMessage::SetColorSelectorHeight(height) => {
             state.color_selector_height = height;
             apply_color_selector_height(height);
+            propagate_links(state, "color_selector_height", &height.to_string());
         }
         InterfaceMessage::SetColorSelectorCornerRadius(radius) => {
             state.color_selector_corner_radius = radius;
             apply_color_selector_corner_radius(radius);
+            propagate_links(state, "color_selector_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetColorSelectorPreviewCornerRadius(radius) => {
             state.color_selector_preview_corner_radius = radius;
             apply_color_selector_preview_corner_radius(radius);
+            propagate_links(state, "color_selector_preview_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetColorSelectorPreviewMargin(margin) => {
             state.color_selector_preview_margin = margin;
             apply_color_selector_preview_margin(margin);
+            propagate_links(state, "color_selector_preview_margin", &margin.to_string());
         }
         InterfaceMessage::SetTextboxHeight(height) => {
             state.textbox_height = height;
             apply_textbox_height(height);
+            propagate_links(state, "textbox_height", &height.to_string());
         }
         InterfaceMessage::SetTextboxCornerRadius(radius) => {
             state.textbox_corner_radius = radius;
             apply_textbox_corner_radius(radius);
+            propagate_links(state, "textbox_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetSliderHeight(height) => {
             state.slider_height = height;
             apply_slider_height(height);
+            propagate_links(state, "slider_height", &height.to_string());
         }
         InterfaceMessage::SetFontSelectorHeight(height) => {
             state.font_selector_height = height;
             apply_font_selector_height(height);
+            propagate_links(state, "font_selector_height", &height.to_string());
         }
         InterfaceMessage::SetFontSelectorCornerRadius(radius) => {
             state.font_selector_corner_radius = radius;
             apply_font_selector_corner_radius(radius);
+            propagate_links(state, "font_selector_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetDropdownHeight(height) => {
             state.dropdown_height = height;
             apply_dropdown_height(height);
+            propagate_links(state, "dropdown_height", &height.to_string());
         }
         InterfaceMessage::SetDropdownCornerRadius(radius) => {
             state.dropdown_corner_radius = radius;
             apply_dropdown_corner_radius(radius);
+            propagate_links(state, "dropdown_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetButtonCornerRadius(radius) => {
             state.button_corner_radius = radius;
             apply_button_corner_radius(radius);
+            propagate_links(state, "button_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetColorSelectorFont(font) => {
             state.color_selector_font = font.clone();
@@ -2059,11 +2369,13 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.nested_section_label_offset = offset;
             state.label_offset_spinbox.value = offset as i32;
             apply_nested_section_label_offset(offset);
+            propagate_links(state, "nested_section_label_offset", &offset.to_string());
         }
         InterfaceMessage::SetLabelMargin(margin) => {
             state.label_margin = margin;
             state.label_margin_spinbox.value = margin as i32;
             apply_label_margin(margin);
+            propagate_links(state, "label_margin", &margin.to_string());
         }
         InterfaceMessage::SetGraphShowGrid(show) => {
             state.graph_show_grid = show;
@@ -2088,18 +2400,21 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.graph_cell_opacity_spinbox.value = (opacity * 100.0).round() as i32;
             write_config_value("graph_cell_opacity", &format!("{:.2}", opacity));
             cce_graph_reload();
+            propagate_links(state, "graph_cell_opacity", &opacity.to_string());
         }
         InterfaceMessage::SetGraphGapOpacity(opacity) => {
             state.graph_gap_opacity = opacity;
             state.graph_gap_opacity_spinbox.value = (opacity * 100.0).round() as i32;
             write_config_value("graph_gap_opacity", &format!("{:.2}", opacity));
             cce_graph_reload();
+            propagate_links(state, "graph_gap_opacity", &opacity.to_string());
         }
         InterfaceMessage::SetGraphGapWidth(gap) => {
             state.graph_gap_width = gap;
             state.graph_gap_width_spinbox.value = gap as i32;
             write_config_value("graph_gap_width", &gap.to_string());
             cce_graph_reload();
+            propagate_links(state, "graph_gap_width", &gap.to_string());
         }
         InterfaceMessage::SetMenubarOpacity(opacity) => {
             state.menubar_opacity = opacity;
@@ -2107,6 +2422,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             write_transparency_config_value("opacity", &format!("{:.2}", opacity));
             send_ipc_command("reload");
             status_interface_reload();
+            propagate_links(state, "menubar_opacity", &opacity.to_string());
         }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor => {}
         InterfaceMessage::Refreshed(new) => {
@@ -3631,6 +3947,82 @@ mod tests {
         let state = InterfaceState::default();
         assert_eq!(state.custom_multicontrol.name, "custom_parameters");
         assert_eq!(state.custom_multicontrol.base.label, Some("custom_parameters".to_string()));
+    }
+
+    #[test]
+    fn test_widget_value_linking() {
+        let original_links = fs::read_to_string(LINKS_PATH).unwrap_or_default();
+        let test_links = r#"{
+            "spinbox_height": "textbox_height",
+            "textbox_height": "dropdown_height"
+        }"#;
+        fs::write(LINKS_PATH, test_links).unwrap();
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_linking_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\nspinbox_height = 28\ntextbox_height = 28\ndropdown_height = 28\nbutton_corner_radius = 4\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        assert!(write_config_value_path(path_str, "spinbox_height", "32"));
+
+        if !original_links.is_empty() {
+            let _ = fs::write(LINKS_PATH, original_links);
+        } else {
+            let _ = fs::remove_file(LINKS_PATH);
+        }
+
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("spinbox_height = 32"));
+        assert!(updated.contains("textbox_height = 32"));
+        assert!(updated.contains("dropdown_height = 32"));
+        assert!(updated.contains("button_corner_radius = 4"));
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_propagate_links() {
+        let original_config = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+        let original_links = fs::read_to_string(LINKS_PATH).unwrap_or_default();
+
+        let test_config = "[layout]\nspinbox_height = 28\ntextbox_height = 28\ndropdown_height = 28\n";
+        fs::write(CONFIG_PATH, test_config).unwrap();
+
+        let test_links = r#"{
+            "spinbox_height": "textbox_height",
+            "textbox_height": "dropdown_height"
+        }"#;
+        fs::write(LINKS_PATH, test_links).unwrap();
+
+        let mut state = InterfaceState::default();
+        state.spinbox_height = 36;
+        state.textbox_height = 28;
+        state.dropdown_height = 28;
+        state.spinbox_height_spinbox.value = 36;
+        state.textbox_height_spinbox.value = 28;
+        state.dropdown_height_spinbox.value = 28;
+
+        propagate_links(&mut state, "spinbox_height", "36");
+
+        if !original_config.is_empty() {
+            let _ = fs::write(CONFIG_PATH, original_config);
+        } else {
+            let _ = fs::remove_file(CONFIG_PATH);
+        }
+        if !original_links.is_empty() {
+            let _ = fs::write(LINKS_PATH, original_links);
+        } else {
+            let _ = fs::remove_file(LINKS_PATH);
+        }
+
+        assert_eq!(state.spinbox_height, 36);
+        assert_eq!(state.textbox_height, 36);
+        assert_eq!(state.dropdown_height, 36);
+        assert_eq!(state.spinbox_height_spinbox.value, 36);
+        assert_eq!(state.textbox_height_spinbox.value, 36);
+        assert_eq!(state.dropdown_height_spinbox.value, 36);
     }
 }
 
