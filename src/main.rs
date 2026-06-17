@@ -4186,6 +4186,16 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
     }
 
     fn handle_key_input_internal(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
+        if cce_ui::widget::context_menu::is_visible() {
+            if event.state == cce_ui::widget::ElementState::Pressed
+                && event.logical_key == cce_ui::widget::Key::Named(cce_ui::widget::NamedKey::Escape)
+            {
+                cce_ui::widget::context_menu::hide();
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+
         if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
             let is_nav_key = match (&event.logical_key, event.ctrl) {
                 (cce_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
