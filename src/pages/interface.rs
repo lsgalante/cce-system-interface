@@ -82,6 +82,8 @@ pub struct InterfaceState {
     pub font_selector_corner_radius_spinbox: Spinbox,
     pub dropdown_height: u16,
     pub dropdown_height_spinbox: Spinbox,
+    pub dropdown_corner_radius: u16,
+    pub dropdown_corner_radius_spinbox: Spinbox,
     pub button_corner_radius: u16,
     pub button_corner_radius_spinbox: Spinbox,
     pub nested_section_label_alignment: u8,
@@ -223,6 +225,8 @@ impl Default for InterfaceState {
             font_selector_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
             dropdown_height: 44,
             dropdown_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            dropdown_corner_radius: 4,
+            dropdown_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px"),
             button_corner_radius: 4,
             button_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px"),
             nested_section_label_alignment: 0,
@@ -331,6 +335,7 @@ pub enum InterfaceMessage {
     SetFontSelectorHeight(u16),
     SetFontSelectorCornerRadius(u16),
     SetDropdownHeight(u16),
+    SetDropdownCornerRadius(u16),
     SetButtonCornerRadius(u16),
     SetColorSelectorFont(String),
     SetMenubarFont(String),
@@ -454,6 +459,7 @@ pub fn read_interface_config() -> InterfaceState {
     let font_selector_height = parse_u16_from(&content, "font_selector_height", 44);
     let font_selector_corner_radius = parse_u16_from(&content, "font_selector_corner_radius", 4);
     let dropdown_height = parse_u16_from(&content, "dropdown_height", 44);
+    let dropdown_corner_radius = parse_u16_from(&content, "dropdown_corner_radius", 4);
     let button_corner_radius = parse_u16_from(&content, "button_corner_radius", 4);
     let color_selector_font = parse_string_from(&content, "color_selector_font", "monospace");
     let menubar_font = parse_string_from(&content, "menubar_font", "Outfit");
@@ -553,6 +559,8 @@ pub fn read_interface_config() -> InterfaceState {
         font_selector_corner_radius_spinbox: Spinbox::new(font_selector_corner_radius as i32, 0, 50, 1).with_label("Border Radius").with_unit("px"),
         dropdown_height,
         dropdown_height_spinbox: Spinbox::new(dropdown_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        dropdown_corner_radius,
+        dropdown_corner_radius_spinbox: Spinbox::new(dropdown_corner_radius as i32, 0, 50, 1).with_label("Radius").with_unit("px"),
         button_corner_radius,
         button_corner_radius_spinbox: Spinbox::new(button_corner_radius as i32, 0, 50, 1).with_label("Radius").with_unit("px"),
         nested_section_label_alignment,
@@ -981,6 +989,11 @@ fn apply_font_selector_corner_radius(radius: u16) {
 fn apply_dropdown_height(height: u16) {
     write_config_value("dropdown_height", &height.to_string());
     cce_ui::layout::set_dropdown_height(height as f32);
+}
+
+fn apply_dropdown_corner_radius(radius: u16) {
+    write_config_value("dropdown_corner_radius", &radius.to_string());
+    cce_ui::layout::set_dropdown_corner_radius(radius as f32);
 }
 
 fn apply_button_corner_radius(radius: u16) {
@@ -1691,6 +1704,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.dropdown_height_spinbox.value = state.dropdown_height as i32;
             subsec.widget_full(&mut state.dropdown_height_spinbox, 44.0, ctx);
+            subsec.spacing(4.0);
+            state.dropdown_corner_radius_spinbox.value = state.dropdown_corner_radius as i32;
+            subsec.widget_full(&mut state.dropdown_corner_radius_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -2002,6 +2018,10 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::SetDropdownHeight(height) => {
             state.dropdown_height = height;
             apply_dropdown_height(height);
+        }
+        InterfaceMessage::SetDropdownCornerRadius(radius) => {
+            state.dropdown_corner_radius = radius;
+            apply_dropdown_corner_radius(radius);
         }
         InterfaceMessage::SetButtonCornerRadius(radius) => {
             state.button_corner_radius = radius;
@@ -3461,6 +3481,34 @@ mod tests {
         // 4. Parse dropdown_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "dropdown_height", 44);
         assert_eq!(val2, 48);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_dropdown_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_dropdown_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse dropdown_corner_radius when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "dropdown_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write dropdown_corner_radius config
+        assert!(write_config_value_path(path_str, "dropdown_corner_radius", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("dropdown_corner_radius = 12"));
+
+        // 4. Parse dropdown_corner_radius when present (should return written value 12)
+        let val2 = parse_u16_from(&updated, "dropdown_corner_radius", 4);
+        assert_eq!(val2, 12);
 
         // Clean up
         let _ = fs::remove_file(path_str);
