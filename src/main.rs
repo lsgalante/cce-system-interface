@@ -253,9 +253,9 @@ impl cce_ui::engine::Application for SystemInterface {
             let current_page_shared = current_page_shared.clone();
             tokio::spawn(async move {
                 let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
-                let windows_path = format!("/tmp/cce-client-windows-{}", display);
-                let tags_path = format!("/tmp/cce-client-tags-{}", display);
-                let title_path = format!("/tmp/cce-client-title-{}", display);
+                let windows_path = format!("/tmp/cce-windows-{}", display);
+                let tags_path = format!("/tmp/cce-tags-{}", display);
+                let title_path = format!("/tmp/cce-title-{}", display);
                 
                 let mut last_mod = std::time::SystemTime::UNIX_EPOCH;
                 
@@ -314,8 +314,8 @@ impl cce_ui::engine::Application for SystemInterface {
             let current_page_shared = current_page_shared.clone();
             tokio::spawn(async move {
                 let socket_path = match std::env::var("WAYLAND_DISPLAY") {
-                    Ok(display) => format!("/tmp/clear-input-coords-{}.sock", display),
-                    Err(_) => "/tmp/clear-input-coords.sock".to_string(),
+                    Ok(display) => format!("/tmp/cce-input-coords-{}.sock", display),
+                    Err(_) => "/tmp/cce-input-coords.sock".to_string(),
                 };
                 loop {
                     let current_page = current_page_shared.load(std::sync::atomic::Ordering::SeqCst);
@@ -3933,7 +3933,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
     }
 
     fn handle_mouse_wheel_internal(&mut self, delta: &cce_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/clear-scroll-debug.txt") {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/cce-scroll-debug.log") {
             use std::io::Write;
             let _ = writeln!(file, "handle_mouse_wheel_internal: px={}, py={}, delta={:?}, sidebar_w={}", px, py, delta, self.sidebar_width);
         }

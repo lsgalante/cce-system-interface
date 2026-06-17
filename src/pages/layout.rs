@@ -11,8 +11,8 @@ const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/cce-client-{}.sock", display),
-        Err(_) => "/tmp/cce-client.sock".to_string(),
+        Ok(display) => format!("/tmp/cce-{}.sock", display),
+        Err(_) => "/tmp/cce.sock".to_string(),
     }
 }
 
@@ -433,8 +433,8 @@ fn read_current_layout_status() -> LayoutStatusInfo {
 
     let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
     
-    let tags_path = format!("/tmp/cce-client-tags-{}", display);
-    let tags_fallback = "/tmp/cce-client-tags".to_string();
+    let tags_path = format!("/tmp/cce-tags-{}", display);
+    let tags_fallback = "/tmp/cce-tags".to_string();
     let tags_content = fs::read_to_string(&tags_path)
         .or_else(|_| fs::read_to_string(&tags_fallback))
         .unwrap_or_default();
@@ -448,24 +448,24 @@ fn read_current_layout_status() -> LayoutStatusInfo {
         }
     }
 
-    let title_path = format!("/tmp/cce-client-title-{}", display);
-    let title_fallback = "/tmp/cce-client-title".to_string();
+    let title_path = format!("/tmp/cce-title-{}", display);
+    let title_fallback = "/tmp/cce-title".to_string();
     let focused_title = fs::read_to_string(&title_path)
         .or_else(|_| fs::read_to_string(&title_fallback))
         .unwrap_or_default()
         .trim()
         .to_string();
 
-    let layout_path = format!("/tmp/cce-client-layout-{}", display);
-    let layout_fallback = "/tmp/cce-client-layout".to_string();
+    let layout_path = format!("/tmp/cce-layout-{}", display);
+    let layout_fallback = "/tmp/cce-layout".to_string();
     let focused_layout_mode = fs::read_to_string(&layout_path)
         .or_else(|_| fs::read_to_string(&layout_fallback))
         .unwrap_or_else(|_| "Cascade".to_string())
         .trim()
         .to_string();
 
-    let windows_path = format!("/tmp/cce-client-windows-{}", display);
-    let windows_fallback = "/tmp/cce-client-windows".to_string();
+    let windows_path = format!("/tmp/cce-windows-{}", display);
+    let windows_fallback = "/tmp/cce-windows".to_string();
     let windows_content = fs::read_to_string(&windows_path)
         .or_else(|_| fs::read_to_string(&windows_fallback))
         .unwrap_or_default();

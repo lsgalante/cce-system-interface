@@ -602,8 +602,8 @@ const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/cce-client-{}.sock", display),
-        Err(_) => "/tmp/cce-client.sock".to_string(),
+        Ok(display) => format!("/tmp/cce-{}.sock", display),
+        Err(_) => "/tmp/cce.sock".to_string(),
     }
 }
 
