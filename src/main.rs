@@ -1,5 +1,4 @@
 use cce_ui::widget::{Finger, hover_animation, TextItem, Element, PageSelector};
-use cce_ui::layout::RenderTarget;
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use cce_system_interface::app::{AppAction, AppState, PageContent};
@@ -1198,7 +1197,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         }
 
         self.sidebar_width = self.menubar.sidebar_w();
-        self.header_height = 32.0; // CSD Titlebar height
+        self.header_height = 0.0; // No CSD Titlebar
         let s = 1.0f32;
         let mut widgets = Vec::new();
         let mut text_items = Vec::new();
@@ -1239,25 +1238,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         let mut window_pc = PageContent::new();
         cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, sw / s, sh / s, &mut self.ui_context);
 
-        // Append CSD Titlebar background & border separator to window_pc
-        let titlebar_r = (win_r + 0.04).min(1.0);
-        let titlebar_g = (win_g + 0.04).min(1.0);
-        let titlebar_b = (win_b + 0.06).min(1.0);
-        window_pc.rect([titlebar_r, titlebar_g, titlebar_b, win_a], 0.0, 0.0, sw / s, self.header_height);
-        window_pc.rect([0.22, 0.22, 0.28, win_a], 0.0, self.header_height - 1.0, sw / s, 1.0);
-
-        // Title text in Titlebar
-        window_pc.text("SYSTEM INTERFACE", 12.0, (self.header_height - 12.0) / 2.0, 12.0, [0.8, 0.8, 0.83, 1.0]);
-
-        // CSD Window Control Buttons (Close, Minimize, Maximize)
-        let btn_y = (self.header_height - 12.0) / 2.0;
-        let close_x = sw / s - 24.0;
-        let min_x = sw / s - 44.0;
-        let max_x = sw / s - 64.0;
-        
-        window_pc.rect_with_radius([0.9, 0.3, 0.3, 1.0], close_x, btn_y, 12.0, 12.0, 6.0);
-        window_pc.rect_with_radius([0.9, 0.8, 0.2, 1.0], min_x, btn_y, 12.0, 12.0, 6.0);
-        window_pc.rect_with_radius([0.2, 0.8, 0.2, 1.0], max_x, btn_y, 12.0, 12.0, 6.0);
+        // CSD Titlebar removed
 
         for pc_part in &[window_pc] {
             for (c, x, y, w, h, r, corners) in &pc_part.rects {
@@ -2377,15 +2358,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         let lx_no_scroll = self.cursor_x / s;
         let ly_no_scroll = self.cursor_y / s;
 
-        // CSD Close Button Interaction
-        if state == cce_ui::widget::ElementState::Pressed && button == cce_ui::widget::MouseButton::Left {
-            let btn_y = (self.header_height - 12.0) / 2.0;
-            let close_x = self.width as f32 - 24.0;
-            if lx_no_scroll >= close_x - 4.0 && lx_no_scroll <= close_x + 16.0 && ly_no_scroll >= btn_y - 4.0 && ly_no_scroll <= btn_y + 16.0 {
-                self.handle_action(&AppAction::Exit);
-                return true;
-            }
-        }
+        // CSD Close Button Interaction removed
 
         if cce_ui::widget::context_menu::is_visible() {
             if cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
