@@ -745,6 +745,10 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.plate_opacity_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.plate_corner_radius_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.plate_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.page_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.page_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.layer_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.layer_opacity_spinbox.set_parent(None, &mut self.ui_context);
 
         self.app.interface.color_selector_preview_corner_radius_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.color_selector_preview_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
@@ -1075,6 +1079,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
                 // (ScrollingList child widgets)
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
+                // (Page child widgets)
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[19], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.page_opacity_spinbox, &mut self.ui_context);
+                // (Layer child widgets)
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[20], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.layer_opacity_spinbox, &mut self.ui_context);
                 // (Graph child widgets)
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
@@ -1960,6 +1970,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.interface.plate_corner_radius_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.page_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.layer_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
 
 
             if self.app.interface.color_selector_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2500,6 +2516,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.interface.toggle_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.plate_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.plate_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.page_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.layer_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
 
 
                     if self.app.interface.color_selector_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2761,6 +2779,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         16 => pages::interface::InterfaceMessage::PickPopoverBgColor,
                         17 => pages::interface::InterfaceMessage::PickNotificationBgColor,
                         18 => pages::interface::InterfaceMessage::PickWindowColor,
+                        19 => pages::interface::InterfaceMessage::PickPageColor,
+                        20 => pages::interface::InterfaceMessage::PickLayerColor,
                         _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
@@ -2785,6 +2805,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                         17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                         18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                        19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
+                        20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                         _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -2943,6 +2965,18 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.page_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPageOpacity(sb.value as f32 / 100.0)));
+            }
+            let sb = &mut self.app.interface.layer_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetLayerOpacity(sb.value as f32 / 100.0)));
             }
 
 
@@ -3810,6 +3844,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 if self.app.interface.plate_corner_radius_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(self.app.interface.plate_corner_radius_spinbox.value as u16)));
                 }
+                if self.app.interface.page_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPageOpacity(self.app.interface.page_opacity_spinbox.value as f32 / 100.0)));
+                }
+                if self.app.interface.layer_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetLayerOpacity(self.app.interface.layer_opacity_spinbox.value as f32 / 100.0)));
+                }
 
 
                 if self.app.interface.color_selector_height_spinbox.take_change() {
@@ -4207,6 +4247,34 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 if sb4.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
                     if sb4.value != old4 {
                         actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetWindowCornerRadius(sb4.value as u16)));
+                    }
+                }
+                let sb5 = &mut self.app.interface.plate_opacity_spinbox;
+                let old5 = sb5.value;
+                if sb5.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb5.value != old5 {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateOpacity(sb5.value as f32 / 100.0)));
+                    }
+                }
+                let sb6 = &mut self.app.interface.plate_corner_radius_spinbox;
+                let old6 = sb6.value;
+                if sb6.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb6.value != old6 {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(sb6.value as u16)));
+                    }
+                }
+                let sb7 = &mut self.app.interface.page_opacity_spinbox;
+                let old7 = sb7.value;
+                if sb7.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb7.value != old7 {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPageOpacity(sb7.value as f32 / 100.0)));
+                    }
+                }
+                let sb8 = &mut self.app.interface.layer_opacity_spinbox;
+                let old8 = sb8.value;
+                if sb8.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb8.value != old8 {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetLayerOpacity(sb8.value as f32 / 100.0)));
                     }
                 }
                 for a in &actions {
@@ -4717,6 +4785,26 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 let new_val = sb.value;
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.page_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetPageOpacity(new_val as f32 / 100.0)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.layer_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetLayerOpacity(new_val as f32 / 100.0)));
                 }
                 self.needs_rebuild = true;
                 return true;

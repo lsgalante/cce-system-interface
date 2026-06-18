@@ -62,6 +62,12 @@ pub struct InterfaceState {
     pub plate_opacity_spinbox: Spinbox,
     pub plate_corner_radius: u16,
     pub plate_corner_radius_spinbox: Spinbox,
+    pub page_color: [u8; 3],
+    pub page_opacity: f32,
+    pub page_opacity_spinbox: Spinbox,
+    pub layer_color: [u8; 3],
+    pub layer_opacity: f32,
+    pub layer_opacity_spinbox: Spinbox,
 
     pub page_margin: u16,
     pub page_margin_spinbox: Spinbox,
@@ -197,6 +203,8 @@ impl Default for InterfaceState {
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 16: Popover - Background
                 ColorSelector::new([0x08, 0x08, 0x0c]).with_label("Background"), // 17: Notification - Background
                 ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color"), // 18: Surfaces - Window Color
+                ColorSelector::new([0, 0, 0]).with_label("Page Color"), // 19: Containers - Page Color
+                ColorSelector::new([0, 0, 0]).with_label("Layer Color"), // 20: Containers - Layer Color
             ],
             paginator_tab_margin_x: 5,
             paginator_tab_margin_y: 10,
@@ -214,6 +222,12 @@ impl Default for InterfaceState {
             plate_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
             plate_corner_radius: 12,
             plate_corner_radius_spinbox: Spinbox::new(12, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+            page_color: [0, 0, 0],
+            page_opacity: 1.0,
+            page_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            layer_color: [0, 0, 0],
+            layer_opacity: 1.0,
+            layer_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
 
             page_margin: 20,
             page_margin_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Page Margin").with_unit("px"),
@@ -353,6 +367,10 @@ pub enum InterfaceMessage {
     SetPlatePadding(u16),
     SetPlateOpacity(f32),
     SetPlateCornerRadius(u16),
+    SetPageColor([u8; 3]),
+    SetPageOpacity(f32),
+    SetLayerColor([u8; 3]),
+    SetLayerOpacity(f32),
 
     SetPageMargin(u16),
     SetGridMinColWidth(u16),
@@ -406,6 +424,8 @@ pub enum InterfaceMessage {
     PickPopoverBgColor,
     PickNotificationBgColor,
     PickWindowColor,
+    PickPageColor,
+    PickLayerColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
     SetSans(String),
@@ -483,6 +503,10 @@ pub fn read_interface_config() -> InterfaceState {
     let plate_padding = parse_u16_from(&content, "plate_padding", 20);
     let plate_opacity = parse_f32_from(&content, "plate_opacity", 1.0);
     let plate_corner_radius = parse_u16_from(&content, "plate_corner_radius", 12);
+    let page_color = parse_color_from_key(&content, "page_color", [0, 0, 0]);
+    let page_opacity = parse_f32_from(&content, "page_opacity", 1.0);
+    let layer_color = parse_color_from_key(&content, "layer_color", [0, 0, 0]);
+    let layer_opacity = parse_f32_from(&content, "layer_opacity", 1.0);
 
     let page_margin = parse_u16_from(&content, "page_margin", 20);
     let grid_min_col_width = parse_u16_from(&content, "grid_min_col_width", 260);
@@ -562,6 +586,8 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font), // 16: Popover - Background
             ColorSelector::new(notification_bg_color).with_label("Background").with_font_family(&color_selector_font), // 17: Notification - Background
             ColorSelector::new(window_color).with_label("Color").with_font_family(&color_selector_font), // 18: Surfaces - Window Color
+            ColorSelector::new(page_color).with_label("Page Color").with_font_family(&color_selector_font), // 19: Containers - Page Color
+            ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font), // 20: Containers - Layer Color
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -579,6 +605,12 @@ pub fn read_interface_config() -> InterfaceState {
         plate_opacity_spinbox: Spinbox::new((plate_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
         plate_corner_radius,
         plate_corner_radius_spinbox: Spinbox::new(plate_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+        page_color,
+        page_opacity,
+        page_opacity_spinbox: Spinbox::new((page_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        layer_color,
+        layer_opacity,
+        layer_opacity_spinbox: Spinbox::new((layer_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
 
         page_margin,
         page_margin_spinbox: Spinbox::new(page_margin as i32, 0, 100, 1).with_label("Page Margin").with_unit("px"),
@@ -1073,6 +1105,34 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     status_interface_reload();
                 }
             }
+            "page_opacity" => {
+                if let Ok(val) = val_str.parse::<f32>() {
+                    state.page_opacity = val;
+                    state.page_opacity_spinbox.value = (val * 100.0).round() as i32;
+                    apply_page_opacity(val);
+                }
+            }
+            "layer_opacity" => {
+                if let Ok(val) = val_str.parse::<f32>() {
+                    state.layer_opacity = val;
+                    state.layer_opacity_spinbox.value = (val * 100.0).round() as i32;
+                    apply_layer_opacity(val);
+                }
+            }
+            "page_color" => {
+                let trimmed = val_str.trim().trim_matches('"');
+                let rgb = parse_hex(trimmed);
+                state.page_color = rgb;
+                state.color_selectors[19].color = rgb;
+                apply_page_color(rgb);
+            }
+            "layer_color" => {
+                let trimmed = val_str.trim().trim_matches('"');
+                let rgb = parse_hex(trimmed);
+                state.layer_color = rgb;
+                state.color_selectors[20].color = rgb;
+                apply_layer_color(rgb);
+            }
             _ => {}
         }
     }
@@ -1303,6 +1363,34 @@ fn apply_plate_opacity(opacity: f32) {
 fn apply_plate_corner_radius(radius: u16) {
     write_config_value("plate_corner_radius", &radius.to_string());
     cce_ui::layout::set_plate_corner_radius(radius as f32);
+}
+
+fn apply_page_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("page_color", &hex);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_page_color([r, g, b, 1.0]);
+}
+
+fn apply_page_opacity(opacity: f32) {
+    write_config_value("page_opacity", &opacity.to_string());
+    cce_ui::layout::set_page_opacity(opacity);
+}
+
+fn apply_layer_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("layer_color", &hex);
+    let r = cce_ui::color::srgb_to_linear(rgb[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
+    cce_ui::color::set_layer_color([r, g, b, 1.0]);
+}
+
+fn apply_layer_opacity(opacity: f32) {
+    write_config_value("layer_opacity", &opacity.to_string());
+    cce_ui::layout::set_layer_opacity(opacity);
 }
 
 
@@ -2226,8 +2314,31 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
     });
 
-    // 8. Containers Section
     builder.add_section(&mut final_pc, "Containers", sec_focused.get(8).copied().unwrap_or(false), |sec| {
+        sec.spacing(12.0);
+
+        // Page child section
+        sec.add_section("Page", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[19].color = state.page_color;
+            subsec.widget_full(&mut state.color_selectors[19], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.page_opacity_spinbox.value = (state.page_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.page_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Layer child section
+        sec.add_section("Layer", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[20].color = state.layer_color;
+            subsec.widget_full(&mut state.color_selectors[20], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.layer_opacity_spinbox.value = (state.layer_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.layer_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
         sec.spacing(12.0);
 
         // Section child section
@@ -2426,6 +2537,30 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_plate_corner_radius(radius);
             propagate_links(state, "plate_corner_radius", &radius.to_string());
         }
+        InterfaceMessage::SetPageColor(rgb) => {
+            state.page_color = rgb;
+            apply_page_color(rgb);
+            let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+            propagate_links(state, "page_color", &hex);
+        }
+        InterfaceMessage::SetPageOpacity(opacity) => {
+            state.page_opacity = opacity;
+            state.page_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            apply_page_opacity(opacity);
+            propagate_links(state, "page_opacity", &opacity.to_string());
+        }
+        InterfaceMessage::SetLayerColor(rgb) => {
+            state.layer_color = rgb;
+            apply_layer_color(rgb);
+            let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+            propagate_links(state, "layer_color", &hex);
+        }
+        InterfaceMessage::SetLayerOpacity(opacity) => {
+            state.layer_opacity = opacity;
+            state.layer_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            apply_layer_opacity(opacity);
+            propagate_links(state, "layer_opacity", &opacity.to_string());
+        }
 
         InterfaceMessage::SetPageMargin(margin) => {
             state.page_margin = margin;
@@ -2605,7 +2740,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             status_interface_reload();
             propagate_links(state, "menubar_opacity", &opacity.to_string());
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
@@ -2614,6 +2749,8 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_pp_hovered = state.plate_padding_spinbox.hovered();
             let was_pl_op_hovered = state.plate_opacity_spinbox.hovered();
             let was_pl_cr_hovered = state.plate_corner_radius_spinbox.hovered();
+            let was_page_op_hovered = state.page_opacity_spinbox.hovered();
+            let was_layer_op_hovered = state.layer_opacity_spinbox.hovered();
 
             let was_pm_hovered = state.page_margin_spinbox.hovered();
             let was_gm_hovered = state.grid_min_col_width_spinbox.hovered();
@@ -2678,6 +2815,8 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.plate_padding_spinbox.set_hovered(was_pp_hovered);
             state.plate_opacity_spinbox.set_hovered(was_pl_op_hovered);
             state.plate_corner_radius_spinbox.set_hovered(was_pl_cr_hovered);
+            state.page_opacity_spinbox.set_hovered(was_page_op_hovered);
+            state.layer_opacity_spinbox.set_hovered(was_layer_op_hovered);
 
             state.page_margin_spinbox.set_hovered(was_pm_hovered);
             state.grid_min_col_width_spinbox.set_hovered(was_gm_hovered);
@@ -3431,7 +3570,7 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\nmenubar_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\nscrollinglist_bg_color = \"#515161\"\nbreadcrumb_bg_color = \"#515161\"\n";
+        let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\nmenubar_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\nscrollinglist_bg_color = \"#515161\"\nbreadcrumb_bg_color = \"#515161\"\npage_color = \"#0a1a0e\"\nlayer_color = \"#123456\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -3448,6 +3587,8 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "toggle_disabled_color", [0, 0, 0]), [135, 135, 148]);
         assert_eq!(parse_color_from_key(content, "scrollinglist_bg_color", [0, 0, 0]), [81, 81, 97]);
         assert_eq!(parse_color_from_key(content, "breadcrumb_bg_color", [0, 0, 0]), [81, 81, 97]);
+        assert_eq!(parse_color_from_key(content, "page_color", [0, 0, 0]), [10, 26, 14]);
+        assert_eq!(parse_color_from_key(content, "layer_color", [0, 0, 0]), [18, 52, 86]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
     }
 
@@ -4527,6 +4668,98 @@ mod tests {
         assert_eq!(radius2, 16);
 
         // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_page_opacity() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_page_opacity_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_f32_from(&content, "page_opacity", 1.0);
+        assert_eq!(val, 1.0);
+
+        assert!(write_config_value_path(path_str, "page_opacity", "0.75"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("page_opacity = 0.75"));
+
+        let val2 = parse_f32_from(&updated, "page_opacity", 1.0);
+        assert_eq!(val2, 0.75);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_layer_opacity() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_layer_opacity_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_f32_from(&content, "layer_opacity", 1.0);
+        assert_eq!(val, 1.0);
+
+        assert!(write_config_value_path(path_str, "layer_opacity", "0.60"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("layer_opacity = 0.60"));
+
+        let val2 = parse_f32_from(&updated, "layer_opacity", 1.0);
+        assert_eq!(val2, 0.60);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_page_color() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_page_color_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let color = parse_color_from_key(&content, "page_color", [0, 0, 0]);
+        assert_eq!(color, [0, 0, 0]);
+
+        assert!(write_config_value_path(path_str, "page_color", "\"#112233\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("page_color = \"#112233\""));
+
+        let color2 = parse_color_from_key(&updated, "page_color", [0, 0, 0]);
+        assert_eq!(color2, [17, 34, 51]);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_layer_color() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_layer_color_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let color = parse_color_from_key(&content, "layer_color", [0, 0, 0]);
+        assert_eq!(color, [0, 0, 0]);
+
+        assert!(write_config_value_path(path_str, "layer_color", "\"#445566\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("layer_color = \"#445566\""));
+
+        let color2 = parse_color_from_key(&updated, "layer_color", [0, 0, 0]);
+        assert_eq!(color2, [68, 85, 102]);
+
         let _ = fs::remove_file(path_str);
     }
 }
