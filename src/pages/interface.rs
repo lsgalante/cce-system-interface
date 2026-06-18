@@ -186,6 +186,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 15: Breadcrumb - Background
                 ColorSelector::new([81, 81, 97]).with_label("Background"), // 16: Popover - Background
                 ColorSelector::new([0x08, 0x08, 0x0c]).with_label("Background"), // 17: Notification - Background
+                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color"), // 18: Surfaces - Window Color
             ],
             paginator_tab_margin_x: 5,
             paginator_tab_margin_y: 10,
