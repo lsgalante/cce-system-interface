@@ -408,8 +408,7 @@ impl cce_ui::engine::Application for SystemInterface {
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let mut menubar = cce_ui::widget::MenuBar::new(0.0, 0.0, 180.0, 680.0)
-            .with_vertical(true)
-            .with_title("SYSTEM");
+            .with_vertical(true);
         menubar.set_pages(pages_names);
         let sidebar_width = menubar.sidebar_w();
 
