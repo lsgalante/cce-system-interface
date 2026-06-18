@@ -44,6 +44,8 @@ pub struct InterfaceState {
     pub window_color: [u8; 3],
     pub window_opacity: f32,
     pub window_opacity_spinbox: Spinbox,
+    pub window_corner_radius: u16,
+    pub window_corner_radius_spinbox: Spinbox,
     pub paginator_tab_margin_x: u16,
     pub paginator_tab_margin_y: u16,
     pub tab_margin_spinbox_x: Spinbox,
@@ -297,6 +299,8 @@ impl Default for InterfaceState {
             window_color: [0x0a, 0x1a, 0x0e],
             window_opacity: 0.9,
             window_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            window_corner_radius: 12,
+            window_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
         }
     }
@@ -325,6 +329,7 @@ pub enum InterfaceMessage {
     SetNotificationOpacity(f32),
     SetWindowColor([u8; 3]),
     SetWindowOpacity(f32),
+    SetWindowCornerRadius(u16),
     SetTabMarginX(u16),
     SetTabMarginY(u16),
     SetButtonPadding(u16),
@@ -491,6 +496,7 @@ pub fn read_interface_config() -> InterfaceState {
     let notification_opacity = parse_notifications_opacity(&content);
     let window_color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
     let window_opacity = parse_surfaces_opacity(&content);
+    let window_corner_radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
     
     InterfaceState {
         low_color: bg,
@@ -640,6 +646,8 @@ pub fn read_interface_config() -> InterfaceState {
         window_color,
         window_opacity,
         window_opacity_spinbox: Spinbox::new((window_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        window_corner_radius,
+        window_corner_radius_spinbox: Spinbox::new(window_corner_radius as i32, 0, 100, 1).with_label("Corner Radius").with_unit("px"),
         custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
     }
 }
@@ -1199,6 +1207,11 @@ fn apply_window_color(rgb: [u8; 3]) {
 
 fn apply_window_opacity(opacity: f32) {
     write_surfaces_config_value("window_opacity", &format!("{:.2}", opacity));
+    send_ipc_command("reload");
+}
+
+fn apply_window_corner_radius(radius: u16) {
+    write_surfaces_config_value("window_corner_radius", &radius.to_string());
     send_ipc_command("reload");
 }
 
@@ -2088,6 +2101,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.window_opacity_spinbox.value = (state.window_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.window_opacity_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
+            state.window_corner_radius_spinbox.value = state.window_corner_radius as i32;
+            subsec.widget_full(&mut state.window_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
         sec.spacing(12.0);
     });
@@ -2277,6 +2293,11 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.window_opacity = opacity;
             state.window_opacity_spinbox.value = (opacity * 100.0).round() as i32;
             apply_window_opacity(opacity);
+        }
+        InterfaceMessage::SetWindowCornerRadius(radius) => {
+            state.window_corner_radius = radius;
+            state.window_corner_radius_spinbox.value = radius as i32;
+            apply_window_corner_radius(radius);
         }
         InterfaceMessage::SetTabMarginX(margin) => {
             state.paginator_tab_margin_x = margin;
@@ -2505,6 +2526,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
             let was_wo_hovered = state.window_opacity_spinbox.hovered();
+            let was_wcr_hovered = state.window_corner_radius_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
             let sans_serif = state.sans_serif.clone();
@@ -2563,6 +2585,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
             state.window_opacity_spinbox.set_hovered(was_wo_hovered);
+            state.window_corner_radius_spinbox.set_hovered(was_wcr_hovered);
 
             if typeface_loaded {
                 state.typeface_loaded = typeface_loaded;
@@ -3097,6 +3120,28 @@ fn parse_surfaces_opacity(content: &str) -> f32 {
         }
     }
     0.9 // default to 0.9
+}
+
+fn parse_surfaces_u16(content: &str, key: &str, default: u16) -> u16 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[surfaces]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with(key) {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(v) = val.trim().parse::<u16>() {
+                    return v;
+                }
+            }
+        }
+    }
+    default
 }
 
 fn parse_notifications_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
@@ -4208,6 +4253,8 @@ mod tests {
         assert_eq!(opacity, 0.9);
         let color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
         assert_eq!(color, [0x0a, 0x1a, 0x0e]);
+        let radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
+        assert_eq!(radius, 12);
 
         // 3. Write surfaces opacity config
         write_surfaces_config_value_path(path_str, "window_opacity", "0.75");
@@ -4226,6 +4273,15 @@ mod tests {
         // 6. Parse surfaces window_color when present
         let color2 = parse_surfaces_color(&updated2, "window_color", [0, 0, 0]);
         assert_eq!(color2, [17, 34, 51]);
+
+        // 7. Write surfaces window_corner_radius config
+        write_surfaces_config_value_path(path_str, "window_corner_radius", "16");
+        let updated3 = fs::read_to_string(path_str).unwrap();
+        assert!(updated3.contains("window_corner_radius = 16"));
+
+        // 8. Parse surfaces window_corner_radius when present
+        let radius2 = parse_surfaces_u16(&updated3, "window_corner_radius", 12);
+        assert_eq!(radius2, 16);
 
         // Clean up
         let _ = fs::remove_file(path_str);
