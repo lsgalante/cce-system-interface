@@ -604,12 +604,7 @@ impl cce_ui::engine::Application for SystemInterface {
     }
 
     fn clear_color(&self) -> [f32; 4] {
-        [
-            self.app.interface.high_color[0] as f32 / 255.0,
-            self.app.interface.high_color[1] as f32 / 255.0,
-            self.app.interface.high_color[2] as f32 / 255.0,
-            self.app.layout.side_panel_border_opacity as f32 / 100.0,
-        ]
+        [0.0, 0.0, 0.0, 0.0]
     }
 
     fn handle_pointer_move(&mut self, pos: cce_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
