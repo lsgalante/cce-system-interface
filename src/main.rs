@@ -183,6 +183,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let app = AppState {
             layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
+            interface: pages::interface::read_interface_config(),
             ..Default::default()
         };
 
@@ -425,6 +426,10 @@ impl cce_ui::engine::Application for SystemInterface {
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
 
+        let win_color = app_state.interface.window_color;
+        let win_opacity = app_state.interface.window_opacity;
+        let win_radius = app_state.interface.window_corner_radius;
+
         let mut font_system = FontSystem::new();
         font_system.db_mut().load_fonts_dir("/home/lsgalante/Dropbox/Fonts");
 
@@ -472,9 +477,14 @@ impl cce_ui::engine::Application for SystemInterface {
             display_brightness_dragging: false,
             page_sec_containers: Vec::new(),
             root_window: cce_ui::widget::Window::new(0.0, 0.0, 820.0, 680.0)
-                .with_background([0.06, 0.06, 0.09, 1.0])
+                .with_background([
+                    win_color[0] as f32 / 255.0,
+                    win_color[1] as f32 / 255.0,
+                    win_color[2] as f32 / 255.0,
+                    win_opacity,
+                ])
                 .with_border([0.22, 0.22, 0.28, 1.0], 1.5)
-                .with_radius(12.0),
+                .with_radius(win_radius as f32),
             menubar,
             switcher,
             plates,
@@ -1213,8 +1223,14 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.menubar.set_selected_page(page_idx);
         self.switcher.set_active_index(Some(page_idx));
 
-        // Update root window size and children
+        // Update root window size, background color, opacity, corner radius, and children
         self.root_window.set_rect(0.0, 0.0, sw / s, sh / s);
+        let win_r = self.app.interface.window_color[0] as f32 / 255.0;
+        let win_g = self.app.interface.window_color[1] as f32 / 255.0;
+        let win_b = self.app.interface.window_color[2] as f32 / 255.0;
+        let win_a = self.app.interface.window_opacity;
+        self.root_window.background_color = Some([win_r, win_g, win_b, win_a]);
+        self.root_window.radius = self.app.interface.window_corner_radius as f32;
         self.root_window.clear_children(&mut self.ui_context);
         self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
@@ -1229,8 +1245,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, sw / s, sh / s, &mut self.ui_context);
 
         // Append CSD Titlebar background & border separator to window_pc
-        window_pc.rect([0.12, 0.12, 0.15, 1.0], 0.0, 0.0, sw / s, self.header_height);
-        window_pc.rect([0.22, 0.22, 0.28, 1.0], 0.0, self.header_height - 1.0, sw / s, 1.0);
+        let titlebar_r = (win_r + 0.04).min(1.0);
+        let titlebar_g = (win_g + 0.04).min(1.0);
+        let titlebar_b = (win_b + 0.06).min(1.0);
+        window_pc.rect([titlebar_r, titlebar_g, titlebar_b, win_a], 0.0, 0.0, sw / s, self.header_height);
+        window_pc.rect([0.22, 0.22, 0.28, win_a], 0.0, self.header_height - 1.0, sw / s, 1.0);
 
         // Title text in Titlebar
         window_pc.text("SYSTEM INTERFACE", 12.0, (self.header_height - 12.0) / 2.0, 12.0, [0.8, 0.8, 0.83, 1.0]);
