@@ -25,10 +25,10 @@ pub struct AudioState {
     pub loaded: bool,
     pub sinks: Vec<AudioSink>,
     pub sources: Vec<AudioSource>,
-    pub sink_spinboxes: Vec<Spinbox>,
-    pub source_spinboxes: Vec<Spinbox>,
-    pub sink_sliders: Vec<Slider>,
-    pub source_sliders: Vec<Slider>,
+    pub sink_spinboxes: Vec<Box<Spinbox>>,
+    pub source_spinboxes: Vec<Box<Spinbox>>,
+    pub sink_sliders: Vec<Box<Slider>>,
+    pub source_sliders: Vec<Box<Slider>>,
 }
 
 #[derive(Debug, Clone)]
@@ -260,9 +260,9 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         state.sink_sliders[idx].set_value(sink.volume);
                         let slider_x = subsec.ax(bar_x);
                         
-                        let label_h = cce_ui::widget::label_offset(&state.sink_sliders[idx]);
+                        let label_h = cce_ui::widget::label_offset(&*state.sink_sliders[idx]);
                         let slider_h = cce_ui::layout::slider_height() + label_h;
-                        render_widget(subsec.pc, &mut state.sink_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
+                        render_widget(subsec.pc, &mut *state.sink_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
 
                         let row_y = subsec.ay() + slider_h + 8.0;
                         let sb_w = 100.0;
@@ -274,7 +274,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
                         state.sink_spinboxes[idx].set_row_rect(row_rect_x, subsec.cw - 16.0);
                         let sb_x = subsec.ax(bar_x);
-                        render_widget(subsec.pc, &mut state.sink_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
+                        render_widget(subsec.pc, &mut *state.sink_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
 
                         let mute_label = if sink.muted { "Unmute" } else { "Mute" };
                         let mute_col = if sink.muted { MUTED_BG } else { BTN_INACTIVE };
@@ -328,9 +328,9 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         state.source_sliders[idx].set_value(src.volume);
                         let slider_x = subsec.ax(bar_x);
                         
-                        let label_h = cce_ui::widget::label_offset(&state.source_sliders[idx]);
+                        let label_h = cce_ui::widget::label_offset(&*state.source_sliders[idx]);
                         let slider_h = cce_ui::layout::slider_height() + label_h;
-                        render_widget(subsec.pc, &mut state.source_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
+                        render_widget(subsec.pc, &mut *state.source_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
 
                         let row_y = subsec.ay() + slider_h + 8.0;
                         let sb_w = 100.0;
@@ -342,7 +342,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                         state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
                         state.source_spinboxes[idx].set_row_rect(row_rect_x, subsec.cw - 16.0);
                         let sb_x = subsec.ax(bar_x);
-                        render_widget(subsec.pc, &mut state.source_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
+                        render_widget(subsec.pc, &mut *state.source_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
 
                         let mute_label = if src.muted { "Unmute" } else { "Mute" };
                         let mute_col = if src.muted { MUTED_BG } else { BTN_INACTIVE };
@@ -366,10 +366,10 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
     match msg {
         AudioMessage::Refreshed(new) => {
             *state = new;
-            state.sink_spinboxes.resize_with(state.sinks.len(), || Spinbox::new(50, 0, 100, 1));
-            state.source_spinboxes.resize_with(state.sources.len(), || Spinbox::new(50, 0, 100, 1));
-            state.sink_sliders.resize_with(state.sinks.len(), || Slider::new().with_range(0.0, 1.0).with_scroll(true));
-            state.source_sliders.resize_with(state.sources.len(), || Slider::new().with_range(0.0, 1.0).with_scroll(true));
+            state.sink_spinboxes.resize_with(state.sinks.len(), || Box::new(Spinbox::new(50, 0, 100, 1)));
+            state.source_spinboxes.resize_with(state.sources.len(), || Box::new(Spinbox::new(50, 0, 100, 1)));
+            state.sink_sliders.resize_with(state.sinks.len(), || Box::new(Slider::new().with_range(0.0, 1.0).with_scroll(true)));
+            state.source_sliders.resize_with(state.sources.len(), || Box::new(Slider::new().with_range(0.0, 1.0).with_scroll(true)));
         }
         AudioMessage::SinkVolume(id, vol) => {
             if let Some(sink) = state.sinks.iter_mut().find(|s| s.id == id) {

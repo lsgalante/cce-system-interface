@@ -921,4 +921,30 @@ mode = "popup"
         );
         assert!(res);
     }
+
+    #[test]
+    fn test_spinbox_right_click_crash() {
+        use cce_ui::widget::Element;
+        let mut state = LayoutState::default();
+        let mut ctx = cce_ui::context::UiContext::new();
+        let sb = &mut state.spinboxes[0];
+        sb.set_rect(0.0, 0.0, 100.0, 44.0);
+        let res = sb.mouse_input(
+            cce_ui::widget::MouseButton::Right,
+            cce_ui::widget::ElementState::Pressed,
+            50.0,
+            20.0,
+            &mut ctx,
+        );
+        assert!(res);
+        assert!(cce_ui::widget::context_menu::is_visible());
+
+        // Now replace the state simulating config reload/refresh
+        let new_state = LayoutState::default();
+        state = new_state;
+
+        // Assert that the context menu is hidden (cleared)
+        assert!(!cce_ui::widget::context_menu::is_visible());
+    }
 }
+

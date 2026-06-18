@@ -1088,16 +1088,16 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 
                 for sb in &mut self.app.audio.sink_spinboxes {
-                    link_parent_child(&mut self.page_sec_containers[0], sb, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[0], &mut **sb, &mut self.ui_context);
                 }
                 for sb in &mut self.app.audio.source_spinboxes {
-                    link_parent_child(&mut self.page_sec_containers[1], sb, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut **sb, &mut self.ui_context);
                 }
                 for slider in &mut self.app.audio.sink_sliders {
-                    link_parent_child(&mut self.page_sec_containers[0], slider, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[0], &mut **slider, &mut self.ui_context);
                 }
                 for slider in &mut self.app.audio.source_sliders {
-                    link_parent_child(&mut self.page_sec_containers[1], slider, &mut self.ui_context);
+                    link_parent_child(&mut self.page_sec_containers[1], &mut **slider, &mut self.ui_context);
                 }
             }
             Page::Display => {
