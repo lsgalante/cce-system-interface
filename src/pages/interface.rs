@@ -41,6 +41,9 @@ pub struct InterfaceState {
     pub notification_bg_color: [u8; 3],
     pub notification_opacity: f32,
     pub notification_opacity_spinbox: Spinbox,
+    pub window_color: [u8; 3],
+    pub window_opacity: f32,
+    pub window_opacity_spinbox: Spinbox,
     pub paginator_tab_margin_x: u16,
     pub paginator_tab_margin_y: u16,
     pub tab_margin_spinbox_x: Spinbox,
@@ -290,6 +293,9 @@ impl Default for InterfaceState {
             notification_bg_color: [0x08, 0x08, 0x0c],
             notification_opacity: 0.9,
             notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            window_color: [0x0a, 0x1a, 0x0e],
+            window_opacity: 0.9,
+            window_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
         }
     }
@@ -316,6 +322,8 @@ pub enum InterfaceMessage {
     SetPopoverBgColor([u8; 3]),
     SetNotificationBgColor([u8; 3]),
     SetNotificationOpacity(f32),
+    SetWindowColor([u8; 3]),
+    SetWindowOpacity(f32),
     SetTabMarginX(u16),
     SetTabMarginY(u16),
     SetButtonPadding(u16),
@@ -370,6 +378,7 @@ pub enum InterfaceMessage {
     PickBreadcrumbBgColor,
     PickPopoverBgColor,
     PickNotificationBgColor,
+    PickWindowColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
     SetSans(String),
@@ -479,6 +488,8 @@ pub fn read_interface_config() -> InterfaceState {
     let opacity = parse_transparency_opacity(&content);
     let notification_bg_color = parse_notifications_color(&content, "bg_color", [0x08, 0x08, 0x0c]);
     let notification_opacity = parse_notifications_opacity(&content);
+    let window_color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
+    let window_opacity = parse_surfaces_opacity(&content);
     
     InterfaceState {
         low_color: bg,
@@ -517,6 +528,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(breadcrumb_bg).with_label("Background").with_font_family(&color_selector_font), // 15: Breadcrumb - Background
             ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font), // 16: Popover - Background
             ColorSelector::new(notification_bg_color).with_label("Background").with_font_family(&color_selector_font), // 17: Notification - Background
+            ColorSelector::new(window_color).with_label("Color").with_font_family(&color_selector_font), // 18: Surfaces - Window Color
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -624,6 +636,9 @@ pub fn read_interface_config() -> InterfaceState {
         notification_bg_color,
         notification_opacity,
         notification_opacity_spinbox: Spinbox::new((notification_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        window_color,
+        window_opacity,
+        window_opacity_spinbox: Spinbox::new((window_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
         custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
     }
 }
@@ -1172,6 +1187,17 @@ fn apply_notifications_bg_color(rgb: [u8; 3]) {
 
 fn apply_notifications_opacity(opacity: f32) {
     write_notifications_config_value("opacity", &format!("{:.2}", opacity));
+    send_ipc_command("reload");
+}
+
+fn apply_window_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_surfaces_config_value("window_color", &hex);
+    send_ipc_command("reload");
+}
+
+fn apply_window_opacity(opacity: f32) {
+    write_surfaces_config_value("window_opacity", &format!("{:.2}", opacity));
     send_ipc_command("reload");
 }
 
@@ -1728,7 +1754,7 @@ pub async fn fetch_typeface_state() -> InterfaceState {
 pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
 
     // 1. Custom Parameters Section
     builder.add_section(&mut final_pc, "Custom Parameters", false, |sec| {
@@ -2050,11 +2076,26 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
     });
 
+    // 6. Surfaces Section
+    builder.add_section(&mut final_pc, "Surfaces", sec_focused.get(6).copied().unwrap_or(false), |sec| {
+        sec.spacing(12.0);
+        sec.add_section("Window", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[18].color = state.window_color;
+            subsec.widget_full(&mut state.color_selectors[18], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.window_opacity_spinbox.value = (state.window_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.window_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+    });
+
     let widget_h = 26.0;
     const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
     // 7. Fonts Section
-    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(6).copied().unwrap_or(false), |sec| {
+    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(7).copied().unwrap_or(false), |sec| {
         sec.spacing(8.0);
 
         // System Fonts Section
@@ -2226,6 +2267,15 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.notification_opacity = opacity;
             state.notification_opacity_spinbox.value = (opacity * 100.0).round() as i32;
             apply_notifications_opacity(opacity);
+        }
+        InterfaceMessage::SetWindowColor(rgb) => {
+            state.window_color = rgb;
+            apply_window_color(rgb);
+        }
+        InterfaceMessage::SetWindowOpacity(opacity) => {
+            state.window_opacity = opacity;
+            state.window_opacity_spinbox.value = (opacity * 100.0).round() as i32;
+            apply_window_opacity(opacity);
         }
         InterfaceMessage::SetTabMarginX(margin) => {
             state.paginator_tab_margin_x = margin;
@@ -2424,7 +2474,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             status_interface_reload();
             propagate_links(state, "menubar_opacity", &opacity.to_string());
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
@@ -2453,6 +2503,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
+            let was_wo_hovered = state.window_opacity_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
             let sans_serif = state.sans_serif.clone();
@@ -2510,6 +2561,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
+            state.window_opacity_spinbox.set_hovered(was_wo_hovered);
 
             if typeface_loaded {
                 state.typeface_loaded = typeface_loaded;
@@ -2930,6 +2982,120 @@ pub fn write_transparency_config_value(key: &str, value: &str) {
         }
     }
     let _ = fs::write(CONFIG_PATH, updated);
+}
+
+fn write_surfaces_config_value(key: &str, value: &str) {
+    write_surfaces_config_value_path(CONFIG_PATH, key, value);
+}
+
+fn write_surfaces_config_value_path(path: &str, key: &str, value: &str) {
+    let content = fs::read_to_string(path).unwrap_or_default();
+    let new_line = format!("{} = {}", key, value);
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[surfaces]" {
+            in_section = true;
+            updated_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            in_section = false;
+        }
+        if in_section && trimmed.starts_with(key) {
+            found = true;
+            updated_lines.push(new_line.clone());
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let mut updated = updated_lines.join("\n");
+
+    if !found {
+        let mut result = String::new();
+        let has_section = content.lines().any(|l| l.trim() == "[surfaces]");
+        if has_section {
+            let mut in_section = false;
+            let mut inserted = false;
+            for line in updated.lines() {
+                if line.trim() == "[surfaces]" {
+                    in_section = true;
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+                if line.trim().starts_with('[') && in_section {
+                    if !inserted {
+                        result.push_str(&new_line);
+                        result.push('\n');
+                        inserted = true;
+                    }
+                    in_section = false;
+                }
+                result.push_str(line);
+                result.push('\n');
+            }
+            if !inserted {
+                result.push_str(&new_line);
+                result.push('\n');
+            }
+            updated = result;
+        } else {
+            updated.push_str("\n[surfaces]\n");
+            updated.push_str(&new_line);
+            updated.push_str("\n");
+        }
+    }
+    let _ = fs::write(path, updated);
+}
+
+fn parse_surfaces_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[surfaces]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with(key) {
+            if let Some(rest) = trimmed.strip_prefix(key) {
+                let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
+                let hex = rest.trim_end_matches('"').trim().trim_start_matches('#');
+                return parse_hex(hex);
+            }
+        }
+    }
+    default
+}
+
+fn parse_surfaces_opacity(content: &str) -> f32 {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[surfaces]" {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && in_section {
+            break;
+        }
+        if in_section && trimmed.starts_with("window_opacity") {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                if let Ok(o) = val.trim().parse::<f32>() {
+                    return o.clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
+    0.9 // default to 0.9
 }
 
 fn parse_notifications_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
@@ -4023,6 +4189,45 @@ mod tests {
         assert_eq!(state.spinbox_height_spinbox.value, 36);
         assert_eq!(state.textbox_height_spinbox.value, 36);
         assert_eq!(state.dropdown_height_spinbox.value, 36);
+    }
+
+    #[test]
+    fn test_read_write_surfaces_config() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_surfaces_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[notifications]\nenable = true\n\n[layout]\ngap = 18\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse opacity/color when missing (should return defaults)
+        let content = fs::read_to_string(path_str).unwrap();
+        let opacity = parse_surfaces_opacity(&content);
+        assert_eq!(opacity, 0.9);
+        let color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
+        assert_eq!(color, [0x0a, 0x1a, 0x0e]);
+
+        // 3. Write surfaces opacity config
+        write_surfaces_config_value_path(path_str, "window_opacity", "0.75");
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("window_opacity = 0.75"));
+
+        // 4. Parse surfaces opacity when present
+        let opacity2 = parse_surfaces_opacity(&updated);
+        assert_eq!(opacity2, 0.75);
+
+        // 5. Write surfaces window_color config
+        write_surfaces_config_value_path(path_str, "window_color", "\"#112233\"");
+        let updated2 = fs::read_to_string(path_str).unwrap();
+        assert!(updated2.contains("window_color = \"#112233\""));
+
+        // 6. Parse surfaces window_color when present
+        let color2 = parse_surfaces_color(&updated2, "window_color", [0, 0, 0]);
+        assert_eq!(color2, [17, 34, 51]);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
     }
 }
 

@@ -755,6 +755,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.button_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.notification_opacity_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.notification_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.window_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.window_opacity_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.custom_multicontrol.clear_children(&mut self.ui_context);
         self.app.interface.custom_multicontrol.set_parent(None, &mut self.ui_context);
 
@@ -930,9 +932,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
             }
             Page::Interface => {
-                self.page_sec_containers.resize_with(7, cce_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(8, cce_ui::widget::Container::new);
                 
-                for i in 0..7 {
+                for i in 0..8 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
@@ -1033,21 +1035,25 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.notification_opacity_spinbox, &mut self.ui_context);
                 
-                // Section 6: Fonts (parent of System Fonts and Program Fonts)
+                // Section 6: Surfaces
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[18], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.window_opacity_spinbox, &mut self.ui_context);
+                
+                // Section 7: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.sans_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.serif_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.mono_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.sans_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.serif_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.mono_box, &mut self.ui_context);
                 
                 // (Program Fonts)
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.borders_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.borders_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.status_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.status_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.fuzzel_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.terminal_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.terminal_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.borders_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.borders_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.status_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.status_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.fuzzel_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.terminal_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.terminal_box, &mut self.ui_context);
             }
 
             Page::Input => {
@@ -1469,6 +1475,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 15 => self.app.interface.breadcrumb_bg_color,
                 16 => self.app.interface.popover_bg_color,
                 17 => self.app.interface.notification_bg_color,
+                18 => self.app.interface.window_color,
                 _ => self.app.interface.low_color,
             };
             if cp.color != state_color {
@@ -1491,6 +1498,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                     16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                     17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
+                    18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                 }));
                 color_changed = true;
@@ -1937,6 +1945,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 changed = true;
             }
             if self.app.interface.notification_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.window_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
             if self.app.interface.sans_box.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2426,6 +2437,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.interface.dropdown_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.button_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.notification_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.window_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     let tf = &mut self.app.interface;
                     if tf.sans_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if tf.serif_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2665,6 +2677,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         15 => pages::interface::InterfaceMessage::PickBreadcrumbBgColor,
                         16 => pages::interface::InterfaceMessage::PickPopoverBgColor,
                         17 => pages::interface::InterfaceMessage::PickNotificationBgColor,
+                        18 => pages::interface::InterfaceMessage::PickWindowColor,
                         _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
@@ -2688,6 +2701,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                         16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                         17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
+                        18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                         _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                     }));
                 }
@@ -2703,6 +2717,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNotificationOpacity(sb.value as f32 / 100.0)));
+            }
+            let sb = &mut self.app.interface.window_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetWindowOpacity(sb.value as f32 / 100.0)));
             }
             let sb = &mut self.app.interface.tab_margin_spinbox_x;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
@@ -4055,6 +4075,13 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetGraphGapOpacity(sb2.value as f32 / 100.0)));
                     }
                 }
+                let sb3 = &mut self.app.interface.window_opacity_spinbox;
+                let old3 = sb3.value;
+                if sb3.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
+                    if sb3.value != old3 {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetWindowOpacity(sb3.value as f32 / 100.0)));
+                    }
+                }
                 for a in &actions {
                     self.handle_action(a);
                 }
@@ -4340,6 +4367,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                             15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                             16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                             17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
+                            18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
@@ -4359,6 +4387,16 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 let new_val = sb.value;
                 if new_val != old {
                     self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetNotificationOpacity(new_val as f32 / 100.0)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.window_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetWindowOpacity(new_val as f32 / 100.0)));
                 }
                 self.needs_rebuild = true;
                 return true;
