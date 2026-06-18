@@ -955,36 +955,23 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
             }
             Page::Interface => {
-                self.page_sec_containers.resize_with(8, cce_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(9, cce_ui::widget::Container::new);
                 
-                for i in 0..8 {
+                for i in 0..9 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
                 // Section 0: Custom Parameters
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.custom_multicontrol, &mut self.ui_context);
                 
-                // Section 1: Layout (parent of Sections, Grid Layout)
+                // Section 1: Layout (parent of Grid Layout)
                 // (Layout widgets)
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[1], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[2], &mut self.ui_context);
-
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_cell_opacity_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_gap_opacity_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
-                // (Sections child widgets)
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.page_margin_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.section_label_font_selector, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.label_alignment_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.label_offset_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
                 // (Grid Layout child widgets)
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.grid_min_col_width_spinbox, &mut self.ui_context);
+
                 
                 // Section 2: Status
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[8], &mut self.ui_context);
@@ -1004,21 +991,14 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.tab_margin_spinbox_y, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.button_padding_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
-                
-                // (Toggles child widgets)
+                 // (Toggles child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[12], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_height_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_corner_radius_spinbox, &mut self.ui_context);
                 
-                // (ScrollingList child widgets)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
- 
                 // (Breadcrumb child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
- 
-                // (Popover child widgets)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
  
                 // (Spinbox child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
@@ -1066,8 +1046,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_padding_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_opacity_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_corner_radius_spinbox, &mut self.ui_context);
-
-
+                // (Popover child widgets)
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
                 
                 // Section 7: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)
@@ -1084,7 +1064,26 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.terminal_menu, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.terminal_box, &mut self.ui_context);
+
+                // Section 8: Containers (parent of ScrollingList, Sections, Graph)
+                // (Sections child widgets)
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.page_margin_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.section_label_font_selector, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.label_alignment_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.label_offset_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
+                // (ScrollingList child widgets)
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
+                // (Graph child widgets)
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_cell_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_gap_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
             }
+
 
             Page::Input => {
                 self.page_sec_containers.resize_with(6, cce_ui::widget::Container::new);

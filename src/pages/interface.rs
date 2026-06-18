@@ -1842,7 +1842,8 @@ pub async fn fetch_typeface_state() -> InterfaceState {
 pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(9);
+
 
     // 1. Custom Parameters Section
     builder.add_section(&mut final_pc, "Custom Parameters", false, |sec| {
@@ -1865,36 +1866,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.widget_full(&mut state.color_selectors[2], 40.0, ctx);
         sec.spacing(12.0);
 
-        // Section child section
-
-        sec.add_section("Section", false, |subsec| {
-            subsec.spacing(8.0);
-            state.section_padding_spinbox.value = state.section_padding as i32;
-            subsec.widget_full(&mut state.section_padding_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
-            state.page_margin_spinbox.value = state.page_margin as i32;
-            subsec.widget_full(&mut state.page_margin_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
-            state.section_label_font_selector.font_family = state.section_label_font.clone();
-            subsec.widget_full(&mut state.section_label_font_selector, 44.0, ctx);
-            subsec.spacing(12.0);
-
-            // Nested Section child section
-            subsec.add_section("Nested Section", false, |subsubsec| {
-                subsubsec.spacing(8.0);
-                subsubsec.widget_full(&mut state.label_alignment_menu, 44.0, ctx);
-                subsubsec.spacing(8.0);
-                state.label_offset_spinbox.value = state.nested_section_label_offset as i32;
-                subsubsec.widget_full(&mut state.label_offset_spinbox, 44.0, ctx);
-                subsubsec.spacing(8.0);
-                state.nested_section_label_font_selector.font_family = state.nested_section_label_font.clone();
-                subsubsec.widget_full(&mut state.nested_section_label_font_selector, 44.0, ctx);
-                subsubsec.spacing(8.0);
-            });
-            subsec.spacing(8.0);
-        });
-        sec.spacing(12.0);
-
         // Grid Layout child section
         sec.add_section("Adaptive Grid", false, |subsec| {
             subsec.spacing(8.0);
@@ -1903,31 +1874,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
-
-        // Graph child section
-        sec.add_section("Graph", false, |subsec| {
-            subsec.spacing(8.0);
-            state.graph_show_grid_toggle.set_toggled(state.graph_show_grid);
-            subsec.widget_full(&mut state.graph_show_grid_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(8.0);
-            state.graph_snap_enabled_toggle.set_toggled(state.graph_snap_enabled);
-            subsec.widget_full(&mut state.graph_snap_enabled_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(8.0);
-            state.graph_uniform_background_toggle.set_toggled(state.graph_uniform_background);
-            subsec.widget_full(&mut state.graph_uniform_background_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(8.0);
-            state.graph_cell_opacity_spinbox.value = (state.graph_cell_opacity * 100.0).round() as i32;
-            subsec.widget_full(&mut state.graph_cell_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
-            state.graph_gap_opacity_spinbox.value = (state.graph_gap_opacity * 100.0).round() as i32;
-            subsec.widget_full(&mut state.graph_gap_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
-            state.graph_gap_width_spinbox.value = state.graph_gap_width as i32;
-            subsec.widget_full(&mut state.graph_gap_width_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
-        });
-        sec.spacing(8.0);
     });
+
 
     // 3. Status Section
     builder.add_section(&mut final_pc, "Status", false, |sec| {
@@ -2003,17 +1951,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
         });
 
-        sec.spacing(12.0);
-
-        // ScrollingList Section
-        sec.add_section("ScrollingList", false, |subsec| {
-            subsec.spacing(8.0);
-            state.color_selectors[14].color = state.scrollinglist_bg_color;
-            subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
-            subsec.spacing(8.0);
-        });
-        sec.spacing(12.0);
-
         // Breadcrumb Section
         sec.add_section("Breadcrumb", false, |subsec| {
             subsec.spacing(8.0);
@@ -2023,14 +1960,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         });
         sec.spacing(12.0);
 
-        // Popover Section
-        sec.add_section("Popover", false, |subsec| {
-            subsec.spacing(8.0);
-            state.color_selectors[16].color = state.popover_bg_color;
-            subsec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
-            subsec.spacing(8.0);
-        });
-        sec.spacing(12.0);
 
         // Spinbox Section
         sec.add_section("Spinbox", false, |subsec| {
@@ -2192,8 +2121,16 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         });
         sec.spacing(12.0);
 
-
+        // Popover Section
+        sec.add_section("Popover", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[16].color = state.popover_bg_color;
+            subsec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
     });
+
 
     let widget_h = 26.0;
     const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
@@ -2289,7 +2226,75 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
     });
 
+    // 8. Containers Section
+    builder.add_section(&mut final_pc, "Containers", sec_focused.get(8).copied().unwrap_or(false), |sec| {
+        sec.spacing(12.0);
+
+        // Section child section
+        sec.add_section("Section", false, |subsec| {
+            subsec.spacing(8.0);
+            state.section_padding_spinbox.value = state.section_padding as i32;
+            subsec.widget_full(&mut state.section_padding_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.page_margin_spinbox.value = state.page_margin as i32;
+            subsec.widget_full(&mut state.page_margin_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.section_label_font_selector.font_family = state.section_label_font.clone();
+            subsec.widget_full(&mut state.section_label_font_selector, 44.0, ctx);
+            subsec.spacing(12.0);
+
+            // Nested Section child section
+            subsec.add_section("Nested Section", false, |subsubsec| {
+                subsubsec.spacing(8.0);
+                subsubsec.widget_full(&mut state.label_alignment_menu, 44.0, ctx);
+                subsubsec.spacing(8.0);
+                state.label_offset_spinbox.value = state.nested_section_label_offset as i32;
+                subsubsec.widget_full(&mut state.label_offset_spinbox, 44.0, ctx);
+                subsubsec.spacing(8.0);
+                state.nested_section_label_font_selector.font_family = state.nested_section_label_font.clone();
+                subsubsec.widget_full(&mut state.nested_section_label_font_selector, 44.0, ctx);
+                subsubsec.spacing(8.0);
+            });
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // ScrollingList Section
+        sec.add_section("ScrollingList", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[14].color = state.scrollinglist_bg_color;
+            subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Graph child section
+        sec.add_section("Graph", false, |subsec| {
+            subsec.spacing(8.0);
+            state.graph_show_grid_toggle.set_toggled(state.graph_show_grid);
+            subsec.widget_full(&mut state.graph_show_grid_toggle, state.toggle_height as f32, ctx);
+            subsec.spacing(8.0);
+            state.graph_snap_enabled_toggle.set_toggled(state.graph_snap_enabled);
+            subsec.widget_full(&mut state.graph_snap_enabled_toggle, state.toggle_height as f32, ctx);
+            subsec.spacing(8.0);
+            state.graph_uniform_background_toggle.set_toggled(state.graph_uniform_background);
+            subsec.widget_full(&mut state.graph_uniform_background_toggle, state.toggle_height as f32, ctx);
+            subsec.spacing(8.0);
+            state.graph_cell_opacity_spinbox.value = (state.graph_cell_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.graph_cell_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.graph_gap_opacity_spinbox.value = (state.graph_gap_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.graph_gap_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.graph_gap_width_spinbox.value = state.graph_gap_width as i32;
+            subsec.widget_full(&mut state.graph_gap_width_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+    });
+
     final_pc
+
 }
 
 
