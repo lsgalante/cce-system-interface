@@ -52,6 +52,7 @@ impl Default for AppState {
 
 #[derive(Debug, Clone)]
 pub enum AppAction {
+    Exit,
     Audio(audio::AudioMessage),
     Display(display::DisplayMessage),
     Radios(network::NetworkMessage),

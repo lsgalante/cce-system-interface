@@ -1,4 +1,5 @@
 use cce_ui::widget::{Finger, hover_animation, TextItem, Element, PageSelector};
+use cce_ui::layout::RenderTarget;
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use cce_system_interface::app::{AppAction, AppState, PageContent};
@@ -162,6 +163,7 @@ struct SystemInterface {
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
     page_sec_containers: Vec<cce_ui::widget::Container>,
+    root_window: cce_ui::widget::Window,
     menubar: cce_ui::widget::MenuBar,
     switcher: cce_ui::widget::Switcher,
     plates: Vec<cce_ui::widget::Plate>,
@@ -469,6 +471,10 @@ impl cce_ui::engine::Application for SystemInterface {
             audio_source_dragging: None,
             display_brightness_dragging: false,
             page_sec_containers: Vec::new(),
+            root_window: cce_ui::widget::Window::new(0.0, 0.0, 820.0, 680.0)
+                .with_background([0.06, 0.06, 0.09, 1.0])
+                .with_border([0.22, 0.22, 0.28, 1.0], 1.5)
+                .with_radius(12.0),
             menubar,
             switcher,
             plates,
@@ -483,6 +489,9 @@ impl cce_ui::engine::Application for SystemInterface {
         for plate in &mut this.plates {
             this.switcher.add_child(plate.as_ptr(), &mut this.ui_context);
         }
+
+        this.root_window.add_child(this.menubar.as_ptr(), &mut this.ui_context);
+        this.root_window.add_child(this.switcher.as_ptr(), &mut this.ui_context);
 
         this.rebuild_layout(820.0, 680.0);
         this
@@ -499,7 +508,11 @@ impl cce_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn update(&mut self, msg: Self::Message, needs_rebuild: &mut bool, _exit: &mut bool) {
+    fn update(&mut self, msg: Self::Message, needs_rebuild: &mut bool, exit: &mut bool) {
+        if matches!(msg, AppAction::Exit) {
+            *exit = true;
+            return;
+        }
         self.handle_action(&msg);
         *needs_rebuild = true;
         self.needs_rebuild = true;
@@ -1157,12 +1170,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         }
 
         self.sidebar_width = self.menubar.sidebar_w();
-        self.header_height = 0.0;
+        self.header_height = 32.0; // CSD Titlebar height
         let s = 1.0f32;
         let mut widgets = Vec::new();
         let mut text_items = Vec::new();
         let mut page_buttons = Vec::new();
-
 
         cce_ui::widget::hover_animation::reset_frame_registration();
         cce_ui::widget::popovers::clear();
@@ -1178,13 +1190,39 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.menubar.set_selected_page(page_idx);
         self.switcher.set_active_index(Some(page_idx));
 
-        let mut menubar_pc = PageContent::new();
-        cce_ui::layout::render_widget(&mut menubar_pc, &mut self.menubar, 0.0, 0.0, self.sidebar_width, sh / s, &mut self.ui_context);
+        // Update root window size and children
+        self.root_window.set_rect(0.0, 0.0, sw / s, sh / s);
+        self.root_window.clear_children(&mut self.ui_context);
+        self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
+        self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
 
-        let mut switcher_pc = PageContent::new();
-        cce_ui::layout::render_widget(&mut switcher_pc, &mut self.switcher, self.sidebar_width, 0.0, sw / s - self.sidebar_width, sh / s, &mut self.ui_context);
+        // Position sidebar and switcher below the titlebar
+        let mut dummy_pc = PageContent::new();
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.menubar, 0.0, self.header_height, self.sidebar_width, sh / s - self.header_height, &mut self.ui_context);
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, sw / s - self.sidebar_width, sh / s - self.header_height, &mut self.ui_context);
 
-        for pc_part in &[menubar_pc, switcher_pc] {
+        // Render root window recursively
+        let mut window_pc = PageContent::new();
+        cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, sw / s, sh / s, &mut self.ui_context);
+
+        // Append CSD Titlebar background & border separator to window_pc
+        window_pc.rect([0.12, 0.12, 0.15, 1.0], 0.0, 0.0, sw / s, self.header_height);
+        window_pc.rect([0.22, 0.22, 0.28, 1.0], 0.0, self.header_height - 1.0, sw / s, 1.0);
+
+        // Title text in Titlebar
+        window_pc.text("SYSTEM INTERFACE", 12.0, (self.header_height - 12.0) / 2.0, 12.0, [0.8, 0.8, 0.83, 1.0]);
+
+        // CSD Window Control Buttons (Close, Minimize, Maximize)
+        let btn_y = (self.header_height - 12.0) / 2.0;
+        let close_x = sw / s - 24.0;
+        let min_x = sw / s - 44.0;
+        let max_x = sw / s - 64.0;
+        
+        window_pc.rect_with_radius([0.9, 0.3, 0.3, 1.0], close_x, btn_y, 12.0, 12.0, 6.0);
+        window_pc.rect_with_radius([0.9, 0.8, 0.2, 1.0], min_x, btn_y, 12.0, 12.0, 6.0);
+        window_pc.rect_with_radius([0.2, 0.8, 0.2, 1.0], max_x, btn_y, 12.0, 12.0, 6.0);
+
+        for pc_part in &[window_pc] {
             for (c, x, y, w, h, r, corners) in &pc_part.rects {
                 widgets.push(AppWidget {
                     x: *x * s, y: *y * s, w: *w * s, h: *h * s,
@@ -1645,6 +1683,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
     fn handle_action(&mut self, action: &AppAction) {
         use pages::*;
         match action {
+            AppAction::Exit => {}
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Display(m) => display::update(&mut self.app.display, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
@@ -2284,7 +2323,15 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         let lx_no_scroll = self.cursor_x / s;
         let ly_no_scroll = self.cursor_y / s;
 
-
+        // CSD Close Button Interaction
+        if state == cce_ui::widget::ElementState::Pressed && button == cce_ui::widget::MouseButton::Left {
+            let btn_y = (self.header_height - 12.0) / 2.0;
+            let close_x = self.width as f32 - 24.0;
+            if lx_no_scroll >= close_x - 4.0 && lx_no_scroll <= close_x + 16.0 && ly_no_scroll >= btn_y - 4.0 && ly_no_scroll <= btn_y + 16.0 {
+                self.handle_action(&AppAction::Exit);
+                return true;
+            }
+        }
 
         if cce_ui::widget::context_menu::is_visible() {
             if cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
