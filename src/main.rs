@@ -734,10 +734,18 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.spinbox_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.toggle_height_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.toggle_height_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.toggle_corner_radius_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.toggle_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+
         self.app.interface.color_selector_height_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.color_selector_height_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.color_selector_corner_radius_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.color_selector_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.plate_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.plate_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.plate_corner_radius_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.plate_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+
         self.app.interface.color_selector_preview_corner_radius_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.color_selector_preview_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.color_selector_preview_margin_spinbox.clear_children(&mut self.ui_context);
@@ -956,14 +964,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 // Section 0: Custom Parameters
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.interface.custom_multicontrol, &mut self.ui_context);
                 
-                // Section 1: Layout (parent of Plate, Sections, Grid Layout)
+                // Section 1: Layout (parent of Sections, Grid Layout)
                 // (Layout widgets)
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[1], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[2], &mut self.ui_context);
-                // (Plate child widgets)
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[0], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.plate_padding_spinbox, &mut self.ui_context);
+
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_snap_enabled_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.graph_uniform_background_toggle, &mut self.ui_context);
@@ -1003,6 +1009,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[12], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_height_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (ScrollingList child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
@@ -1054,6 +1061,13 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[18], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.window_opacity_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.window_corner_radius_spinbox, &mut self.ui_context);
+                // (Plate child widgets)
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[0], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_corner_radius_spinbox, &mut self.ui_context);
+
+
                 
                 // Section 7: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)
@@ -1938,6 +1952,17 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.interface.toggle_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.toggle_corner_radius_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.plate_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.plate_corner_radius_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+
+
             if self.app.interface.color_selector_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
@@ -2473,6 +2498,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.interface.spinbox_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.spinbox_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.toggle_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.toggle_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.plate_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.plate_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+
+
                     if self.app.interface.color_selector_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.color_selector_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.color_selector_preview_corner_radius_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2897,6 +2927,26 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetToggleHeight(sb.value as u16)));
             }
+            let sb = &mut self.app.interface.toggle_corner_radius_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetToggleCornerRadius(sb.value as u16)));
+            }
+            let sb = &mut self.app.interface.plate_opacity_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateOpacity(sb.value as f32 / 100.0)));
+            }
+            let sb = &mut self.app.interface.plate_corner_radius_spinbox;
+            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
+            let old = sb.value;
+            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(sb.value as u16)));
+            }
+
+
             let sb = &mut self.app.interface.color_selector_height_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
@@ -3752,6 +3802,17 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 if self.app.interface.toggle_height_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetToggleHeight(self.app.interface.toggle_height_spinbox.value as u16)));
                 }
+                if self.app.interface.toggle_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetToggleCornerRadius(self.app.interface.toggle_corner_radius_spinbox.value as u16)));
+                }
+                if self.app.interface.plate_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateOpacity(self.app.interface.plate_opacity_spinbox.value as f32 / 100.0)));
+                }
+                if self.app.interface.plate_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(self.app.interface.plate_corner_radius_spinbox.value as u16)));
+                }
+
+
                 if self.app.interface.color_selector_height_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetColorSelectorHeight(self.app.interface.color_selector_height_spinbox.value as u16)));
                 }
@@ -4631,6 +4692,38 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
                 return true;
             }
+            let sb = &mut self.app.interface.toggle_corner_radius_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetToggleCornerRadius(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.plate_opacity_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetPlateOpacity(new_val as f32 / 100.0)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+            let sb = &mut self.app.interface.plate_corner_radius_spinbox;
+            let old = sb.value;
+            if sb.keyboard_input(event, &mut self.ui_context) {
+                let new_val = sb.value;
+                if new_val != old {
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(new_val as u16)));
+                }
+                self.needs_rebuild = true;
+                return true;
+            }
+
+
             let sb = &mut self.app.interface.color_selector_height_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event, &mut self.ui_context) {

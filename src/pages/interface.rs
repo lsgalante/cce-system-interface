@@ -58,6 +58,11 @@ pub struct InterfaceState {
     pub section_padding_spinbox: Spinbox,
     pub plate_padding: u16,
     pub plate_padding_spinbox: Spinbox,
+    pub plate_opacity: f32,
+    pub plate_opacity_spinbox: Spinbox,
+    pub plate_corner_radius: u16,
+    pub plate_corner_radius_spinbox: Spinbox,
+
     pub page_margin: u16,
     pub page_margin_spinbox: Spinbox,
     pub grid_min_col_width: u16,
@@ -68,6 +73,9 @@ pub struct InterfaceState {
     pub spinbox_corner_radius_spinbox: Spinbox,
     pub toggle_height: u16,
     pub toggle_height_spinbox: Spinbox,
+    pub toggle_corner_radius: u16,
+    pub toggle_corner_radius_spinbox: Spinbox,
+
     pub color_selector_height: u16,
     pub color_selector_height_spinbox: Spinbox,
     pub color_selector_corner_radius: u16,
@@ -202,6 +210,11 @@ impl Default for InterfaceState {
             section_padding_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Padding").with_unit("px"),
             plate_padding: 20,
             plate_padding_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Padding").with_unit("px"),
+            plate_opacity: 1.0,
+            plate_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            plate_corner_radius: 12,
+            plate_corner_radius_spinbox: Spinbox::new(12, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+
             page_margin: 20,
             page_margin_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Page Margin").with_unit("px"),
             grid_min_col_width: 260,
@@ -212,6 +225,9 @@ impl Default for InterfaceState {
             spinbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
             toggle_height: 44,
             toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            toggle_corner_radius: 4,
+            toggle_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+
             color_selector_height: 22,
             color_selector_height_spinbox: Spinbox::new(22, 10, 100, 1).with_label("Height").with_unit("px"),
             color_selector_corner_radius: 4,
@@ -335,11 +351,16 @@ pub enum InterfaceMessage {
     SetButtonPadding(u16),
     SetSectionPadding(u16),
     SetPlatePadding(u16),
+    SetPlateOpacity(f32),
+    SetPlateCornerRadius(u16),
+
     SetPageMargin(u16),
     SetGridMinColWidth(u16),
     SetSpinboxHeight(u16),
     SetSpinboxCornerRadius(u16),
     SetToggleHeight(u16),
+    SetToggleCornerRadius(u16),
+
     SetColorSelectorHeight(u16),
     SetColorSelectorCornerRadius(u16),
     SetColorSelectorPreviewCornerRadius(u16),
@@ -460,11 +481,16 @@ pub fn read_interface_config() -> InterfaceState {
     let button_padding = parse_u16_from(&content, "button_padding", paginator_tab_padding_y);
     let section_padding = parse_u16_from(&content, "section_padding", 8);
     let plate_padding = parse_u16_from(&content, "plate_padding", 20);
+    let plate_opacity = parse_f32_from(&content, "plate_opacity", 1.0);
+    let plate_corner_radius = parse_u16_from(&content, "plate_corner_radius", 12);
+
     let page_margin = parse_u16_from(&content, "page_margin", 20);
     let grid_min_col_width = parse_u16_from(&content, "grid_min_col_width", 260);
     let spinbox_height = parse_u16_from(&content, "spinbox_height", 26);
     let spinbox_corner_radius = parse_u16_from(&content, "spinbox_corner_radius", 4);
     let toggle_height = parse_u16_from(&content, "toggle_height", 44);
+    let toggle_corner_radius = parse_u16_from(&content, "toggle_corner_radius", 4);
+
     let color_selector_height = parse_u16_from(&content, "color_selector_height", 22);
     let color_selector_corner_radius = parse_u16_from(&content, "color_selector_corner_radius", 4);
     let color_selector_preview_corner_radius = parse_u16_from(&content, "color_selector_preview_corner_radius", 4);
@@ -549,6 +575,11 @@ pub fn read_interface_config() -> InterfaceState {
         section_padding_spinbox: Spinbox::new(section_padding as i32, 0, 100, 1).with_label("Padding").with_unit("px"),
         plate_padding,
         plate_padding_spinbox: Spinbox::new(plate_padding as i32, 0, 100, 1).with_label("Padding").with_unit("px"),
+        plate_opacity,
+        plate_opacity_spinbox: Spinbox::new((plate_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        plate_corner_radius,
+        plate_corner_radius_spinbox: Spinbox::new(plate_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+
         page_margin,
         page_margin_spinbox: Spinbox::new(page_margin as i32, 0, 100, 1).with_label("Page Margin").with_unit("px"),
         grid_min_col_width,
@@ -559,6 +590,9 @@ pub fn read_interface_config() -> InterfaceState {
         spinbox_corner_radius_spinbox: Spinbox::new(spinbox_corner_radius as i32, 0, 50, 1).with_label("Border Radius").with_unit("px"),
         toggle_height,
         toggle_height_spinbox: Spinbox::new(toggle_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
+        toggle_corner_radius,
+        toggle_corner_radius_spinbox: Spinbox::new(toggle_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+
         color_selector_height,
         color_selector_height_spinbox: Spinbox::new(color_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px"),
         color_selector_corner_radius,
@@ -854,6 +888,21 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     apply_plate_padding(val);
                 }
             }
+            "plate_opacity" => {
+                if let Ok(val) = val_str.parse::<f32>() {
+                    state.plate_opacity = val;
+                    state.plate_opacity_spinbox.value = (val * 100.0).round() as i32;
+                    apply_plate_opacity(val);
+                }
+            }
+            "plate_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.plate_corner_radius = val;
+                    state.plate_corner_radius_spinbox.value = val as i32;
+                    apply_plate_corner_radius(val);
+                }
+            }
+
             "page_margin" => {
                 if let Ok(val) = val_str.parse::<u16>() {
                     state.page_margin = val;
@@ -889,6 +938,14 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     apply_toggle_height(val);
                 }
             }
+            "toggle_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.toggle_corner_radius = val;
+                    state.toggle_corner_radius_spinbox.value = val as i32;
+                    apply_toggle_corner_radius(val);
+                }
+            }
+
             "color_selector_height" => {
                 if let Ok(val) = val_str.parse::<u16>() {
                     state.color_selector_height = val;
@@ -1238,6 +1295,17 @@ fn apply_plate_padding(padding: u16) {
     cce_ui::layout::set_plate_padding(padding as f32);
 }
 
+fn apply_plate_opacity(opacity: f32) {
+    write_config_value("plate_opacity", &opacity.to_string());
+    cce_ui::layout::set_plate_opacity(opacity);
+}
+
+fn apply_plate_corner_radius(radius: u16) {
+    write_config_value("plate_corner_radius", &radius.to_string());
+    cce_ui::layout::set_plate_corner_radius(radius as f32);
+}
+
+
 fn apply_page_margin(margin: u16) {
     write_config_value("page_margin", &margin.to_string());
     cce_ui::layout::set_page_margin(margin as f32);
@@ -1267,6 +1335,12 @@ fn apply_toggle_height(height: u16) {
     write_config_value("toggle_height", &height.to_string());
     cce_ui::layout::set_toggle_height(height as f32);
 }
+
+fn apply_toggle_corner_radius(radius: u16) {
+    write_config_value("toggle_corner_radius", &radius.to_string());
+    cce_ui::layout::set_toggle_corner_radius(radius as f32);
+}
+
 
 fn apply_color_selector_height(height: u16) {
     write_config_value("color_selector_height", &height.to_string());
@@ -1791,19 +1865,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.widget_full(&mut state.color_selectors[2], 40.0, ctx);
         sec.spacing(12.0);
 
-        // Plate child section
-        sec.add_section("Plate", false, |subsec| {
-            subsec.spacing(8.0);
-            state.color_selectors[0].color = state.page_low_color;
-            subsec.widget_full(&mut state.color_selectors[0], 40.0, ctx);
-            subsec.spacing(8.0);
-            state.plate_padding_spinbox.value = state.plate_padding as i32;
-            subsec.widget_full(&mut state.plate_padding_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
-        });
-        sec.spacing(12.0);
-
         // Section child section
+
         sec.add_section("Section", false, |subsec| {
             subsec.spacing(8.0);
             state.section_padding_spinbox.value = state.section_padding as i32;
@@ -1923,8 +1986,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         });
         sec.spacing(12.0);
 
-        // Toggles Section
-        sec.add_section("Toggles", false, |subsec| {
+        // Toggle Section
+        sec.add_section("Toggle", false, |subsec| {
             subsec.spacing(8.0);
             state.color_selectors[12].color = state.toggle_enabled_color;
             subsec.widget_full(&mut state.color_selectors[12], 40.0, ctx);
@@ -1935,7 +1998,11 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.toggle_height_spinbox.value = state.toggle_height as i32;
             subsec.widget_full(&mut state.toggle_height_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
+            state.toggle_corner_radius_spinbox.value = state.toggle_corner_radius as i32;
+            subsec.widget_full(&mut state.toggle_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
+
         sec.spacing(12.0);
 
         // ScrollingList Section
@@ -2106,6 +2173,26 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
+
+        // Plate child section
+        sec.add_section("Plate", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[0].color = state.page_low_color;
+            subsec.widget_full(&mut state.color_selectors[0], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.plate_padding_spinbox.value = state.plate_padding as i32;
+            subsec.widget_full(&mut state.plate_padding_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.plate_opacity_spinbox.value = (state.plate_opacity * 100.0).round() as i32;
+            subsec.widget_full(&mut state.plate_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.plate_corner_radius_spinbox.value = state.plate_corner_radius as i32;
+            subsec.widget_full(&mut state.plate_corner_radius_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+
     });
 
     let widget_h = 26.0;
@@ -2324,6 +2411,17 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_plate_padding(padding);
             propagate_links(state, "plate_padding", &padding.to_string());
         }
+        InterfaceMessage::SetPlateOpacity(opacity) => {
+            state.plate_opacity = opacity;
+            apply_plate_opacity(opacity);
+            propagate_links(state, "plate_opacity", &opacity.to_string());
+        }
+        InterfaceMessage::SetPlateCornerRadius(radius) => {
+            state.plate_corner_radius = radius;
+            apply_plate_corner_radius(radius);
+            propagate_links(state, "plate_corner_radius", &radius.to_string());
+        }
+
         InterfaceMessage::SetPageMargin(margin) => {
             state.page_margin = margin;
             apply_page_margin(margin);
@@ -2349,6 +2447,12 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_toggle_height(height);
             propagate_links(state, "toggle_height", &height.to_string());
         }
+        InterfaceMessage::SetToggleCornerRadius(radius) => {
+            state.toggle_corner_radius = radius;
+            apply_toggle_corner_radius(radius);
+            propagate_links(state, "toggle_corner_radius", &radius.to_string());
+        }
+
         InterfaceMessage::SetColorSelectorHeight(height) => {
             state.color_selector_height = height;
             apply_color_selector_height(height);
@@ -2503,11 +2607,16 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_bp_hovered = state.button_padding_spinbox.hovered();
             let was_sp_hovered = state.section_padding_spinbox.hovered();
             let was_pp_hovered = state.plate_padding_spinbox.hovered();
+            let was_pl_op_hovered = state.plate_opacity_spinbox.hovered();
+            let was_pl_cr_hovered = state.plate_corner_radius_spinbox.hovered();
+
             let was_pm_hovered = state.page_margin_spinbox.hovered();
             let was_gm_hovered = state.grid_min_col_width_spinbox.hovered();
             let was_sh_hovered = state.spinbox_height_spinbox.hovered();
             let was_scr_hovered = state.spinbox_corner_radius_spinbox.hovered();
             let was_th_hovered = state.toggle_height_spinbox.hovered();
+            let was_tgcr_hovered = state.toggle_corner_radius_spinbox.hovered();
+
             let was_gsg_hovered = state.graph_show_grid_toggle.hovered();
             let was_gse_hovered = state.graph_snap_enabled_toggle.hovered();
             let was_gub_hovered = state.graph_uniform_background_toggle.hovered();
@@ -2562,11 +2671,16 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.button_padding_spinbox.set_hovered(was_bp_hovered);
             state.section_padding_spinbox.set_hovered(was_sp_hovered);
             state.plate_padding_spinbox.set_hovered(was_pp_hovered);
+            state.plate_opacity_spinbox.set_hovered(was_pl_op_hovered);
+            state.plate_corner_radius_spinbox.set_hovered(was_pl_cr_hovered);
+
             state.page_margin_spinbox.set_hovered(was_pm_hovered);
             state.grid_min_col_width_spinbox.set_hovered(was_gm_hovered);
             state.spinbox_height_spinbox.set_hovered(was_sh_hovered);
             state.spinbox_corner_radius_spinbox.set_hovered(was_scr_hovered);
             state.toggle_height_spinbox.set_hovered(was_th_hovered);
+            state.toggle_corner_radius_spinbox.set_hovered(was_tgcr_hovered);
+
             state.graph_show_grid_toggle.set_hovered(was_gsg_hovered);
             state.graph_snap_enabled_toggle.set_hovered(was_gse_hovered);
             state.graph_uniform_background_toggle.set_hovered(was_gub_hovered);
@@ -3562,6 +3676,92 @@ mod tests {
         // Clean up
         let _ = fs::remove_file(path_str);
     }
+
+    #[test]
+    fn test_read_write_toggle_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_toggle_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse toggle_corner_radius when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "toggle_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write toggle_corner_radius config
+        assert!(write_config_value_path(path_str, "toggle_corner_radius", "8"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("toggle_corner_radius = 8"));
+
+        // 4. Parse toggle_corner_radius when present (should return written value 8)
+        let val2 = parse_u16_from(&updated, "toggle_corner_radius", 4);
+        assert_eq!(val2, 8);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_plate_opacity() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_plate_opacity_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse plate_opacity when missing (should return default 1.0)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_f32_from(&content, "plate_opacity", 1.0);
+        assert_eq!(val, 1.0);
+
+        // 3. Write plate_opacity config
+        assert!(write_config_value_path(path_str, "plate_opacity", "0.85"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("plate_opacity = 0.85"));
+
+        // 4. Parse plate_opacity when present (should return written value 0.85)
+        let val2 = parse_f32_from(&updated, "plate_opacity", 1.0);
+        assert_eq!(val2, 0.85);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_plate_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_plate_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "[layout]\ngap = 18\nborder_color = \"#374673\"\n";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse plate_corner_radius when missing (should return default 12)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "plate_corner_radius", 12);
+        assert_eq!(val, 12);
+
+        // 3. Write plate_corner_radius config
+        assert!(write_config_value_path(path_str, "plate_corner_radius", "16"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("plate_corner_radius = 16"));
+
+        // 4. Parse plate_corner_radius when present (should return written value 16)
+        let val2 = parse_u16_from(&updated, "plate_corner_radius", 12);
+        assert_eq!(val2, 16);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+
 
     #[test]
     fn test_read_write_color_selector_height() {
