@@ -3297,6 +3297,18 @@ mod tests {
         assert!(!cce_ui::widget::context_menu::is_visible());
     }
 
+    #[test]
+    fn test_context_menu_null_target_safety() {
+        let mut ctx = cce_ui::context::UiContext::new();
+        // Hide context menu initially
+        ctx.hide_context_menu();
+        assert!(!ctx.is_context_menu_visible());
+
+        // This should return early and not panic/crash on a null target
+        ctx.handle_right_click(std::ptr::null_mut::<cce_ui::widget::Spinbox>() as *mut (dyn Element + 'static), 10.0, 10.0);
+        assert!(!ctx.is_context_menu_visible());
+    }
+
 
     #[test]
     fn test_parse_color_from_key() {
