@@ -6,7 +6,7 @@ use cce_ui::widget::{
     ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle, MultiControl
 };
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-interface/links.json";
 
 fn get_socket_path() -> String {
@@ -718,30 +718,38 @@ pub fn read_interface_config() -> InterfaceState {
     }
 }
 
+fn parse_json(content: &str) -> serde_json::Value {
+    serde_json::from_str(content).unwrap_or_default()
+}
+
+fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    if let Some(obj) = val.as_object() {
+        for (_, sec_val) in obj.iter() {
+            if let Some(sec_obj) = sec_val.as_object() {
+                if let Some(v) = sec_obj.get(key) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn parse_string_from(content: &str, key: &str, default: &str) -> String {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=');
-            let rest = rest.trim();
-            let val_str = if rest.starts_with('"') && rest.ends_with('"') && rest.len() >= 2 {
-                &rest[1..rest.len() - 1]
-            } else {
-                rest
-            };
-            return val_str.trim().to_string();
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(s) = v.as_str() {
+            return s.to_string();
         }
     }
     default.to_string()
 }
 
 fn parse_color_from_key(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            let hex = rest.trim_end_matches('"').trim().trim_start_matches('#');
-            return parse_hex(hex);
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(s) = v.as_str() {
+            return parse_hex(s);
         }
     }
     default
@@ -782,8 +790,8 @@ pub fn get_links_path(path: &str) -> Vec<(String, String)> {
 
 pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
     let content = fs::read_to_string(path).unwrap_or_default();
+    let mut val = parse_json(&content);
     
-    // Resolve all linked keys transitively
     let mut keys_to_update = vec![key.to_string()];
     let links = get_links();
     let mut i = 0;
@@ -800,65 +808,55 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
         i += 1;
     }
 
-    let mut updated = content.clone();
-    for k in &keys_to_update {
-        let old_key = if k == key {
-            match key {
-                "low_color" => "background_color",
-                "high_color" => "border_color",
-                _ => "",
-            }
+    let set_val = |val_obj: &mut serde_json::Value, k: &str, val_str: &str| {
+        let j_val = if let Ok(b) = val_str.parse::<bool>() {
+            serde_json::json!(b)
+        } else if let Ok(n) = val_str.parse::<i64>() {
+            serde_json::json!(n)
+        } else if let Ok(f) = val_str.parse::<f64>() {
+            serde_json::json!(f)
         } else {
-            ""
+            serde_json::json!(val_str)
         };
-        let new_line = format!("{} = {}", k, value);
-        let mut found = false;
-        let next_update: String = updated.lines()
-            .map(|line| {
-                let trimmed = line.trim();
-                if trimmed.starts_with(k) {
-                    let rest = trimmed.strip_prefix(k).unwrap_or("");
-                    let next_char = rest.trim_start().chars().next();
-                    if next_char == Some('=') {
-                        found = true;
-                        new_line.clone()
-                    } else {
-                        line.to_string()
-                    }
-                } else if !old_key.is_empty() && trimmed.starts_with(old_key) {
-                    let rest = trimmed.strip_prefix(old_key).unwrap_or("");
-                    let next_char = rest.trim_start().chars().next();
-                    if next_char == Some('=') {
-                        found = true;
-                        new_line.clone()
-                    } else {
-                        line.to_string()
-                    }
-                } else {
-                    line.to_string()
-                }
-            }).collect::<Vec<_>>().join("\n");
         
-        if !found {
-            let mut result = String::new();
-            let mut in_layout = false;
-            let mut inserted = false;
-            for line in next_update.lines() {
-                if line.trim() == "[layout]" { in_layout = true; }
-                else if line.trim().starts_with('[') && in_layout {
-                    if !inserted { result.push_str(&new_line); result.push('\n'); inserted = true; }
-                    in_layout = false;
+        let mut updated = false;
+        if let Some(obj) = val_obj.as_object_mut() {
+            for (sec_name, sec_val) in obj.iter_mut() {
+                if let Some(sec_obj) = sec_val.as_object_mut() {
+                    if sec_obj.contains_key(k) {
+                        sec_obj.insert(k.to_string(), j_val.clone());
+                        updated = true;
+                        break;
+                    }
                 }
-                result.push_str(line); result.push('\n');
             }
-            if in_layout && !inserted { result.push_str(&new_line); result.push('\n'); }
-            updated = result;
+            if !updated {
+                if let Some(layout_obj) = obj.get_mut("layout").and_then(|l| l.as_object_mut()) {
+                    layout_obj.insert(k.to_string(), j_val);
+                }
+            }
+        }
+    };
+
+    for k in &keys_to_update {
+        let mapped_k = if k == key {
+            match key {
+                "low_color" => "low_color",
+                "high_color" => "border_color",
+                _ => k,
+            }
         } else {
-            updated = next_update;
+            k
+        };
+        set_val(&mut val, mapped_k, value);
+    }
+
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        if fs::write(path, updated_str).is_ok() {
+            return true;
         }
     }
-    
-    fs::write(path, updated).is_ok()
+    false
 }
 
 pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
@@ -1671,56 +1669,40 @@ pub fn save_preferred_fonts(
 }
 
 pub fn parse_i16_from(content: &str, key: &str, default: i16) -> i16 {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            let val_str = rest.trim_end_matches('"').trim();
-            if let Ok(val) = val_str.parse::<i16>() {
-                return val;
-            }
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(n) = v.as_i64() {
+            return n as i16;
         }
     }
     default
 }
 
 pub fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            let val_str = rest.trim_end_matches('"').trim();
-            if let Ok(val) = val_str.parse::<u16>() {
-                return val;
-            }
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(n) = v.as_u64() {
+            return n as u16;
         }
     }
     default
 }
 
 pub fn parse_bool_from(content: &str, key: &str, default: bool) -> bool {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            let val_str = rest.trim_end_matches('"').trim();
-            if let Ok(val) = val_str.parse::<bool>() {
-                return val;
-            }
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(b) = v.as_bool() {
+            return b;
         }
     }
     default
 }
 
 pub fn parse_f32_from(content: &str, key: &str, default: f32) -> f32 {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            let val_str = rest.trim_end_matches('"').trim();
-            if let Ok(val) = val_str.parse::<f32>() {
-                return val;
-            }
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(n) = v.as_f64() {
+            return n as f32;
         }
     }
     default
@@ -3179,91 +3161,28 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
 }
 
 pub fn parse_transparency_opacity(content: &str) -> f32 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[transparency]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("opacity") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(o) = val.trim().parse::<f32>() {
-                    return o.clamp(0.0, 1.0);
-                }
-            }
-        }
-    }
-    0.9 // default to 0.9
+    let val = parse_json(content);
+    val["transparency"]["opacity"].as_f64().map(|v| v as f32).unwrap_or(0.9)
 }
 
 pub fn write_transparency_config_value(key: &str, value: &str) {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let mut updated_lines = Vec::new();
-    let mut in_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[transparency]" {
-            in_section = true;
-            updated_lines.push(line.to_string());
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            in_section = false;
-        }
-        if in_section && trimmed.starts_with(key) {
-            found = true;
-            updated_lines.push(new_line.clone());
-        } else {
-            updated_lines.push(line.to_string());
-        }
+    let mut val = parse_json(&content);
+    let j_val = if let Ok(b) = value.parse::<bool>() {
+        serde_json::json!(b)
+    } else if let Ok(n) = value.parse::<i64>() {
+        serde_json::json!(n)
+    } else if let Ok(f) = value.parse::<f64>() {
+        serde_json::json!(f)
+    } else {
+        serde_json::json!(value)
+    };
+    if let Some(transparency) = val.get_mut("transparency").and_then(|t| t.as_object_mut()) {
+        transparency.insert(key.to_string(), j_val);
     }
-
-    let mut updated = updated_lines.join("\n");
-
-    if !found {
-        let mut result = String::new();
-        let has_section = content.lines().any(|l| l.trim() == "[transparency]");
-        if has_section {
-            let mut in_section = false;
-            let mut inserted = false;
-            for line in updated.lines() {
-                if line.trim() == "[transparency]" {
-                    in_section = true;
-                    result.push_str(line);
-                    result.push('\n');
-                    continue;
-                }
-                if line.trim().starts_with('[') && in_section {
-                    if !inserted {
-                        result.push_str(&new_line);
-                        result.push('\n');
-                        inserted = true;
-                    }
-                    in_section = false;
-                }
-                result.push_str(line);
-                result.push('\n');
-            }
-            if !inserted {
-                result.push_str(&new_line);
-                result.push('\n');
-            }
-            updated = result;
-        } else {
-            updated.push_str("\n[transparency]\n");
-            updated.push_str(&new_line);
-            updated.push_str("\n");
-        }
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        let _ = fs::write(CONFIG_PATH, updated_str);
     }
-    let _ = fs::write(CONFIG_PATH, updated);
 }
 
 fn write_surfaces_config_value(key: &str, value: &str) {
@@ -3272,178 +3191,56 @@ fn write_surfaces_config_value(key: &str, value: &str) {
 
 fn write_surfaces_config_value_path(path: &str, key: &str, value: &str) {
     let content = fs::read_to_string(path).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let mut updated_lines = Vec::new();
-    let mut in_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[surfaces]" {
-            in_section = true;
-            updated_lines.push(line.to_string());
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            in_section = false;
-        }
-        if in_section && trimmed.starts_with(key) {
-            found = true;
-            updated_lines.push(new_line.clone());
-        } else {
-            updated_lines.push(line.to_string());
-        }
+    let mut val = parse_json(&content);
+    let j_val = if let Ok(b) = value.parse::<bool>() {
+        serde_json::json!(b)
+    } else if let Ok(n) = value.parse::<i64>() {
+        serde_json::json!(n)
+    } else if let Ok(f) = value.parse::<f64>() {
+        serde_json::json!(f)
+    } else {
+        serde_json::json!(value)
+    };
+    if let Some(surfaces) = val.get_mut("surfaces").and_then(|s| s.as_object_mut()) {
+        surfaces.insert(key.to_string(), j_val);
     }
-
-    let mut updated = updated_lines.join("\n");
-
-    if !found {
-        let mut result = String::new();
-        let has_section = content.lines().any(|l| l.trim() == "[surfaces]");
-        if has_section {
-            let mut in_section = false;
-            let mut inserted = false;
-            for line in updated.lines() {
-                if line.trim() == "[surfaces]" {
-                    in_section = true;
-                    result.push_str(line);
-                    result.push('\n');
-                    continue;
-                }
-                if line.trim().starts_with('[') && in_section {
-                    if !inserted {
-                        result.push_str(&new_line);
-                        result.push('\n');
-                        inserted = true;
-                    }
-                    in_section = false;
-                }
-                result.push_str(line);
-                result.push('\n');
-            }
-            if !inserted {
-                result.push_str(&new_line);
-                result.push('\n');
-            }
-            updated = result;
-        } else {
-            updated.push_str("\n[surfaces]\n");
-            updated.push_str(&new_line);
-            updated.push_str("\n");
-        }
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        let _ = fs::write(path, updated_str);
     }
-    let _ = fs::write(path, updated);
 }
 
 fn parse_surfaces_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[surfaces]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with(key) {
-            if let Some(rest) = trimmed.strip_prefix(key) {
-                let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-                let hex = rest.trim_end_matches('"').trim().trim_start_matches('#');
-                return parse_hex(hex);
-            }
-        }
+    let val = parse_json(content);
+    if let Some(s) = val["surfaces"].get(key).and_then(|v| v.as_str()) {
+        return parse_hex(s);
     }
     default
 }
 
 fn parse_surfaces_opacity(content: &str) -> f32 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[surfaces]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("window_opacity") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(o) = val.trim().parse::<f32>() {
-                    return o.clamp(0.0, 1.0);
-                }
-            }
-        }
-    }
-    0.9 // default to 0.9
+    let val = parse_json(content);
+    val["surfaces"]["window_opacity"].as_f64().map(|v| v as f32).unwrap_or(0.9)
 }
 
 fn parse_surfaces_u16(content: &str, key: &str, default: u16) -> u16 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[surfaces]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with(key) {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(v) = val.trim().parse::<u16>() {
-                    return v;
-                }
-            }
-        }
+    let val = parse_json(content);
+    if let Some(n) = val["surfaces"].get(key).and_then(|v| v.as_u64()) {
+        return n as u16;
     }
     default
 }
 
 fn parse_notifications_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with(key) {
-            if let Some(rest) = trimmed.strip_prefix(key) {
-                let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-                let hex = rest.trim_end_matches('"').trim().trim_start_matches('#');
-                return parse_hex(hex);
-            }
-        }
+    let val = parse_json(content);
+    if let Some(s) = val["notifications"].get(key).and_then(|v| v.as_str()) {
+        return parse_hex(s);
     }
     default
 }
 
 fn parse_notifications_opacity(content: &str) -> f32 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("opacity") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(o) = val.trim().parse::<f32>() {
-                    return o.clamp(0.0, 1.0);
-                }
-            }
-        }
-    }
-    0.9 // default to 0.9
+    let val = parse_json(content);
+    val["notifications"]["opacity"].as_f64().map(|v| v as f32).unwrap_or(0.9)
 }
 
 fn write_notifications_config_value(key: &str, value: &str) {
@@ -3452,68 +3249,22 @@ fn write_notifications_config_value(key: &str, value: &str) {
 
 fn write_notifications_config_value_path(path: &str, key: &str, value: &str) {
     let content = fs::read_to_string(path).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let mut updated_lines = Vec::new();
-    let mut in_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            updated_lines.push(line.to_string());
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            in_section = false;
-        }
-        if in_section && trimmed.starts_with(key) {
-            found = true;
-            updated_lines.push(new_line.clone());
-        } else {
-            updated_lines.push(line.to_string());
-        }
+    let mut val = parse_json(&content);
+    let j_val = if let Ok(b) = value.parse::<bool>() {
+        serde_json::json!(b)
+    } else if let Ok(n) = value.parse::<i64>() {
+        serde_json::json!(n)
+    } else if let Ok(f) = value.parse::<f64>() {
+        serde_json::json!(f)
+    } else {
+        serde_json::json!(value)
+    };
+    if let Some(notifications) = val.get_mut("notifications").and_then(|n| n.as_object_mut()) {
+        notifications.insert(key.to_string(), j_val);
     }
-
-    let mut updated = updated_lines.join("\n");
-
-    if !found {
-        let mut result = String::new();
-        let has_section = content.lines().any(|l| l.trim() == "[notifications]");
-        if has_section {
-            let mut in_section = false;
-            let mut inserted = false;
-            for line in updated.lines() {
-                if line.trim() == "[notifications]" {
-                    in_section = true;
-                    result.push_str(line);
-                    result.push('\n');
-                    continue;
-                }
-                if line.trim().starts_with('[') && in_section {
-                    if !inserted {
-                        result.push_str(&new_line);
-                        result.push('\n');
-                        inserted = true;
-                    }
-                    in_section = false;
-                }
-                result.push_str(line);
-                result.push('\n');
-            }
-            if !inserted {
-                result.push_str(&new_line);
-                result.push('\n');
-            }
-            updated = result;
-        } else {
-            updated.push_str("\n[notifications]\n");
-            updated.push_str(&new_line);
-            updated.push_str("\n");
-        }
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        let _ = fs::write(path, updated_str);
     }
-    let _ = fs::write(path, updated);
 }
 
 

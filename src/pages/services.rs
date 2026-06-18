@@ -598,7 +598,7 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
 
 // ── Notifications Configuration Reader & Writer ──
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
@@ -619,66 +619,23 @@ pub fn read_notifications_config() -> NotificationsConfig {
     }
 }
 
+fn parse_json(content: &str) -> serde_json::Value {
+    serde_json::from_str(content).unwrap_or_default()
+}
+
 fn parse_notifications_enable(content: &str) -> bool {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("enable") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                return val.trim() == "true";
-            }
-        }
-    }
-    true // default to true
+    let val = parse_json(content);
+    val["notifications"]["enable"].as_bool().unwrap_or(true)
 }
 
 fn parse_notifications_bell(content: &str) -> bool {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("bell") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                return val.trim() == "true";
-            }
-        }
-    }
-    false // default to false
+    let val = parse_json(content);
+    val["notifications"]["bell"].as_bool().unwrap_or(false)
 }
 
 fn parse_notifications_duration(content: &str) -> i32 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("duration") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(d) = val.trim().parse::<i32>() {
-                    return d;
-                }
-            }
-        }
-    }
-    5 // default to 5 seconds
+    let val = parse_json(content);
+    val["notifications"]["duration"].as_i64().map(|v| v as i32).unwrap_or(5)
 }
 
 fn send_ipc_command(cmd: &str) {
@@ -689,68 +646,28 @@ fn send_ipc_command(cmd: &str) {
 
 fn write_config_value(key: &str, value: &str) {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let mut updated_lines = Vec::new();
-    let mut in_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[notifications]" {
-            in_section = true;
-            updated_lines.push(line.to_string());
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            in_section = false;
-        }
-        if in_section && trimmed.starts_with(key) {
-            found = true;
-            updated_lines.push(new_line.clone());
-        } else {
-            updated_lines.push(line.to_string());
+    let mut val = parse_json(&content);
+    let j_val = if let Ok(b) = value.parse::<bool>() {
+        serde_json::json!(b)
+    } else if let Ok(n) = value.parse::<i64>() {
+        serde_json::json!(n)
+    } else if let Ok(f) = value.parse::<f64>() {
+        serde_json::json!(f)
+    } else {
+        serde_json::json!(value)
+    };
+    if let Some(notifications) = val.get_mut("notifications").and_then(|n| n.as_object_mut()) {
+        notifications.insert(key.to_string(), j_val);
+    } else {
+        let mut map = serde_json::Map::new();
+        map.insert(key.to_string(), j_val);
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert("notifications".to_string(), serde_json::Value::Object(map));
         }
     }
-
-    let mut updated = updated_lines.join("\n");
-
-    if !found {
-        let mut result = String::new();
-        let has_section = content.lines().any(|l| l.trim() == "[notifications]");
-        if has_section {
-            let mut in_section = false;
-            let mut inserted = false;
-            for line in updated.lines() {
-                if line.trim() == "[notifications]" {
-                    in_section = true;
-                    result.push_str(line);
-                    result.push('\n');
-                    continue;
-                }
-                if line.trim().starts_with('[') && in_section {
-                    if !inserted {
-                        result.push_str(&new_line);
-                        result.push('\n');
-                        inserted = true;
-                    }
-                    in_section = false;
-                }
-                result.push_str(line);
-                result.push('\n');
-            }
-            if !inserted {
-                result.push_str(&new_line);
-                result.push('\n');
-            }
-            updated = result;
-        } else {
-            updated.push_str("\n[notifications]\n");
-            updated.push_str(&new_line);
-            updated.push_str("\n");
-        }
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        let _ = fs::write(CONFIG_PATH, updated_str);
     }
-    let _ = fs::write(CONFIG_PATH, updated);
 }
 
 fn write_enable_notifications(enabled: bool) {
@@ -770,12 +687,12 @@ fn get_config_path() -> String {
             if let Some(path) = p.borrow().as_ref() {
                 return path.clone();
             }
-            "/home/lsgalante/.config/cce/config.toml".to_string()
+            "/home/lsgalante/.config/cce/config.json".to_string()
         })
     }
     #[cfg(not(test))]
     {
-        "/home/lsgalante/.config/cce/config.toml".to_string()
+        "/home/lsgalante/.config/cce/config.json".to_string()
     }
 }
 

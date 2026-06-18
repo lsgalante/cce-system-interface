@@ -7,7 +7,7 @@ use cce_ui::widget::{Spinbox, Dropdown, LayoutPreview, PreviewLayoutMode, Toggle
 use crate::pages::interface::{parse_bool_from, parse_transparency_opacity, write_transparency_config_value, status_interface_reload};
 
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
@@ -247,44 +247,36 @@ pub fn read_layout_config() -> LayoutState {
     }
 }
 
-fn parse_tag_layouts_from_config(content: &str) -> Vec<String> {
-    let mut modes = vec!["cascade".to_string(); 4];
-    let mut current_tag = None;
-    let mut current_mode = None;
-    
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[[tag_layout]]" {
-            if let (Some(tag), Some(mode)) = (current_tag, current_mode.take()) {
-                if tag >= 1 && tag <= 4 {
-                    modes[tag - 1] = mode;
+fn parse_json(content: &str) -> serde_json::Value {
+    serde_json::from_str(content).unwrap_or_default()
+}
+
+fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    if let Some(obj) = val.as_object() {
+        for (_, sec_val) in obj.iter() {
+            if let Some(sec_obj) = sec_val.as_object() {
+                if let Some(v) = sec_obj.get(key) {
+                    return Some(v);
                 }
             }
-            current_tag = None;
-            continue;
-        }
-        if trimmed.starts_with('[') && !trimmed.starts_with("[[") {
-            if let (Some(tag), Some(mode)) = (current_tag, current_mode.take()) {
-                if tag >= 1 && tag <= 4 {
-                    modes[tag - 1] = mode;
-                }
-            }
-            current_tag = None;
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("tag") {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=').trim();
-            if let Ok(tag) = rest.parse::<usize>() {
-                current_tag = Some(tag);
-            }
-        } else if let Some(rest) = trimmed.strip_prefix("mode") {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=').trim().trim_matches('"').to_string();
-            current_mode = Some(rest);
         }
     }
-    if let (Some(tag), Some(mode)) = (current_tag, current_mode.take()) {
-        if tag >= 1 && tag <= 4 {
-            modes[tag - 1] = mode;
+    None
+}
+
+fn parse_tag_layouts_from_config(content: &str) -> Vec<String> {
+    let val = parse_json(content);
+    let mut modes = vec!["cascade".to_string(); 4];
+    if let Some(arr) = val.get("tag_layout").and_then(|t| t.as_array()) {
+        for item in arr {
+            if let (Some(tag), Some(mode)) = (
+                item.get("tag").and_then(|t| t.as_u64()),
+                item.get("mode").and_then(|m| m.as_str())
+            ) {
+                if tag >= 1 && tag <= 4 {
+                    modes[tag as usize - 1] = mode.to_string();
+                }
+            }
         }
     }
     modes
@@ -292,74 +284,49 @@ fn parse_tag_layouts_from_config(content: &str) -> Vec<String> {
 
 fn write_tag_layout(tag_num: usize, mode_str: &str) -> bool {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut val = parse_json(&content);
     
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i].trim();
-        if line == "[[tag_layout]]" {
-            let mut tag_val = None;
-            let mut mode_line_idx = None;
-            
-            let mut j = i + 1;
-            while j < lines.len() {
-                let next_line = lines[j].trim();
-                if next_line.starts_with("[[") || (next_line.starts_with('[') && !next_line.starts_with("[[")) {
+    let mut found = false;
+    if let Some(arr) = val.get_mut("tag_layout").and_then(|t| t.as_array_mut()) {
+        for item in arr.iter_mut() {
+            if item.get("tag").and_then(|t| t.as_u64()) == Some(tag_num as u64) {
+                if let Some(obj) = item.as_object_mut() {
+                    obj.insert("mode".to_string(), serde_json::json!(mode_str.to_lowercase()));
+                    found = true;
                     break;
                 }
-                if next_line.starts_with("tag") {
-                    if let Some(val_str) = next_line.split('=').nth(1) {
-                        if let Ok(v) = val_str.trim().parse::<usize>() {
-                            tag_val = Some(v);
-                        }
-                    }
-                } else if next_line.starts_with("mode") {
-                    mode_line_idx = Some(j);
-                }
-                j += 1;
             }
-            
-            if tag_val == Some(tag_num) {
-                if let Some(idx) = mode_line_idx {
-                    lines[idx] = format!("mode = \"{}\"", mode_str.to_lowercase());
-                    let result = lines.join("\n") + "\n";
-                    return fs::write(CONFIG_PATH, result).is_ok();
-                }
-            }
-            i = j;
-        } else {
-            i += 1;
+        }
+        if !found {
+            arr.push(serde_json::json!({
+                "tag": tag_num,
+                "mode": mode_str.to_lowercase()
+            }));
+        }
+    } else {
+        let arr = vec![serde_json::json!({
+            "tag": tag_num,
+            "mode": mode_str.to_lowercase()
+        })];
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert("tag_layout".to_string(), serde_json::Value::Array(arr));
         }
     }
     
-    let mut result = lines.join("\n");
-    if !result.ends_with('\n') {
-        result.push('\n');
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        return fs::write(CONFIG_PATH, updated_str).is_ok();
     }
-    result.push_str(&format!("\n[[tag_layout]]\ntag = {}\nmode = \"{}\"\n", tag_num, mode_str.to_lowercase()));
-    fs::write(CONFIG_PATH, result).is_ok()
+    false
 }
 
 fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            return rest.trim_end_matches('"').trim().parse::<u16>().unwrap_or(default);
-        }
-    }
-    default
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_u64()).map(|n| n as u16).unwrap_or(default)
 }
 
 fn parse_string_from(content: &str, key: &str, default: &str) -> String {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            return rest.trim_end_matches('"').trim().to_string();
-        }
-    }
-    default.to_string()
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| default.to_string())
 }
 
 fn write_config_value(key: &str, value: &str) -> bool {

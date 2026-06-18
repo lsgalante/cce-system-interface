@@ -2,7 +2,7 @@ use crate::app::{PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -104,152 +104,54 @@ pub enum DisplayMessage {
     StartScreensaverPreview,
 }
 
+fn parse_json(content: &str) -> serde_json::Value {
+    serde_json::from_str(content).unwrap_or_default()
+}
+
 fn parse_screensaver_enable(content: &str) -> bool {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[screensaver]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("enable") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                return val.trim() == "true";
-            }
-        }
-    }
-    true // default to true
+    let val = parse_json(content);
+    val["screensaver"]["enable"].as_bool().unwrap_or(true)
 }
 
 fn parse_screensaver_lock_screen(content: &str) -> bool {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[screensaver]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("lock_screen") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                return val.trim() == "true";
-            }
-        }
-    }
-    true // default to true
+    let val = parse_json(content);
+    val["screensaver"]["lock_screen"].as_bool().unwrap_or(true)
 }
 
 fn parse_screensaver_timeout(content: &str) -> i32 {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[screensaver]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("timeout") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                if let Ok(t) = val.trim().parse::<i32>() {
-                    return t;
-                }
-            }
-        }
-    }
-    10 // default to 10 minutes
+    let val = parse_json(content);
+    val["screensaver"]["timeout"].as_i64().map(|v| v as i32).unwrap_or(10)
 }
 
 fn parse_screensaver_style(content: &str) -> String {
-    let mut in_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[screensaver]" {
-            in_section = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            break;
-        }
-        if in_section && trimmed.starts_with("style") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                return val.trim().trim_matches('"').to_string();
-            }
-        }
-    }
-    "starfield".to_string() // default to starfield
+    let val = parse_json(content);
+    val["screensaver"]["style"].as_str().unwrap_or("starfield").to_string()
 }
 
 pub fn write_config_value(key: &str, value: &str) {
     let content = std::fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let mut updated_lines = Vec::new();
-    let mut in_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[screensaver]" {
-            in_section = true;
-            updated_lines.push(line.to_string());
-            continue;
-        }
-        if trimmed.starts_with('[') && in_section {
-            in_section = false;
-        }
-        if in_section && trimmed.starts_with(key) {
-            found = true;
-            updated_lines.push(new_line.clone());
-        } else {
-            updated_lines.push(line.to_string());
+    let mut val = parse_json(&content);
+    let j_val = if let Ok(b) = value.parse::<bool>() {
+        serde_json::json!(b)
+    } else if let Ok(n) = value.parse::<i64>() {
+        serde_json::json!(n)
+    } else if let Ok(f) = value.parse::<f64>() {
+        serde_json::json!(f)
+    } else {
+        serde_json::json!(value)
+    };
+    if let Some(screensaver) = val.get_mut("screensaver").and_then(|s| s.as_object_mut()) {
+        screensaver.insert(key.to_string(), j_val);
+    } else {
+        let mut map = serde_json::Map::new();
+        map.insert(key.to_string(), j_val);
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert("screensaver".to_string(), serde_json::Value::Object(map));
         }
     }
-
-    let mut updated = updated_lines.join("\n");
-
-    if !found {
-        let mut result = String::new();
-        let has_section = content.lines().any(|l| l.trim() == "[screensaver]");
-        if has_section {
-            let mut in_section = false;
-            let mut inserted = false;
-            for line in updated.lines() {
-                if line.trim() == "[screensaver]" {
-                    in_section = true;
-                    result.push_str(line);
-                    result.push('\n');
-                    continue;
-                }
-                if line.trim().starts_with('[') && in_section {
-                    if !inserted {
-                        result.push_str(&new_line);
-                        result.push('\n');
-                        inserted = true;
-                    }
-                    in_section = false;
-                }
-                result.push_str(line);
-                result.push('\n');
-            }
-            if !inserted {
-                result.push_str(&new_line);
-                result.push('\n');
-            }
-            updated = result;
-        } else {
-            updated.push_str("\n[screensaver]\n");
-            updated.push_str(&new_line);
-            updated.push_str("\n");
-        }
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        let _ = std::fs::write(CONFIG_PATH, updated_str);
     }
-    let _ = std::fs::write(CONFIG_PATH, updated);
 }
 
 pub async fn fetch_display_state() -> DisplayState {

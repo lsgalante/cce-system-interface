@@ -5,7 +5,7 @@ use crate::app::PageContent;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.toml";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
@@ -277,64 +277,61 @@ pub fn read_input_config() -> InputState {
     }
 }
 
+fn parse_json(content: &str) -> serde_json::Value {
+    serde_json::from_str(content).unwrap_or_default()
+}
+
+fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    if let Some(obj) = val.as_object() {
+        for (_, sec_val) in obj.iter() {
+            if let Some(sec_obj) = sec_val.as_object() {
+                if let Some(v) = sec_obj.get(key) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn parse_bool_from(content: &str, key: &str) -> bool {
-    content.lines().find(|l| l.trim().starts_with(key))
-        .and_then(|l| l.split('=').nth(1))
-        .map(|v| v.trim() == "true")
-        .unwrap_or(false)
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_bool()).unwrap_or(false)
 }
 
 fn parse_bool_from_default(content: &str, key: &str, default: bool) -> bool {
-    content.lines().find(|l| l.trim().starts_with(key))
-        .and_then(|l| l.split('=').nth(1))
-        .map(|v| v.trim() == "true")
-        .unwrap_or(default)
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_bool()).unwrap_or(default)
 }
 
 fn parse_u16_key(content: &str, key: &str, default: u16) -> u16 {
-    content.lines().find(|l| l.trim().starts_with(key))
-        .and_then(|l| l.split('=').nth(1))
-        .and_then(|v| v.trim().parse::<u16>().ok())
-        .unwrap_or(default)
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_u64()).map(|n| n as u16).unwrap_or(default)
 }
 
 fn parse_f32_key(content: &str, key: &str, default: f32) -> f32 {
-    content.lines().find(|l| l.trim().starts_with(key))
-        .and_then(|l| l.split('=').nth(1))
-        .and_then(|v| v.trim().parse::<f32>().ok())
-        .unwrap_or(default)
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_f64()).map(|n| n as f32).unwrap_or(default)
 }
 
 fn parse_string_key(content: &str, key: &str, default: &str) -> String {
-    content.lines().find(|l| l.trim().starts_with(key))
-        .and_then(|l| l.split('=').nth(1))
-        .map(|v| v.trim().trim_matches('"').to_string())
-        .unwrap_or_else(|| default.to_string())
+    let val = parse_json(content);
+    json_find_key(&val, key).and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| default.to_string())
 }
 
 fn parse_keybinds(content: &str) -> Vec<Keybind> {
+    let val = parse_json(content);
     let mut keybinds = Vec::new();
-    let mut current: Option<Keybind> = None;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[[keybind]]" {
-            if let Some(kb) = current.take() { keybinds.push(kb); }
-            current = Some(Keybind {
-                mods: String::new(), key: String::new(),
-                action: String::new(), command: String::new(),
+    if let Some(arr) = val.get("keybind").and_then(|k| k.as_array()) {
+        for v in arr {
+            keybinds.push(Keybind {
+                mods: v.get("mods").and_then(|m| m.as_str()).unwrap_or("").to_string(),
+                key: v.get("key").and_then(|k| k.as_str()).unwrap_or("").to_string(),
+                action: v.get("action").and_then(|a| a.as_str()).unwrap_or("").to_string(),
+                command: v.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string(),
             });
-            continue;
-        }
-        if let Some(ref mut kb) = current {
-            let set = |rest: &str| rest.trim_start_matches(|c: char| c == ' ' || c == '=').trim_matches('"').to_string();
-            if let Some(rest) = trimmed.strip_prefix("mods") { kb.mods = set(rest); }
-            else if let Some(rest) = trimmed.strip_prefix("key") { kb.key = set(rest); }
-            else if let Some(rest) = trimmed.strip_prefix("action") { kb.action = set(rest); }
-            else if let Some(rest) = trimmed.strip_prefix("command") { kb.command = set(rest); }
         }
     }
-    if let Some(kb) = current.take() { keybinds.push(kb); }
     keybinds
 }
 
@@ -346,52 +343,43 @@ fn send_ipc_command(cmd: &str) {
 
 fn write_config_value(key: &str, value: &str) {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let new_line = format!("{} = {}", key, value);
-
-    let mut found = false;
-    let updated: String = content.lines()
-        .map(|line| {
-            if line.trim().starts_with(key) { found = true; new_line.clone() }
-            else { line.to_string() }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    if !found {
-        let section = if key == "zoom_in" || key == "zoom_out" {
-            "[graph]"
-        } else if key == "tap_to_click" || key == "dwtp"
-                || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile"
-                || key == "cursor_theme" || key == "cursor_size" || key == "natural_scroll" {
-            "[input]"
-        } else if key == "inertial_scroll" || key == "scroll_friction"
-               || key == "inertial_pointer" || key == "pointer_friction"
-               || key == "inertial_trackpad" || key == "trackpad_friction" || key == "scroll_speed" {
-            "[inertial]"
-        } else {
-            "[repeat]"
-        };
-
-        let mut result = String::new();
-        let mut in_section = false;
-        let mut inserted = false;
-        for line in updated.lines() {
-            if line.trim() == section { in_section = true; }
-            else if line.trim().starts_with('[') && in_section {
-                if !inserted { result.push_str(&new_line); result.push('\n'); inserted = true; }
-                in_section = false;
-            }
-            result.push_str(line);
-            result.push('\n');
-        }
-        if !inserted {
-            if !in_section { result.push('\n'); result.push_str(section); result.push('\n'); }
-            result.push_str(&new_line);
-            result.push('\n');
-        }
-        let _ = fs::write(CONFIG_PATH, result);
+    let mut val = parse_json(&content);
+    let j_val = if let Ok(b) = value.parse::<bool>() {
+        serde_json::json!(b)
+    } else if let Ok(n) = value.parse::<i64>() {
+        serde_json::json!(n)
+    } else if let Ok(f) = value.parse::<f64>() {
+        serde_json::json!(f)
     } else {
-        let _ = fs::write(CONFIG_PATH, updated);
+        serde_json::json!(value)
+    };
+
+    let section = if key == "zoom_in" || key == "zoom_out" {
+        "graph"
+    } else if key == "tap_to_click" || key == "dwtp"
+            || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile"
+            || key == "cursor_theme" || key == "cursor_size" || key == "natural_scroll" {
+        "input"
+    } else if key == "inertial_scroll" || key == "scroll_friction"
+           || key == "inertial_pointer" || key == "pointer_friction"
+           || key == "inertial_trackpad" || key == "trackpad_friction" || key == "scroll_speed" {
+        "inertial"
+    } else {
+        "repeat"
+    };
+
+    if let Some(sec_obj) = val.get_mut(section).and_then(|s| s.as_object_mut()) {
+        sec_obj.insert(key.to_string(), j_val);
+    } else {
+        let mut map = serde_json::Map::new();
+        map.insert(key.to_string(), j_val);
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert(section.to_string(), serde_json::Value::Object(map));
+        }
+    }
+
+    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+        let _ = fs::write(CONFIG_PATH, updated_str);
     }
 }
 
