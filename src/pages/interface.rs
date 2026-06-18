@@ -3273,6 +3273,32 @@ mod tests {
     }
 
     #[test]
+    fn test_interface_spinbox_right_click_crash() {
+        use cce_ui::widget::Element;
+        let mut state = InterfaceState::default();
+        let mut ctx = cce_ui::context::UiContext::new();
+        let sb = &mut state.window_corner_radius_spinbox;
+        sb.set_rect(0.0, 0.0, 100.0, 44.0);
+        let res = sb.mouse_input(
+            cce_ui::widget::MouseButton::Right,
+            cce_ui::widget::ElementState::Pressed,
+            50.0,
+            20.0,
+            &mut ctx,
+        );
+        assert!(res);
+        assert!(cce_ui::widget::context_menu::is_visible());
+
+        // Now simulate update(InterfaceMessage::Refreshed)
+        let new_state = InterfaceState::default();
+        update(&mut state, InterfaceMessage::Refreshed(new_state));
+
+        // Assert that the context menu is hidden (cleared)
+        assert!(!cce_ui::widget::context_menu::is_visible());
+    }
+
+
+    #[test]
     fn test_parse_color_from_key() {
         let content = "\n[layout]\nlow_color = \"#112233\"\nhigh_color = \"#445566\"\ndisabled_color = \"#778899\"\nstatus_separator_color = \"#aabbcc\"\nvisual_guides_color = \"#ddeeff\"\nslider_track_color = \"#123456\"\npage_low_color = \"#474751\"\ncolor_borders_color = \"#abcdef\"\nstatus_normal_color = \"#ccccd8\"\npaginator_sidebar_color = \"#5a5a65\"\nprimary_highlight_color = \"#ffffff\"\nmenubar_tab_label_color = \"#e6e6f2\"\ntoggle_enabled_color = \"#68d8a5\"\ntoggle_disabled_color = \"#878794\"\nscrollinglist_bg_color = \"#515161\"\nbreadcrumb_bg_color = \"#515161\"\n";
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);

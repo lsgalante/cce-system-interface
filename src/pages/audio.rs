@@ -410,5 +410,32 @@ mod tests {
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
+
+    #[test]
+    fn test_boxed_spinbox_right_click_crash() {
+        use cce_ui::widget::{Element, Spinbox};
+        let mut state = AudioState::default();
+        state.sink_spinboxes.push(Box::new(Spinbox::new(50, 0, 100, 1)));
+        let mut ctx = cce_ui::context::UiContext::new();
+        let sb = &mut state.sink_spinboxes[0];
+        sb.set_rect(0.0, 0.0, 100.0, 44.0);
+        let res = sb.mouse_input(
+            cce_ui::widget::MouseButton::Right,
+            cce_ui::widget::ElementState::Pressed,
+            50.0,
+            20.0,
+            &mut ctx,
+        );
+        assert!(res);
+        assert!(cce_ui::widget::context_menu::is_visible());
+
+        // Now replace the state simulating config reload/refresh
+        let new_state = AudioState::default();
+        state = new_state;
+
+        // Assert that the context menu is hidden (cleared)
+        assert!(!cce_ui::widget::context_menu::is_visible());
+    }
 }
+
 
