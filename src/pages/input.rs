@@ -409,10 +409,9 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         sec.spacing(8.0);
 
         // Built-in trackpad visualizer widget
-        let pad_w = 280.0;
         let pad_h = 158.0;
         state.trackpad.set_fingers(state.fingers.clone());
-        sec.widget(&mut state.trackpad, 14.0, pad_w, pad_h, ctx);
+        sec.widget_full(&mut state.trackpad, pad_h, ctx);
         sec.spacing(12.0);
     });
 
