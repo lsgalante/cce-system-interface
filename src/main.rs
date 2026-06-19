@@ -1540,6 +1540,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 16 => self.app.interface.popover_bg_color,
                 17 => self.app.interface.notification_bg_color,
                 18 => self.app.interface.window_color,
+                19 => self.app.interface.page_color,
+                20 => self.app.interface.layer_color,
                 _ => self.app.interface.low_color,
             };
             if cp.color != state_color {
@@ -1563,6 +1565,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                     17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                     18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                    19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
+                    20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                 }));
                 color_changed = true;
@@ -3815,6 +3819,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                             15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                             16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                             17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
+                            18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                            19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
+                            20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
@@ -4610,6 +4617,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                             16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                             17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
                             18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                            19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
+                            20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
                         }));
                     }
