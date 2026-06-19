@@ -550,7 +550,26 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
             write_config_value("duration", &state.notifications_duration.to_string());
         }
         ServicesMessage::SendTestNotification => {
-            send_ipc_command("notify \"cce-client\" \"System notifications are working correctly!\"");
+            tokio::spawn(async move {
+                if let Ok(connection) = zbus::Connection::session().await {
+                    let _ = connection.call_method(
+                        Some("org.freedesktop.Notifications"),
+                        "/org/freedesktop/Notifications",
+                        Some("org.freedesktop.Notifications"),
+                        "Notify",
+                        &(
+                            "cce-client",
+                            0u32,
+                            "",
+                            "System notifications are working correctly!",
+                            "",
+                            Vec::<&str>::new(),
+                            std::collections::HashMap::<&str, zbus::zvariant::Value>::new(),
+                            -1i32,
+                        )
+                    ).await;
+                }
+            });
         }
         ServicesMessage::NotificationsRefreshed(new) => {
             state.notifications_loaded = true;
@@ -873,4 +892,3 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 }
-
