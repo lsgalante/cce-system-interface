@@ -1820,14 +1820,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         let ly = self.cursor_y / s + self.scroll_y;
         cce_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
-        if lx_no_scroll < self.sidebar_width {
-            if self.menubar.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                changed = true;
-            }
-        } else {
-            if self.switcher.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                changed = true;
-            }
+        if self.menubar.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+            changed = true;
+        }
+        if self.switcher.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+            changed = true;
         }
         for w in &mut self.widgets {
             let was = w.hovering;
@@ -2371,7 +2368,31 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
 
-        if lx_no_scroll < self.sidebar_width {
+        let mut handled = false;
+        if state == cce_ui::widget::ElementState::Pressed {
+            if lx_no_scroll < self.sidebar_width {
+                if self.menubar.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+                    use cce_ui::widget::MenuController;
+                    if let Some((idx, _)) = self.menubar.menu_click() {
+                        if idx < Page::ALL.len() {
+                            cce_ui::widget::focus::clear_focus();
+                            let new_page = Page::ALL[idx];
+                            self.app.current_page = new_page;
+                            self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
+                            self.scroll_y = 0.0;
+                            pages::interface::write_config_value("last_page", &format!("\"{}\"", new_page.label().to_lowercase()));
+                        }
+                    }
+                    self.needs_rebuild = true;
+                    handled = true;
+                }
+            } else {
+                if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+                    self.needs_rebuild = true;
+                    handled = true;
+                }
+            }
+        } else {
             if self.menubar.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
                 use cce_ui::widget::MenuController;
                 if let Some((idx, _)) = self.menubar.menu_click() {
@@ -2385,13 +2406,15 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     }
                 }
                 self.needs_rebuild = true;
-                return true;
+                handled = true;
             }
-        } else {
             if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
                 self.needs_rebuild = true;
-                return true;
+                handled = true;
             }
+        }
+        if handled {
+            return true;
         }
 
         if button != cce_ui::widget::MouseButton::Left && button != cce_ui::widget::MouseButton::Right { return false; }
