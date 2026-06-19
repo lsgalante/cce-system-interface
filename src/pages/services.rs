@@ -717,16 +717,7 @@ fn write_status_padding(padding: u16) {
 
 fn read_status_separators() -> Option<bool> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("status_separators") {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            if let Ok(val) = rest.trim_end_matches('"').trim().parse::<bool>() {
-                return Some(val);
-            }
-        }
-    }
-    Some(true)
+    Some(crate::pages::interface::parse_bool_from(&content, "status_separators", true))
 }
 
 fn write_status_separators(val: bool) {
@@ -735,16 +726,7 @@ fn write_status_separators(val: bool) {
 
 fn read_status_underline() -> Option<bool> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("status_underline") {
-            let rest = rest.trim_start_matches(|c: char| c == ' ' || c == '=' || c == '"');
-            if let Ok(val) = rest.trim_end_matches('"').trim().parse::<bool>() {
-                return Some(val);
-            }
-        }
-    }
-    Some(true)
+    Some(crate::pages::interface::parse_bool_from(&content, "status_underline", true))
 }
 
 fn write_status_underline(val: bool) {
@@ -801,68 +783,49 @@ mod tests {
 
     #[test]
     fn test_parse_notifications_enable_explicit() {
-        let content = "\
-[notifications]
-enable = false
-";
+        let content = "{\"notifications\": {\"enable\": false}}";
         assert!(!parse_notifications_enable(content));
 
-        let content = "\
-[notifications]
-enable = true
-";
+        let content = "{\"notifications\": {\"enable\": true}}";
         assert!(parse_notifications_enable(content));
     }
 
     #[test]
     fn test_parse_notifications_enable_other_sections() {
-        let content = "\
-[layout]
-enable = false
-
-[notifications]
-enable = true
-
-[input]
-enable = false
-";
+        let content = r#"{
+            "layout": {"enable": false},
+            "notifications": {"enable": true},
+            "input": {"enable": false}
+        }"#;
         assert!(parse_notifications_enable(content));
 
-        let content = "\
-[layout]
-enable = true
-
-[notifications]
-enable = false
-
-[input]
-enable = true
-";
+        let content = r#"{
+            "layout": {"enable": true},
+            "notifications": {"enable": false},
+            "input": {"enable": true}
+        }"#;
         assert!(!parse_notifications_enable(content));
     }
 
     #[test]
     fn test_parse_notifications_duration_default() {
         assert_eq!(parse_notifications_duration(""), 5);
-        assert_eq!(parse_notifications_duration("[notifications]\n"), 5);
+        assert_eq!(parse_notifications_duration("{\"notifications\": {}}"), 5);
     }
 
     #[test]
     fn test_parse_notifications_duration_explicit() {
-        let content = "\
-[notifications]
-duration = 10
-";
+        let content = "{\"notifications\": {\"duration\": 10}}";
         assert_eq!(parse_notifications_duration(content), 10);
     }
 
     #[test]
     fn test_read_write_separators() {
         let dir = std::env::temp_dir();
-        let path = dir.join("test_status_separators.toml");
+        let path = dir.join("test_status_separators.json");
         let path_str = path.to_str().unwrap().to_string();
 
-        let _ = fs::write(&path_str, "[layout]\nstatus_separators = true\nstatus_padding = 8\n");
+        let _ = fs::write(&path_str, "{\"layout\": {\"status_separators\": true, \"status_padding\": 8}}");
         TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
 
         let original = read_status_separators().unwrap_or(true);
@@ -877,10 +840,10 @@ duration = 10
     #[test]
     fn test_read_write_padding() {
         let dir = std::env::temp_dir();
-        let path = dir.join("test_status_padding.toml");
+        let path = dir.join("test_status_padding.json");
         let path_str = path.to_str().unwrap().to_string();
 
-        let _ = fs::write(&path_str, "[layout]\nstatus_separators = true\nstatus_padding = 8\n");
+        let _ = fs::write(&path_str, "{\"layout\": {\"status_separators\": true, \"status_padding\": 8}}");
         TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
 
         let original = read_status_padding().unwrap_or(8);
@@ -895,10 +858,10 @@ duration = 10
     #[test]
     fn test_read_write_underline() {
         let dir = std::env::temp_dir();
-        let path = dir.join("test_status_underline.toml");
+        let path = dir.join("test_status_underline.json");
         let path_str = path.to_str().unwrap().to_string();
 
-        let _ = fs::write(&path_str, "[layout]\nstatus_underline = true\nstatus_padding = 8\n");
+        let _ = fs::write(&path_str, "{\"layout\": {\"status_underline\": true, \"status_padding\": 8}}");
         TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
 
         let original = read_status_underline().unwrap_or(true);

@@ -5401,18 +5401,15 @@ fn main() {
     let mut initial_page = Page::ALL[0];
 
     // Try to load last_page from config
-    let config_path = "/home/lsgalante/.config/cce/config.toml";
+    let config_path = "/home/lsgalante/.config/cce/config.json";
     if let Ok(content) = std::fs::read_to_string(config_path) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("last_page") {
-                if let Some(val_str) = trimmed.split('=').nth(1) {
-                    let last_page_val = val_str.trim().trim_matches('"').trim_matches('\'').trim().to_lowercase();
-                    for page in Page::ALL {
-                        if page.label().to_lowercase() == last_page_val {
-                            initial_page = page;
-                            break;
-                        }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(last_page_val) = val.pointer("/layout/last_page").and_then(|v| v.as_str()) {
+                let last_page_val = last_page_val.trim_matches('"').trim_matches('\'').trim().to_lowercase();
+                for page in Page::ALL {
+                    if page.label().to_lowercase() == last_page_val {
+                        initial_page = page;
+                        break;
                     }
                 }
             }

@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn test_parse_side_panel_width_explicit() {
-        let content = "side_panel_width = 450";
+        let content = "{\"layout\": {\"side_panel_width\": 450}}";
         let width = parse_u16_from(content, "side_panel_width", 360);
         assert_eq!(width, 450);
     }
@@ -815,51 +815,43 @@ mod tests {
 
     #[test]
     fn test_parse_side_panel_border_opacity_explicit() {
-        let content = "side_panel_border_opacity = 75";
+        let content = "{\"layout\": {\"side_panel_border_opacity\": 75}}";
         let opacity = parse_u16_from(content, "side_panel_border_opacity", 100);
         assert_eq!(opacity, 75);
     }
 
     #[test]
     fn test_parse_tag_layouts_single() {
-        let content = r#"
-[layout]
-gap = 10
-
-[[tag_layout]]
-tag = 2
-mode = "grid"
-"#;
+        let content = r#"{
+            "layout": {"gap": 10},
+            "tag_layout": [
+                {"tag": 2, "mode": "grid"}
+            ]
+        }"#;
         let modes = parse_tag_layouts_from_config(content);
         assert_eq!(modes, vec!["cascade", "grid", "cascade", "cascade"]);
     }
 
     #[test]
     fn test_parse_tag_layouts_multiple() {
-        let content = r#"
-[[tag_layout]]
-tag = 1
-mode = "fullscreen"
-
-[[tag_layout]]
-tag = 4
-mode = "floating"
-"#;
+        let content = r#"{
+            "tag_layout": [
+                {"tag": 1, "mode": "fullscreen"},
+                {"tag": 4, "mode": "floating"}
+            ]
+        }"#;
         let modes = parse_tag_layouts_from_config(content);
         assert_eq!(modes, vec!["fullscreen", "cascade", "cascade", "floating"]);
     }
 
     #[test]
     fn test_parse_tag_layouts_out_of_bounds() {
-        let content = r#"
-[[tag_layout]]
-tag = 5
-mode = "grid"
-
-[[tag_layout]]
-tag = 0
-mode = "popup"
-"#;
+        let content = r#"{
+            "tag_layout": [
+                {"tag": 5, "mode": "grid"},
+                {"tag": 0, "mode": "popup"}
+            ]
+        }"#;
         let modes = parse_tag_layouts_from_config(content);
         assert_eq!(modes, vec!["cascade", "cascade", "cascade", "cascade"]);
     }
