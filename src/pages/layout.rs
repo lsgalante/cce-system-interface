@@ -882,6 +882,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unused_assignments)]
     fn test_spinbox_right_click_crash() {
         use cce_ui::widget::Element;
         let mut state = LayoutState::default();

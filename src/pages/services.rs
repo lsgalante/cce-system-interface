@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Element, ScrollingList, TextBox, StatusDot, DotStatus, InteractiveListItem, Toggle, Spinbox, Slider, Label};
+use cce_ui::widget::{Element, ScrollingList, TextBox, StatusDot, DotStatus, InteractiveListItem, Toggle, Spinbox, Label};
 use crate::pages::interface::parse_u16_from;
 
 // ── Notifications Data and Settings Configuration ──

@@ -276,7 +276,9 @@ fn spawn_brightness(pct: u32) {
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+#[allow(dead_code)]
 const BLANK_BAR: [f32; 4] = [0.15, 0.15, 0.24, 1.0];
+#[allow(dead_code)]
 const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 
 const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];

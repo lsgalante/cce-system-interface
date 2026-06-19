@@ -826,7 +826,7 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
         
         let mut updated = false;
         if let Some(obj) = val_obj.as_object_mut() {
-            for (sec_name, sec_val) in obj.iter_mut() {
+            for (_sec_name, sec_val) in obj.iter_mut() {
                 if let Some(sec_obj) = sec_val.as_object_mut() {
                     if sec_obj.contains_key(k) {
                         sec_obj.insert(k.to_string(), j_val.clone());

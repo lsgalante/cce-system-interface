@@ -207,14 +207,18 @@ async fn fetch_sources(connected_ports: &[String]) -> Vec<AudioSource> {
     sources
 }
 
+#[allow(dead_code)]
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const MUTED_BG: [f32; 4] = [0.33, 0.20, 0.20, 1.0];
 const BTN_INACTIVE: [f32; 4] = [0.13, 0.18, 0.14, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
+#[allow(dead_code)]
 const BLANK_BAR: [f32; 4] = [0.15, 0.15, 0.24, 1.0];
+#[allow(dead_code)]
 const FILL_BAR: [f32; 4] = [0.30, 0.50, 0.32, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+#[allow(dead_code)]
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 
 pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
@@ -412,6 +416,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unused_assignments)]
     fn test_boxed_spinbox_right_click_crash() {
         use cce_ui::widget::{Element, Spinbox};
         let mut state = AudioState::default();
