@@ -1222,7 +1222,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         let win_g = self.app.interface.window_color[1] as f32 / 255.0;
         let win_b = self.app.interface.window_color[2] as f32 / 255.0;
         let win_a = self.app.interface.window_opacity;
-        self.root_window.background_color = Some([win_r, win_g, win_b, win_a]);
+        self.root_window.background_color = Some(cce_ui::color::to_linear([win_r, win_g, win_b, win_a]));
         self.root_window.radius = self.app.interface.window_corner_radius as f32;
         self.root_window.clear_children(&mut self.ui_context);
         self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
