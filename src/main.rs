@@ -767,6 +767,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.interface.color_selector_font_selector.set_parent(None, &mut self.ui_context);
         self.app.interface.menubar_font_selector.clear_children(&mut self.ui_context);
         self.app.interface.menubar_font_selector.set_parent(None, &mut self.ui_context);
+        self.app.interface.breadcrumb_font_selector.clear_children(&mut self.ui_context);
+        self.app.interface.breadcrumb_font_selector.set_parent(None, &mut self.ui_context);
         self.app.interface.section_label_font_selector.clear_children(&mut self.ui_context);
         self.app.interface.section_label_font_selector.set_parent(None, &mut self.ui_context);
         self.app.interface.nested_section_label_font_selector.clear_children(&mut self.ui_context);
@@ -1007,6 +1009,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 
                 // (Breadcrumb child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.breadcrumb_font_selector, &mut self.ui_context);
  
                 // (Spinbox child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.spinbox_height_spinbox, &mut self.ui_context);
@@ -1990,6 +1993,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.interface.menubar_font_selector.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.interface.breadcrumb_font_selector.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
             if self.app.interface.section_label_font_selector.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
@@ -2541,6 +2547,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.interface.color_selector_preview_margin_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.color_selector_font_selector.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.menubar_font_selector.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.interface.breadcrumb_font_selector.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.section_label_font_selector.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.nested_section_label_font_selector.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.textbox_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -3552,6 +3559,15 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
             if fs.take_change() {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarFont(fs.font_family.clone())));
+            }
+
+            let fs = &mut self.app.interface.breadcrumb_font_selector;
+            if state == cce_ui::widget::ElementState::Pressed && !fs.hit_test(lx, ly, &self.ui_context) { fs.unfocus(); }
+            if fs.mouse_input(button, state, lx, ly, &mut self.ui_context) {
+                self.needs_rebuild = true;
+            }
+            if fs.take_change() {
+                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBreadcrumbFont(fs.font_family.clone())));
             }
 
             let fs = &mut self.app.interface.section_label_font_selector;

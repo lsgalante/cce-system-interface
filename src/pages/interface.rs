@@ -147,6 +147,8 @@ pub struct InterfaceState {
     pub section_label_font_selector: FontSelector,
     pub nested_section_label_font: String,
     pub nested_section_label_font_selector: FontSelector,
+    pub breadcrumb_font: String,
+    pub breadcrumb_font_selector: FontSelector,
     // Graph configuration fields
     pub graph_show_grid: bool,
     pub graph_show_grid_toggle: Toggle,
@@ -309,6 +311,8 @@ impl Default for InterfaceState {
             section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
             nested_section_label_font: "Outfit".to_string(),
             nested_section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
+            breadcrumb_font: "Outfit".to_string(),
+            breadcrumb_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font"),
             graph_show_grid: true,
             graph_show_grid_toggle: Toggle::new().with_label("Show Grid"),
             graph_snap_enabled: true,
@@ -393,6 +397,7 @@ pub enum InterfaceMessage {
     SetButtonCornerRadius(u16),
     SetColorSelectorFont(String),
     SetMenubarFont(String),
+    SetBreadcrumbFont(String),
     SetSectionLabelFont(String),
     SetNestedSectionLabelFont(String),
     SetNestedSectionLabelAlignment(usize),
@@ -531,6 +536,7 @@ pub fn read_interface_config() -> InterfaceState {
     let menubar_font = parse_string_from(&content, "menubar_font", "Outfit");
     let section_label_font = parse_string_from(&content, "section_label_font", "Outfit");
     let nested_section_label_font = parse_string_from(&content, "nested_section_label_font", "Outfit");
+    let breadcrumb_font = parse_string_from(&content, "breadcrumb_font", "Outfit");
     let nested_section_label_alignment = parse_u16_from(&content, "nested_section_label_alignment", 0) as u8;
     let nested_section_label_offset = parse_i16_from(&content, "nested_section_label_offset", 0);
     let label_margin = parse_u16_from(&content, "label_margin", 6);
@@ -692,6 +698,8 @@ pub fn read_interface_config() -> InterfaceState {
         section_label_font_selector: FontSelector::new(section_label_font.clone()).with_label("Label"),
         nested_section_label_font: nested_section_label_font.clone(),
         nested_section_label_font_selector: FontSelector::new(nested_section_label_font.clone()).with_label("Label"),
+        breadcrumb_font: breadcrumb_font.clone(),
+        breadcrumb_font_selector: FontSelector::new(breadcrumb_font.clone()).with_label("Font"),
         graph_show_grid,
         graph_show_grid_toggle: Toggle::new().with_label("Show Grid"),
         graph_snap_enabled,
@@ -1500,6 +1508,11 @@ fn apply_menubar_font(font: &str) {
     cce_ui::layout::set_menubar_font(font);
 }
 
+fn apply_breadcrumb_font(font: &str) {
+    write_config_value("breadcrumb_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_breadcrumb_font(font);
+}
+
 fn apply_section_label_font(font: &str) {
     write_config_value("section_label_font", &format!("\"{}\"", font));
     cce_ui::layout::set_section_label_font(font);
@@ -2027,6 +2040,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.color_selectors[15].color = state.breadcrumb_bg_color;
             subsec.widget_full(&mut state.color_selectors[15], 40.0, ctx);
+            subsec.spacing(8.0);
+            state.breadcrumb_font_selector.font_family = state.breadcrumb_font.clone();
+            subsec.widget_full(&mut state.breadcrumb_font_selector, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -2649,6 +2665,11 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.menubar_font_selector.font_family = font.clone();
             apply_menubar_font(&font);
         }
+        InterfaceMessage::SetBreadcrumbFont(font) => {
+            state.breadcrumb_font = font.clone();
+            state.breadcrumb_font_selector.font_family = font.clone();
+            apply_breadcrumb_font(&font);
+        }
         InterfaceMessage::SetSectionLabelFont(font) => {
             state.section_label_font = font.clone();
             state.section_label_font_selector.font_family = font.clone();
@@ -2756,6 +2777,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_tcr_hovered = state.textbox_corner_radius_spinbox.hovered();
             let was_fsh_hovered = state.font_selector_height_spinbox.hovered();
             let was_fscr_hovered = state.font_selector_corner_radius_spinbox.hovered();
+            let was_bfs_hovered = state.breadcrumb_font_selector.hovered();
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
@@ -2822,6 +2844,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.textbox_corner_radius_spinbox.set_hovered(was_tcr_hovered);
             state.font_selector_height_spinbox.set_hovered(was_fsh_hovered);
             state.font_selector_corner_radius_spinbox.set_hovered(was_fscr_hovered);
+            state.breadcrumb_font_selector.set_hovered(was_bfs_hovered);
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
