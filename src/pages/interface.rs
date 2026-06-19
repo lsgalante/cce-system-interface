@@ -2409,7 +2409,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
 
     // 1. Custom Parameters Section
-    builder.add_section(&mut final_pc, "Custom Parameters", false, |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Custom Parameters", false, |sec| {
         sec.spacing(8.0);
         let h = state.custom_multicontrol.preferred_height().unwrap_or(100.0);
         sec.widget_full(&mut state.custom_multicontrol, h, ctx);
@@ -2417,7 +2417,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     });
 
     // 2. Layout Section
-    builder.add_section(&mut final_pc, "Layout", false, |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Layout", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[7].color = state.low_color;
         sec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
@@ -2441,7 +2441,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
 
     // 3. Status Section
-    builder.add_section(&mut final_pc, "Status", false, |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Status", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[8].color = state.normal_color;
         sec.widget_full(&mut state.color_selectors[8], 40.0, ctx);
@@ -2455,7 +2455,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     });
 
     // 4. Controls Section
-    builder.add_section(&mut final_pc, "Controls", false, |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Controls", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[6].color = state.color_borders_color;
         sec.widget_full(&mut state.color_selectors[6], 40.0, ctx);
@@ -2630,7 +2630,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     });
 
     // 5. Indicators Section
-    builder.add_section(&mut final_pc, "Indicators", false, |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Indicators", false, |sec| {
         sec.spacing(8.0);
         sec.add_section("Primary Highlight", false, |subsec| {
             subsec.spacing(8.0);
@@ -2642,7 +2642,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     });
 
     // 5. Notification Section
-    builder.add_section(&mut final_pc, "Notification", false, |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Notification", false, |sec| {
         sec.spacing(8.0);
         state.color_selectors[17].color = state.notification_bg_color;
         sec.widget_full(&mut state.color_selectors[17], 40.0, ctx);
@@ -2653,7 +2653,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     });
 
     // 6. Surfaces Section
-    builder.add_section(&mut final_pc, "Surfaces", sec_focused.get(6).copied().unwrap_or(false), |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Surfaces", sec_focused.get(6).copied().unwrap_or(false), |sec| {
         sec.spacing(12.0);
         sec.add_section("Window", false, |subsec| {
             subsec.spacing(8.0);
@@ -2702,7 +2702,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
     // 7. Fonts Section
-    builder.add_section(&mut final_pc, "Fonts", sec_focused.get(7).copied().unwrap_or(false), |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Fonts", sec_focused.get(7).copied().unwrap_or(false), |sec| {
         sec.spacing(8.0);
 
         // System Fonts Section
@@ -2792,7 +2792,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
     });
 
-    builder.add_section(&mut final_pc, "Containers", sec_focused.get(8).copied().unwrap_or(false), |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Containers", sec_focused.get(8).copied().unwrap_or(false), |sec| {
         sec.spacing(12.0);
 
         // Page child section
@@ -2883,7 +2883,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     });
 
     // 10. Windows Section
-    builder.add_section(&mut final_pc, "Windows", sec_focused.get(9).copied().unwrap_or(false), |sec| {
+    builder.add_section_with_width(&mut final_pc, cw, "Windows", sec_focused.get(9).copied().unwrap_or(false), |sec| {
         sec.spacing(8.0);
         
         // 1. Current Layout Preview
