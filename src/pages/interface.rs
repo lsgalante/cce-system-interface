@@ -756,6 +756,7 @@ fn parse_color_from_key(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
 }
 
 fn parse_hex(s: &str) -> [u8; 3] {
+    let s = s.trim_matches(|c| c == '"' || c == '\'' || c == ' ');
     let s = s.trim_start_matches('#');
     if s.len() >= 6 {
         let r = u8::from_str_radix(&s[0..2], 16).unwrap_or(0x0a);
