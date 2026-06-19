@@ -823,6 +823,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.input.cursor_size_spinbox.clear_children(&mut self.ui_context); self.app.input.cursor_size_spinbox.set_parent(None, &mut self.ui_context);
         self.app.input.zoom_in_box.clear_children(&mut self.ui_context); self.app.input.zoom_in_box.set_parent(None, &mut self.ui_context);
         self.app.input.zoom_out_box.clear_children(&mut self.ui_context); self.app.input.zoom_out_box.set_parent(None, &mut self.ui_context);
+        self.app.input.keybinds_control.clear_children(&mut self.ui_context); self.app.input.keybinds_control.set_parent(None, &mut self.ui_context);
 
         for sb in &mut self.app.audio.sink_spinboxes {
             sb.clear_children(&mut self.ui_context);
@@ -1099,13 +1100,14 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
 
 
             Page::Input => {
-                self.page_sec_containers.resize_with(6, cce_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(7, cce_ui::widget::Container::new);
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[3], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[4], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[5], &mut self.ui_context);
+                link_parent_child(page_root, &mut self.page_sec_containers[6], &mut self.ui_context);
                 
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.dwtp_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox, &mut self.ui_context);
@@ -1129,6 +1131,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
 
                 link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_in_box, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_out_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.input.keybinds_control, &mut self.ui_context);
             }
             Page::Audio => {
                 self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
@@ -2118,6 +2121,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if self.app.input.zoom_out_box.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
+            if self.app.input.keybinds_control.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
         }
         if self.app.current_page == Page::Audio {
             if let Some(idx) = self.audio_sink_dragging {
@@ -2571,6 +2577,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if self.app.input.trackpoint_accel_profile_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.input.zoom_in_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.input.zoom_out_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if self.app.input.keybinds_control.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
 
                 Page::Audio => {
@@ -3121,6 +3128,10 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyCursorSize));
             }
+            let kc = &mut self.app.input.keybinds_control;
+            if state == cce_ui::widget::ElementState::Pressed && !kc.hit_test(lx, ly, &self.ui_context) {
+                kc.unfocus();
+            }
         }
         if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Services {
             let sb = &mut self.app.services.notifications_duration_spinbox;
@@ -3200,6 +3211,14 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
             if state == cce_ui::widget::ElementState::Pressed && tb.take_change() {
                 actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
+            }
+            let kc = &mut self.app.input.keybinds_control;
+            if kc.mouse_input(button, state, lx, ly, &mut self.ui_context) {
+                self.needs_rebuild = true;
+            }
+            if kc.take_change() {
+                actions.push(AppAction::Input(pages::input::InputMessage::ReloadKeybinds));
+                self.needs_rebuild = true;
             }
         }
         if self.app.current_page == Page::Services {
@@ -4003,6 +4022,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 }
                 if self.app.input.zoom_out_box.take_change() {
                     actions.push(AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
+                }
+                if self.app.input.keybinds_control.take_change() {
+                    actions.push(AppAction::Input(pages::input::InputMessage::ReloadKeybinds));
                 }
             }
             Page::Services => {
@@ -5111,6 +5133,13 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
             if self.app.input.zoom_out_box.keyboard_input(event, &mut self.ui_context) {
                 self.handle_action(&AppAction::Input(pages::input::InputMessage::ApplyZoomOut));
+                self.needs_rebuild = true;
+                return true;
+            }
+            if self.app.input.keybinds_control.keyboard_input(event, &mut self.ui_context) {
+                if self.app.input.keybinds_control.take_change() {
+                    self.handle_action(&AppAction::Input(pages::input::InputMessage::ReloadKeybinds));
+                }
                 self.needs_rebuild = true;
                 return true;
             }

@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::app::PageContent;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox};
+use cce_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox, KeybindsControl};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 
@@ -74,6 +74,9 @@ pub struct InputState {
     // Graph settings
     pub zoom_in_box: TextBox,
     pub zoom_out_box: TextBox,
+
+    // Keyboard bindings widget
+    pub keybinds_control: KeybindsControl,
 }
 
 fn scan_cursor_themes() -> Vec<String> {
@@ -157,6 +160,9 @@ impl Default for InputState {
             // Graph defaults
             zoom_in_box: TextBox::new("=".to_string()).with_label("Zoom In"),
             zoom_out_box: TextBox::new("-".to_string()).with_label("Zoom Out"),
+
+            // Keyboard bindings widget
+            keybinds_control: KeybindsControl::new(),
         }
     }
 }
@@ -192,6 +198,7 @@ pub enum InputMessage {
 
     ApplyZoomIn,
     ApplyZoomOut,
+    ReloadKeybinds,
 }
 
 pub fn read_input_config() -> InputState {
@@ -274,6 +281,9 @@ pub fn read_input_config() -> InputState {
         // Graph settings
         zoom_in_box: TextBox::new(zoom_in).with_label("Zoom In"),
         zoom_out_box: TextBox::new(zoom_out).with_label("Zoom Out"),
+
+        // Keyboard bindings widget
+        keybinds_control: KeybindsControl::new(),
     }
 }
 
@@ -394,8 +404,6 @@ fn apply_repeat_config(rate: u16, delay: u16) {
     send_ipc_command(&format!("repeat delay {}", delay));
 }
 
-const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
-const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
 pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
@@ -491,22 +499,8 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 
     // ── Keyboard Bindings ──
     builder.add_section(&mut final_pc, "Keyboard Bindings", false, |sec| {
-        for kb in &state.keybinds {
-            let binding = if kb.mods.is_empty() {
-                kb.key.clone()
-            } else {
-                format!("{}+{}", kb.mods, kb.key)
-            };
-            let action_label = if kb.command.is_empty() {
-                kb.action.clone()
-            } else {
-                format!("{}: {}", kb.action, kb.command)
-            };
-            sec.text(&binding, 14.0, 0.0, 12.0, TEXT_FG);
-            let label_w = sec_w - 200.0;
-            sec.text(&action_label, 14.0 + label_w.min(180.0), 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
-        }
+        let height = state.keybinds_control.preferred_height().unwrap_or(200.0);
+        sec.widget_full(&mut state.keybinds_control, height, ctx);
     });
 
     final_pc
@@ -607,6 +601,9 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
             let val = state.zoom_out_box.text.clone();
             write_config_value("zoom_out", &format!("\"{}\"", val));
         }
+        InputMessage::ReloadKeybinds => {
+            send_ipc_command("reload");
+        }
         InputMessage::Refreshed(new) => {
             let fingers = state.fingers.clone();
             *state = new;
@@ -644,11 +641,11 @@ mod tests {
 
     #[test]
     fn test_parse_scrolling_params() {
-        let content = "[input]\nnatural_scroll = true\n[inertial]\nscroll_speed = 2.5\n";
+        let content = r#"{"input": {"natural_scroll": true}, "inertial": {"scroll_speed": 2.5}}"#;
         assert_eq!(parse_bool_from_default(content, "natural_scroll", false), true);
         assert_eq!(parse_f32_key(content, "scroll_speed", 1.0), 2.5);
 
-        let empty_content = "";
+        let empty_content = "{}";
         assert_eq!(parse_bool_from_default(empty_content, "natural_scroll", false), false);
         assert_eq!(parse_f32_key(empty_content, "scroll_speed", 1.0), 1.0);
     }
