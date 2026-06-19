@@ -214,7 +214,7 @@ const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
 pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
-    let sec_w = 320.0f32;
+    let sec_w = 360.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
     builder.add_section(&mut final_pc, "Services", sec_focused.first().copied().unwrap_or(false), |sec| {
