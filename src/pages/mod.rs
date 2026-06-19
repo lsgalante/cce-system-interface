@@ -1,7 +1,6 @@
 pub mod audio;
 pub mod network;
 pub mod display;
-pub mod layout;
 pub mod storage;
 pub mod system_info;
 pub mod keybindings;
@@ -20,7 +19,6 @@ pub enum Page {
     Services,
     Storage,
     Display,
-    Layout,
     System,
     Hardware,
     Input,
@@ -29,7 +27,7 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 12] = [
+    pub const ALL: [Page; 11] = [
         Page::Accounts,
         Page::Audio,
         Page::Display,
@@ -41,7 +39,6 @@ impl Page {
         Page::Services,
         Page::Storage,
         Page::System,
-        Page::Layout,
     ];
 
     pub fn label(self) -> &'static str {
@@ -52,7 +49,6 @@ impl Page {
             Page::Services => "Services",
             Page::Storage => "Storage",
             Page::Display => "Display",
-            Page::Layout => "Window Manager",
             Page::System => "System",
             Page::Hardware => "Hardware",
             Page::Input => "Input",

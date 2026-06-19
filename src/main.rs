@@ -132,7 +132,7 @@ struct SystemInterface {
     rx_audio: std::sync::mpsc::Receiver<pages::audio::AudioState>,
     rx_display: std::sync::mpsc::Receiver<pages::display::DisplayState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
-    rx_layout: std::sync::mpsc::Receiver<pages::layout::LayoutState>,
+    rx_layout: std::sync::mpsc::Receiver<pages::interface::WindowsState>,
     rx_wm_events: std::sync::mpsc::Receiver<()>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
@@ -180,7 +180,6 @@ impl cce_ui::engine::Application for SystemInterface {
     fn new(_qh: &wayland_client::QueueHandle<cce_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
         cce_ui::scale::set_scale_factor(1.0);
         let app = AppState {
-            layout: pages::layout::read_layout_config(),
             input: pages::input::read_input_config(),
             interface: pages::interface::read_interface_config(),
             ..Default::default()
@@ -226,19 +225,19 @@ impl cce_ui::engine::Application for SystemInterface {
         let rx_display = spawn_bg_active(current_page_shared.clone(), 2, 10, || pages::display::fetch_display_state());
         let rx_network = spawn_bg_active(current_page_shared.clone(), 7, 5, || pages::network::fetch_network_state());
         let rx_layout = {
-            let (tx, rx) = std::sync::mpsc::channel::<pages::layout::LayoutState>();
+            let (tx, rx) = std::sync::mpsc::channel::<pages::interface::WindowsState>();
             let current_page_shared = current_page_shared.clone();
             tokio::spawn(async move {
                 let mut last_fetch: Option<std::time::Instant> = None;
                 loop {
                     let current_page = current_page_shared.load(std::sync::atomic::Ordering::SeqCst);
-                    if current_page == 11 { // Layout is index 11
+                    if current_page == 5 { // Interface is index 5
                         let should_fetch = match last_fetch {
                             None => true,
                             Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                         };
                         if should_fetch {
-                            let val = tokio::task::spawn_blocking(|| pages::layout::read_layout_config()).await;
+                            let val = tokio::task::spawn_blocking(|| pages::interface::read_windows_config()).await;
                             if let Ok(val) = val {
                                 if tx.send(val).is_err() { break; }
                             }
@@ -267,7 +266,7 @@ impl cce_ui::engine::Application for SystemInterface {
 
                 loop {
                     let current_page = current_page_shared.load(std::sync::atomic::Ordering::SeqCst);
-                    if current_page == 11 { // Layout is index 11
+                    if current_page == 5 { // Interface is index 5
                         let mut changed = false;
                         for p in &[&windows_path, &tags_path, &title_path] {
                             if let Some(mtime) = check_mtime(p) {
@@ -682,16 +681,16 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
 
         self.app.network.wifi_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.network.wifi_list_box.scroll_box.set_parent(None, &mut self.ui_context);
 
-        for sb in &mut self.app.layout.spinboxes {
+        for sb in &mut self.app.interface.windows.spinboxes {
             sb.clear_children(&mut self.ui_context);
             sb.set_parent(None, &mut self.ui_context);
         }
-        self.app.layout.cascade_offset_spinbox.clear_children(&mut self.ui_context); self.app.layout.cascade_offset_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.edge_gap_spinbox.clear_children(&mut self.ui_context); self.app.layout.edge_gap_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.top_gap_spinbox.clear_children(&mut self.ui_context); self.app.layout.top_gap_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.grid_gap_spinbox.clear_children(&mut self.ui_context); self.app.layout.grid_gap_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.transition_duration_spinbox.clear_children(&mut self.ui_context); self.app.layout.transition_duration_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.status_height_spinbox.clear_children(&mut self.ui_context); self.app.layout.status_height_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.cascade_offset_spinbox.clear_children(&mut self.ui_context); self.app.interface.windows.cascade_offset_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.edge_gap_spinbox.clear_children(&mut self.ui_context); self.app.interface.windows.edge_gap_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.top_gap_spinbox.clear_children(&mut self.ui_context); self.app.interface.windows.top_gap_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.grid_gap_spinbox.clear_children(&mut self.ui_context); self.app.interface.windows.grid_gap_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.transition_duration_spinbox.clear_children(&mut self.ui_context); self.app.interface.windows.transition_duration_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.status_height_spinbox.clear_children(&mut self.ui_context); self.app.interface.windows.status_height_spinbox.set_parent(None, &mut self.ui_context);
 
         for cs in &mut self.app.interface.color_selectors {
             cs.clear_children(&mut self.ui_context);
@@ -862,20 +861,20 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         self.app.services.status_underline_toggle.clear_children(&mut self.ui_context); self.app.services.status_underline_toggle.set_parent(None, &mut self.ui_context);
         self.app.services.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.services.status_padding_spinbox.set_parent(None, &mut self.ui_context);
 
-        for menu in &mut self.app.layout.tag_layout_menus {
+        for menu in &mut self.app.interface.windows.tag_layout_menus {
             menu.clear_children(&mut self.ui_context);
             menu.set_parent(None, &mut self.ui_context);
         }
-        self.app.layout.side_panel_behavior_menu.clear_children(&mut self.ui_context);
-        self.app.layout.side_panel_behavior_menu.set_parent(None, &mut self.ui_context);
-        self.app.layout.side_panel_position_menu.clear_children(&mut self.ui_context);
-        self.app.layout.side_panel_position_menu.set_parent(None, &mut self.ui_context);
-        self.app.layout.side_panel_width_spinbox.clear_children(&mut self.ui_context);
-        self.app.layout.side_panel_width_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.side_panel_border_gap_spinbox.clear_children(&mut self.ui_context);
-        self.app.layout.side_panel_border_gap_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.layout.side_panel_border_opacity_spinbox.clear_children(&mut self.ui_context);
-        self.app.layout.side_panel_border_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.side_panel_behavior_menu.clear_children(&mut self.ui_context);
+        self.app.interface.windows.side_panel_behavior_menu.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.side_panel_position_menu.clear_children(&mut self.ui_context);
+        self.app.interface.windows.side_panel_position_menu.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.side_panel_width_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.side_panel_width_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.side_panel_border_gap_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.side_panel_border_gap_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.side_panel_border_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.side_panel_border_opacity_spinbox.set_parent(None, &mut self.ui_context);
 
         use cce_ui::widget::focus::link_parent_child;
         match self.app.current_page {
@@ -927,47 +926,10 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 }
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
             }
-            Page::Layout => {
-                self.page_sec_containers.resize_with(7, cce_ui::widget::Container::new);
-                
-                for i in 0..7 {
-                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
-                }
-                
-                // Fullscreen (Section 0)
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.layout.spinboxes[0], &mut self.ui_context);
-                
-                // Cascade (Section 1)
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.spinboxes[1], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.cascade_offset_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.edge_gap_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.layout.top_gap_spinbox, &mut self.ui_context);
-                
-                // Grid (Section 2)
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.layout.grid_gap_spinbox, &mut self.ui_context);
-                
-                // Floating (Section 3)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.layout.spinboxes[3], &mut self.ui_context);
-                
-                // Movement (Section 4)
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.layout.transition_duration_spinbox, &mut self.ui_context);
-                
-                // Default Layouts (Section 5)
-                for menu in &mut self.app.layout.tag_layout_menus {
-                    link_parent_child(&mut self.page_sec_containers[5], menu, &mut self.ui_context);
-                }
-
-                // Side Panel (Section 6)
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_behavior_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_position_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_width_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_gap_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.layout.side_panel_border_opacity_spinbox, &mut self.ui_context);
-            }
             Page::Interface => {
-                self.page_sec_containers.resize_with(9, cce_ui::widget::Container::new);
+                self.page_sec_containers.resize_with(10, cce_ui::widget::Container::new);
                 
-                for i in 0..9 {
+                for i in 0..10 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
@@ -1099,6 +1061,41 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_cell_opacity_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_gap_opacity_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_gap_width_spinbox, &mut self.ui_context);
+
+                // Section 9: Windows (parent of Fullscreen, Cascade, Grid, Floating, Movement, Default Layouts, Side Panel, Effects)
+                // Fullscreen
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.spinboxes[0], &mut self.ui_context);
+                
+                // Cascade
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.spinboxes[1], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.cascade_offset_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.edge_gap_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.top_gap_spinbox, &mut self.ui_context);
+                
+                // Grid
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.grid_gap_spinbox, &mut self.ui_context);
+                
+                // Floating
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.spinboxes[3], &mut self.ui_context);
+                
+                // Movement
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.transition_duration_spinbox, &mut self.ui_context);
+                
+                // Default Layouts
+                for menu in &mut self.app.interface.windows.tag_layout_menus {
+                    link_parent_child(&mut self.page_sec_containers[9], menu, &mut self.ui_context);
+                }
+
+                // Side Panel
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_behavior_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_position_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_width_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_border_gap_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_border_opacity_spinbox, &mut self.ui_context);
+
+                // Effects
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.transparency_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.blur_toggle, &mut self.ui_context);
             }
 
 
@@ -1479,7 +1476,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
             Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused, &mut layout, &mut self.ui_context),
-            Page::Layout => layout::view(&mut self.app.layout, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Hardware => hardware::view(&mut self.app.hardware, cx, cy, cw, ch, root_focused, &mut layout, &mut self.ui_context),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
@@ -1604,13 +1600,13 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_layout.try_recv() {
-            layout::update(&mut self.app.layout, layout::LayoutMessage::Refreshed(s));
-            if self.app.current_page == Page::Layout {
+            interface::update_windows(&mut self.app.interface.windows, interface::WindowsMessage::Refreshed(s));
+            if self.app.current_page == Page::Interface {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(_) = self.rx_wm_events.try_recv() {
-            if self.app.current_page == Page::Layout {
+            if self.app.current_page == Page::Interface {
                 self.needs_rebuild = true;
             }
         }
@@ -1714,7 +1710,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Display(m) => display::update(&mut self.app.display, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
-            AppAction::Layout(m) => layout::update(&mut self.app.layout, m.clone()),
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
             AppAction::Hardware(m) => hardware::update(&mut self.app.hardware, m.clone()),
@@ -1845,57 +1840,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 changed = true;
             }
         }
-        if self.app.current_page == Page::Layout {
-            for sb in &mut self.app.layout.spinboxes {
-                if sb.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-            }
-            if self.app.layout.cascade_offset_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.edge_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.top_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.grid_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.transition_duration_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.status_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            for menu in &mut self.app.layout.tag_layout_menus {
-                if menu.cursor_moved(lx, ly, &mut self.ui_context) {
-                    changed = true;
-                }
-            }
-            if self.app.layout.side_panel_behavior_menu.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.side_panel_position_menu.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.side_panel_width_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.side_panel_border_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.side_panel_border_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.transparency_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.layout.blur_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-        }
+
         if self.app.current_page == Page::Interface {
             for cp in &mut self.app.interface.color_selectors {
                 if cp.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -2085,6 +2030,55 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 changed = true;
             }
             if self.app.interface.custom_multicontrol.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            for sb in &mut self.app.interface.windows.spinboxes {
+                if sb.cursor_moved(lx, ly, &mut self.ui_context) {
+                    changed = true;
+                }
+            }
+            if self.app.interface.windows.cascade_offset_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.edge_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.top_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.grid_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.transition_duration_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.status_height_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            for menu in &mut self.app.interface.windows.tag_layout_menus {
+                if menu.cursor_moved(lx, ly, &mut self.ui_context) {
+                    changed = true;
+                }
+            }
+            if self.app.interface.windows.side_panel_behavior_menu.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.side_panel_position_menu.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.side_panel_width_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.side_panel_border_gap_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.side_panel_border_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.transparency_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
+                changed = true;
+            }
+            if self.app.interface.windows.blur_toggle.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
         }
@@ -2492,27 +2486,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         if accs.smtp_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     }
                 }
-                Page::Layout => {
-                    for sb in &mut self.app.layout.spinboxes {
-                        if sb.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    }
-                    if self.app.layout.cascade_offset_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.edge_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.top_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.grid_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.transition_duration_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.status_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    for menu in &mut self.app.layout.tag_layout_menus {
-                        if menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    }
-                    if self.app.layout.side_panel_behavior_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.side_panel_position_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.side_panel_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.side_panel_border_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.side_panel_border_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.transparency_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.layout.blur_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                }
+
                 Page::Interface => {
                     if self.app.interface.custom_multicontrol.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     for cp in &mut self.app.interface.color_selectors {
@@ -2577,6 +2551,25 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     if tf.fuzzel_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if tf.terminal_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if tf.terminal_box.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    for sb in &mut tf.windows.spinboxes {
+                        if sb.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    }
+                    if tf.windows.cascade_offset_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.edge_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.top_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.grid_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.transition_duration_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.status_height_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    for menu in &mut tf.windows.tag_layout_menus {
+                        if menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    }
+                    if tf.windows.side_panel_behavior_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.side_panel_position_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.side_panel_width_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.side_panel_border_gap_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.side_panel_border_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.transparency_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
+                    if tf.windows.blur_toggle.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                 }
                 Page::Input => {
                     if self.app.input.rate_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -2657,127 +2650,169 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
 
-        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Layout {
-            for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
+        if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
+            let tf = &mut self.app.interface.windows;
+            for (i, sb) in tf.spinboxes.iter_mut().enumerate() {
                 if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
                 let old = sb.value;
                 if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetWidth(
-                            pages::layout::WidthParam::ALL[i],
-                            sb.value as u16,
+                    actions.push(AppAction::Interface(
+                        pages::interface::InterfaceMessage::Windows(
+                            pages::interface::WindowsMessage::SetWidth(
+                                pages::interface::WidthParam::ALL[i],
+                                sb.value as u16,
+                            )
                         )
                     ));
                 }
             }
-            let sb = &mut self.app.layout.cascade_offset_spinbox;
+            let sb = &mut tf.cascade_offset_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetCascadeOffset(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.edge_gap_spinbox;
+            let sb = &mut tf.edge_gap_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetEdgeGap(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.top_gap_spinbox;
+            let sb = &mut tf.top_gap_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetTopGap(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.grid_gap_spinbox;
+            let sb = &mut tf.grid_gap_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetGridGap(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetGridGap(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.transition_duration_spinbox;
+            let sb = &mut tf.transition_duration_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetTransitionDuration(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.status_height_spinbox;
+            let sb = &mut tf.status_height_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetStatusHeight(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetStatusHeight(sb.value as u16)
+                    )
                 ));
             }
         }
-        if self.app.current_page == Page::Layout {
-            for (idx, menu) in self.app.layout.tag_layout_menus.iter_mut().enumerate() {
+        if self.app.current_page == Page::Interface {
+            let tf = &mut self.app.interface.windows;
+            for (idx, menu) in tf.tag_layout_menus.iter_mut().enumerate() {
                 if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
                 if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                     self.needs_rebuild = true;
                 }
                 if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTagLayout(idx + 1, menu.selected)));
+                    actions.push(AppAction::Interface(
+                        pages::interface::InterfaceMessage::Windows(
+                            pages::interface::WindowsMessage::SetTagLayout(idx + 1, menu.selected)
+                        )
+                    ));
                 }
             }
-            let menu = &mut self.app.layout.side_panel_behavior_menu;
+            let menu = &mut tf.side_panel_behavior_menu;
             if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
             if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(menu.selected)));
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetSidePanelBehavior(menu.selected)
+                    )
+                ));
             }
-            let menu = &mut self.app.layout.side_panel_position_menu;
+            let menu = &mut tf.side_panel_position_menu;
             if state == cce_ui::widget::ElementState::Pressed && !menu.hit_test(lx, ly, &self.ui_context) { menu.unfocus(); }
             if menu.mouse_input(button, state, lx, ly, &mut self.ui_context) {
                 self.needs_rebuild = true;
             }
             if state == cce_ui::widget::ElementState::Pressed && menu.take_change() {
-                actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(menu.selected)));
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetSidePanelPosition(menu.selected)
+                    )
+                ));
             }
-            let sb = &mut self.app.layout.side_panel_width_spinbox;
+            let sb = &mut tf.side_panel_width_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetSidePanelWidth(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetSidePanelWidth(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.side_panel_border_gap_spinbox;
+            let sb = &mut tf.side_panel_border_gap_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetSidePanelBorderGap(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetSidePanelBorderGap(sb.value as u16)
+                    )
                 ));
             }
-            let sb = &mut self.app.layout.side_panel_border_opacity_spinbox;
+            let sb = &mut tf.side_panel_border_opacity_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Layout(
-                    pages::layout::LayoutMessage::SetSidePanelBorderOpacity(sb.value as u16)
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::SetSidePanelBorderOpacity(sb.value as u16)
+                    )
                 ));
             }
-            let toggle = &mut self.app.layout.transparency_toggle;
+            let toggle = &mut tf.transparency_toggle;
             toggle.mouse_input(button, state, lx, ly, &mut self.ui_context);
             if toggle.take_click() {
-                actions.push(AppAction::Layout(pages::layout::LayoutMessage::ToggleTransparency));
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::ToggleTransparency
+                    )
+                ));
             }
-            let toggle2 = &mut self.app.layout.blur_toggle;
+            let toggle2 = &mut tf.blur_toggle;
             toggle2.mouse_input(button, state, lx, ly, &mut self.ui_context);
             if toggle2.take_click() {
-                actions.push(AppAction::Layout(pages::layout::LayoutMessage::ToggleBlur));
+                actions.push(AppAction::Interface(
+                    pages::interface::InterfaceMessage::Windows(
+                        pages::interface::WindowsMessage::ToggleBlur
+                    )
+                ));
             }
         }
         if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
@@ -3752,51 +3787,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
 
     fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
         match self.app.current_page {
-            Page::Layout => {
-                for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
-                    if sb.take_change() {
-                        actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetWidth(pages::layout::WidthParam::ALL[i], sb.value as u16)));
-                    }
-                }
-                if self.app.layout.cascade_offset_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetCascadeOffset(self.app.layout.cascade_offset_spinbox.value as u16)));
-                }
-                if self.app.layout.edge_gap_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetEdgeGap(self.app.layout.edge_gap_spinbox.value as u16)));
-                }
-                if self.app.layout.top_gap_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTopGap(self.app.layout.top_gap_spinbox.value as u16)));
-                }
-                if self.app.layout.grid_gap_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetGridGap(self.app.layout.grid_gap_spinbox.value as u16)));
-                }
-                if self.app.layout.transition_duration_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTransitionDuration(self.app.layout.transition_duration_spinbox.value as u16)));
-                }
-                if self.app.layout.status_height_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetStatusHeight(self.app.layout.status_height_spinbox.value as u16)));
-                }
-                for (idx, menu) in self.app.layout.tag_layout_menus.iter_mut().enumerate() {
-                    if menu.take_change() {
-                        actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetTagLayout(idx + 1, menu.selected)));
-                    }
-                }
-                if self.app.layout.side_panel_behavior_menu.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(self.app.layout.side_panel_behavior_menu.selected)));
-                }
-                if self.app.layout.side_panel_position_menu.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(self.app.layout.side_panel_position_menu.selected)));
-                }
-                if self.app.layout.side_panel_width_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelWidth(self.app.layout.side_panel_width_spinbox.value as u16)));
-                }
-                if self.app.layout.side_panel_border_gap_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBorderGap(self.app.layout.side_panel_border_gap_spinbox.value as u16)));
-                }
-                if self.app.layout.side_panel_border_opacity_spinbox.take_change() {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBorderOpacity(self.app.layout.side_panel_border_opacity_spinbox.value as u16)));
-                }
-            }
             Page::Interface => {
                 for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
                     if cp.take_change() {
@@ -3989,6 +3979,51 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 }
                 if self.app.interface.status_size_box.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusSize(self.app.interface.status_size_box.value)));
+                }
+
+                let tf = &mut self.app.interface.windows;
+                for (i, sb) in tf.spinboxes.iter_mut().enumerate() {
+                    if sb.take_change() {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetWidth(pages::interface::WidthParam::ALL[i], sb.value as u16))));
+                    }
+                }
+                if tf.cascade_offset_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetCascadeOffset(tf.cascade_offset_spinbox.value as u16))));
+                }
+                if tf.edge_gap_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetEdgeGap(tf.edge_gap_spinbox.value as u16))));
+                }
+                if tf.top_gap_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetTopGap(tf.top_gap_spinbox.value as u16))));
+                }
+                if tf.grid_gap_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetGridGap(tf.grid_gap_spinbox.value as u16))));
+                }
+                if tf.transition_duration_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetTransitionDuration(tf.transition_duration_spinbox.value as u16))));
+                }
+                if tf.status_height_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetStatusHeight(tf.status_height_spinbox.value as u16))));
+                }
+                for (idx, menu) in tf.tag_layout_menus.iter_mut().enumerate() {
+                    if menu.take_change() {
+                        actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetTagLayout(idx + 1, menu.selected))));
+                    }
+                }
+                if tf.side_panel_behavior_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetSidePanelBehavior(tf.side_panel_behavior_menu.selected))));
+                }
+                if tf.side_panel_position_menu.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetSidePanelPosition(tf.side_panel_position_menu.selected))));
+                }
+                if tf.side_panel_width_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetSidePanelWidth(tf.side_panel_width_spinbox.value as u16))));
+                }
+                if tf.side_panel_border_gap_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetSidePanelBorderGap(tf.side_panel_border_gap_spinbox.value as u16))));
+                }
+                if tf.side_panel_border_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetSidePanelBorderOpacity(tf.side_panel_border_opacity_spinbox.value as u16))));
                 }
             }
             Page::Input => {
@@ -4446,145 +4481,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
 
-        if self.app.current_page == Page::Layout {
-            let mut changed = false;
-            let mut actions = Vec::new();
-            for (i, sb) in self.app.layout.spinboxes.iter_mut().enumerate() {
-                let old = sb.value;
-                if sb.keyboard_input(event, &mut self.ui_context) {
-                    if sb.value != old {
-                        actions.push(AppAction::Layout(
-                            pages::layout::LayoutMessage::SetWidth(
-                                pages::layout::WidthParam::ALL[i],
-                                sb.value as u16,
-                            )
-                        ));
-                    }
-                    changed = true;
-                }
-            }
-            let sb = &mut self.app.layout.cascade_offset_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetCascadeOffset(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.edge_gap_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetEdgeGap(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.top_gap_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetTopGap(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.grid_gap_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetGridGap(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.transition_duration_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetTransitionDuration(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.status_height_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetStatusHeight(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let (menu_changed, old_selected, new_selected) = {
-                let menu = &mut self.app.layout.side_panel_behavior_menu;
-                let old = menu.selected;
-                let changed = menu.keyboard_input(event, &mut self.ui_context);
-                (changed, old, menu.selected)
-            };
-            if menu_changed {
-                if new_selected != old_selected {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelBehavior(new_selected)));
-                }
-                changed = true;
-            }
-            let (menu_changed, old_selected, new_selected) = {
-                let menu = &mut self.app.layout.side_panel_position_menu;
-                let old = menu.selected;
-                let changed = menu.keyboard_input(event, &mut self.ui_context);
-                (changed, old, menu.selected)
-            };
-            if menu_changed {
-                if new_selected != old_selected {
-                    actions.push(AppAction::Layout(pages::layout::LayoutMessage::SetSidePanelPosition(new_selected)));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.side_panel_width_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetSidePanelWidth(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.side_panel_border_gap_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetSidePanelBorderGap(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            let sb = &mut self.app.layout.side_panel_border_opacity_spinbox;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                if sb.value != old {
-                    actions.push(AppAction::Layout(
-                        pages::layout::LayoutMessage::SetSidePanelBorderOpacity(sb.value as u16)
-                    ));
-                }
-                changed = true;
-            }
-            for a in &actions {
-                self.handle_action(a);
-            }
-            if changed {
-                self.needs_rebuild = true;
-                return true;
-            }
-        }
         if self.app.current_page == Page::Interface {
             let mc = &mut self.app.interface.custom_multicontrol;
             if mc.keyboard_input(event, &mut self.ui_context) {
@@ -5084,6 +4980,175 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.handle_action(a);
             }
             if consumed {
+                self.needs_rebuild = true;
+                return true;
+            }
+
+            let mut changed = false;
+            let mut actions = Vec::new();
+            {
+                let tf = &mut self.app.interface.windows;
+                for (i, sb) in tf.spinboxes.iter_mut().enumerate() {
+                    let old = sb.value;
+                    if sb.keyboard_input(event, &mut self.ui_context) {
+                        if sb.value != old {
+                            actions.push(AppAction::Interface(
+                                pages::interface::InterfaceMessage::Windows(
+                                    pages::interface::WindowsMessage::SetWidth(
+                                        pages::interface::WidthParam::ALL[i],
+                                        sb.value as u16,
+                                    )
+                                )
+                            ));
+                        }
+                        changed = true;
+                    }
+                }
+                let sb = &mut tf.cascade_offset_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetCascadeOffset(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.edge_gap_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetEdgeGap(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.top_gap_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetTopGap(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.grid_gap_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetGridGap(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.transition_duration_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetTransitionDuration(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.status_height_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetStatusHeight(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let (menu_changed, old_selected, new_selected) = {
+                    let menu = &mut tf.side_panel_behavior_menu;
+                    let old = menu.selected;
+                    let changed = menu.keyboard_input(event, &mut self.ui_context);
+                    (changed, old, menu.selected)
+                };
+                if menu_changed {
+                    if new_selected != old_selected {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetSidePanelBehavior(new_selected)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let (menu_changed, old_selected, new_selected) = {
+                    let menu = &mut tf.side_panel_position_menu;
+                    let old = menu.selected;
+                    let changed = menu.keyboard_input(event, &mut self.ui_context);
+                    (changed, old, menu.selected)
+                };
+                if menu_changed {
+                    if new_selected != old_selected {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetSidePanelPosition(new_selected)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.side_panel_width_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetSidePanelWidth(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.side_panel_border_gap_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetSidePanelBorderGap(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+                let sb = &mut tf.side_panel_border_opacity_spinbox;
+                let old = sb.value;
+                if sb.keyboard_input(event, &mut self.ui_context) {
+                    if sb.value != old {
+                        actions.push(AppAction::Interface(
+                            pages::interface::InterfaceMessage::Windows(
+                                pages::interface::WindowsMessage::SetSidePanelBorderOpacity(sb.value as u16)
+                            )
+                        ));
+                    }
+                    changed = true;
+                }
+            }
+            for a in &actions {
+                self.handle_action(a);
+            }
+            if changed {
                 self.needs_rebuild = true;
                 return true;
             }

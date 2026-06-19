@@ -3,7 +3,6 @@ use cce_ui::layout::RenderTarget;
 use crate::pages::audio;
 use crate::pages::display;
 use crate::pages::input;
-use crate::pages::layout;
 use crate::pages::network;
 use crate::pages::hardware;
 use crate::pages::system_info;
@@ -19,7 +18,6 @@ pub struct AppState {
     pub audio: audio::AudioState,
     pub display: display::DisplayState,
     pub network: network::NetworkState,
-    pub layout: layout::LayoutState,
     pub input: input::InputState,
     pub hardware: hardware::HardwareState,
     pub system_info: system_info::SystemState,
@@ -37,7 +35,6 @@ impl Default for AppState {
             audio: audio::AudioState::default(),
             display: display::DisplayState::default(),
             network: network::NetworkState::default(),
-            layout: layout::LayoutState::default(),
             input: input::InputState::default(),
             hardware: hardware::HardwareState::default(),
             system_info: system_info::SystemState::default(),
@@ -56,7 +53,6 @@ pub enum AppAction {
     Audio(audio::AudioMessage),
     Display(display::DisplayMessage),
     Radios(network::NetworkMessage),
-    Layout(layout::LayoutMessage),
     Input(input::InputMessage),
     Hardware(hardware::HardwareMessage),
     SystemInfo(system_info::SystemMessage),
