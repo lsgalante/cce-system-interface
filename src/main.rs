@@ -165,7 +165,7 @@ struct SystemInterface {
     display_brightness_dragging: bool,
     page_sec_containers: Vec<cce_ui::widget::Container>,
     root_window: cce_ui::widget::Window,
-    menubar: cce_ui::widget::MenuBar,
+    menubar: cce_ui::widget::Paginator,
     switcher: cce_ui::widget::Switcher,
     plates: Vec<cce_ui::widget::Plate>,
     sans_serif_family: String,
@@ -197,9 +197,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::interface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
-        let mut menubar = cce_ui::widget::MenuBar::new(0.0, 0.0, 180.0, 680.0)
-            .with_vertical(true);
-        menubar.set_pages(pages_names);
+        let menubar = cce_ui::widget::Paginator::new(180.0, pages_names);
         let sidebar_width = menubar.sidebar_w();
 
         let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
