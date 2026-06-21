@@ -1870,6 +1870,7 @@ fn apply_window_opacity(opacity: f32) {
 fn apply_window_corner_radius(radius: u16) {
     write_surfaces_config_value("window_corner_radius", &radius.to_string());
     send_ipc_command("reload");
+    cce_ui::color::set_window_corner_radius(radius as f32);
 }
 
 fn apply_paginator_tab_margin_x(margin: u16) {
