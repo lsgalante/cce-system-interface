@@ -46,13 +46,7 @@ impl SystemInterface {
                     changed = true;
                 }
             }
-            if self.app.interface.tab_margin_spinbox_x.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
             if self.app.interface.menubar_opacity_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
-                changed = true;
-            }
-            if self.app.interface.tab_margin_spinbox_y.cursor_moved(lx, ly, &mut self.ui_context) {
                 changed = true;
             }
             if self.app.interface.button_padding_spinbox.cursor_moved(lx, ly, &mut self.ui_context) {
@@ -691,9 +685,7 @@ impl SystemInterface {
                     for cp in &mut self.app.interface.color_selectors {
                         if cp.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     }
-                    if self.app.interface.tab_margin_spinbox_x.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.menubar_opacity_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
-                    if self.app.interface.tab_margin_spinbox_y.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.button_padding_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.section_padding_spinbox.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
                     if self.app.interface.label_alignment_menu.hit_test(lx, ly, &self.ui_context) { clicked_any_focusable = true; }
@@ -1101,18 +1093,7 @@ impl SystemInterface {
             if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
                 actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetWindowCornerRadius(sb.value as u16)));
             }
-            let sb = &mut self.app.interface.tab_margin_spinbox_x;
-            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
-            let old = sb.value;
-            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(sb.value as u16)));
-            }
-            let sb = &mut self.app.interface.tab_margin_spinbox_y;
-            if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
-            let old = sb.value;
-            if sb.mouse_input(button, state, lx, ly, &mut self.ui_context) && sb.value != old {
-                actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(sb.value as u16)));
-            }
+
             let sb = &mut self.app.interface.button_padding_spinbox;
             if !sb.hit_test(lx, ly, &self.ui_context) { sb.unfocus(); }
             let old = sb.value;
@@ -2028,12 +2009,7 @@ impl SystemInterface {
                 if self.app.interface.menubar_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(self.app.interface.menubar_opacity_spinbox.value as f32 / 100.0)));
                 }
-                if self.app.interface.tab_margin_spinbox_x.take_change() {
-                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(self.app.interface.tab_margin_spinbox_x.value as u16)));
-                }
-                if self.app.interface.tab_margin_spinbox_y.take_change() {
-                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(self.app.interface.tab_margin_spinbox_y.value as u16)));
-                }
+
                 if self.app.interface.button_padding_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonPadding(self.app.interface.button_padding_spinbox.value as u16)));
                 }
@@ -2787,26 +2763,7 @@ impl SystemInterface {
                 self.needs_rebuild = true;
                 return true;
             }
-            let sb = &mut self.app.interface.tab_margin_spinbox_x;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                let new_val = sb.value;
-                if new_val != old {
-                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginX(new_val as u16)));
-                }
-                self.needs_rebuild = true;
-                return true;
-            }
-            let sb = &mut self.app.interface.tab_margin_spinbox_y;
-            let old = sb.value;
-            if sb.keyboard_input(event, &mut self.ui_context) {
-                let new_val = sb.value;
-                if new_val != old {
-                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::SetTabMarginY(new_val as u16)));
-                }
-                self.needs_rebuild = true;
-                return true;
-            }
+
             let sb = &mut self.app.interface.button_padding_spinbox;
             let old = sb.value;
             if sb.keyboard_input(event, &mut self.ui_context) {

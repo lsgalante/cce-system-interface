@@ -53,12 +53,8 @@ impl SystemInterface {
             cs.clear_children(&mut self.ui_context);
             cs.set_parent(None, &mut self.ui_context);
         }
-        self.app.interface.tab_margin_spinbox_x.clear_children(&mut self.ui_context);
-        self.app.interface.tab_margin_spinbox_x.set_parent(None, &mut self.ui_context);
         self.app.interface.menubar_opacity_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.menubar_opacity_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.interface.tab_margin_spinbox_y.clear_children(&mut self.ui_context);
-        self.app.interface.tab_margin_spinbox_y.set_parent(None, &mut self.ui_context);
         self.app.interface.button_padding_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.button_padding_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.section_padding_spinbox.clear_children(&mut self.ui_context);
@@ -315,8 +311,7 @@ impl SystemInterface {
                 // (MenuBar child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[9], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[11], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.tab_margin_spinbox_x, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.tab_margin_spinbox_y, &mut self.ui_context);
+
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.button_padding_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
                  // (Toggles child widgets)

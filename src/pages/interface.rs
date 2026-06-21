@@ -195,10 +195,6 @@ pub struct InterfaceState {
     pub window_opacity_spinbox: Spinbox,
     pub window_corner_radius: u16,
     pub window_corner_radius_spinbox: Spinbox,
-    pub paginator_tab_margin_x: u16,
-    pub paginator_tab_margin_y: u16,
-    pub tab_margin_spinbox_x: Spinbox,
-    pub tab_margin_spinbox_y: Spinbox,
     pub paginator_tab_padding_x: u16,
     pub paginator_tab_padding_y: u16,
     pub button_padding: u16,
@@ -270,7 +266,6 @@ pub struct InterfaceState {
     pub status_interface: String,
     pub fuzzel: String,
     pub terminal: String,
-    pub paginator: String,
     pub all_fonts: Vec<String>,
     pub mono_fonts: Vec<String>,
     pub sans_box: TextBox,
@@ -362,10 +357,6 @@ impl Default for InterfaceState {
                 ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background"), // 21: ScrollingList - Entry Background
                 ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight"), // 22: ScrollingList - Entry Highlight
             ],
-            paginator_tab_margin_x: 5,
-            paginator_tab_margin_y: 10,
-            tab_margin_spinbox_x: Spinbox::new(5, 0, 100, 1).with_label("Tab Margin X").with_unit("px"),
-            tab_margin_spinbox_y: Spinbox::new(10, 0, 100, 1).with_label("Tab Margin Y").with_unit("px"),
             paginator_tab_padding_x: 10,
             paginator_tab_padding_y: 14,
             button_padding: 14,
@@ -439,7 +430,6 @@ impl Default for InterfaceState {
             status_interface: String::new(),
             fuzzel: String::new(),
             terminal: String::new(),
-            paginator: String::new(),
             all_fonts: Vec::new(),
             mono_fonts: Vec::new(),
             sans_box: TextBox::new(String::new()).with_label("Sans-Serif"),
@@ -521,8 +511,6 @@ pub enum InterfaceMessage {
     SetWindowColor([u8; 3]),
     SetWindowOpacity(f32),
     SetWindowCornerRadius(u16),
-    SetTabMarginX(u16),
-    SetTabMarginY(u16),
     SetButtonPadding(u16),
     SetSectionPadding(u16),
     SetPlatePadding(u16),
@@ -654,9 +642,6 @@ pub fn read_interface_config() -> InterfaceState {
 
     let popover_bg = parse_color_from_key(&content, "popover_bg_color", scrollinglist_bg);
     
-    let paginator_tab_margin_general = parse_u16_from(&content, "paginator_tab_margin", 999);
-    let paginator_tab_margin_x = parse_u16_from(&content, "paginator_tab_margin_x", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 5 });
-    let paginator_tab_margin_y = parse_u16_from(&content, "paginator_tab_margin_y", if paginator_tab_margin_general != 999 { paginator_tab_margin_general } else { 10 });
     let paginator_tab_padding_x = parse_u16_from(&content, "paginator_tab_padding_x", 10);
     let paginator_tab_padding_y = parse_u16_from(&content, "paginator_tab_padding_y", 14);
     let button_padding = parse_u16_from(&content, "button_padding", paginator_tab_padding_y);
@@ -756,10 +741,6 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font), // 21: ScrollingList - Entry Background
             ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font), // 22: ScrollingList - Entry Highlight
         ],
-        paginator_tab_margin_x,
-        paginator_tab_margin_y,
-        tab_margin_spinbox_x: Spinbox::new(paginator_tab_margin_x as i32, 0, 100, 1).with_label("Tab Margin X").with_unit("px"),
-        tab_margin_spinbox_y: Spinbox::new(paginator_tab_margin_y as i32, 0, 100, 1).with_label("Tab Margin Y").with_unit("px"),
         paginator_tab_padding_x,
         paginator_tab_padding_y,
         button_padding,
@@ -833,7 +814,6 @@ pub fn read_interface_config() -> InterfaceState {
         status_interface: String::new(),
         fuzzel: String::new(),
         terminal: String::new(),
-        paginator: String::new(),
         all_fonts: Vec::new(),
         mono_fonts: Vec::new(),
         sans_box: TextBox::default(),
@@ -1408,20 +1388,7 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
 
     for k in keys_to_update {
         match k.as_str() {
-            "paginator_tab_margin_x" => {
-                if let Ok(val) = val_str.parse::<u16>() {
-                    state.paginator_tab_margin_x = val;
-                    state.tab_margin_spinbox_x.value = val as i32;
-                    apply_paginator_tab_margin_x(val);
-                }
-            }
-            "paginator_tab_margin_y" => {
-                if let Ok(val) = val_str.parse::<u16>() {
-                    state.paginator_tab_margin_y = val;
-                    state.tab_margin_spinbox_y.value = val as i32;
-                    apply_paginator_tab_margin_y(val);
-                }
-            }
+
             "button_padding" => {
                 if let Ok(val) = val_str.parse::<u16>() {
                     state.button_padding = val;
@@ -1873,17 +1840,6 @@ fn apply_window_corner_radius(radius: u16) {
     cce_ui::color::set_window_corner_radius(radius as f32);
 }
 
-fn apply_paginator_tab_margin_x(margin: u16) {
-    write_config_value("paginator_tab_margin_x", &margin.to_string());
-    send_ipc_command(&format!("layout paginator_tab_margin_x {}", margin));
-    cce_ui::layout::set_paginator_tab_margin_x(margin as f32);
-}
-
-fn apply_paginator_tab_margin_y(margin: u16) {
-    write_config_value("paginator_tab_margin_y", &margin.to_string());
-    send_ipc_command(&format!("layout paginator_tab_margin_y {}", margin));
-    cce_ui::layout::set_paginator_tab_margin_y(margin as f32);
-}
 
 fn apply_button_padding(padding: u16) {
     write_config_value("button_padding", &padding.to_string());
@@ -2100,7 +2056,7 @@ fn parse_font_for_alias(content: &str, alias: &str) -> Option<String> {
     None
 }
 
-pub fn read_preferred_fonts() -> (String, String, String, String, String, String, String, String) {
+pub fn read_preferred_fonts() -> (String, String, String, String, String, String, String) {
     let content = fs::read_to_string(FONTS_CONF_PATH).unwrap_or_default();
     
     let sans = parse_font_for_alias(&content, "sans-serif").unwrap_or_else(|| "Noto Sans".to_string());
@@ -2110,9 +2066,8 @@ pub fn read_preferred_fonts() -> (String, String, String, String, String, String
     let status = parse_font_for_alias(&content, "status-interface").unwrap_or_else(|| "Noto Sans".to_string());
     let fuzzel_font = parse_font_for_alias(&content, "fuzzel").unwrap_or_else(|| "Noto Sans".to_string());
     let term = parse_font_for_alias(&content, "terminal").unwrap_or_else(|| "Noto Sans Mono".to_string());
-    let paginator = parse_font_for_alias(&content, "paginator-tab-labels").unwrap_or_else(|| "Noto Sans Mono".to_string());
     
-    (sans, serif, mono, borders, status, fuzzel_font, term, paginator)
+    (sans, serif, mono, borders, status, fuzzel_font, term)
 }
 
 pub fn save_preferred_fonts(
@@ -2123,7 +2078,6 @@ pub fn save_preferred_fonts(
     status: &str,
     fuzzel: &str,
     terminal: &str,
-    paginator: &str,
 ) {
     let content = fs::read_to_string(FONTS_CONF_PATH).unwrap_or_default();
     
@@ -2200,14 +2154,6 @@ pub fn save_preferred_fonts(
     new_content.push_str("        <test qual=\"any\" name=\"family\"><string>terminal</string></test>\n");
     new_content.push_str("        <edit name=\"family\" mode=\"assign\" binding=\"same\">\n");
     new_content.push_str(&format!("            <string>{}</string>\n", terminal));
-    new_content.push_str("        </edit>\n");
-    new_content.push_str("    </match>\n");
-    
-    // Paginator Tab Labels
-    new_content.push_str("    <match target=\"pattern\">\n");
-    new_content.push_str("        <test qual=\"any\" name=\"family\"><string>paginator-tab-labels</string></test>\n");
-    new_content.push_str("        <edit name=\"family\" mode=\"assign\" binding=\"same\">\n");
-    new_content.push_str(&format!("            <string>{}</string>\n", paginator));
     new_content.push_str("        </edit>\n");
     new_content.push_str("    </match>\n");
     
@@ -2372,7 +2318,7 @@ fn parse_families(output: Option<std::process::Output>) -> Vec<String> {
 }
 
 pub async fn fetch_typeface_state() -> InterfaceState {
-    let (sans, serif, mono, borders, status, fuzzel_font, term, paginator_font) = read_preferred_fonts();
+    let (sans, serif, mono, borders, status, fuzzel_font, term) = read_preferred_fonts();
     
     let all_output = tokio::process::Command::new("fc-list")
         .args([":", "family"])
@@ -2436,7 +2382,6 @@ pub async fn fetch_typeface_state() -> InterfaceState {
     state.status_interface = status;
     state.fuzzel = fuzzel_font;
     state.terminal = term;
-    state.paginator = paginator_font;
     state.all_fonts = all_fonts;
     state.mono_fonts = mono_fonts;
     state.sans_box = TextBox::new(sans).with_label("Sans-Serif");
@@ -2534,12 +2479,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.color_selectors[11].color = state.menubar_tab_label_color;
             subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
-            state.tab_margin_spinbox_x.value = state.paginator_tab_margin_x as i32;
-            subsec.widget_full(&mut state.tab_margin_spinbox_x, 44.0, ctx);
-            subsec.spacing(8.0);
-            state.tab_margin_spinbox_y.value = state.paginator_tab_margin_y as i32;
-            subsec.widget_full(&mut state.tab_margin_spinbox_y, 44.0, ctx);
-            subsec.spacing(8.0);
             state.menubar_font_selector.font_family = state.menubar_font.clone();
             subsec.widget_full(&mut state.menubar_font_selector, 44.0, ctx);
             subsec.spacing(8.0);
@@ -3196,16 +3135,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.window_corner_radius_spinbox.value = radius as i32;
             apply_window_corner_radius(radius);
         }
-        InterfaceMessage::SetTabMarginX(margin) => {
-            state.paginator_tab_margin_x = margin;
-            apply_paginator_tab_margin_x(margin);
-            propagate_links(state, "paginator_tab_margin_x", &margin.to_string());
-        }
-        InterfaceMessage::SetTabMarginY(margin) => {
-            state.paginator_tab_margin_y = margin;
-            apply_paginator_tab_margin_y(margin);
-            propagate_links(state, "paginator_tab_margin_y", &margin.to_string());
-        }
         InterfaceMessage::SetButtonPadding(padding) => {
             state.button_padding = padding;
             apply_button_padding(padding);
@@ -3441,8 +3370,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
-            let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
-            let was_my_hovered = state.tab_margin_spinbox_y.hovered();
             let was_bp_hovered = state.button_padding_spinbox.hovered();
             let was_sp_hovered = state.section_padding_spinbox.hovered();
             let was_pp_hovered = state.plate_padding_spinbox.hovered();
@@ -3487,7 +3414,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let status_interface = state.status_interface.clone();
             let fuzzel = state.fuzzel.clone();
             let terminal = state.terminal.clone();
-            let paginator = state.paginator.clone();
             let all_fonts = state.all_fonts.clone();
             let mono_fonts = state.mono_fonts.clone();
             let sans_box = state.sans_box.clone();
@@ -3508,8 +3434,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
 
             *state = new;
 
-            state.tab_margin_spinbox_x.set_hovered(was_mx_hovered);
-            state.tab_margin_spinbox_y.set_hovered(was_my_hovered);
             state.button_padding_spinbox.set_hovered(was_bp_hovered);
             state.section_padding_spinbox.set_hovered(was_sp_hovered);
             state.plate_padding_spinbox.set_hovered(was_pp_hovered);
@@ -3555,7 +3479,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 state.status_interface = status_interface;
                 state.fuzzel = fuzzel;
                 state.terminal = terminal;
-                state.paginator = paginator;
                 state.all_fonts = all_fonts;
                 state.mono_fonts = mono_fonts;
                 state.sans_box = sans_box;
@@ -3643,7 +3566,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetSerif(serif) => {
@@ -3673,7 +3595,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetMono(mono) => {
@@ -3703,7 +3624,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetBorders(borders) => {
@@ -3717,7 +3637,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetStatus(status) => {
@@ -3731,7 +3650,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetFuzzel(fuzzel) => {
@@ -3745,7 +3663,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetTerminal(term) => {
@@ -3759,7 +3676,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
 
@@ -3784,7 +3700,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetStatusMenu(idx) => {
@@ -3808,7 +3723,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetFuzzelMenu(idx) => {
@@ -3832,7 +3746,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetTerminalMenu(idx) => {
@@ -3856,7 +3769,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
                 &state.status_interface,
                 &state.fuzzel,
                 &state.terminal,
-                &state.paginator,
             );
         }
         InterfaceMessage::SetBordersSize(val) => {
@@ -4867,51 +4779,7 @@ mod tests {
         let _ = fs::remove_file(path_str);
     }
 
-    #[test]
-    fn test_read_write_paginator_tab_margin_x() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_paginator_tab_margin_x_config.toml");
-        let path_str = path.to_str().unwrap();
 
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
-        fs::write(path_str, initial_content).unwrap();
-
-        let content = fs::read_to_string(path_str).unwrap();
-        let val = parse_u16_from(&content, "paginator_tab_margin_x", 5);
-        assert_eq!(val, 5);
-
-        assert!(write_config_value_path(path_str, "paginator_tab_margin_x", "8"));
-        let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"paginator_tab_margin_x\": 8"));
-
-        let val2 = parse_u16_from(&updated, "paginator_tab_margin_x", 5);
-        assert_eq!(val2, 8);
-
-        let _ = fs::remove_file(path_str);
-    }
-
-    #[test]
-    fn test_read_write_paginator_tab_margin_y() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_paginator_tab_margin_y_config.toml");
-        let path_str = path.to_str().unwrap();
-
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
-        fs::write(path_str, initial_content).unwrap();
-
-        let content = fs::read_to_string(path_str).unwrap();
-        let val = parse_u16_from(&content, "paginator_tab_margin_y", 10);
-        assert_eq!(val, 10);
-
-        assert!(write_config_value_path(path_str, "paginator_tab_margin_y", "12"));
-        let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"paginator_tab_margin_y\": 12"));
-
-        let val2 = parse_u16_from(&updated, "paginator_tab_margin_y", 10);
-        assert_eq!(val2, 12);
-
-        let _ = fs::remove_file(path_str);
-    }
 
     #[test]
     fn test_read_write_button_padding() {

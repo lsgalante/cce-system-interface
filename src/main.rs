@@ -194,7 +194,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let (watchers, tx_backup, rx_backup, tx_update, rx_update) =
             cce_system_interface::watchers::spawn_all(current_page_shared.clone());
 
-        let (sans_family, serif_family, monospace_family, _, _, _, _, _) = pages::interface::read_preferred_fonts();
+        let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::interface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let mut menubar = cce_ui::widget::MenuBar::new(0.0, 0.0, 180.0, 680.0)
