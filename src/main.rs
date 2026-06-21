@@ -493,7 +493,35 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 20 => self.app.interface.layer_color,
                 _ => self.app.interface.desktop_background_color,
             };
-            if cp.color != state_color {
+            if i == 21 || i == 22 {
+                let (state_rgb, state_alpha) = if i == 21 {
+                    (
+                        [
+                            self.app.interface.scrollinglist_entry_bg_color[0],
+                            self.app.interface.scrollinglist_entry_bg_color[1],
+                            self.app.interface.scrollinglist_entry_bg_color[2],
+                        ],
+                        self.app.interface.scrollinglist_entry_bg_color[3],
+                    )
+                } else {
+                    (
+                        [
+                            self.app.interface.scrollinglist_entry_highlight_color[0],
+                            self.app.interface.scrollinglist_entry_highlight_color[1],
+                            self.app.interface.scrollinglist_entry_highlight_color[2],
+                        ],
+                        self.app.interface.scrollinglist_entry_highlight_color[3],
+                    )
+                };
+                if cp.color != state_rgb || cp.alpha != state_alpha {
+                    color_actions.push(AppAction::Interface(if i == 21 {
+                        pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
+                    } else {
+                        pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
+                    }));
+                    color_changed = true;
+                }
+            } else if cp.color != state_color {
                 color_actions.push(AppAction::Interface(match i {
                     0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
                     1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),

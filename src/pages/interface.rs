@@ -180,6 +180,8 @@ pub struct InterfaceState {
     pub toggle_enabled_color: [u8; 3],
     pub toggle_disabled_color: [u8; 3],
     pub scrollinglist_bg_color: [u8; 3],
+    pub scrollinglist_entry_bg_color: [u8; 4],
+    pub scrollinglist_entry_highlight_color: [u8; 4],
     pub breadcrumb_bg_color: [u8; 3],
     pub popover_bg_color: [u8; 3],
     pub color_selectors: Vec<ColorSelector>,
@@ -331,6 +333,8 @@ impl Default for InterfaceState {
             toggle_enabled_color: [104, 217, 165],
             toggle_disabled_color: [135, 135, 148],
             scrollinglist_bg_color: [81, 81, 97],
+            scrollinglist_entry_bg_color: [255, 255, 255, 10],
+            scrollinglist_entry_highlight_color: [255, 255, 255, 204],
             breadcrumb_bg_color: [81, 81, 97],
             popover_bg_color: [81, 81, 97],
             color_selectors: vec![
@@ -355,6 +359,8 @@ impl Default for InterfaceState {
                 ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color"), // 18: Surfaces - Window Color
                 ColorSelector::new([0, 0, 0]).with_label("Page Color"), // 19: Containers - Page Color
                 ColorSelector::new([0, 0, 0]).with_label("Layer Color"), // 20: Containers - Layer Color
+                ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background"), // 21: ScrollingList - Entry Background
+                ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight"), // 22: ScrollingList - Entry Highlight
             ],
             paginator_tab_margin_x: 5,
             paginator_tab_margin_y: 10,
@@ -506,6 +512,8 @@ pub enum InterfaceMessage {
     SetToggleEnabledColor([u8; 3]),
     SetToggleDisabledColor([u8; 3]),
     SetScrollingListBgColor([u8; 3]),
+    SetScrollingListEntryBgColor([u8; 4]),
+    SetScrollingListEntryHighlightColor([u8; 4]),
     SetBreadcrumbBgColor([u8; 3]),
     SetPopoverBgColor([u8; 3]),
     SetNotificationBgColor([u8; 3]),
@@ -574,6 +582,8 @@ pub enum InterfaceMessage {
     PickToggleEnabledColor,
     PickToggleDisabledColor,
     PickScrollingListBgColor,
+    PickScrollingListEntryBgColor,
+    PickScrollingListEntryHighlightColor,
     PickBreadcrumbBgColor,
     PickPopoverBgColor,
     PickNotificationBgColor,
@@ -637,6 +647,8 @@ pub fn read_interface_config() -> InterfaceState {
     let toggle_disabled = parse_color_from_key(&content, "toggle_disabled_color", [135, 135, 148]);
 
     let scrollinglist_bg = parse_color_from_key(&content, "scrollinglist_bg_color", [81, 81, 97]);
+    let scrollinglist_entry_bg = parse_rgba_color_from_key(&content, "scrollinglist_entry_bg_color", [255, 255, 255, 10]);
+    let scrollinglist_entry_highlight = parse_rgba_color_from_key(&content, "scrollinglist_entry_highlight_color", [255, 255, 255, 204]);
 
     let breadcrumb_bg = parse_color_from_key(&content, "breadcrumb_bg_color", scrollinglist_bg);
 
@@ -715,6 +727,8 @@ pub fn read_interface_config() -> InterfaceState {
         toggle_enabled_color: toggle_enabled,
         toggle_disabled_color: toggle_disabled,
         scrollinglist_bg_color: scrollinglist_bg,
+        scrollinglist_entry_bg_color: scrollinglist_entry_bg,
+        scrollinglist_entry_highlight_color: scrollinglist_entry_highlight,
         breadcrumb_bg_color: breadcrumb_bg,
         popover_bg_color: popover_bg,
         color_selectors: vec![
@@ -739,6 +753,8 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(window_color).with_label("Color").with_font_family(&color_selector_font), // 18: Surfaces - Window Color
             ColorSelector::new(page_color).with_label("Page Color").with_font_family(&color_selector_font), // 19: Containers - Page Color
             ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font), // 20: Containers - Layer Color
+            ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font), // 21: ScrollingList - Entry Background
+            ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font), // 22: ScrollingList - Entry Highlight
         ],
         paginator_tab_margin_x,
         paginator_tab_margin_y,
@@ -1249,6 +1265,33 @@ fn parse_hex(s: &str) -> [u8; 3] {
         let b = u8::from_str_radix(&s[4..6], 16).unwrap_or(0x0e);
         [r, g, b]
     } else { [0x0a, 0x1a, 0x0e] }
+}
+
+fn parse_rgba_color_from_key(content: &str, key: &str, default: [u8; 4]) -> [u8; 4] {
+    let val = parse_json(content);
+    if let Some(v) = json_find_key(&val, key) {
+        if let Some(s) = v.as_str() {
+            return parse_hex_rgba(s);
+        }
+    }
+    default
+}
+
+fn parse_hex_rgba(s: &str) -> [u8; 4] {
+    let s = s.trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+    let s = s.trim_start_matches('#');
+    if s.len() >= 8 {
+        let r = u8::from_str_radix(&s[0..2], 16).unwrap_or(255);
+        let g = u8::from_str_radix(&s[2..4], 16).unwrap_or(255);
+        let b = u8::from_str_radix(&s[4..6], 16).unwrap_or(255);
+        let a = u8::from_str_radix(&s[6..8], 16).unwrap_or(255);
+        [r, g, b, a]
+    } else if s.len() >= 6 {
+        let r = u8::from_str_radix(&s[0..2], 16).unwrap_or(255);
+        let g = u8::from_str_radix(&s[2..4], 16).unwrap_or(255);
+        let b = u8::from_str_radix(&s[4..6], 16).unwrap_or(255);
+        [r, g, b, 255]
+    } else { [255, 255, 255, 255] }
 }
 
 pub fn write_config_value(key: &str, value: &str) -> bool {
@@ -1762,6 +1805,26 @@ fn apply_scrollinglist_bg_color(rgb: [u8; 3]) {
     let g = cce_ui::color::srgb_to_linear(rgb[1] as f32 / 255.0);
     let b = cce_ui::color::srgb_to_linear(rgb[2] as f32 / 255.0);
     cce_ui::color::set_scrollinglist_bg_color([r, g, b, 0.3]);
+}
+
+fn apply_scrollinglist_entry_bg_color(rgba: [u8; 4]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}{:02x}\"", rgba[0], rgba[1], rgba[2], rgba[3]);
+    write_config_value("scrollinglist_entry_bg_color", &hex);
+    let r = cce_ui::color::srgb_to_linear(rgba[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgba[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgba[2] as f32 / 255.0);
+    let a = rgba[3] as f32 / 255.0;
+    cce_ui::color::set_scrollinglist_entry_bg_color([r, g, b, a]);
+}
+
+fn apply_scrollinglist_entry_highlight_color(rgba: [u8; 4]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}{:02x}\"", rgba[0], rgba[1], rgba[2], rgba[3]);
+    write_config_value("scrollinglist_entry_highlight_color", &hex);
+    let r = cce_ui::color::srgb_to_linear(rgba[0] as f32 / 255.0);
+    let g = cce_ui::color::srgb_to_linear(rgba[1] as f32 / 255.0);
+    let b = cce_ui::color::srgb_to_linear(rgba[2] as f32 / 255.0);
+    let a = rgba[3] as f32 / 255.0;
+    cce_ui::color::set_scrollinglist_entry_highlight_color([r, g, b, a]);
 }
 
 fn apply_breadcrumb_bg_color(rgb: [u8; 3]) {
@@ -2851,6 +2914,18 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.color_selectors[14].color = state.scrollinglist_bg_color;
             subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
             subsec.spacing(8.0);
+
+            let bg_rgba = state.scrollinglist_entry_bg_color;
+            state.color_selectors[21].color = [bg_rgba[0], bg_rgba[1], bg_rgba[2]];
+            state.color_selectors[21].alpha = bg_rgba[3];
+            subsec.widget_full(&mut state.color_selectors[21], 40.0, ctx);
+            subsec.spacing(8.0);
+
+            let highlight_rgba = state.scrollinglist_entry_highlight_color;
+            state.color_selectors[22].color = [highlight_rgba[0], highlight_rgba[1], highlight_rgba[2]];
+            state.color_selectors[22].alpha = highlight_rgba[3];
+            subsec.widget_full(&mut state.color_selectors[22], 40.0, ctx);
+            subsec.spacing(8.0);
         });
         sec.spacing(12.0);
 
@@ -3080,6 +3155,14 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::SetScrollingListBgColor(rgb) => {
             state.scrollinglist_bg_color = rgb;
             apply_scrollinglist_bg_color(rgb);
+        }
+        InterfaceMessage::SetScrollingListEntryBgColor(rgba) => {
+            state.scrollinglist_entry_bg_color = rgba;
+            apply_scrollinglist_entry_bg_color(rgba);
+        }
+        InterfaceMessage::SetScrollingListEntryHighlightColor(rgba) => {
+            state.scrollinglist_entry_highlight_color = rgba;
+            apply_scrollinglist_entry_highlight_color(rgba);
         }
         InterfaceMessage::SetBreadcrumbBgColor(rgb) => {
             state.breadcrumb_bg_color = rgb;
@@ -3355,7 +3438,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             status_interface_reload();
             propagate_links(state, "menubar_opacity", &opacity.to_string());
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_mx_hovered = state.tab_margin_spinbox_x.hovered();
             let was_my_hovered = state.tab_margin_spinbox_y.hovered();
@@ -4144,6 +4227,18 @@ mod tests {
         assert_eq!(parse_color_from_key(content, "page_color", [0, 0, 0]), [10, 26, 14]);
         assert_eq!(parse_color_from_key(content, "layer_color", [0, 0, 0]), [18, 52, 86]);
         assert_eq!(parse_color_from_key(content, "non_existent", [1, 2, 3]), [1, 2, 3]);
+    }
+
+    #[test]
+    fn test_parse_rgba_color_from_key() {
+        let content = r##"{
+            "layout": {
+                "scrollinglist_entry_bg_color": "#ffffff0a",
+                "scrollinglist_entry_highlight_color": "#ffffffcc"
+            }
+        }"##;
+        assert_eq!(parse_rgba_color_from_key(content, "scrollinglist_entry_bg_color", [0, 0, 0, 0]), [255, 255, 255, 10]);
+        assert_eq!(parse_rgba_color_from_key(content, "scrollinglist_entry_highlight_color", [0, 0, 0, 0]), [255, 255, 255, 204]);
     }
 
     #[test]

@@ -1017,6 +1017,7 @@ impl SystemInterface {
         if state == cce_ui::widget::ElementState::Pressed && self.app.current_page == Page::Interface {
             for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
+                let old_alpha = cp.alpha;
                 if !cp.hit_test(lx, ly, &self.ui_context) { cp.unfocus(); }
                 cp.mouse_input(button, state, lx, ly, &mut self.ui_context);
                 if cp.take_click() {
@@ -1042,10 +1043,12 @@ impl SystemInterface {
                         18 => pages::interface::InterfaceMessage::PickWindowColor,
                         19 => pages::interface::InterfaceMessage::PickPageColor,
                         20 => pages::interface::InterfaceMessage::PickLayerColor,
+                        21 => pages::interface::InterfaceMessage::PickScrollingListEntryBgColor,
+                        22 => pages::interface::InterfaceMessage::PickScrollingListEntryHighlightColor,
                         _ => pages::interface::InterfaceMessage::PickLowColor,
                     }));
                 }
-                if cp.color != old {
+                if cp.color != old || cp.alpha != old_alpha {
                     actions.push(AppAction::Interface(match i {
                         0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
                         1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
@@ -1068,6 +1071,8 @@ impl SystemInterface {
                         18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                         19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                         20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
+                        21 => pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
+                        22 => pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                         _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                     }));
                 }
@@ -2011,6 +2016,8 @@ impl SystemInterface {
                             18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                             19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                             20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
+                            21 => pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
+                            22 => pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                             _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         }));
                     }
@@ -2690,8 +2697,9 @@ impl SystemInterface {
             let mut actions = Vec::new();
             for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
                 let old = cp.color;
+                let old_alpha = cp.alpha;
                 if cp.keyboard_input(event, &mut self.ui_context) {
-                    if cp.color != old {
+                    if cp.color != old || cp.alpha != old_alpha {
                         actions.push(AppAction::Interface(match i {
                             0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
                             1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
@@ -2714,6 +2722,8 @@ impl SystemInterface {
                             18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                             19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                             20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
+                            21 => pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
+                            22 => pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                             _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         }));
                     }
