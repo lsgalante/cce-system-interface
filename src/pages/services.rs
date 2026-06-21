@@ -217,7 +217,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
     let sec_w = 360.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
-    builder.add_section(&mut final_pc, "Services", sec_focused.first().copied().unwrap_or(false), |sec| {
+    builder.add_section_spanned(&mut final_pc, "Services", 2, sec_focused.first().copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
