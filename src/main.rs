@@ -477,7 +477,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 4 => self.app.interface.separator_color,
                 5 => self.app.interface.slider_track_color,
                 6 => self.app.interface.color_borders_color,
-                7 => self.app.interface.low_color,
+                7 => self.app.interface.desktop_background_color,
                 8 => self.app.interface.normal_color,
                 9 => self.app.interface.paginator_sidebar_color,
                 10 => self.app.interface.primary_highlight_color,
@@ -491,7 +491,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 18 => self.app.interface.window_color,
                 19 => self.app.interface.page_color,
                 20 => self.app.interface.layer_color,
-                _ => self.app.interface.low_color,
+                _ => self.app.interface.desktop_background_color,
             };
             if cp.color != state_color {
                 color_actions.push(AppAction::Interface(match i {
@@ -502,7 +502,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
                     5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
                     6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
-                    7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                    7 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                     8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
                     9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
                     10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
@@ -516,7 +516,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                     19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                     20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
-                    _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                    _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                 }));
                 color_changed = true;
             }

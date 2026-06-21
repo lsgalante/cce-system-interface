@@ -165,7 +165,7 @@ pub enum WindowsMessage {
 #[derive(Debug, Clone)]
 pub struct InterfaceState {
     pub windows: WindowsState,
-    pub low_color: [u8; 3],
+    pub desktop_background_color: [u8; 3],
     pub high_color: [u8; 3],
     pub disabled_color: [u8; 3],
     pub separator_color: [u8; 3],
@@ -316,7 +316,7 @@ impl Default for InterfaceState {
     fn default() -> Self {
         Self {
             windows: WindowsState::default(),
-            low_color: [0x0a, 0x1a, 0x0e],
+            desktop_background_color: [0, 0, 0],
             high_color: [0x3e, 0x3e, 0x3e],
             disabled_color: [0x55, 0x55, 0x55],
             separator_color: [124, 124, 137],
@@ -341,7 +341,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([124, 124, 137]).with_label("Separators"), // 4: Status - Separators
                 ColorSelector::new([116, 116, 128]).with_label("Slider Track"), // 5: Controls - Slider Track
                 ColorSelector::new([124, 124, 137]).with_label("Borders"), // 6: Controls - Borders
-                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Low Color"), // 7: Layout - Low Color
+                ColorSelector::new([0, 0, 0]).with_label("Color"), // 7: Surfaces - Desktop Background Color
                 ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal"), // 8: Status - Normal
                 ColorSelector::new([90, 90, 101]).with_label("Background"), // 9: Controls - Paginator Sidebar (now Background)
                 ColorSelector::new([255, 255, 255]).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
@@ -491,7 +491,7 @@ impl Default for InterfaceState {
 #[derive(Debug, Clone)]
 pub enum InterfaceMessage {
     Windows(WindowsMessage),
-    SetLowColor([u8; 3]),
+    SetDesktopBackground([u8; 3]),
     SetHighColor([u8; 3]),
     SetDisabledColor([u8; 3]),
     SetSeparatorColor([u8; 3]),
@@ -601,12 +601,7 @@ pub enum InterfaceMessage {
 
 pub fn read_interface_config() -> InterfaceState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let has_low = content.lines().any(|l| l.trim().starts_with("low_color"));
-    let bg = if has_low {
-        parse_color_from_key(&content, "low_color", [0x0a, 0x1a, 0x0e])
-    } else {
-        parse_color_from_key(&content, "background_color", [0x0a, 0x1a, 0x0e])
-    };
+    let bg = parse_surfaces_color(&content, "desktop_background", parse_color_from_key(&content, "low_color", [0, 0, 0]));
     
     let has_high = content.lines().any(|l| l.trim().starts_with("high_color"));
     let border = if has_high {
@@ -696,7 +691,7 @@ pub fn read_interface_config() -> InterfaceState {
     let graph_cell_opacity = parse_f32_from(&content, "graph_cell_opacity", legacy_opacity);
     let graph_gap_opacity = parse_f32_from(&content, "graph_gap_opacity", legacy_opacity);
     let graph_gap_width = parse_u16_from(&content, "graph_gap_width", 35);
-    let opacity = parse_transparency_opacity(&content);
+    let menubar_opacity = parse_f32_from(&content, "menubar_opacity", 0.90);
     let notification_bg_color = parse_notifications_color(&content, "bg_color", [0x08, 0x08, 0x0c]);
     let notification_opacity = parse_notifications_opacity(&content);
     let window_color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
@@ -705,7 +700,7 @@ pub fn read_interface_config() -> InterfaceState {
     
     InterfaceState {
         windows: read_windows_config(),
-        low_color: bg,
+        desktop_background_color: bg,
         high_color: border,
         disabled_color: disabled,
         separator_color: separator,
@@ -862,8 +857,8 @@ pub fn read_interface_config() -> InterfaceState {
         graph_gap_opacity_spinbox: Spinbox::new((graph_gap_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Gap Opacity").with_unit("%"),
         graph_gap_width,
         graph_gap_width_spinbox: Spinbox::new(graph_gap_width as i32, 0, 100, 1).with_label("Gap Width").with_unit("px"),
-        menubar_opacity: opacity,
-        menubar_opacity_spinbox: Spinbox::new((opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
+        menubar_opacity,
+        menubar_opacity_spinbox: Spinbox::new((menubar_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
         notification_bg_color,
         notification_opacity,
         notification_opacity_spinbox: Spinbox::new((notification_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%"),
@@ -921,8 +916,7 @@ pub fn read_windows_config() -> WindowsState {
     let spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
     let spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
 
-    let transparency_opacity = parse_transparency_opacity(&content);
-    let transparency_enabled = transparency_opacity < 1.0;
+    let transparency_enabled = parse_bool_from(&content, "window_opacity", true);
 
     let window_blur = parse_bool_from(&content, "window_blur", false);
     let border_blur = parse_bool_from(&content, "border_blur", false);
@@ -1329,7 +1323,7 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
     for k in &keys_to_update {
         let mapped_k = if k == key {
             match key {
-                "low_color" => "low_color",
+                // Removed low_color
                 "high_color" => "border_color",
                 _ => k,
             }
@@ -1645,13 +1639,10 @@ fn cce_graph_reload() {
     }
 }
 
-fn apply_background(rgb: [u8; 3]) {
-    let _ = std::process::Command::new("pkill").args(["-x", "swaybg"]).status();
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    let hex = format!("{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
-    let _ = std::process::Command::new("swaybg").arg("-c").arg(&hex).spawn();
-    write_config_value("low_color", &format!("\"#{}\"", hex));
-    send_ipc_command(&format!("layout low_color #{}", hex));
+fn apply_desktop_background(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_surfaces_config_value("desktop_background", &hex);
+    send_ipc_command(&format!("layout desktop_background #{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]));
 }
 
 fn apply_border_color(rgb: [u8; 3]) {
@@ -2419,9 +2410,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     // 2. Layout Section
     builder.add_section_with_width(&mut final_pc, cw, "Layout", false, |sec| {
         sec.spacing(8.0);
-        state.color_selectors[7].color = state.low_color;
-        sec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
-        sec.spacing(8.0);
         state.color_selectors[1].color = state.high_color;
         sec.widget_full(&mut state.color_selectors[1], 40.0, ctx);
         sec.spacing(8.0);
@@ -2692,6 +2680,15 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.color_selectors[16].color = state.popover_bg_color;
             subsec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
+            subsec.spacing(8.0);
+        });
+        sec.spacing(12.0);
+
+        // Desktop Background Section
+        sec.add_section("Desktop Background", false, |subsec| {
+            subsec.spacing(8.0);
+            state.color_selectors[7].color = state.desktop_background_color;
+            subsec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -3024,9 +3021,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
 pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
     match msg {
-        InterfaceMessage::SetLowColor(rgb) => {
-            state.low_color = rgb;
-            apply_background(rgb);
+        InterfaceMessage::SetDesktopBackground(rgb) => {
+            state.desktop_background_color = rgb;
+            apply_desktop_background(rgb);
         }
         InterfaceMessage::SetPageLowColor(rgb) => {
             state.page_low_color = rgb;
@@ -3353,7 +3350,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::SetMenubarOpacity(opacity) => {
             state.menubar_opacity = opacity;
             state.menubar_opacity_spinbox.value = (opacity * 100.0).round() as i32;
-            write_transparency_config_value("opacity", &format!("{:.2}", opacity));
+            write_config_value("menubar_opacity", &format!("{:.2}", opacity));
             send_ipc_command("reload");
             status_interface_reload();
             propagate_links(state, "menubar_opacity", &opacity.to_string());
@@ -3888,11 +3885,7 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
         }
         WindowsMessage::ToggleTransparency => {
             state.transparency_enabled = !state.transparency_enabled;
-            if state.transparency_enabled {
-                write_transparency_config_value("opacity", "0.85");
-            } else {
-                write_transparency_config_value("opacity", "1.00");
-            }
+            write_config_value("window_opacity", &state.transparency_enabled.to_string());
             send_ipc_command("reload");
             status_interface_reload();
         }
@@ -5022,12 +5015,12 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"transparency\": {\"opacity\": 0.85}}";
+        let initial_content = "{\"layout\": {\"menubar_opacity\": 0.85}}";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse when present (should return 0.85)
         let content = fs::read_to_string(path_str).unwrap();
-        let val = parse_transparency_opacity(&content);
+        let val = parse_f32_from(&content, "menubar_opacity", 0.9);
         assert_eq!(val, 0.85);
 
         // Clean up
@@ -5227,6 +5220,15 @@ mod tests {
         // 8. Parse surfaces window_corner_radius when present
         let radius2 = parse_surfaces_u16(&updated3, "window_corner_radius", 12);
         assert_eq!(radius2, 16);
+
+        // 9. Write surfaces desktop_background config
+        write_surfaces_config_value_path(path_str, "desktop_background", "\"#445566\"");
+        let updated4 = fs::read_to_string(path_str).unwrap();
+        assert!(updated4.contains("\"desktop_background\": \"#445566\""));
+
+        // 10. Parse surfaces desktop_background when present
+        let color3 = parse_surfaces_color(&updated4, "desktop_background", [0, 0, 0]);
+        assert_eq!(color3, [68, 85, 102]);
 
         // Clean up
         let _ = fs::remove_file(path_str);

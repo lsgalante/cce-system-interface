@@ -295,7 +295,6 @@ impl SystemInterface {
                 
                 // Section 1: Layout (parent of Grid Layout)
                 // (Layout widgets)
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[1], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.interface.color_selectors[2], &mut self.ui_context);
                 // (Grid Layout child widgets)
@@ -378,6 +377,8 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_corner_radius_spinbox, &mut self.ui_context);
                 // (Popover child widgets)
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
+                // (Desktop Background child widgets)
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
                 
                 // Section 7: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)

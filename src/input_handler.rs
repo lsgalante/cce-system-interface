@@ -1054,7 +1054,7 @@ impl SystemInterface {
                         4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
                         5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
                         6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
-                        7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                        7 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
                         9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
                         10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
@@ -1068,7 +1068,7 @@ impl SystemInterface {
                         18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                         19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                         20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
-                        _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                        _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                     }));
                 }
             }
@@ -1997,7 +1997,7 @@ impl SystemInterface {
                             4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
                             5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
                             6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
-                            7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                            7 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                             8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
                             9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
                             10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
@@ -2011,7 +2011,7 @@ impl SystemInterface {
                             18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                             19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                             20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
-                            _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                            _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         }));
                     }
                 }
@@ -2700,7 +2700,7 @@ impl SystemInterface {
                             4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
                             5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
                             6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
-                            7 => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                            7 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                             8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
                             9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
                             10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
@@ -2714,7 +2714,7 @@ impl SystemInterface {
                             18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                             19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                             20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
-                            _ => pages::interface::InterfaceMessage::SetLowColor(cp.color),
+                            _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         }));
                     }
                     changed = true;
