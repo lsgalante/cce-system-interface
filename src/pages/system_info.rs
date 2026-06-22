@@ -459,13 +459,14 @@ pub async fn fetch_system_state() -> SystemState {
 
         notifications_loaded: false,
         notifications_enable: true,
-        notifications_enable_toggle: Toggle::new().with_label("Enable Notifications"),
+        notifications_enable_toggle: Toggle::new().with_label("Enable Notifications").with_config(&get_config_path(), "enable"),
         notifications_bell: false,
-        notifications_bell_toggle: Toggle::new().with_label("Play Bell Sound"),
+        notifications_bell_toggle: Toggle::new().with_label("Play Bell Sound").with_config(&get_config_path(), "bell"),
         notifications_duration: 5,
         notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
             .with_label("Notification Duration")
-            .with_unit("s"),
+            .with_unit("s")
+            .with_config(&get_config_path(), "duration"),
 
         status_loaded: false,
         status_font_size: 11,
@@ -474,9 +475,9 @@ pub async fn fetch_system_state() -> SystemState {
         status_underline: true,
         status_running: false,
         status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-        status_separators_toggle: Toggle::new().with_label("Show Separators"),
-        status_underline_toggle: Toggle::new().with_label("Show Underline"),
-        status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Side Padding").with_unit("px"),
+        status_separators_toggle: Toggle::new().with_label("Show Separators").with_config(&get_config_path(), "status_separators"),
+        status_underline_toggle: Toggle::new().with_label("Show Underline").with_config(&get_config_path(), "status_underline"),
+        status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Side Padding").with_unit("px").with_config(&get_config_path(), "status_padding"),
     }
 }
 

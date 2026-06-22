@@ -164,18 +164,20 @@ pub async fn fetch_display_state() -> DisplayState {
             .with_font_size(13.0)
             .with_color([0xd4, 0xd4, 0xd4]),
         screensaver_enable,
-        screensaver_enable_toggle: Toggle::new().with_label("Enable Screensaver"),
+        screensaver_enable_toggle: Toggle::new().with_label("Enable Screensaver").with_config(CONFIG_PATH, "enable"),
         screensaver_timeout,
         screensaver_timeout_spinbox: Spinbox::new(screensaver_timeout, 1, 120, 1)
             .with_label("Screensaver Timeout")
-            .with_unit("m"),
+            .with_unit("m")
+            .with_config(CONFIG_PATH, "timeout"),
         screensaver_lock_screen,
-        screensaver_lock_screen_toggle: Toggle::new().with_label("Lock Screen on Activation"),
+        screensaver_lock_screen_toggle: Toggle::new().with_label("Lock Screen on Activation").with_config(CONFIG_PATH, "lock_screen"),
         screensaver_style: screensaver_style.clone(),
         screensaver_style_menu: Dropdown::new(
             vec!["Blank".to_string(), "Starfield".to_string(), "Matrix Rain".to_string()],
             style_idx,
-        ).with_label("Screensaver Style"),
+        ).with_label("Screensaver Style")
+        .with_config(CONFIG_PATH, "style"),
     }
 }
 
