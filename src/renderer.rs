@@ -8,17 +8,17 @@ impl SystemInterface {
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
         self.ui_context.clear_hierarchy();
         self.switcher.clear_children(&mut self.ui_context);
-        for plate in &mut self.plates {
-            self.switcher.add_child(plate.as_ptr(), &mut self.ui_context);
+        for page in &mut self.pages {
+            self.switcher.add_child(page.as_ptr(), &mut self.ui_context);
         }
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
 
         // ── Rebuild Element Focus Hierarchy ──
-        for plate in &mut self.plates {
-            plate.clear_children(&mut self.ui_context);
+        for page in &mut self.pages {
+            page.clear_children(&mut self.ui_context);
         }
-        let page_root = &mut self.plates[page_idx];
+        let page_root = &mut self.pages[page_idx];
         self.page_sec_containers.clear();
 
         // Clear all widgets' hierarchy links
@@ -632,7 +632,7 @@ impl SystemInterface {
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
 
         let mut popovers = Vec::new();
-        Self::collect_popover_rects(&self.plates[page_idx], &mut popovers, &self.ui_context);
+        Self::collect_popover_rects(&self.pages[page_idx], &mut popovers, &self.ui_context);
 
         let mut max_y = 0.0f32;
         for (_, _, y, _, h, _, _) in &pc.rects {
@@ -823,7 +823,7 @@ impl SystemInterface {
         let ch = (ch - 2.0 * margin).max(1.0);
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        let root_focused = cce_ui::widget::focus::is_focused(&self.plates[page_idx]);
+        let root_focused = cce_ui::widget::focus::is_focused(&self.pages[page_idx]);
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()
             .map(|c| cce_ui::widget::focus::is_focused(c))
             .collect();

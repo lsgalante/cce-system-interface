@@ -167,7 +167,7 @@ struct SystemInterface {
     root_window: cce_ui::widget::Window,
     menubar: cce_ui::widget::Paginator,
     switcher: cce_ui::widget::Switcher,
-    plates: Vec<cce_ui::widget::Plate>,
+    pages: Vec<cce_ui::widget::Page>,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -201,12 +201,11 @@ impl cce_ui::engine::Application for SystemInterface {
         let sidebar_width = menubar.sidebar_w();
 
         let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
-        let mut plates = Vec::new();
+        let mut pages = Vec::new();
         for page in Page::ALL.iter() {
-            let plate = cce_ui::widget::Plate::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
-                .with_label(page.label())
-                .with_draggable(false);
-            plates.push(plate);
+            let page_widget = cce_ui::widget::Page::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
+                .with_label(page.label());
+            pages.push(page_widget);
         }
 
         let mut app_state = app;
@@ -273,7 +272,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 .with_radius(win_radius as f32),
             menubar,
             switcher,
-            plates,
+            pages,
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -282,8 +281,8 @@ impl cce_ui::engine::Application for SystemInterface {
             ui_context: cce_ui::context::UiContext::new(),
         };
 
-        for plate in &mut this.plates {
-            this.switcher.add_child(plate.as_ptr(), &mut this.ui_context);
+        for page in &mut this.pages {
+            this.switcher.add_child(page.as_ptr(), &mut this.ui_context);
         }
 
         this.root_window.add_child(this.menubar.as_ptr(), &mut this.ui_context);
