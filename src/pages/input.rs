@@ -352,18 +352,6 @@ fn send_ipc_command(cmd: &str) {
 }
 
 fn write_config_value(key: &str, value: &str) {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let mut val = parse_json(&content);
-    let j_val = if let Ok(b) = value.parse::<bool>() {
-        serde_json::json!(b)
-    } else if let Ok(n) = value.parse::<i64>() {
-        serde_json::json!(n)
-    } else if let Ok(f) = value.parse::<f64>() {
-        serde_json::json!(f)
-    } else {
-        serde_json::json!(value)
-    };
-
     let section = if key == "zoom_in" || key == "zoom_out" {
         "graph"
     } else if key == "tap_to_click" || key == "dwtp"
@@ -378,19 +366,7 @@ fn write_config_value(key: &str, value: &str) {
         "repeat"
     };
 
-    if let Some(sec_obj) = val.get_mut(section).and_then(|s| s.as_object_mut()) {
-        sec_obj.insert(key.to_string(), j_val);
-    } else {
-        let mut map = serde_json::Map::new();
-        map.insert(key.to_string(), j_val);
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert(section.to_string(), serde_json::Value::Object(map));
-        }
-    }
-
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        let _ = fs::write(CONFIG_PATH, updated_str);
-    }
+    cce_ui::config::write_config_value(CONFIG_PATH, key, value, section);
 }
 
 fn write_tap_to_click(enabled: bool) {

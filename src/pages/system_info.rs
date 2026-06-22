@@ -953,29 +953,7 @@ fn send_ipc_command(cmd: &str) {
 }
 
 fn write_config_value(key: &str, value: &str) {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let mut val = parse_json(&content);
-    let j_val = if let Ok(b) = value.parse::<bool>() {
-        serde_json::json!(b)
-    } else if let Ok(n) = value.parse::<i64>() {
-        serde_json::json!(n)
-    } else if let Ok(f) = value.parse::<f64>() {
-        serde_json::json!(f)
-    } else {
-        serde_json::json!(value)
-    };
-    if let Some(notifications) = val.get_mut("notifications").and_then(|n| n.as_object_mut()) {
-        notifications.insert(key.to_string(), j_val);
-    } else {
-        let mut map = serde_json::Map::new();
-        map.insert(key.to_string(), j_val);
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("notifications".to_string(), serde_json::Value::Object(map));
-        }
-    }
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        let _ = fs::write(CONFIG_PATH, updated_str);
-    }
+    cce_ui::config::write_config_value(&get_config_path(), key, value, "notifications");
 }
 
 fn write_enable_notifications(enabled: bool) {

@@ -1325,32 +1325,7 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
         i += 1;
     }
 
-    let set_val = |val_obj: &mut serde_json::Value, k: &str, val_str: &str| {
-        let j_val = if let Ok(parsed_val) = serde_json::from_str::<serde_json::Value>(val_str) {
-            parsed_val
-        } else {
-            serde_json::json!(val_str)
-        };
-        
-        let mut updated = false;
-        if let Some(obj) = val_obj.as_object_mut() {
-            for (_sec_name, sec_val) in obj.iter_mut() {
-                if let Some(sec_obj) = sec_val.as_object_mut() {
-                    if sec_obj.contains_key(k) {
-                        sec_obj.insert(k.to_string(), j_val.clone());
-                        updated = true;
-                        break;
-                    }
-                }
-            }
-            if !updated {
-                if let Some(layout_obj) = obj.get_mut("layout").and_then(|l| l.as_object_mut()) {
-                    layout_obj.insert(k.to_string(), j_val);
-                }
-            }
-        }
-    };
-
+    let mut updated_any = false;
     for k in &keys_to_update {
         let mapped_k = if k == key {
             match key {
@@ -1361,12 +1336,16 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
         } else {
             k
         };
-        set_val(&mut val, mapped_k, value);
+        if cce_ui::config::update_json_in_memory(&mut val, mapped_k, value, "layout") {
+            updated_any = true;
+        }
     }
 
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        if fs::write(path, updated_str).is_ok() {
-            return true;
+    if updated_any {
+        if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
+            if fs::write(path, updated_str).is_ok() {
+                return true;
+            }
         }
     }
     false
