@@ -6,6 +6,7 @@ use cce_ui::widget::{Element, TextItem, PageSelector};
 impl SystemInterface {
 
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
+        self.ui_context.clear_hierarchy();
         self.switcher.clear_children(&mut self.ui_context);
         for plate in &mut self.plates {
             self.switcher.add_child(plate.as_ptr(), &mut self.ui_context);
