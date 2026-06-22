@@ -197,7 +197,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::interface::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
-        let menubar = cce_ui::widget::Paginator::new(180.0, pages_names);
+        let menubar = cce_ui::widget::Paginator::new(pages_names);
         let sidebar_width = menubar.sidebar_w();
 
         let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
@@ -256,7 +256,7 @@ impl cce_ui::engine::Application for SystemInterface {
             width: 552,
             height: 1128,
             needs_rebuild: true,
-            scroll_y: 4000.0,
+            scroll_y: 0.0,
             max_scroll_y: 0.0,
             audio_sink_dragging: None,
             audio_source_dragging: None,

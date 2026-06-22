@@ -402,6 +402,8 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
                 // (ScrollingList child widgets)
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[21], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[22], &mut self.ui_context);
                 // (Page child widgets)
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[19], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.page_opacity_spinbox, &mut self.ui_context);
