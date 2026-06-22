@@ -47,10 +47,10 @@ impl WidthParam {
 
 fn make_spinboxes(fs: u16, ca: u16, g: u16, fl: u16) -> Vec<Spinbox> {
     vec![
-        Spinbox::new(fs as i32, 0, 100, 1),
-        Spinbox::new(ca as i32, 0, 100, 1),
-        Spinbox::new(g as i32, 0, 100, 1),
-        Spinbox::new(fl as i32, 0, 100, 1),
+        Spinbox::new(fs as i32, 0, 100, 1).with_config(CONFIG_PATH, "fullscreen_border_width"),
+        Spinbox::new(ca as i32, 0, 100, 1).with_config(CONFIG_PATH, "cascade_border_width"),
+        Spinbox::new(g as i32, 0, 100, 1).with_config(CONFIG_PATH, "grid_border_width"),
+        Spinbox::new(fl as i32, 0, 100, 1).with_config(CONFIG_PATH, "floating_border_width"),
     ]
 }
 
@@ -102,12 +102,12 @@ impl Default for WindowsState {
             status_height: 24,
             transition_duration: 300,
             spinboxes: make_spinboxes(0, 6, 6, 6),
-            cascade_offset_spinbox: Spinbox::new(20, 0, 200, 1),
-            edge_gap_spinbox: Spinbox::new(48, 0, 200, 1),
-            top_gap_spinbox: Spinbox::new(48, 0, 200, 1),
-            grid_gap_spinbox: Spinbox::new(6, 0, 200, 1),
-            status_height_spinbox: Spinbox::new(24, 0, 100, 1),
-            transition_duration_spinbox: Spinbox::new(300, 0, 2000, 50),
+            cascade_offset_spinbox: Spinbox::new(20, 0, 200, 1).with_config(CONFIG_PATH, "cascade_offset"),
+            edge_gap_spinbox: Spinbox::new(48, 0, 200, 1).with_config(CONFIG_PATH, "edge_gap"),
+            top_gap_spinbox: Spinbox::new(48, 0, 200, 1).with_config(CONFIG_PATH, "gap_top"),
+            grid_gap_spinbox: Spinbox::new(6, 0, 200, 1).with_config(CONFIG_PATH, "grid_gap"),
+            status_height_spinbox: Spinbox::new(24, 0, 100, 1).with_config(CONFIG_PATH, "bar_height"),
+            transition_duration_spinbox: Spinbox::new(300, 0, 2000, 50).with_config(CONFIG_PATH, "transition_duration"),
             tag_layout_menus: (1..=4).map(|i| {
                 Dropdown::new(
                     vec![
@@ -119,25 +119,28 @@ impl Default for WindowsState {
                     ],
                     0
                 ).with_label(&format!("Tag {}", i))
+                .with_config(CONFIG_PATH, "tag_layout")
             }).collect(),
             side_panel_behavior_menu: Dropdown::new(
                 vec!["Above".to_string(), "Inline".to_string()],
                 1,
-            ).with_label("Behavior"),
+            ).with_label("Behavior")
+            .with_config(CONFIG_PATH, "side_panel_behavior"),
             side_panel_position_menu: Dropdown::new(
                 vec!["Left".to_string(), "Right".to_string()],
                 0,
-            ).with_label("Position"),
+            ).with_label("Position")
+            .with_config(CONFIG_PATH, "side_panel_position"),
             side_panel_width: 360,
-            side_panel_width_spinbox: Spinbox::new(360, 0, 2000, 10),
+            side_panel_width_spinbox: Spinbox::new(360, 0, 2000, 10).with_config(CONFIG_PATH, "side_panel_width"),
             side_panel_border_gap: 0,
-            side_panel_border_gap_spinbox: Spinbox::new(0, 0, 500, 1),
+            side_panel_border_gap_spinbox: Spinbox::new(0, 0, 500, 1).with_config(CONFIG_PATH, "side_panel_border_gap"),
             side_panel_border_opacity: 100,
-            side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5),
+            side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_config(CONFIG_PATH, "side_panel_border_opacity"),
             transparency_enabled: true,
-            transparency_toggle: Toggle::new().with_label("Transparency"),
+            transparency_toggle: Toggle::new().with_label("Transparency").with_config(CONFIG_PATH, "window_opacity"),
             blur_enabled: true,
-            blur_toggle: Toggle::new().with_label("Blur"),
+            blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
         }
     }
 }
@@ -335,97 +338,98 @@ impl Default for InterfaceState {
             breadcrumb_bg_color: [81, 81, 97],
             popover_bg_color: [81, 81, 97],
             color_selectors: vec![
-                ColorSelector::new([71, 71, 81]).with_label("Low Color"), // 0: Plate - Low Color
-                ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color"), // 1: Layout - High Color
-                ColorSelector::new([0xff, 0x8c, 0x00]).with_label("Visual Guides"), // 2: Layout - Visual Guides
-                ColorSelector::new([0x55, 0x55, 0x55]).with_label("Disabled"), // 3: Status - Disabled
-                ColorSelector::new([124, 124, 137]).with_label("Separators"), // 4: Status - Separators
-                ColorSelector::new([116, 116, 128]).with_label("Slider Track"), // 5: Controls - Slider Track
-                ColorSelector::new([124, 124, 137]).with_label("Borders"), // 6: Controls - Borders
-                ColorSelector::new([0, 0, 0]).with_label("Color"), // 7: Surfaces - Desktop Background Color
-                ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal"), // 8: Status - Normal
-                ColorSelector::new([90, 90, 101]).with_label("Background"), // 9: Controls - Paginator Sidebar (now Background)
-                ColorSelector::new([255, 255, 255]).with_label("Primary Highlight"), // 10: Controls - Primary Highlight
-                ColorSelector::new([230, 230, 242]).with_label("Tab Label"), // 11: Controls - Tab Label
-                ColorSelector::new([104, 217, 165]).with_label("Enabled"), // 12: Toggles - Enabled
-                ColorSelector::new([135, 135, 148]).with_label("Disabled"), // 13: Toggles - Disabled
-                ColorSelector::new([81, 81, 97]).with_label("Background"), // 14: ScrollingList - Background
-                ColorSelector::new([81, 81, 97]).with_label("Background"), // 15: Breadcrumb - Background
-                ColorSelector::new([81, 81, 97]).with_label("Background"), // 16: Popover - Background
-                ColorSelector::new([0x08, 0x08, 0x0c]).with_label("Background"), // 17: Notification - Background
-                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color"), // 18: Surfaces - Window Color
-                ColorSelector::new([0, 0, 0]).with_label("Page Color"), // 19: Containers - Page Color
-                ColorSelector::new([0, 0, 0]).with_label("Layer Color"), // 20: Containers - Layer Color
-                ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background"), // 21: ScrollingList - Entry Background
-                ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight"), // 22: ScrollingList - Entry Highlight
+                ColorSelector::new([71, 71, 81]).with_label("Low Color").with_config(CONFIG_PATH, "page_low_color"), // 0: Plate - Low Color
+                ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color").with_config(CONFIG_PATH, "high_color"), // 1: Layout - High Color
+                ColorSelector::new([0xff, 0x8c, 0x00]).with_label("Visual Guides").with_config(CONFIG_PATH, "visual_guides_color"), // 2: Layout - Visual Guides
+                ColorSelector::new([0x55, 0x55, 0x55]).with_label("Disabled").with_config(CONFIG_PATH, "disabled_color"), // 3: Status - Disabled
+                ColorSelector::new([124, 124, 137]).with_label("Separators").with_config(CONFIG_PATH, "separator_color"), // 4: Status - Separators
+                ColorSelector::new([116, 116, 128]).with_label("Slider Track").with_config(CONFIG_PATH, "slider_track_color"), // 5: Controls - Slider Track
+                ColorSelector::new([124, 124, 137]).with_label("Borders").with_config(CONFIG_PATH, "color_borders_color"), // 6: Controls - Borders
+                ColorSelector::new([0, 0, 0]).with_label("Color").with_config(CONFIG_PATH, "desktop_background_color"), // 7: Surfaces - Desktop Background Color
+                ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal").with_config(CONFIG_PATH, "status_normal_color"), // 8: Status - Normal
+                ColorSelector::new([90, 90, 101]).with_label("Background").with_config(CONFIG_PATH, "paginator_sidebar_color"), // 9: Controls - Paginator Sidebar (now Background)
+                ColorSelector::new([255, 255, 255]).with_label("Primary Highlight").with_config(CONFIG_PATH, "primary_highlight_color"), // 10: Controls - Primary Highlight
+                ColorSelector::new([230, 230, 242]).with_label("Tab Label").with_config(CONFIG_PATH, "menubar_tab_label_color"), // 11: Controls - Tab Label
+                ColorSelector::new([104, 217, 165]).with_label("Enabled").with_config(CONFIG_PATH, "toggle_enabled_color"), // 12: Toggles - Enabled
+                ColorSelector::new([135, 135, 148]).with_label("Disabled").with_config(CONFIG_PATH, "toggle_disabled_color"), // 13: Toggles - Disabled
+                ColorSelector::new([81, 81, 97]).with_label("Background").with_config(CONFIG_PATH, "scrollinglist_bg_color"), // 14: ScrollingList - Background
+                ColorSelector::new([81, 81, 97]).with_label("Background").with_config(CONFIG_PATH, "breadcrumb_bg_color"), // 15: Breadcrumb - Background
+                ColorSelector::new([81, 81, 97]).with_label("Background").with_config(CONFIG_PATH, "popover_bg_color"), // 16: Popover - Background
+                ColorSelector::new([0x08, 0x08, 0x0c]).with_label("Background").with_config(CONFIG_PATH, "notification_bg_color"), // 17: Notification - Background
+                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color").with_config(CONFIG_PATH, "window_color"), // 18: Surfaces - Window Color
+                ColorSelector::new([0, 0, 0]).with_label("Page Color").with_config(CONFIG_PATH, "page_color"), // 19: Containers - Page Color
+                ColorSelector::new([0, 0, 0]).with_label("Layer Color").with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
+                ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background").with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
+                ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight").with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
             ],
             paginator_tab_padding_x: 10,
             paginator_tab_padding_y: 14,
             button_padding: 14,
-            button_padding_spinbox: Spinbox::new(14, 0, 100, 1).with_label("Button Padding").with_unit("px"),
+            button_padding_spinbox: Spinbox::new(14, 0, 100, 1).with_label("Button Padding").with_unit("px").with_config(CONFIG_PATH, "button_padding"),
             button_strip_spacing: 8,
-            button_strip_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px"),
+            button_strip_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "button_strip_spacing"),
             section_padding: 8,
-            section_padding_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Padding").with_unit("px"),
+            section_padding_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Padding").with_unit("px").with_config(CONFIG_PATH, "section_padding"),
             plate_padding: 20,
-            plate_padding_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Padding").with_unit("px"),
+            plate_padding_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Padding").with_unit("px").with_config(CONFIG_PATH, "plate_padding"),
             plate_opacity: 1.0,
-            plate_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            plate_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "plate_opacity"),
             plate_corner_radius: 12,
-            plate_corner_radius_spinbox: Spinbox::new(12, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+            plate_corner_radius_spinbox: Spinbox::new(12, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "plate_corner_radius"),
             page_color: [0, 0, 0],
             page_opacity: 1.0,
-            page_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            page_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "page_opacity"),
             layer_color: [0, 0, 0],
             layer_opacity: 1.0,
-            layer_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            layer_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "layer_opacity"),
 
             page_margin: 20,
-            page_margin_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Page Margin").with_unit("px"),
+            page_margin_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Page Margin").with_unit("px").with_config(CONFIG_PATH, "page_margin"),
             grid_min_col_width: 260,
-            grid_min_col_width_spinbox: Spinbox::new(260, 100, 1000, 10).with_label("Minimum Width").with_unit("px"),
+            grid_min_col_width_spinbox: Spinbox::new(260, 100, 1000, 10).with_label("Minimum Width").with_unit("px").with_config(CONFIG_PATH, "grid_min_col_width"),
             spinbox_height: 26,
-            spinbox_height_spinbox: Spinbox::new(26, 10, 100, 1).with_label("Height").with_unit("px"),
+            spinbox_height_spinbox: Spinbox::new(26, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "spinbox_height"),
             spinbox_corner_radius: 4,
-            spinbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
+            spinbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px").with_config(CONFIG_PATH, "spinbox_corner_radius"),
             toggle_height: 44,
-            toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "toggle_height"),
             toggle_corner_radius: 4,
-            toggle_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px"),
+            toggle_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "toggle_corner_radius"),
 
             color_selector_height: 22,
-            color_selector_height_spinbox: Spinbox::new(22, 10, 100, 1).with_label("Height").with_unit("px"),
+            color_selector_height_spinbox: Spinbox::new(22, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "color_selector_height"),
             color_selector_corner_radius: 4,
-            color_selector_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
+            color_selector_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px").with_config(CONFIG_PATH, "color_selector_corner_radius"),
             color_selector_preview_corner_radius: 4,
-            color_selector_preview_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Preview Corner Radius").with_unit("px"),
+            color_selector_preview_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Preview Corner Radius").with_unit("px").with_config(CONFIG_PATH, "color_selector_preview_corner_radius"),
             color_selector_preview_margin: 0,
-            color_selector_preview_margin_spinbox: Spinbox::new(0, 0, 20, 1).with_label("Preview Margin").with_unit("px"),
+            color_selector_preview_margin_spinbox: Spinbox::new(0, 0, 20, 1).with_label("Preview Margin").with_unit("px").with_config(CONFIG_PATH, "color_selector_preview_margin"),
             textbox_height: 44,
-            textbox_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            textbox_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "textbox_height"),
             textbox_corner_radius: 4,
-            textbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
+            textbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px").with_config(CONFIG_PATH, "textbox_corner_radius"),
             slider_height: 28,
-            slider_height_spinbox: Spinbox::new(28, 10, 100, 1).with_label("Height").with_unit("px"),
+            slider_height_spinbox: Spinbox::new(28, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "slider_height"),
             font_selector_height: 44,
-            font_selector_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            font_selector_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "font_selector_height"),
             font_selector_corner_radius: 4,
-            font_selector_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px"),
+            font_selector_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px").with_config(CONFIG_PATH, "font_selector_corner_radius"),
             dropdown_height: 44,
-            dropdown_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px"),
+            dropdown_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "dropdown_height"),
             dropdown_corner_radius: 4,
-            dropdown_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px"),
+            dropdown_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px").with_config(CONFIG_PATH, "dropdown_corner_radius"),
             button_corner_radius: 4,
-            button_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px"),
+            button_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Radius").with_unit("px").with_config(CONFIG_PATH, "button_corner_radius"),
             nested_section_label_alignment: 0,
             label_alignment_menu: Dropdown::new(
                 vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
                 0,
-            ).with_label("Label Alignment"),
+            ).with_label("Label Alignment")
+            .with_config(CONFIG_PATH, "nested_section_label_alignment"),
             nested_section_label_offset: 0,
-            label_offset_spinbox: Spinbox::new(0, -100, 100, 1).with_label("Label Offset").with_unit("px"),
+            label_offset_spinbox: Spinbox::new(0, -100, 100, 1).with_label("Label Offset").with_unit("px").with_config(CONFIG_PATH, "nested_section_label_offset"),
             label_margin: 6,
-            label_margin_spinbox: Spinbox::new(6, 0, 100, 1).with_label("Label Margin").with_unit("px"),
+            label_margin_spinbox: Spinbox::new(6, 0, 100, 1).with_label("Label Margin").with_unit("px").with_config(CONFIG_PATH, "label_margin"),
             typeface_loaded: false,
             sans_serif: String::new(),
             serif: String::new(),
@@ -436,53 +440,53 @@ impl Default for InterfaceState {
             terminal: String::new(),
             all_fonts: Vec::new(),
             mono_fonts: Vec::new(),
-            sans_box: TextBox::new(String::new()).with_label("Sans-Serif"),
-            serif_box: TextBox::new(String::new()).with_label("Serif"),
-            mono_box: TextBox::new(String::new()).with_label("Monospace"),
-            borders_box: TextBox::new(String::new()).with_label("Active Font"),
-            status_box: TextBox::new(String::new()).with_label("Active Font"),
-            fuzzel_box: TextBox::new(String::new()).with_label("Active Font"),
-            terminal_box: TextBox::new(String::new()).with_label("Active Font"),
-            borders_menu: Dropdown::new(Vec::new(), 0),
-            status_menu: Dropdown::new(Vec::new(), 0),
-            fuzzel_menu: Dropdown::new(Vec::new(), 0),
-            terminal_menu: Dropdown::new(Vec::new(), 0),
-            borders_size_box: Spinbox::new(14, 6, 72, 1),
-            status_size_box: Spinbox::new(14, 6, 72, 1),
-            fuzzel_size_box: Spinbox::new(14, 6, 72, 1),
-            terminal_size_box: Spinbox::new(14, 6, 72, 1),
+            sans_box: TextBox::new(String::new()).with_label("Sans-Serif").with_config(FONTS_CONF_PATH, "sans-serif"),
+            serif_box: TextBox::new(String::new()).with_label("Serif").with_config(FONTS_CONF_PATH, "serif"),
+            mono_box: TextBox::new(String::new()).with_label("Monospace").with_config(FONTS_CONF_PATH, "monospace"),
+            borders_box: TextBox::new(String::new()).with_label("Active Font").with_config(FONTS_CONF_PATH, "window_borders"),
+            status_box: TextBox::new(String::new()).with_label("Active Font").with_config(FONTS_CONF_PATH, "status_interface"),
+            fuzzel_box: TextBox::new(String::new()).with_label("Active Font").with_config(FONTS_CONF_PATH, "fuzzel"),
+            terminal_box: TextBox::new(String::new()).with_label("Active Font").with_config(FONTS_CONF_PATH, "terminal"),
+            borders_menu: Dropdown::new(Vec::new(), 0).with_config(FONTS_CONF_PATH, "window_borders"),
+            status_menu: Dropdown::new(Vec::new(), 0).with_config(FONTS_CONF_PATH, "status_interface"),
+            fuzzel_menu: Dropdown::new(Vec::new(), 0).with_config(FONTS_CONF_PATH, "fuzzel"),
+            terminal_menu: Dropdown::new(Vec::new(), 0).with_config(FONTS_CONF_PATH, "terminal"),
+            borders_size_box: Spinbox::new(14, 6, 72, 1).with_config(CONFIG_PATH, "border_font_size"),
+            status_size_box: Spinbox::new(14, 6, 72, 1).with_config(CONFIG_PATH, "status_font_size"),
+            fuzzel_size_box: Spinbox::new(14, 6, 72, 1).with_config("/home/lsgalante/.config/fuzzel/fuzzel.ini", "size"),
+            terminal_size_box: Spinbox::new(14, 6, 72, 1).with_config("/home/lsgalante/.config/foot/foot.ini", "size"),
             color_selector_font: "monospace".to_string(),
-            color_selector_font_selector: FontSelector::new("monospace".to_string()).with_label("Color Label"),
+            color_selector_font_selector: FontSelector::new("monospace".to_string()).with_label("Color Label").with_config(CONFIG_PATH, "color_selector_font"),
             menubar_font: "Outfit".to_string(),
-            menubar_font_selector: FontSelector::new("Outfit".to_string()).with_label("Menu Label"),
+            menubar_font_selector: FontSelector::new("Outfit".to_string()).with_label("Menu Label").with_config(CONFIG_PATH, "menubar_font"),
             section_label_font: "Outfit".to_string(),
-            section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
+            section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label").with_config(CONFIG_PATH, "section_label_font"),
             nested_section_label_font: "Outfit".to_string(),
-            nested_section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label"),
+            nested_section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label").with_config(CONFIG_PATH, "nested_section_label_font"),
             breadcrumb_font: "Outfit".to_string(),
-            breadcrumb_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font"),
+            breadcrumb_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "breadcrumb_font"),
             graph_show_grid: true,
-            graph_show_grid_toggle: Toggle::new().with_label("Show Grid"),
+            graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
             graph_snap_enabled: true,
-            graph_snap_enabled_toggle: Toggle::new().with_label("Grid Snapping"),
+            graph_snap_enabled_toggle: Toggle::new().with_label("Grid Snapping").with_config(CONFIG_PATH, "graph_snap_enabled"),
             graph_uniform_background: false,
-            graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background"),
+            graph_uniform_background_toggle: Toggle::new().with_label("Uniform Background").with_config(CONFIG_PATH, "graph_uniform_background"),
             graph_cell_opacity: 0.95,
-            graph_cell_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Cell Opacity").with_unit("%"),
+            graph_cell_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Cell Opacity").with_unit("%").with_config(CONFIG_PATH, "graph_cell_opacity"),
             graph_gap_opacity: 0.95,
-            graph_gap_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Gap Opacity").with_unit("%"),
+            graph_gap_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Gap Opacity").with_unit("%").with_config(CONFIG_PATH, "graph_gap_opacity"),
             graph_gap_width: 35,
-            graph_gap_width_spinbox: Spinbox::new(35, 0, 100, 1).with_label("Gap Width").with_unit("px"),
+            graph_gap_width_spinbox: Spinbox::new(35, 0, 100, 1).with_label("Gap Width").with_unit("px").with_config(CONFIG_PATH, "graph_gap_width"),
             menubar_opacity: 0.9,
-            menubar_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            menubar_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "menubar_opacity"),
             notification_bg_color: [0x08, 0x08, 0x0c],
             notification_opacity: 0.9,
-            notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "notification_opacity"),
             window_color: [0x0a, 0x1a, 0x0e],
             window_opacity: 0.9,
-            window_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%"),
+            window_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "window_opacity"),
             window_corner_radius: 12,
-            window_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px"),
+            window_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "window_corner_radius"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
         }
     }
@@ -723,29 +727,29 @@ pub fn read_interface_config() -> InterfaceState {
         breadcrumb_bg_color: breadcrumb_bg,
         popover_bg_color: popover_bg,
         color_selectors: vec![
-            ColorSelector::new(page_low).with_label("Low Color").with_font_family(&color_selector_font), // 0: Plate - Low Color
-            ColorSelector::new(border).with_label("High Color").with_font_family(&color_selector_font), // 1: Layout - High Color
-            ColorSelector::new(visual_guides).with_label("Visual Guides").with_font_family(&color_selector_font), // 2: Layout - Visual Guides
-            ColorSelector::new(disabled).with_label("Disabled").with_font_family(&color_selector_font), // 3: Status - Disabled
-            ColorSelector::new(separator).with_label("Separators").with_font_family(&color_selector_font), // 4: Status - Separators
-            ColorSelector::new(slider_track).with_label("Slider Track").with_font_family(&color_selector_font), // 5: Controls - Slider Track
-            ColorSelector::new(color_borders).with_label("Borders").with_font_family(&color_selector_font), // 6: Controls - Borders
-            ColorSelector::new(bg).with_label("Low Color").with_font_family(&color_selector_font), // 7: Layout - Low Color
-            ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font), // 8: Status - Normal
-            ColorSelector::new(paginator_sidebar).with_label("Background").with_font_family(&color_selector_font), // 9: Controls - Paginator Sidebar (now Background)
-            ColorSelector::new(primary_highlight).with_label("Primary Highlight").with_font_family(&color_selector_font), // 10: Controls - Primary Highlight
-            ColorSelector::new(menubar_tab_label).with_label("Tab Label").with_font_family(&color_selector_font), // 11: Controls - Tab Label
-            ColorSelector::new(toggle_enabled).with_label("Enabled").with_font_family(&color_selector_font), // 12: Toggles - Enabled
-            ColorSelector::new(toggle_disabled).with_label("Disabled").with_font_family(&color_selector_font), // 13: Toggles - Disabled
-            ColorSelector::new(scrollinglist_bg).with_label("Background").with_font_family(&color_selector_font), // 14: ScrollingList - Background
-            ColorSelector::new(breadcrumb_bg).with_label("Background").with_font_family(&color_selector_font), // 15: Breadcrumb - Background
-            ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font), // 16: Popover - Background
-            ColorSelector::new(notification_bg_color).with_label("Background").with_font_family(&color_selector_font), // 17: Notification - Background
-            ColorSelector::new(window_color).with_label("Color").with_font_family(&color_selector_font), // 18: Surfaces - Window Color
-            ColorSelector::new(page_color).with_label("Page Color").with_font_family(&color_selector_font), // 19: Containers - Page Color
-            ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font), // 20: Containers - Layer Color
-            ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font), // 21: ScrollingList - Entry Background
-            ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font), // 22: ScrollingList - Entry Highlight
+            ColorSelector::new(page_low).with_label("Low Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "page_low_color"), // 0: Plate - Low Color
+            ColorSelector::new(border).with_label("High Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "high_color"), // 1: Layout - High Color
+            ColorSelector::new(visual_guides).with_label("Visual Guides").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "visual_guides_color"), // 2: Layout - Visual Guides
+            ColorSelector::new(disabled).with_label("Disabled").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "disabled_color"), // 3: Status - Disabled
+            ColorSelector::new(separator).with_label("Separators").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "separator_color"), // 4: Status - Separators
+            ColorSelector::new(slider_track).with_label("Slider Track").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "slider_track_color"), // 5: Controls - Slider Track
+            ColorSelector::new(color_borders).with_label("Borders").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "color_borders_color"), // 6: Controls - Borders
+            ColorSelector::new(bg).with_label("Low Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_background_color"), // 7: Layout - Low Color
+            ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_normal_color"), // 8: Status - Normal
+            ColorSelector::new(paginator_sidebar).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "paginator_sidebar_color"), // 9: Controls - Paginator Sidebar (now Background)
+            ColorSelector::new(primary_highlight).with_label("Primary Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "primary_highlight_color"), // 10: Controls - Primary Highlight
+            ColorSelector::new(menubar_tab_label).with_label("Tab Label").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "menubar_tab_label_color"), // 11: Controls - Tab Label
+            ColorSelector::new(toggle_enabled).with_label("Enabled").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "toggle_enabled_color"), // 12: Toggles - Enabled
+            ColorSelector::new(toggle_disabled).with_label("Disabled").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "toggle_disabled_color"), // 13: Toggles - Disabled
+            ColorSelector::new(scrollinglist_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_bg_color"), // 14: ScrollingList - Background
+            ColorSelector::new(breadcrumb_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "breadcrumb_bg_color"), // 15: Breadcrumb - Background
+            ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "popover_bg_color"), // 16: Popover - Background
+            ColorSelector::new(notification_bg_color).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "notification_bg_color"), // 17: Notification - Background
+            ColorSelector::new(window_color).with_label("Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "window_color"), // 18: Surfaces - Window Color
+            ColorSelector::new(page_color).with_label("Page Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "page_color"), // 19: Containers - Page Color
+            ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
+            ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
+            ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
         ],
         paginator_tab_padding_x,
         paginator_tab_padding_y,
@@ -2355,16 +2359,16 @@ pub async fn fetch_typeface_state() -> InterfaceState {
         "Other".to_string(),
     ];
 
-    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders");
+    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders").with_config(FONTS_CONF_PATH, "window_borders");
     borders_box.disabled = borders_idx != 3;
 
-    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface");
+    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface").with_config(FONTS_CONF_PATH, "status_interface");
     status_box.disabled = status_idx != 3;
 
-    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel");
+    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel").with_config(FONTS_CONF_PATH, "fuzzel");
     fuzzel_box.disabled = fuzzel_idx != 3;
 
-    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal");
+    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal").with_config(FONTS_CONF_PATH, "terminal");
     terminal_box.disabled = terminal_idx != 3;
 
 
@@ -2384,21 +2388,21 @@ pub async fn fetch_typeface_state() -> InterfaceState {
     state.terminal = term;
     state.all_fonts = all_fonts;
     state.mono_fonts = mono_fonts;
-    state.sans_box = TextBox::new(sans).with_label("Sans-Serif");
-    state.serif_box = TextBox::new(serif).with_label("Serif");
-    state.mono_box = TextBox::new(mono).with_label("Monospace");
+    state.sans_box = TextBox::new(sans).with_label("Sans-Serif").with_config(FONTS_CONF_PATH, "sans-serif");
+    state.serif_box = TextBox::new(serif).with_label("Serif").with_config(FONTS_CONF_PATH, "serif");
+    state.mono_box = TextBox::new(mono).with_label("Monospace").with_config(FONTS_CONF_PATH, "monospace");
     state.borders_box = borders_box;
     state.status_box = status_box;
     state.fuzzel_box = fuzzel_box;
     state.terminal_box = terminal_box;
-    state.borders_menu = Dropdown::new(menu_options.clone(), borders_idx);
-    state.status_menu = Dropdown::new(menu_options.clone(), status_idx);
-    state.fuzzel_menu = Dropdown::new(menu_options.clone(), fuzzel_idx);
-    state.terminal_menu = Dropdown::new(menu_options, terminal_idx);
-    state.borders_size_box = Spinbox::new(borders_size as i32, 6, 72, 1);
-    state.status_size_box = Spinbox::new(status_size as i32, 6, 72, 1);
-    state.fuzzel_size_box = Spinbox::new(fuzzel_size as i32, 6, 72, 1);
-    state.terminal_size_box = Spinbox::new(terminal_size as i32, 6, 72, 1);
+    state.borders_menu = Dropdown::new(menu_options.clone(), borders_idx).with_config(FONTS_CONF_PATH, "window_borders");
+    state.status_menu = Dropdown::new(menu_options.clone(), status_idx).with_config(FONTS_CONF_PATH, "status_interface");
+    state.fuzzel_menu = Dropdown::new(menu_options.clone(), fuzzel_idx).with_config(FONTS_CONF_PATH, "fuzzel");
+    state.terminal_menu = Dropdown::new(menu_options, terminal_idx).with_config(FONTS_CONF_PATH, "terminal");
+    state.borders_size_box = Spinbox::new(borders_size as i32, 6, 72, 1).with_config(CONFIG_PATH, "border_font_size");
+    state.status_size_box = Spinbox::new(status_size as i32, 6, 72, 1).with_config(CONFIG_PATH, "status_font_size");
+    state.fuzzel_size_box = Spinbox::new(fuzzel_size as i32, 6, 72, 1).with_config("/home/lsgalante/.config/fuzzel/fuzzel.ini", "size");
+    state.terminal_size_box = Spinbox::new(terminal_size as i32, 6, 72, 1).with_config("/home/lsgalante/.config/foot/foot.ini", "size");
     state
 }
 
