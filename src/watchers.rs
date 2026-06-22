@@ -14,9 +14,9 @@ pub struct Watchers {
     pub rx_fingers: Receiver<Vec<Finger>>,
     pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemState>,
-    pub rx_status: Receiver<processes::StatusData>,
+    pub rx_status: Receiver<system_info::StatusData>,
     pub rx_storage: Receiver<storage::StorageState>,
-    pub rx_notifications: Receiver<processes::NotificationsConfig>,
+    pub rx_notifications: Receiver<system_info::NotificationsConfig>,
     pub rx_typeface: Receiver<interface::InterfaceState>,
     pub rx_services: Receiver<Vec<processes::ServiceInfo>>,
     pub rx_interface: Receiver<interface::InterfaceState>,
@@ -193,23 +193,23 @@ pub fn spawn_all(
 
     let rx_system = spawn_bg_active(current_page_shared.clone(), 9, 5, || system_info::fetch_system_state());
     let rx_processes = spawn_bg_active(current_page_shared.clone(), 6, 3, || processes::fetch_processes_state());
-    let rx_status = spawn_bg_active(current_page_shared.clone(), 6, 10, || processes::fetch_status_state());
+    let rx_status = spawn_bg_active(current_page_shared.clone(), 9, 10, || system_info::fetch_status_state());
     let rx_storage = spawn_bg_active(current_page_shared.clone(), 8, 10, || storage::fetch_storage_state());
 
     let rx_notifications = {
-        let (tx, rx) = channel::<processes::NotificationsConfig>();
+        let (tx, rx) = channel::<system_info::NotificationsConfig>();
         let current_page_shared = current_page_shared.clone();
         tokio::spawn(async move {
             let mut last_fetch: Option<std::time::Instant> = None;
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 6 { // Processes is index 6
+                if current_page == 9 { // System is index 9
                     let should_fetch = match last_fetch {
                         None => true,
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
-                        let val = tokio::task::spawn_blocking(|| processes::read_notifications_config()).await;
+                        let val = tokio::task::spawn_blocking(|| system_info::read_notifications_config()).await;
                         if let Ok(val) = val {
                             if tx.send(val).is_err() { break; }
                         }

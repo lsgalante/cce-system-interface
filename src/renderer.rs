@@ -155,9 +155,14 @@ impl SystemInterface {
         self.app.interface.terminal_menu.clear_children(&mut self.ui_context); self.app.interface.terminal_menu.set_parent(None, &mut self.ui_context);
         self.app.interface.terminal_box.clear_children(&mut self.ui_context); self.app.interface.terminal_box.set_parent(None, &mut self.ui_context);
 
-        self.app.processes.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.processes.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
-        self.app.processes.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.processes.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
-        self.app.processes.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.processes.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.system_info.cpu_gov_menu.clear_children(&mut self.ui_context); self.app.system_info.cpu_gov_menu.set_parent(None, &mut self.ui_context);
+        self.app.system_info.gpu_gov_menu.clear_children(&mut self.ui_context); self.app.system_info.gpu_gov_menu.set_parent(None, &mut self.ui_context);
+        self.app.system_info.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.system_info.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
+        self.app.system_info.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.system_info.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
+        self.app.system_info.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.system_info.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.system_info.status_separators_toggle.clear_children(&mut self.ui_context); self.app.system_info.status_separators_toggle.set_parent(None, &mut self.ui_context);
+        self.app.system_info.status_underline_toggle.clear_children(&mut self.ui_context); self.app.system_info.status_underline_toggle.set_parent(None, &mut self.ui_context);
+        self.app.system_info.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.system_info.status_padding_spinbox.set_parent(None, &mut self.ui_context);
 
         self.app.input.rate_spinbox.clear_children(&mut self.ui_context); self.app.input.rate_spinbox.set_parent(None, &mut self.ui_context);
         self.app.input.delay_spinbox.clear_children(&mut self.ui_context); self.app.input.delay_spinbox.set_parent(None, &mut self.ui_context);
@@ -209,9 +214,7 @@ impl SystemInterface {
                 scale_lbl.clear_children(&mut self.ui_context); scale_lbl.set_parent(None, &mut self.ui_context);
             }
         }
-        self.app.processes.status_separators_toggle.clear_children(&mut self.ui_context); self.app.processes.status_separators_toggle.set_parent(None, &mut self.ui_context);
-        self.app.processes.status_underline_toggle.clear_children(&mut self.ui_context); self.app.processes.status_underline_toggle.set_parent(None, &mut self.ui_context);
-        self.app.processes.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.processes.status_padding_spinbox.set_parent(None, &mut self.ui_context);
+
 
         for menu in &mut self.app.interface.windows.tag_layout_menus {
             menu.clear_children(&mut self.ui_context);
@@ -246,22 +249,28 @@ impl SystemInterface {
                 }
             }
 
-            Page::Processes => {
+            Page::System => {
                 self.page_sec_containers.resize_with(9, cce_ui::widget::Container::new);
                 for i in 0..9 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.processes.cpu_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.processes.cpu_gov_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.processes.gpu_gov_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.services_search_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.services_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.notifications_enable_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.notifications_bell_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.notifications_duration_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.processes.status_separators_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.processes.status_underline_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.processes.status_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.system_info.cpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.system_info.gpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.system_info.notifications_enable_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.system_info.notifications_bell_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.system_info.notifications_duration_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_separators_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_underline_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_padding_spinbox, &mut self.ui_context);
+            }
+            Page::Processes => {
+                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
+                for i in 0..2 {
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
+                }
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.processes.cpu_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.processes.services_search_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.processes.services_list_box.scroll_box, &mut self.ui_context);
             }
             Page::Radios => {
                 self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
@@ -822,7 +831,7 @@ impl SystemInterface {
             Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused, &mut layout, &mut self.ui_context),
             Page::Processes => processes::view(&mut self.app.processes, cx, cy, cw, ch, root_focused, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
-            Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
+            Page::System => system_info::view(&mut self.app.system_info, cx, cy, cw, ch, root_focused, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
             Page::Interface => interface::view(&mut self.app.interface, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Packages => packages::view(&mut self.app.packages, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),

@@ -140,9 +140,9 @@ struct SystemInterface {
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
-    rx_status: std::sync::mpsc::Receiver<pages::processes::StatusData>,
+    rx_status: std::sync::mpsc::Receiver<pages::system_info::StatusData>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
-    rx_notifications: std::sync::mpsc::Receiver<pages::processes::NotificationsConfig>,
+    rx_notifications: std::sync::mpsc::Receiver<pages::system_info::NotificationsConfig>,
     rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
     rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
@@ -619,8 +619,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_status.try_recv() {
-            processes::update(&mut self.app.processes, processes::ProcessesMessage::StatusRefreshed(s));
-            if self.app.current_page == Page::Processes {
+            system_info::update(&mut self.app.system_info, system_info::SystemMessage::StatusRefreshed(s));
+            if self.app.current_page == Page::System {
                 self.needs_rebuild = true;
             }
         }
@@ -631,8 +631,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_notifications.try_recv() {
-            processes::update(&mut self.app.processes, processes::ProcessesMessage::NotificationsRefreshed(s));
-            if self.app.current_page == Page::Processes {
+            system_info::update(&mut self.app.system_info, system_info::SystemMessage::NotificationsRefreshed(s));
+            if self.app.current_page == Page::System {
                 self.needs_rebuild = true;
             }
         }

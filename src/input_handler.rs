@@ -531,20 +531,38 @@ impl SystemInterface {
                     actions.push(AppAction::Display(pages::display::DisplayMessage::SetScreensaverTimeout(self.app.display.screensaver_timeout_spinbox.value)));
                 }
             }
-            Page::Processes => {
-                if self.app.processes.cpu_gov_menu.take_change() {
-                    if self.app.processes.cpu_gov_menu.selected == 0 {
-                        actions.push(AppAction::Processes(pages::processes::ProcessesMessage::SetCpuPerformance));
+            Page::System => {
+                if self.app.system_info.cpu_gov_menu.take_change() {
+                    if self.app.system_info.cpu_gov_menu.selected == 0 {
+                        actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::SetCpuPerformance));
                     } else {
-                        actions.push(AppAction::Processes(pages::processes::ProcessesMessage::SetCpuPowersave));
+                        actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::SetCpuPowersave));
                     }
                 }
-                if self.app.processes.gpu_gov_menu.take_change() {
-                    if self.app.processes.gpu_gov_menu.selected == 0 {
-                        actions.push(AppAction::Processes(pages::processes::ProcessesMessage::SetGpuDefault));
+                if self.app.system_info.gpu_gov_menu.take_change() {
+                    if self.app.system_info.gpu_gov_menu.selected == 0 {
+                        actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::SetGpuDefault));
                     } else {
-                        actions.push(AppAction::Processes(pages::processes::ProcessesMessage::SetGpuPowersave));
+                        actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::SetGpuPowersave));
                     }
+                }
+                if self.app.system_info.notifications_enable_toggle.take_change() {
+                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::ToggleNotificationsEnable));
+                }
+                if self.app.system_info.notifications_bell_toggle.take_change() {
+                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::ToggleNotificationsBell));
+                }
+                if self.app.system_info.notifications_duration_spinbox.take_change() {
+                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::SetNotificationsDuration(self.app.system_info.notifications_duration_spinbox.value)));
+                }
+                if self.app.system_info.status_separators_toggle.take_change() {
+                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusToggleSeparators));
+                }
+                if self.app.system_info.status_underline_toggle.take_change() {
+                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusToggleUnderline));
+                }
+                if self.app.system_info.status_padding_spinbox.take_change() {
+                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusSetPadding(self.app.system_info.status_padding_spinbox.value as u16)));
                 }
             }
             Page::Accounts => {
