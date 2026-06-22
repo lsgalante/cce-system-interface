@@ -199,6 +199,8 @@ pub struct InterfaceState {
     pub paginator_tab_padding_y: u16,
     pub button_padding: u16,
     pub button_padding_spinbox: Spinbox,
+    pub button_strip_spacing: u16,
+    pub button_strip_spacing_spinbox: Spinbox,
     pub section_padding: u16,
     pub section_padding_spinbox: Spinbox,
     pub plate_padding: u16,
@@ -361,6 +363,8 @@ impl Default for InterfaceState {
             paginator_tab_padding_y: 14,
             button_padding: 14,
             button_padding_spinbox: Spinbox::new(14, 0, 100, 1).with_label("Button Padding").with_unit("px"),
+            button_strip_spacing: 8,
+            button_strip_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px"),
             section_padding: 8,
             section_padding_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Padding").with_unit("px"),
             plate_padding: 20,
@@ -512,6 +516,7 @@ pub enum InterfaceMessage {
     SetWindowOpacity(f32),
     SetWindowCornerRadius(u16),
     SetButtonPadding(u16),
+    SetButtonStripSpacing(u16),
     SetSectionPadding(u16),
     SetPlatePadding(u16),
     SetPlateOpacity(f32),
@@ -645,6 +650,7 @@ pub fn read_interface_config() -> InterfaceState {
     let paginator_tab_padding_x = parse_u16_from(&content, "paginator_tab_padding_x", 10);
     let paginator_tab_padding_y = parse_u16_from(&content, "paginator_tab_padding_y", 14);
     let button_padding = parse_u16_from(&content, "button_padding", paginator_tab_padding_y);
+    let button_strip_spacing = parse_u16_from(&content, "button_strip_spacing", 8);
     let section_padding = parse_u16_from(&content, "section_padding", 8);
     let plate_padding = parse_u16_from(&content, "plate_padding", 20);
     let plate_opacity = parse_f32_from(&content, "plate_opacity", 1.0);
@@ -745,6 +751,8 @@ pub fn read_interface_config() -> InterfaceState {
         paginator_tab_padding_y,
         button_padding,
         button_padding_spinbox: Spinbox::new(button_padding as i32, 0, 100, 1).with_label("Button Padding").with_unit("px"),
+        button_strip_spacing,
+        button_strip_spacing_spinbox: Spinbox::new(button_strip_spacing as i32, 0, 100, 1).with_label("Spacing").with_unit("px"),
         section_padding,
         section_padding_spinbox: Spinbox::new(section_padding as i32, 0, 100, 1).with_label("Padding").with_unit("px"),
         plate_padding,
@@ -1396,6 +1404,13 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     apply_button_padding(val);
                 }
             }
+            "button_strip_spacing" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.button_strip_spacing = val;
+                    state.button_strip_spacing_spinbox.value = val as i32;
+                    apply_button_strip_spacing(val);
+                }
+            }
             "section_padding" => {
                 if let Ok(val) = val_str.parse::<u16>() {
                     state.section_padding = val;
@@ -1845,6 +1860,12 @@ fn apply_button_padding(padding: u16) {
     write_config_value("button_padding", &padding.to_string());
     send_ipc_command(&format!("layout button_padding {}", padding));
     cce_ui::layout::set_button_padding(padding as f32);
+}
+
+fn apply_button_strip_spacing(spacing: u16) {
+    write_config_value("button_strip_spacing", &spacing.to_string());
+    send_ipc_command(&format!("layout button_strip_spacing {}", spacing));
+    cce_ui::layout::set_button_strip_spacing(spacing as f32);
 }
 
 fn apply_plate_padding(padding: u16) {
@@ -2607,6 +2628,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.button_padding_spinbox.value = state.button_padding as i32;
             subsec.widget_full(&mut state.button_padding_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
+            state.button_strip_spacing_spinbox.value = state.button_strip_spacing as i32;
+            subsec.widget_full(&mut state.button_strip_spacing_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
         sec.spacing(12.0);
 
@@ -3140,6 +3164,11 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_button_padding(padding);
             propagate_links(state, "button_padding", &padding.to_string());
         }
+        InterfaceMessage::SetButtonStripSpacing(spacing) => {
+            state.button_strip_spacing = spacing;
+            apply_button_strip_spacing(spacing);
+            propagate_links(state, "button_strip_spacing", &spacing.to_string());
+        }
         InterfaceMessage::SetSectionPadding(padding) => {
             state.section_padding = padding;
             apply_section_padding(padding);
@@ -3371,6 +3400,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_bp_hovered = state.button_padding_spinbox.hovered();
+            let was_bss_hovered = state.button_strip_spacing_spinbox.hovered();
             let was_sp_hovered = state.section_padding_spinbox.hovered();
             let was_pp_hovered = state.plate_padding_spinbox.hovered();
             let was_pl_op_hovered = state.plate_opacity_spinbox.hovered();
@@ -3435,6 +3465,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             *state = new;
 
             state.button_padding_spinbox.set_hovered(was_bp_hovered);
+            state.button_strip_spacing_spinbox.set_hovered(was_bss_hovered);
             state.section_padding_spinbox.set_hovered(was_sp_hovered);
             state.plate_padding_spinbox.set_hovered(was_pp_hovered);
             state.plate_opacity_spinbox.set_hovered(was_pl_op_hovered);
@@ -4801,6 +4832,29 @@ mod tests {
         let val2 = parse_u16_from(&updated, "button_padding", 14);
         assert_eq!(val2, 20);
 
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_button_strip_spacing() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_button_strip_spacing_config.toml");
+        let path_str = path.to_str().unwrap();
+ 
+        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        fs::write(path_str, initial_content).unwrap();
+ 
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "button_strip_spacing", 8);
+        assert_eq!(val, 8);
+ 
+        assert!(write_config_value_path(path_str, "button_strip_spacing", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"button_strip_spacing\": 12"));
+ 
+        let val2 = parse_u16_from(&updated, "button_strip_spacing", 8);
+        assert_eq!(val2, 12);
+ 
         let _ = fs::remove_file(path_str);
     }
 

@@ -4,10 +4,9 @@ use crate::pages::audio;
 use crate::pages::display;
 use crate::pages::input;
 use crate::pages::network;
-use crate::pages::hardware;
+use crate::pages::processes;
 use crate::pages::system_info;
 use crate::pages::storage;
-use crate::pages::services;
 use crate::pages::interface;
 use crate::pages::accounts;
 use crate::pages::packages;
@@ -19,10 +18,9 @@ pub struct AppState {
     pub display: display::DisplayState,
     pub network: network::NetworkState,
     pub input: input::InputState,
-    pub hardware: hardware::HardwareState,
+    pub processes: processes::ProcessesState,
     pub system_info: system_info::SystemState,
     pub storage: storage::StorageState,
-    pub services: services::ServicesState,
     pub interface: interface::InterfaceState,
     pub accounts: accounts::AccountsState,
     pub packages: packages::PackagesState,
@@ -36,10 +34,9 @@ impl Default for AppState {
             display: display::DisplayState::default(),
             network: network::NetworkState::default(),
             input: input::InputState::default(),
-            hardware: hardware::HardwareState::default(),
+            processes: processes::ProcessesState::default(),
             system_info: system_info::SystemState::default(),
             storage: storage::StorageState::default(),
-            services: services::ServicesState::default(),
             interface: interface::InterfaceState::default(),
             accounts: accounts::AccountsState::default_mock(),
             packages: packages::PackagesState::default(),
@@ -54,10 +51,9 @@ pub enum AppAction {
     Display(display::DisplayMessage),
     Radios(network::NetworkMessage),
     Input(input::InputMessage),
-    Hardware(hardware::HardwareMessage),
+    Processes(processes::ProcessesMessage),
     SystemInfo(system_info::SystemMessage),
     Storage(storage::StorageMessage),
-    Services(services::ServicesMessage),
     Interface(interface::InterfaceMessage),
     Accounts(accounts::AccountsMessage),
     Packages(packages::PackagesMessage),
@@ -69,23 +65,64 @@ pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     pub buttons: Vec<(cce_ui::widget::Button, AppAction)>,
+    pub clip_stack: Vec<[f32; 4]>,
 }
 
 impl PageContent {
     pub fn new() -> Self {
-        Self { rects: Vec::new(), texts: Vec::new(), buttons: Vec::new() }
+        Self { rects: Vec::new(), texts: Vec::new(), buttons: Vec::new(), clip_stack: Vec::new() }
+    }
+
+    fn get_clipped_rect(&self, x: f32, y: f32, w: f32, h: f32) -> Option<(f32, f32, f32, f32)> {
+        if let Some(&clip) = self.clip_stack.last() {
+            let cx = clip[0];
+            let cy = clip[1];
+            let cw = clip[2];
+            let ch = clip[3];
+            let rx1 = x.max(cx);
+            let ry1 = y.max(cy);
+            let rx2 = (x + w).min(cx + cw);
+            let ry2 = (y + h).min(cy + ch);
+            if rx1 < rx2 && ry1 < ry2 {
+                Some((rx1, ry1, rx2 - rx1, ry2 - ry1))
+            } else {
+                None
+            }
+        } else {
+            Some((x, y, w, h))
+        }
+    }
+
+    fn get_clipped_bounds(&self, bounds: Option<[f32; 4]>) -> Option<[f32; 4]> {
+        if let Some(&clip) = self.clip_stack.last() {
+            if let Some(b) = bounds {
+                let rx1 = b[0].max(clip[0]);
+                let ry1 = b[1].max(clip[1]);
+                let rx2 = b[2].min(clip[0] + clip[2]);
+                let ry2 = b[3].min(clip[1] + clip[3]);
+                Some([rx1, ry1, rx2.max(rx1), ry2.max(ry1)])
+            } else {
+                Some([clip[0], clip[1], clip[0] + clip[2], clip[1] + clip[3]])
+            }
+        } else {
+            bounds
+        }
     }
 
     pub fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.rects.push((color, x, y, w, h, 0.0, (true, true, true, true)));
+        if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
+            self.rects.push((color, cx, cy, cw, ch, 0.0, (true, true, true, true)));
+        }
     }
 
     pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.texts.push((content.to_string(), size, x, y, color, None, None));
+        let cb = self.get_clipped_bounds(None);
+        self.texts.push((content.to_string(), size, x, y, color, None, cb));
     }
 
     pub fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), None));
+        let cb = self.get_clipped_bounds(None);
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
     }
 
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -114,31 +151,58 @@ impl PageContent {
 
 impl RenderTarget for PageContent {
     fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.rects.push((color, x, y, w, h, 0.0, (true, true, true, true)));
+        if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
+            self.rects.push((color, cx, cy, cw, ch, 0.0, (true, true, true, true)));
+        }
     }
 
     fn rect_with_radius(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32) {
-        self.rects.push((color, x, y, w, h, radius, (true, true, true, true)));
+        if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
+            self.rects.push((color, cx, cy, cw, ch, radius, (true, true, true, true)));
+        }
     }
 
     fn rect_with_radius_corners(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, corners: (bool, bool, bool, bool)) {
-        self.rects.push((color, x, y, w, h, radius, corners));
+        if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
+            self.rects.push((color, cx, cy, cw, ch, radius, corners));
+        }
     }
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.texts.push((content.to_string(), size, x, y, color, None, None));
+        let cb = self.get_clipped_bounds(None);
+        self.texts.push((content.to_string(), size, x, y, color, None, cb));
     }
 
     fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), None));
+        let cb = self.get_clipped_bounds(None);
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
     }
 
     fn text_with_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], bounds: Option<[f32; 4]>) {
-        self.texts.push((content.to_string(), size, x, y, color, None, bounds));
+        let cb = self.get_clipped_bounds(bounds);
+        self.texts.push((content.to_string(), size, x, y, color, None, cb));
     }
 
     fn text_with_font_and_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str, bounds: Option<[f32; 4]>) {
-        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), bounds));
+        let cb = self.get_clipped_bounds(bounds);
+        self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
+    }
+
+    fn push_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        let clip = if let Some(&parent_clip) = self.clip_stack.last() {
+            let cx = x.max(parent_clip[0]);
+            let cy = y.max(parent_clip[1]);
+            let cw = (x + w).min(parent_clip[0] + parent_clip[2]) - cx;
+            let ch = (y + h).min(parent_clip[1] + parent_clip[3]) - cy;
+            [cx, cy, cw.max(0.0), ch.max(0.0)]
+        } else {
+            [x, y, w, h]
+        };
+        self.clip_stack.push(clip);
+    }
+
+    fn pop_clip_rect(&mut self) {
+        self.clip_stack.pop();
     }
 }
 

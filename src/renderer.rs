@@ -21,7 +21,7 @@ impl SystemInterface {
         self.page_sec_containers.clear();
 
         // Clear all widgets' hierarchy links
-        self.app.services.search_box.clear_children(&mut self.ui_context); self.app.services.search_box.set_parent(None, &mut self.ui_context);
+        self.app.processes.services_search_box.clear_children(&mut self.ui_context); self.app.processes.services_search_box.set_parent(None, &mut self.ui_context);
         self.app.packages.search_box.clear_children(&mut self.ui_context); self.app.packages.search_box.set_parent(None, &mut self.ui_context);
         self.app.packages.installed_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.packages.installed_list_box.scroll_box.set_parent(None, &mut self.ui_context);
         self.app.packages.updates_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.packages.updates_list_box.scroll_box.set_parent(None, &mut self.ui_context);
@@ -32,9 +32,8 @@ impl SystemInterface {
         self.app.accounts.oauth_client_id_box.clear_children(&mut self.ui_context); self.app.accounts.oauth_client_id_box.set_parent(None, &mut self.ui_context);
         self.app.accounts.oauth_client_secret_box.clear_children(&mut self.ui_context); self.app.accounts.oauth_client_secret_box.set_parent(None, &mut self.ui_context);
 
-        self.app.services.list_box.scroll_box.clear_children(&mut self.ui_context); self.app.services.list_box.scroll_box.set_parent(None, &mut self.ui_context);
-
-        self.app.hardware.cpu_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.hardware.cpu_list_box.scroll_box.set_parent(None, &mut self.ui_context);
+        self.app.processes.services_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.processes.services_list_box.scroll_box.set_parent(None, &mut self.ui_context);
+        self.app.processes.cpu_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.processes.cpu_list_box.scroll_box.set_parent(None, &mut self.ui_context);
 
         self.app.network.wifi_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.network.wifi_list_box.scroll_box.set_parent(None, &mut self.ui_context);
 
@@ -156,9 +155,9 @@ impl SystemInterface {
         self.app.interface.terminal_menu.clear_children(&mut self.ui_context); self.app.interface.terminal_menu.set_parent(None, &mut self.ui_context);
         self.app.interface.terminal_box.clear_children(&mut self.ui_context); self.app.interface.terminal_box.set_parent(None, &mut self.ui_context);
 
-        self.app.services.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.services.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
-        self.app.services.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.services.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
-        self.app.services.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.services.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.processes.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.processes.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
+        self.app.processes.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.processes.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
+        self.app.processes.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.processes.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
 
         self.app.input.rate_spinbox.clear_children(&mut self.ui_context); self.app.input.rate_spinbox.set_parent(None, &mut self.ui_context);
         self.app.input.delay_spinbox.clear_children(&mut self.ui_context); self.app.input.delay_spinbox.set_parent(None, &mut self.ui_context);
@@ -210,9 +209,9 @@ impl SystemInterface {
                 scale_lbl.clear_children(&mut self.ui_context); scale_lbl.set_parent(None, &mut self.ui_context);
             }
         }
-        self.app.services.status_separators_toggle.clear_children(&mut self.ui_context); self.app.services.status_separators_toggle.set_parent(None, &mut self.ui_context);
-        self.app.services.status_underline_toggle.clear_children(&mut self.ui_context); self.app.services.status_underline_toggle.set_parent(None, &mut self.ui_context);
-        self.app.services.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.services.status_padding_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.processes.status_separators_toggle.clear_children(&mut self.ui_context); self.app.processes.status_separators_toggle.set_parent(None, &mut self.ui_context);
+        self.app.processes.status_underline_toggle.clear_children(&mut self.ui_context); self.app.processes.status_underline_toggle.set_parent(None, &mut self.ui_context);
+        self.app.processes.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.processes.status_padding_spinbox.set_parent(None, &mut self.ui_context);
 
         for menu in &mut self.app.interface.windows.tag_layout_menus {
             menu.clear_children(&mut self.ui_context);
@@ -247,30 +246,22 @@ impl SystemInterface {
                 }
             }
 
-            Page::Services => {
-                self.page_sec_containers.resize_with(3, cce_ui::widget::Container::new);
-                for i in 0..3 {
+            Page::Processes => {
+                self.page_sec_containers.resize_with(8, cce_ui::widget::Container::new);
+                for i in 0..8 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.services.search_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.services.list_box.scroll_box, &mut self.ui_context);
-
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_enable_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_bell_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.services.notifications_duration_spinbox, &mut self.ui_context);
-
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_separators_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_underline_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.services.status_padding_spinbox, &mut self.ui_context);
-            }
-            Page::Hardware => {
-                self.page_sec_containers.resize_with(5, cce_ui::widget::Container::new);
-                for i in 0..5 {
-                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
-                }
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.hardware.cpu_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.hardware.cpu_gov_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.hardware.gpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.processes.cpu_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.processes.cpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.processes.gpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.processes.services_search_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.processes.services_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.notifications_enable_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.notifications_bell_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.notifications_duration_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.status_separators_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.status_underline_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.status_padding_spinbox, &mut self.ui_context);
             }
             Page::Radios => {
                 self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
@@ -705,18 +696,17 @@ impl SystemInterface {
 
             // Auto-detect if inside a ScrollBox to apply left alignment by default
             if !left_align && base.w >= 60.0 {
-                if self.app.current_page == Page::Hardware {
-                    let sb = &self.app.hardware.cpu_list_box;
-                    let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
-                    if base.x >= sb_x - 1.0 && base.x + base.w <= sb_x + sb_w + 1.0
-                       && base.y >= sb_y - 1.0 && base.y + base.h <= sb_y + sb_h + 1.0 {
+                if self.app.current_page == Page::Processes {
+                    let sb1 = &self.app.processes.cpu_list_box;
+                    let (sb1_x, sb1_y, sb1_w, sb1_h) = sb1.rect();
+                    if base.x >= sb1_x - 1.0 && base.x + base.w <= sb1_x + sb1_w + 1.0
+                       && base.y >= sb1_y - 1.0 && base.y + base.h <= sb1_y + sb1_h + 1.0 {
                         left_align = true;
                     }
-                } else if self.app.current_page == Page::Services {
-                    let sb = &self.app.services.list_box;
-                    let (sb_x, sb_y, sb_w, sb_h) = sb.rect();
-                    if base.x >= sb_x - 1.0 && base.x + base.w <= sb_x + sb_w + 1.0
-                       && base.y >= sb_y - 1.0 && base.y + base.h <= sb_y + sb_h + 1.0 {
+                    let sb2 = &self.app.processes.services_list_box;
+                    let (sb2_x, sb2_y, sb2_w, sb2_h) = sb2.rect();
+                    if base.x >= sb2_x - 1.0 && base.x + base.w <= sb2_x + sb2_w + 1.0
+                       && base.y >= sb2_y - 1.0 && base.y + base.h <= sb2_y + sb2_h + 1.0 {
                         left_align = true;
                     }
                 }
@@ -808,6 +798,7 @@ impl SystemInterface {
         self.text_items = text_items;
         self.page_buttons = page_buttons;
         self.needs_rebuild = false;
+        self.ui_context.clear_dirty();
     }
 
     pub(crate) fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
@@ -829,11 +820,10 @@ impl SystemInterface {
             Page::Audio => audio::view(&mut self.app.audio, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Display => display::view(&mut self.app.display, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
             Page::Radios => network::view(&mut self.app.network, cx, cy, cw, ch, root_focused, &mut layout, &mut self.ui_context),
-            Page::Hardware => hardware::view(&mut self.app.hardware, cx, cy, cw, ch, root_focused, &mut layout, &mut self.ui_context),
+            Page::Processes => processes::view(&mut self.app.processes, cx, cy, cw, ch, root_focused, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Input => input::view(&mut self.app.input, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::System => system_info::view(&self.app.system_info, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
             Page::Storage => storage::view(&self.app.storage, cx, cy, cw, ch, &mut layout, &mut self.ui_context),
-            Page::Services => services::view(&mut self.app.services, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Interface => interface::view(&mut self.app.interface, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
             Page::Packages => packages::view(&mut self.app.packages, cx, cy, cw, ch, &sec_focused, &mut layout, &mut self.ui_context),
         }

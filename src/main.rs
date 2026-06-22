@@ -138,13 +138,13 @@ struct SystemInterface {
     rx_wm_events: std::sync::mpsc::Receiver<()>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
-    rx_hardware: std::sync::mpsc::Receiver<pages::hardware::HardwareState>,
+    rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
-    rx_status: std::sync::mpsc::Receiver<pages::services::StatusData>,
+    rx_status: std::sync::mpsc::Receiver<pages::processes::StatusData>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
-    rx_notifications: std::sync::mpsc::Receiver<pages::services::NotificationsConfig>,
+    rx_notifications: std::sync::mpsc::Receiver<pages::processes::NotificationsConfig>,
     rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
-    rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
+    rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
     rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
@@ -237,7 +237,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_wm_events: watchers.rx_wm_events,
             rx_input: watchers.rx_input,
             rx_fingers: watchers.rx_fingers,
-            rx_hardware: watchers.rx_hardware,
+            rx_processes: watchers.rx_processes,
             rx_system: watchers.rx_system,
             rx_status: watchers.rx_status,
             rx_storage: watchers.rx_storage,
@@ -320,14 +320,15 @@ impl cce_ui::engine::Application for SystemInterface {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.needs_rebuild {
+        if self.needs_rebuild || self.ui_context.is_dirty() {
             *needs_rebuild = true;
+            self.needs_rebuild = true;
         }
     }
 
     fn view(&mut self, _quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: cce_ui::engine::LogicalSize, scale: f64) {
         let (width, height) = (size.width, size.height);
-        if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
+        if self.needs_rebuild || self.ui_context.is_dirty() || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
             self.height = height as u32;
             self.scale_factor = scale;
@@ -338,7 +339,7 @@ impl cce_ui::engine::Application for SystemInterface {
 
     fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: cce_ui::engine::LogicalSize, scale: f64) {
         let (width, height) = (size.width, size.height);
-        if self.needs_rebuild || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
+        if self.needs_rebuild || self.ui_context.is_dirty() || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
             self.height = height as u32;
             self.scale_factor = scale;
@@ -611,15 +612,15 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_hardware.try_recv() {
-            hardware::update(&mut self.app.hardware, hardware::HardwareMessage::Refreshed(s));
-            if self.app.current_page == Page::Hardware {
+        while let Ok(s) = self.rx_processes.try_recv() {
+            processes::update(&mut self.app.processes, processes::ProcessesMessage::Refreshed(s));
+            if self.app.current_page == Page::Processes {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_status.try_recv() {
-            services::update(&mut self.app.services, services::ServicesMessage::StatusRefreshed(s));
-            if self.app.current_page == Page::Services {
+            processes::update(&mut self.app.processes, processes::ProcessesMessage::StatusRefreshed(s));
+            if self.app.current_page == Page::Processes {
                 self.needs_rebuild = true;
             }
         }
@@ -630,8 +631,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_notifications.try_recv() {
-            services::update(&mut self.app.services, services::ServicesMessage::NotificationsRefreshed(s));
-            if self.app.current_page == Page::Services {
+            processes::update(&mut self.app.processes, processes::ProcessesMessage::NotificationsRefreshed(s));
+            if self.app.current_page == Page::Processes {
                 self.needs_rebuild = true;
             }
         }
@@ -645,8 +646,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_services.try_recv() {
-            pages::services::update(&mut self.app.services, pages::services::ServicesMessage::Refreshed(s));
-            if self.app.current_page == Page::Services {
+            processes::update(&mut self.app.processes, processes::ProcessesMessage::ServicesRefreshed(s));
+            if self.app.current_page == Page::Processes {
                 self.needs_rebuild = true;
             }
         }
@@ -691,7 +692,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
             AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
-            AppAction::Hardware(m) => hardware::update(&mut self.app.hardware, m.clone()),
+            AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {
                     pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup);
@@ -704,7 +705,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 _ => pages::storage::update(&mut self.app.storage, m.clone()),
             },
 
-            AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
+
             AppAction::Interface(m) => {
                 interface::update(&mut self.app.interface, m.clone());
                 self.sans_serif_family = self.app.interface.sans_serif.clone();

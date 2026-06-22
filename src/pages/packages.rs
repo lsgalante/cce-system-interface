@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
 use cce_ui::widget::{Element, ScrollingList, TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
@@ -415,6 +415,7 @@ pub fn view(
                         }
                     }
 
+                    sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                     for (idx, pkg) in filtered.iter().enumerate() {
                         if let Some(draw_y) = state.installed_list_box.get_item_draw_y(idx, 4.0) {
                             let item = &mut state.installed_items[idx];
@@ -424,6 +425,7 @@ pub fn view(
                             render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                         }
                     }
+                    sec.pc.pop_clip_rect();
 
                     if filtered.is_empty() {
                         sec.pc.text("No packages match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
@@ -446,6 +448,7 @@ pub fn view(
                         }
                     }
 
+                    sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                     for (idx, pkg) in filtered.iter().enumerate() {
                         if let Some(draw_y) = state.updates_list_box.get_item_draw_y(idx, 4.0) {
                             let item = &mut state.updates_items[idx];
@@ -455,6 +458,7 @@ pub fn view(
                             render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                         }
                     }
+                    sec.pc.pop_clip_rect();
 
                     if filtered.is_empty() {
                         sec.pc.text("No updates match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);

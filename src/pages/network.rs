@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{ScrollingList, Toggle, Element};
 
 #[derive(Debug, Clone)]
@@ -345,6 +345,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 let btn_w = list_box_w - 2.0 * margin;
                 let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
 
+                sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                 for (idx, net) in state.available.iter().enumerate() {
                     if let Some(draw_y) = state.wifi_list_box.get_item_draw_y(idx, 4.0) {
                         let prefix = if net.in_use { ">" } else { " " };
@@ -361,6 +362,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                             AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
                     }
                 }
+                sec.pc.pop_clip_rect();
                 sec.content_y += list_box_h + row_gap;
             }
         }

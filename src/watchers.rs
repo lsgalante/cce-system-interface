@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{audio, display, network, interface, input, hardware, system_info, services, storage, packages, accounts};
+use crate::pages::{audio, display, network, interface, input, processes, system_info, storage, packages, accounts};
 use cce_ui::widget::Finger;
 
 pub struct Watchers {
@@ -12,13 +12,13 @@ pub struct Watchers {
     pub rx_wm_events: Receiver<()>,
     pub rx_input: Receiver<input::InputState>,
     pub rx_fingers: Receiver<Vec<Finger>>,
-    pub rx_hardware: Receiver<hardware::HardwareState>,
+    pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemState>,
-    pub rx_status: Receiver<services::StatusData>,
+    pub rx_status: Receiver<processes::StatusData>,
     pub rx_storage: Receiver<storage::StorageState>,
-    pub rx_notifications: Receiver<services::NotificationsConfig>,
+    pub rx_notifications: Receiver<processes::NotificationsConfig>,
     pub rx_typeface: Receiver<interface::InterfaceState>,
-    pub rx_services: Receiver<Vec<services::ServiceInfo>>,
+    pub rx_services: Receiver<Vec<processes::ServiceInfo>>,
     pub rx_interface: Receiver<interface::InterfaceState>,
     pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
     pub rx_packages: Receiver<packages::PackagesState>,
@@ -76,7 +76,7 @@ pub fn spawn_all(
             let mut last_fetch: Option<std::time::Instant> = None;
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 5 { // Interface is index 5
+                if current_page == 4 { // Interface is index 4
                     let should_fetch = match last_fetch {
                         None => true,
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
@@ -112,7 +112,7 @@ pub fn spawn_all(
 
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 5 { // Interface is index 5
+                if current_page == 4 { // Interface is index 4
                     let mut changed = false;
                     for p in &[&windows_path, &tags_path, &title_path] {
                         if let Some(mtime) = check_mtime(p) {
@@ -139,7 +139,7 @@ pub fn spawn_all(
             let mut last_fetch: Option<std::time::Instant> = None;
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 4 { // Input is index 4
+                if current_page == 3 { // Input is index 3
                     let should_fetch = match last_fetch {
                         None => true,
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
@@ -168,13 +168,13 @@ pub fn spawn_all(
             };
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 4 { // Input is index 4
+                if current_page == 3 { // Input is index 3
                     if let Ok(stream) = tokio::net::UnixStream::connect(&socket_path).await {
                         use tokio::io::AsyncBufReadExt;
                         let reader = tokio::io::BufReader::new(stream);
                         let mut lines = reader.lines();
                         while let Ok(Some(line)) = lines.next_line().await {
-                            if current_page_shared.load(Ordering::SeqCst) != 4 {
+                            if current_page_shared.load(Ordering::SeqCst) != 3 {
                                 break;
                             }
                             if let Ok(fingers) = serde_json::from_str::<Vec<Finger>>(&line) {
@@ -191,25 +191,25 @@ pub fn spawn_all(
         rx
     };
 
-    let rx_system = spawn_bg_active(current_page_shared.clone(), 10, 5, || system_info::fetch_system_state());
-    let rx_hardware = spawn_bg_active(current_page_shared.clone(), 3, 3, || hardware::fetch_hardware_state());
-    let rx_status = spawn_bg_active(current_page_shared.clone(), 8, 10, || services::fetch_status_state());
-    let rx_storage = spawn_bg_active(current_page_shared.clone(), 9, 10, || storage::fetch_storage_state());
+    let rx_system = spawn_bg_active(current_page_shared.clone(), 9, 5, || system_info::fetch_system_state());
+    let rx_processes = spawn_bg_active(current_page_shared.clone(), 6, 3, || processes::fetch_processes_state());
+    let rx_status = spawn_bg_active(current_page_shared.clone(), 6, 10, || processes::fetch_status_state());
+    let rx_storage = spawn_bg_active(current_page_shared.clone(), 8, 10, || storage::fetch_storage_state());
 
     let rx_notifications = {
-        let (tx, rx) = channel::<services::NotificationsConfig>();
+        let (tx, rx) = channel::<processes::NotificationsConfig>();
         let current_page_shared = current_page_shared.clone();
         tokio::spawn(async move {
             let mut last_fetch: Option<std::time::Instant> = None;
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 8 { // Services is index 8
+                if current_page == 6 { // Processes is index 6
                     let should_fetch = match last_fetch {
                         None => true,
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
-                        let val = tokio::task::spawn_blocking(|| services::read_notifications_config()).await;
+                        let val = tokio::task::spawn_blocking(|| processes::read_notifications_config()).await;
                         if let Ok(val) = val {
                             if tx.send(val).is_err() { break; }
                         }
@@ -222,8 +222,8 @@ pub fn spawn_all(
         rx
     };
 
-    let rx_typeface = spawn_bg_active(current_page_shared.clone(), 5, 30, || interface::fetch_typeface_state());
-    let rx_services = spawn_bg_active(current_page_shared.clone(), 8, 3, || services::fetch_services());
+    let rx_typeface = spawn_bg_active(current_page_shared.clone(), 4, 30, || interface::fetch_typeface_state());
+    let rx_services = spawn_bg_active(current_page_shared.clone(), 6, 3, || processes::fetch_services());
     let rx_accounts = spawn_bg_active(current_page_shared.clone(), 0, 3, || accounts::fetch_accounts());
 
     let rx_interface = {
@@ -233,7 +233,7 @@ pub fn spawn_all(
             let mut last_fetch: Option<std::time::Instant> = None;
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 5 { // Interface is index 5
+                if current_page == 4 { // Interface is index 4
                     let should_fetch = match last_fetch {
                         None => true,
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
@@ -253,7 +253,7 @@ pub fn spawn_all(
     };
 
     let (tx_backup, rx_backup) = channel();
-    let rx_packages = spawn_bg_active(current_page_shared.clone(), 6, 30, || packages::fetch_packages_state());
+    let rx_packages = spawn_bg_active(current_page_shared.clone(), 5, 30, || packages::fetch_packages_state());
     let (tx_update, rx_update) = channel();
 
     (
@@ -265,7 +265,7 @@ pub fn spawn_all(
             rx_wm_events,
             rx_input,
             rx_fingers,
-            rx_hardware,
+            rx_processes,
             rx_system,
             rx_status,
             rx_storage,
