@@ -111,7 +111,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
     // ── Processes Section ──
-    builder.add_section(&mut final_pc, "Processes", root_focused || sec_focused.first().copied().unwrap_or(false), |sec| {
+    builder.add_section_spanned(&mut final_pc, "Processes", 2, root_focused || sec_focused.first().copied().unwrap_or(false), |sec| {
         let rx = sec.left;
         if !state.loaded {
             sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
