@@ -521,11 +521,10 @@ const ORANGE: [f32; 4] = [1.0, 0.73, 0.20, 1.0];
 pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(9);
 
     // ── CPU Section ──
-    builder.add_section(&mut final_pc, "CPU", root_focused, |sec| {
-        let rx = sec.left;
+    builder.add_section(&mut final_pc, "CPU", false, |sec| {
         if !state.loaded {
             sec.text("Loading CPU model and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
             sec.spacing(10.0);
@@ -541,7 +540,16 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // CPU Temp Label
             sec.widget(&mut state.cpu_temp_label, 12.0, sec.cw - 24.0, 26.0, ctx);
             sec.spacing(12.0);
+        }
+    });
 
+    // ── Processes Section ──
+    builder.add_section(&mut final_pc, "Processes", root_focused || sec_focused.get(1).copied().unwrap_or(false), |sec| {
+        let rx = sec.left;
+        if !state.loaded {
+            sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
+            sec.spacing(10.0);
+        } else {
             // Scrolling box configuration for process list
             let list_box_x = rx + 12.0;
             let list_box_y = sec.ay();
@@ -728,7 +736,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
     });
 
     // ── Services Section ──
-    builder.add_section_spanned(&mut final_pc, "Services", 2, sec_focused.get(5).copied().unwrap_or(false), |sec| {
+    builder.add_section_spanned(&mut final_pc, "Services", 2, sec_focused.get(6).copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
         if !state.services_loaded {
             sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -925,7 +933,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
     });
 
     // ── System Notifications ──
-    builder.add_section(&mut final_pc, "System Notifications", sec_focused.get(6).copied().unwrap_or(false), |sec2| {
+    builder.add_section(&mut final_pc, "System Notifications", sec_focused.get(7).copied().unwrap_or(false), |sec2| {
         let sec_w = sec2.cw;
         state.notifications_enable_toggle.set_toggled(state.notifications_enable);
         sec2.widget_full(&mut state.notifications_enable_toggle, cce_ui::layout::toggle_height(), ctx);
@@ -964,7 +972,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
     });
 
     // ── Status Interface ──
-    builder.add_section(&mut final_pc, "Status Interface", sec_focused.get(7).copied().unwrap_or(false), |sec3| {
+    builder.add_section(&mut final_pc, "Status Interface", sec_focused.get(8).copied().unwrap_or(false), |sec3| {
         let sec_w = sec3.cw;
         if !state.status_loaded {
             sec3.text("Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -1418,7 +1426,7 @@ mod tests {
     fn test_view_layout_grid() {
         let mut state = ProcessesState::default();
         let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
-        let sec_focused = vec![false, false, false, false, false, false, false, false];
+        let sec_focused = vec![false, false, false, false, false, false, false, false, false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());

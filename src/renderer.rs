@@ -247,21 +247,21 @@ impl SystemInterface {
             }
 
             Page::Processes => {
-                self.page_sec_containers.resize_with(8, cce_ui::widget::Container::new);
-                for i in 0..8 {
+                self.page_sec_containers.resize_with(9, cce_ui::widget::Container::new);
+                for i in 0..9 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.processes.cpu_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.processes.cpu_gov_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.processes.gpu_gov_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.processes.services_search_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.processes.services_list_box.scroll_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.notifications_enable_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.notifications_bell_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.notifications_duration_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.status_separators_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.status_underline_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.status_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.processes.cpu_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.processes.cpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.processes.gpu_gov_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.services_search_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.processes.services_list_box.scroll_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.notifications_enable_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.notifications_bell_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.processes.notifications_duration_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.processes.status_separators_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.processes.status_underline_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.processes.status_padding_spinbox, &mut self.ui_context);
             }
             Page::Radios => {
                 self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
