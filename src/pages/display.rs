@@ -463,15 +463,13 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
             };
             
             // Spawn screensaver tool from PATH or local directory
-            std::process::Command::new("/home/lsgalante/Dropbox/Clear/cce-screenaver/target/debug/cce-screenaver")
-                .arg(style_flag)
-                .spawn()
-                .or_else(|_| {
-                    std::process::Command::new("cce-screenaver")
-                        .arg(style_flag)
-                        .spawn()
-                })
-                .ok();
+            let mut cmd = std::process::Command::new("/home/lsgalante/Dropbox/Clear/cce-screenaver/target/debug/cce-screenaver");
+            cmd.arg(style_flag);
+            if cce_ui::process::spawn_detached(cmd).is_err() {
+                let mut cmd_fallback = std::process::Command::new("cce-screenaver");
+                cmd_fallback.arg(style_flag);
+                let _ = cce_ui::process::spawn_detached(cmd_fallback);
+            }
         }
     }
 }

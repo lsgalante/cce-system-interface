@@ -209,16 +209,16 @@ fn format_duration(secs: i64) -> String {
 
 fn spawn_cpu_power(powersave: bool) {
     let script = if powersave { "cpu-powersave-on" } else { "cpu-powersave-off" };
-    let _ = std::process::Command::new("pkexec")
-        .arg(format!("/home/lsgalante/.local/share/cce-system-interface/helpers/{}", script))
-        .spawn();
+    let mut cmd = std::process::Command::new("pkexec");
+    cmd.arg(format!("/home/lsgalante/.local/share/cce-system-interface/helpers/{}", script));
+    let _ = cce_ui::process::spawn_detached(cmd);
 }
 
 fn spawn_gpu_power(powersave: bool) {
     let script = if powersave { "gpu-powersave-on" } else { "gpu-powersave-off" };
-    let _ = std::process::Command::new("pkexec")
-        .arg(format!("/home/lsgalante/.local/share/cce-system-interface/helpers/{}", script))
-        .spawn();
+    let mut cmd = std::process::Command::new("pkexec");
+    cmd.arg(format!("/home/lsgalante/.local/share/cce-system-interface/helpers/{}", script));
+    let _ = cce_ui::process::spawn_detached(cmd);
 }
 
 fn current_cpu_governor() -> String {
@@ -325,7 +325,9 @@ async fn read_nvidia_gpu_temp() -> Option<f32> {
 }
 
 fn spawn_systemctl(action: &str) {
-    let _ = std::process::Command::new("systemctl").arg(action).spawn();
+    let mut cmd = std::process::Command::new("systemctl");
+    cmd.arg(action);
+    let _ = cce_ui::process::spawn_detached(cmd);
 }
 
 pub async fn fetch_system_state() -> SystemState {

@@ -2235,9 +2235,9 @@ fn read_status_size() -> Option<u16> {
 
 fn write_status_size(size: u16) {
     write_config_value("status_font_size", &size.to_string());
-    let _ = std::process::Command::new("pkill")
-        .args(["-f", "cce-status-interface"])
-        .spawn();
+    let mut cmd = std::process::Command::new("pkill");
+    cmd.args(["-f", "cce-status-interface"]);
+    let _ = cce_ui::process::spawn_detached(cmd);
 }
 
 fn read_fuzzel_size() -> Option<u16> {

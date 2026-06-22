@@ -216,7 +216,9 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
         client_config.client_id,
         PKCE_CHALLENGE
     );
-    let _ = std::process::Command::new("xdg-open").arg(&auth_url).spawn();
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(&auth_url);
+    let _ = cce_ui::process::spawn_detached(cmd);
 
     if let Ok((mut stream, _)) = listener.accept().await {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -751,7 +753,9 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             state.status_msg = Some("Google account authenticated!".to_string());
         }
         AccountsMessage::ICloudLoginHelp => {
-            let _ = std::process::Command::new("xdg-open").arg("https://appleid.apple.com/").spawn();
+            let mut cmd = std::process::Command::new("xdg-open");
+            cmd.arg("https://appleid.apple.com/");
+            let _ = cce_ui::process::spawn_detached(cmd);
             state.status_msg = Some("Generate iCloud App Password...".to_string());
         }
         AccountsMessage::EditOAuthCredsStart => {
