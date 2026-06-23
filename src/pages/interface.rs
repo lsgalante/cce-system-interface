@@ -17,6 +17,44 @@ fn get_socket_path() -> String {
     }
 }
 
+fn get_status_socket_path() -> String {
+    match std::env::var("WAYLAND_DISPLAY") {
+        Ok(display) => format!("/tmp/cce-status-{}.sock", display),
+        Err(_) => "/tmp/cce-status.sock".to_string(),
+    }
+}
+
+fn query_ipc(cmd: &str) -> String {
+    use std::io::{Read, Write};
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_socket_path()) {
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(20)));
+        let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(20)));
+        if stream.write_all(format!("{}\n", cmd).as_bytes()).is_ok() {
+            let mut reply = String::new();
+            if stream.read_to_string(&mut reply).is_ok() {
+                return reply;
+            }
+        }
+    }
+    String::new()
+}
+
+fn query_status(sub: &str) -> String {
+    use std::io::{BufRead, Write};
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_status_socket_path()) {
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(20)));
+        let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(20)));
+        if stream.write_all(format!("{}\n", sub).as_bytes()).is_ok() {
+            let mut reader = std::io::BufReader::new(stream);
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_ok() {
+                return line;
+            }
+        }
+    }
+    String::new()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WidthParam {
     Fullscreen, Cascade, Grid, Floating,
@@ -1059,49 +1097,46 @@ struct LayoutStatusInfo {
     focused_layout_mode: String,
 }
 
+fn get_closest_tag(x: f64, y: f64) -> i32 {
+    let centers = [(0.0, 0.0), (2000.0, 0.0), (0.0, 2000.0), (2000.0, 2000.0)];
+    let mut min_dist = f64::MAX;
+    let mut best_tag = 1;
+    for (i, &(cx, cy)) in centers.iter().enumerate() {
+        let dx = x - cx;
+        let dy = y - cy;
+        let dist = dx * dx + dy * dy;
+        if dist < min_dist {
+            min_dist = dist;
+            best_tag = (i + 1) as i32;
+        }
+    }
+    best_tag
+}
+
 fn read_current_layout_status() -> LayoutStatusInfo {
     let mut active_tags = 1;
     let mut focused_tags = 1;
     let mut _num_tags = 4;
 
-    let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
-    
-    let tags_path = format!("/tmp/cce-tags-{}", display);
-    let tags_fallback = "/tmp/cce-tags".to_string();
-    let tags_content = fs::read_to_string(&tags_path)
-        .or_else(|_| fs::read_to_string(&tags_fallback))
-        .unwrap_or_default();
-
-    if let Some(line) = tags_content.lines().next() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3 {
-            active_tags = parts[0].parse().unwrap_or(1);
-            focused_tags = parts[1].parse().unwrap_or(1);
-            _num_tags = parts[2].parse().unwrap_or(4);
+    let tags_content = query_status("tags");
+    if let Some(pan_idx) = tags_content.find("Pan: (") {
+        let coords_str = &tags_content[pan_idx + "Pan: (".len()..];
+        if let Some(end_idx) = coords_str.find(")") {
+            let parts: Vec<&str> = coords_str[..end_idx].split(',').collect();
+            if parts.len() == 2 {
+                let pan_x = parts[0].trim().parse::<f64>().unwrap_or(0.0);
+                let pan_y = parts[1].trim().parse::<f64>().unwrap_or(0.0);
+                let best_tag = get_closest_tag(pan_x, pan_y);
+                active_tags = 1 << (best_tag - 1);
+                focused_tags = active_tags;
+            }
         }
     }
 
-    let title_path = format!("/tmp/cce-title-{}", display);
-    let title_fallback = "/tmp/cce-title".to_string();
-    let focused_title = fs::read_to_string(&title_path)
-        .or_else(|_| fs::read_to_string(&title_fallback))
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let focused_title = query_status("title").trim().to_string();
+    let focused_layout_mode = query_status("layout").trim().to_string();
 
-    let layout_path = format!("/tmp/cce-layout-{}", display);
-    let layout_fallback = "/tmp/cce-layout".to_string();
-    let focused_layout_mode = fs::read_to_string(&layout_path)
-        .or_else(|_| fs::read_to_string(&layout_fallback))
-        .unwrap_or_else(|_| "Cascade".to_string())
-        .trim()
-        .to_string();
-
-    let windows_path = format!("/tmp/cce-windows-{}", display);
-    let windows_fallback = "/tmp/cce-windows".to_string();
-    let windows_content = fs::read_to_string(&windows_path)
-        .or_else(|_| fs::read_to_string(&windows_fallback))
-        .unwrap_or_default();
+    let windows_content = query_ipc("windows");
 
     let mut windows = Vec::new();
     for line in windows_content.lines() {

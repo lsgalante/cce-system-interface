@@ -135,7 +135,6 @@ struct SystemInterface {
     rx_display: std::sync::mpsc::Receiver<pages::display::DisplayState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     rx_layout: std::sync::mpsc::Receiver<pages::interface::WindowsState>,
-    rx_wm_events: std::sync::mpsc::Receiver<()>,
     rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
@@ -233,7 +232,6 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_display: watchers.rx_display,
             rx_network: watchers.rx_network,
             rx_layout: watchers.rx_layout,
-            rx_wm_events: watchers.rx_wm_events,
             rx_input: watchers.rx_input,
             rx_fingers: watchers.rx_fingers,
             rx_processes: watchers.rx_processes,
@@ -584,11 +582,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(_) = self.rx_wm_events.try_recv() {
-            if self.app.current_page == Page::Interface {
-                self.needs_rebuild = true;
-            }
-        }
+
         while let Ok(s) = self.rx_input.try_recv() {
             input::update(&mut self.app.input, input::InputMessage::Refreshed(s));
             if self.app.current_page == Page::Input {

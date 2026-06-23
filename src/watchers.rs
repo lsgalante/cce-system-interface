@@ -9,7 +9,6 @@ pub struct Watchers {
     pub rx_display: Receiver<display::DisplayState>,
     pub rx_network: Receiver<network::NetworkState>,
     pub rx_layout: Receiver<interface::WindowsState>,
-    pub rx_wm_events: Receiver<()>,
     pub rx_input: Receiver<input::InputState>,
     pub rx_fingers: Receiver<Vec<Finger>>,
     pub rx_processes: Receiver<processes::ProcessesState>,
@@ -95,42 +94,6 @@ pub fn spawn_all(
         rx
     };
 
-    let rx_wm_events = {
-        let (tx, rx) = channel::<()>();
-        let current_page_shared = current_page_shared.clone();
-        tokio::spawn(async move {
-            let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
-            let windows_path = format!("/tmp/cce-windows-{}", display);
-            let tags_path = format!("/tmp/cce-tags-{}", display);
-            let title_path = format!("/tmp/cce-title-{}", display);
-            
-            let mut last_mod = std::time::SystemTime::UNIX_EPOCH;
-            
-            let check_mtime = |path: &str| -> Option<std::time::SystemTime> {
-                std::fs::metadata(path).and_then(|m| m.modified()).ok()
-            };
-
-            loop {
-                let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == 4 { // Interface is index 4
-                    let mut changed = false;
-                    for p in &[&windows_path, &tags_path, &title_path] {
-                        if let Some(mtime) = check_mtime(p) {
-                            if mtime > last_mod {
-                                last_mod = mtime;
-                                changed = true;
-                            }
-                        }
-                    }
-                    if changed {
-                        if tx.send(()).is_err() { break; }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-        });
-        rx
-    };
 
     let rx_input = {
         let (tx, rx) = channel::<input::InputState>();
@@ -262,7 +225,6 @@ pub fn spawn_all(
             rx_display,
             rx_network,
             rx_layout,
-            rx_wm_events,
             rx_input,
             rx_fingers,
             rx_processes,
