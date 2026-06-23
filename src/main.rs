@@ -487,6 +487,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 18 => self.app.interface.window_color,
                 19 => self.app.interface.page_color,
                 20 => self.app.interface.layer_color,
+                23 => self.app.interface.status_box_background_color,
                 _ => self.app.interface.desktop_background_color,
             };
             if i == 21 || i == 22 {
@@ -540,6 +541,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
                     19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                     20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
+                    23 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                 }));
                 color_changed = true;

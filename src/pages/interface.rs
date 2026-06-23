@@ -287,6 +287,9 @@ pub struct InterfaceState {
     pub dropdown_corner_radius_spinbox: Spinbox,
     pub button_corner_radius: u16,
     pub button_corner_radius_spinbox: Spinbox,
+    pub status_box_background_color: [u8; 3],
+    pub status_box_corner_radius: u16,
+    pub status_box_corner_radius_spinbox: Spinbox,
     pub nested_section_label_alignment: u8,
     pub label_alignment_menu: Dropdown,
     pub nested_section_label_offset: i16,
@@ -392,6 +395,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([0, 0, 0]).with_label("Layer Color").with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
                 ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background").with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
                 ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight").with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
+                ColorSelector::new([0x15, 0x15, 0x20]).with_label("Background Color").with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
             ],
             paginator_tab_padding_x: 10,
             paginator_tab_padding_y: 14,
@@ -516,6 +520,9 @@ impl Default for InterfaceState {
             window_color: [0x0a, 0x1a, 0x0e],
             window_corner_radius: 12,
             window_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "window_corner_radius"),
+            status_box_background_color: [0x15, 0x15, 0x20],
+            status_box_corner_radius: 4,
+            status_box_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "status_box_corner_radius"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
         }
     }
@@ -557,6 +564,8 @@ pub enum InterfaceMessage {
     SetPageOpacity(f32),
     SetLayerColor([u8; 3]),
     SetLayerOpacity(f32),
+    SetStatusBoxBackgroundColor([u8; 3]),
+    SetStatusBoxCornerRadius(u16),
 
     SetPageMargin(u16),
     SetGridMinColWidth(u16),
@@ -731,6 +740,8 @@ pub fn read_interface_config() -> InterfaceState {
     let notification_opacity = parse_notifications_opacity(&content);
     let window_color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
     let window_corner_radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
+    let status_box_background_color = parse_color_from_key(&content, "status_box_background_color", [0x15, 0x15, 0x20]);
+    let status_box_corner_radius = parse_u16_from(&content, "status_box_corner_radius", 4);
     
     InterfaceState {
         windows: read_windows_config(),
@@ -777,6 +788,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
             ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
             ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
+            ColorSelector::new(status_box_background_color).with_label("Background Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
         ],
         paginator_tab_padding_x,
         paginator_tab_padding_y,
@@ -836,6 +848,9 @@ pub fn read_interface_config() -> InterfaceState {
         dropdown_corner_radius_spinbox: Spinbox::new(dropdown_corner_radius as i32, 0, 50, 1).with_label("Radius").with_unit("px").with_config(CONFIG_PATH, "dropdown_corner_radius"),
         button_corner_radius,
         button_corner_radius_spinbox: Spinbox::new(button_corner_radius as i32, 0, 50, 1).with_label("Radius").with_unit("px").with_config(CONFIG_PATH, "button_corner_radius"),
+        status_box_background_color,
+        status_box_corner_radius,
+        status_box_corner_radius_spinbox: Spinbox::new(status_box_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "status_box_corner_radius"),
         nested_section_label_alignment,
         label_alignment_menu: Dropdown::new(
             vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
@@ -1863,6 +1878,17 @@ fn apply_window_color(rgb: [u8; 3]) {
     send_ipc_command("reload");
 }
 
+fn apply_status_box_background_color(rgb: [u8; 3]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
+    write_config_value("status_box_background_color", &hex);
+    status_interface_reload();
+}
+
+fn apply_status_box_corner_radius(radius: u16) {
+    write_config_value("status_box_corner_radius", &radius.to_string());
+    status_interface_reload();
+}
+
 
 
 fn apply_window_corner_radius(radius: u16) {
@@ -2485,6 +2511,12 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
         state.color_selectors[4].color = state.separator_color;
         sec.widget_full(&mut state.color_selectors[4], 40.0, ctx);
+        sec.spacing(8.0);
+        state.color_selectors[23].color = state.status_box_background_color;
+        sec.widget_full(&mut state.color_selectors[23], 40.0, ctx);
+        sec.spacing(8.0);
+        state.status_box_corner_radius_spinbox.value = state.status_box_corner_radius as i32;
+        sec.widget_full(&mut state.status_box_corner_radius_spinbox, 44.0, ctx);
         sec.spacing(8.0);
     });
 
@@ -3164,6 +3196,15 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.window_corner_radius = radius;
             state.window_corner_radius_spinbox.value = radius as i32;
             apply_window_corner_radius(radius);
+        }
+        InterfaceMessage::SetStatusBoxBackgroundColor(rgb) => {
+            state.status_box_background_color = rgb;
+            apply_status_box_background_color(rgb);
+        }
+        InterfaceMessage::SetStatusBoxCornerRadius(radius) => {
+            state.status_box_corner_radius = radius;
+            state.status_box_corner_radius_spinbox.value = radius as i32;
+            apply_status_box_corner_radius(radius);
         }
         InterfaceMessage::SetButtonPadding(padding) => {
             state.button_padding = padding;

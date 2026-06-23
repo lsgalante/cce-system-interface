@@ -243,6 +243,7 @@ impl SystemInterface {
                             20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                             21 => pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                             22 => pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
+                            23 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
                             _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         }));
                     }
@@ -252,6 +253,11 @@ impl SystemInterface {
                 }
                 if self.app.interface.menubar_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(self.app.interface.menubar_opacity_spinbox.value as f32 / 100.0)));
+                }
+
+
+                if self.app.interface.status_box_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusBoxCornerRadius(self.app.interface.status_box_corner_radius_spinbox.value as u16)));
                 }
 
                 if self.app.interface.button_padding_spinbox.take_change() {
