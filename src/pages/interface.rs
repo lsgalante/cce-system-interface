@@ -932,25 +932,40 @@ pub fn read_windows_config() -> WindowsState {
             .with_config(CONFIG_PATH, "tag_layout")
     }).collect();
 
-    let side_panel_behavior = parse_string_from(&content, "side_panel_behavior", "inline");
+    let mut side_panel_behavior = parse_string_from(&content, "pinned_behavior", "");
+    if side_panel_behavior.is_empty() {
+        side_panel_behavior = parse_string_from(&content, "side_panel_behavior", "inline");
+    }
     let side_panel_behavior_idx = if side_panel_behavior == "above" { 0 } else { 1 };
     let side_panel_behavior_menu = Dropdown::new(
         vec!["Above".to_string(), "Inline".to_string()],
         side_panel_behavior_idx,
     ).with_label("Behavior")
-    .with_config(CONFIG_PATH, "side_panel_behavior");
+    .with_config(CONFIG_PATH, "pinned_behavior");
 
-    let side_panel_position = parse_string_from(&content, "side_panel_position", "left");
+    let mut side_panel_position = parse_string_from(&content, "pinned_position", "");
+    if side_panel_position.is_empty() {
+        side_panel_position = parse_string_from(&content, "side_panel_position", "left");
+    }
     let side_panel_position_idx = if side_panel_position == "right" { 1 } else { 0 };
     let side_panel_position_menu = Dropdown::new(
         vec!["Left".to_string(), "Right".to_string()],
         side_panel_position_idx,
     ).with_label("Position")
-    .with_config(CONFIG_PATH, "side_panel_position");
+    .with_config(CONFIG_PATH, "pinned_position");
 
-    let spw = parse_u16_from(&content, "side_panel_width", 360);
-    let spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
-    let spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
+    let mut spw = parse_u16_from(&content, "pinned_width", 0);
+    if spw == 0 {
+        spw = parse_u16_from(&content, "side_panel_width", 360);
+    }
+    let mut spbg = parse_u16_from(&content, "pinned_border_gap", 9999);
+    if spbg == 9999 {
+        spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
+    }
+    let mut spbo = parse_u16_from(&content, "pinned_border_opacity", 9999);
+    if spbo == 9999 {
+        spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
+    }
 
     let window_blur = parse_bool_from(&content, "window_blur", false);
     let border_blur = parse_bool_from(&content, "border_blur", false);
@@ -978,11 +993,11 @@ pub fn read_windows_config() -> WindowsState {
         side_panel_behavior_menu,
         side_panel_position_menu,
         side_panel_width: spw,
-        side_panel_width_spinbox: Spinbox::new(spw as i32, 0, 2000, 10).with_config(CONFIG_PATH, "side_panel_width"),
+        side_panel_width_spinbox: Spinbox::new(spw as i32, 0, 2000, 10).with_config(CONFIG_PATH, "pinned_width"),
         side_panel_border_gap: spbg,
-        side_panel_border_gap_spinbox: Spinbox::new(spbg as i32, 0, 500, 1).with_config(CONFIG_PATH, "side_panel_border_gap"),
+        side_panel_border_gap_spinbox: Spinbox::new(spbg as i32, 0, 500, 1).with_config(CONFIG_PATH, "pinned_border_gap"),
         side_panel_border_opacity: spbo,
-        side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5).with_config(CONFIG_PATH, "side_panel_border_opacity"),
+        side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5).with_config(CONFIG_PATH, "pinned_border_opacity"),
         blur_enabled,
         blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
     }
@@ -3020,8 +3035,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             }
         });
 
-        // 8. Side Panel Section
-        sec.add_section("Side Panel", false, |subsec| {
+        // 8. Pinned Section
+        sec.add_section("Pinned", false, |subsec| {
             subsec.spacing(8.0);
             subsec.widget_full(&mut state.windows.side_panel_behavior_menu, 44.0, ctx);
             subsec.spacing(8.0);
@@ -3866,38 +3881,38 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             if idx < 2 {
                 state.side_panel_behavior_menu.selected = idx;
                 let val = if idx == 0 { "above" } else { "inline" };
-                write_config_value("side_panel_behavior", &format!("\"{}\"", val));
-                send_ipc_command(&format!("layout side_panel_behavior {}", val));
+                write_config_value("pinned_behavior", &format!("\"{}\"", val));
+                send_ipc_command(&format!("layout pinned_behavior {}", val));
             }
         }
         WindowsMessage::SetSidePanelPosition(idx) => {
             if idx < 2 {
                 state.side_panel_position_menu.selected = idx;
                 let val = if idx == 1 { "right" } else { "left" };
-                write_config_value("side_panel_position", &format!("\"{}\"", val));
-                send_ipc_command(&format!("layout side_panel_position {}", val));
+                write_config_value("pinned_position", &format!("\"{}\"", val));
+                send_ipc_command(&format!("layout pinned_position {}", val));
             }
         }
         WindowsMessage::SetSidePanelWidth(v) => {
             let val = v.min(2000);
             state.side_panel_width = val;
             state.side_panel_width_spinbox.value = val as i32;
-            write_config_value("side_panel_width", &val.to_string());
-            send_ipc_command(&format!("layout side_panel_width {}", val));
+            write_config_value("pinned_width", &val.to_string());
+            send_ipc_command(&format!("layout pinned_width {}", val));
         }
         WindowsMessage::SetSidePanelBorderGap(v) => {
             let val = v.min(500);
             state.side_panel_border_gap = val;
             state.side_panel_border_gap_spinbox.value = val as i32;
-            write_config_value("side_panel_border_gap", &val.to_string());
-            send_ipc_command(&format!("layout side_panel_border_gap {}", val));
+            write_config_value("pinned_border_gap", &val.to_string());
+            send_ipc_command(&format!("layout pinned_border_gap {}", val));
         }
         WindowsMessage::SetSidePanelBorderOpacity(v) => {
             let val = v.min(100);
             state.side_panel_border_opacity = val;
             state.side_panel_border_opacity_spinbox.value = val as i32;
-            write_config_value("side_panel_border_opacity", &val.to_string());
-            send_ipc_command(&format!("layout side_panel_border_opacity {}", val));
+            write_config_value("pinned_border_opacity", &val.to_string());
+            send_ipc_command(&format!("layout pinned_border_opacity {}", val));
         }
 
         WindowsMessage::ToggleBlur => {
