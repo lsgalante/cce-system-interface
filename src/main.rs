@@ -212,7 +212,7 @@ impl cce_ui::engine::Application for SystemInterface {
         app_state.current_page = Page::ALL[initial_page_idx];
 
         let win_color = app_state.interface.window_color;
-        let win_opacity = app_state.interface.window_opacity;
+        let win_opacity = 1.0f32;
         let win_radius = app_state.interface.window_corner_radius;
 
         let mut font_system = FontSystem::new();

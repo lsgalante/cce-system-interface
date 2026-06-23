@@ -82,8 +82,6 @@ pub struct WindowsState {
     pub side_panel_border_gap_spinbox: Spinbox,
     pub side_panel_border_opacity: u16,
     pub side_panel_border_opacity_spinbox: Spinbox,
-    pub transparency_enabled: bool,
-    pub transparency_toggle: Toggle,
     pub blur_enabled: bool,
     pub blur_toggle: Toggle,
 }
@@ -137,8 +135,6 @@ impl Default for WindowsState {
             side_panel_border_gap_spinbox: Spinbox::new(0, 0, 500, 1).with_config(CONFIG_PATH, "side_panel_border_gap"),
             side_panel_border_opacity: 100,
             side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_config(CONFIG_PATH, "side_panel_border_opacity"),
-            transparency_enabled: true,
-            transparency_toggle: Toggle::new().with_label("Transparency").with_config(CONFIG_PATH, "window_opacity"),
             blur_enabled: true,
             blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
         }
@@ -160,7 +156,6 @@ pub enum WindowsMessage {
     SetSidePanelWidth(u16),
     SetSidePanelBorderGap(u16),
     SetSidePanelBorderOpacity(u16),
-    ToggleTransparency,
     ToggleBlur,
     Refreshed(WindowsState),
 }
@@ -194,8 +189,6 @@ pub struct InterfaceState {
     pub notification_opacity: f32,
     pub notification_opacity_spinbox: Spinbox,
     pub window_color: [u8; 3],
-    pub window_opacity: f32,
-    pub window_opacity_spinbox: Spinbox,
     pub window_corner_radius: u16,
     pub window_corner_radius_spinbox: Spinbox,
     pub paginator_tab_padding_x: u16,
@@ -483,8 +476,6 @@ impl Default for InterfaceState {
             notification_opacity: 0.9,
             notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "notification_opacity"),
             window_color: [0x0a, 0x1a, 0x0e],
-            window_opacity: 0.9,
-            window_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "window_opacity"),
             window_corner_radius: 12,
             window_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "window_corner_radius"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
@@ -517,7 +508,6 @@ pub enum InterfaceMessage {
     SetNotificationBgColor([u8; 3]),
     SetNotificationOpacity(f32),
     SetWindowColor([u8; 3]),
-    SetWindowOpacity(f32),
     SetWindowCornerRadius(u16),
     SetButtonPadding(u16),
     SetButtonStripSpacing(u16),
@@ -702,7 +692,6 @@ pub fn read_interface_config() -> InterfaceState {
     let notification_bg_color = parse_notifications_color(&content, "bg_color", [0x08, 0x08, 0x0c]);
     let notification_opacity = parse_notifications_opacity(&content);
     let window_color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
-    let window_opacity = parse_surfaces_opacity(&content);
     let window_corner_radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
     
     InterfaceState {
@@ -871,8 +860,6 @@ pub fn read_interface_config() -> InterfaceState {
         notification_opacity,
         notification_opacity_spinbox: Spinbox::new((notification_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "notification_opacity"),
         window_color,
-        window_opacity,
-        window_opacity_spinbox: Spinbox::new((window_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "window_opacity"),
         window_corner_radius,
         window_corner_radius_spinbox: Spinbox::new(window_corner_radius as i32, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "window_corner_radius"),
         custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
@@ -927,8 +914,6 @@ pub fn read_windows_config() -> WindowsState {
     let spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
     let spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
 
-    let transparency_enabled = parse_bool_from(&content, "window_opacity", true);
-
     let window_blur = parse_bool_from(&content, "window_blur", false);
     let border_blur = parse_bool_from(&content, "border_blur", false);
     let blur_enabled = window_blur || border_blur;
@@ -960,8 +945,6 @@ pub fn read_windows_config() -> WindowsState {
         side_panel_border_gap_spinbox: Spinbox::new(spbg as i32, 0, 500, 1).with_config(CONFIG_PATH, "side_panel_border_gap"),
         side_panel_border_opacity: spbo,
         side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5).with_config(CONFIG_PATH, "side_panel_border_opacity"),
-        transparency_enabled,
-        transparency_toggle: Toggle::new().with_label("Transparency").with_config(CONFIG_PATH, "window_opacity"),
         blur_enabled,
         blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
     }
@@ -1830,10 +1813,7 @@ fn apply_window_color(rgb: [u8; 3]) {
     send_ipc_command("reload");
 }
 
-fn apply_window_opacity(opacity: f32) {
-    write_surfaces_config_value("window_opacity", &format!("{:.2}", opacity));
-    send_ipc_command("reload");
-}
+
 
 fn apply_window_corner_radius(radius: u16) {
     write_surfaces_config_value("window_corner_radius", &radius.to_string());
@@ -2661,9 +2641,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.color_selectors[18].color = state.window_color;
             subsec.widget_full(&mut state.color_selectors[18], 40.0, ctx);
             subsec.spacing(8.0);
-            state.window_opacity_spinbox.value = (state.window_opacity * 100.0).round() as i32;
-            subsec.widget_full(&mut state.window_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.window_corner_radius_spinbox.value = state.window_corner_radius as i32;
             subsec.widget_full(&mut state.window_corner_radius_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
@@ -3029,9 +3006,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // 9. Effects Section
         sec.add_section("Effects", false, |subsec| {
             subsec.spacing(8.0);
-            state.windows.transparency_toggle.set_toggled(state.windows.transparency_enabled);
-            subsec.widget_full(&mut state.windows.transparency_toggle, cce_ui::layout::toggle_height(), ctx);
-            subsec.spacing(8.0);
             state.windows.blur_toggle.set_toggled(state.windows.blur_enabled);
             subsec.widget_full(&mut state.windows.blur_toggle, cce_ui::layout::toggle_height(), ctx);
             subsec.spacing(8.0);
@@ -3135,11 +3109,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.window_color = rgb;
             apply_window_color(rgb);
         }
-        InterfaceMessage::SetWindowOpacity(opacity) => {
-            state.window_opacity = opacity;
-            state.window_opacity_spinbox.value = (opacity * 100.0).round() as i32;
-            apply_window_opacity(opacity);
-        }
+
         InterfaceMessage::SetWindowCornerRadius(radius) => {
             state.window_corner_radius = radius;
             state.window_corner_radius_spinbox.value = radius as i32;
@@ -3419,7 +3389,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
-            let was_wo_hovered = state.window_opacity_spinbox.hovered();
             let was_wcr_hovered = state.window_corner_radius_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
@@ -3484,7 +3453,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
-            state.window_opacity_spinbox.set_hovered(was_wo_hovered);
             state.window_corner_radius_spinbox.set_hovered(was_wcr_hovered);
 
             if typeface_loaded {
@@ -3896,12 +3864,7 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             write_config_value("side_panel_border_opacity", &val.to_string());
             send_ipc_command(&format!("layout side_panel_border_opacity {}", val));
         }
-        WindowsMessage::ToggleTransparency => {
-            state.transparency_enabled = !state.transparency_enabled;
-            write_config_value("window_opacity", &state.transparency_enabled.to_string());
-            send_ipc_command("reload");
-            status_interface_reload();
-        }
+
         WindowsMessage::ToggleBlur => {
             state.blur_enabled = !state.blur_enabled;
             let val = state.blur_enabled.to_string();
@@ -3911,7 +3874,6 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
         }
         WindowsMessage::Refreshed(new) => {
             // Restore hover states
-            let transparency_hover = state.transparency_toggle.hovered();
             let blur_hover = state.blur_toggle.hovered();
             let tag_layout_menus_hover: Vec<bool> = state.tag_layout_menus.iter().map(|m| m.hovered()).collect();
             let side_panel_behavior_hover = state.side_panel_behavior_menu.hovered();
@@ -3929,7 +3891,6 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
 
             *state = new;
 
-            state.transparency_toggle.set_hovered(transparency_hover);
             state.blur_toggle.set_hovered(blur_hover);
             for (menu, hover) in state.tag_layout_menus.iter_mut().zip(tag_layout_menus_hover) {
                 menu.set_hovered(hover);
@@ -4011,10 +3972,7 @@ fn parse_surfaces_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
     default
 }
 
-fn parse_surfaces_opacity(content: &str) -> f32 {
-    let val = parse_json(content);
-    val["surfaces"]["window_opacity"].as_f64().map(|v| v as f32).unwrap_or(0.9)
-}
+
 
 fn parse_surfaces_u16(content: &str, key: &str, default: u16) -> u16 {
     let val = parse_json(content);
@@ -5191,21 +5149,10 @@ mod tests {
 
         // 2. Parse opacity/color when missing (should return defaults)
         let content = fs::read_to_string(path_str).unwrap();
-        let opacity = parse_surfaces_opacity(&content);
-        assert_eq!(opacity, 0.9);
         let color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
         assert_eq!(color, [0x0a, 0x1a, 0x0e]);
         let radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
         assert_eq!(radius, 12);
-
-        // 3. Write surfaces opacity config
-        write_surfaces_config_value_path(path_str, "window_opacity", "0.75");
-        let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"window_opacity\": 0.75"));
-
-        // 4. Parse surfaces opacity when present
-        let opacity2 = parse_surfaces_opacity(&updated);
-        assert_eq!(opacity2, 0.75);
 
         // 5. Write surfaces window_color config
         write_surfaces_config_value_path(path_str, "window_color", "\"#112233\"");
