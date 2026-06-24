@@ -204,7 +204,6 @@ pub struct InterfaceState {
     pub desktop_background_color: [u8; 3],
     pub high_color: [u8; 3],
     pub disabled_color: [u8; 3],
-    pub separator_color: [u8; 3],
     pub visual_guides_color: [u8; 3],
     pub slider_track_color: [u8; 3],
     pub page_low_color: [u8; 3],
@@ -355,7 +354,6 @@ impl Default for InterfaceState {
             desktop_background_color: [0, 0, 0],
             high_color: [0x3e, 0x3e, 0x3e],
             disabled_color: [0x55, 0x55, 0x55],
-            separator_color: [124, 124, 137],
             visual_guides_color: [0xff, 0x8c, 0x00],
             slider_track_color: [116, 116, 128],
             page_low_color: [71, 71, 81],
@@ -376,8 +374,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([0x3e, 0x3e, 0x3e]).with_label("High Color").with_config(CONFIG_PATH, "high_color"), // 1: Layout - High Color
                 ColorSelector::new([0xff, 0x8c, 0x00]).with_label("Visual Guides").with_config(CONFIG_PATH, "visual_guides_color"), // 2: Layout - Visual Guides
                 ColorSelector::new([0x55, 0x55, 0x55]).with_label("Disabled").with_config(CONFIG_PATH, "disabled_color"), // 3: Status - Disabled
-                ColorSelector::new([124, 124, 137]).with_label("Separators").with_config(CONFIG_PATH, "separator_color"), // 4: Status - Separators
-                ColorSelector::new([116, 116, 128]).with_label("Slider Track").with_config(CONFIG_PATH, "slider_track_color"), // 5: Controls - Slider Track
+                ColorSelector::new([116, 116, 128]).with_label("Slider Track").with_config(CONFIG_PATH, "slider_track_color"), // 4: Controls - Slider Track
                 ColorSelector::new([124, 124, 137]).with_label("Borders").with_config(CONFIG_PATH, "color_borders_color"), // 6: Controls - Borders
                 ColorSelector::new([0, 0, 0]).with_label("Color").with_config(CONFIG_PATH, "desktop_background_color"), // 7: Surfaces - Desktop Background Color
                 ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal").with_config(CONFIG_PATH, "status_normal_color"), // 8: Status - Normal
@@ -534,7 +531,6 @@ pub enum InterfaceMessage {
     SetDesktopBackground([u8; 3]),
     SetHighColor([u8; 3]),
     SetDisabledColor([u8; 3]),
-    SetSeparatorColor([u8; 3]),
     SetVisualGuidesColor([u8; 3]),
     SetSliderTrackColor([u8; 3]),
     SetPageLowColor([u8; 3]),
@@ -604,7 +600,6 @@ pub enum InterfaceMessage {
     PickLowColor,
     PickHighColor,
     PickDisabledColor,
-    PickSeparatorColor,
     PickVisualGuides,
     PickSliderTrackColor,
     PickPageLowColor,
@@ -655,8 +650,6 @@ pub fn read_interface_config() -> InterfaceState {
     };
     
     let disabled = parse_color_from_key(&content, "disabled_color", [0x55, 0x55, 0x55]);
-    
-    let separator = parse_color_from_key(&content, "status_separator_color", [124, 124, 137]);
     
     let visual_guides = parse_color_from_key(&content, "visual_guides_color", [0xff, 0x8c, 0x00]);
     
@@ -748,7 +741,6 @@ pub fn read_interface_config() -> InterfaceState {
         desktop_background_color: bg,
         high_color: border,
         disabled_color: disabled,
-        separator_color: separator,
         visual_guides_color: visual_guides,
         slider_track_color: slider_track,
         page_low_color: page_low,
@@ -769,8 +761,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(border).with_label("High Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "high_color"), // 1: Layout - High Color
             ColorSelector::new(visual_guides).with_label("Visual Guides").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "visual_guides_color"), // 2: Layout - Visual Guides
             ColorSelector::new(disabled).with_label("Disabled").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "disabled_color"), // 3: Status - Disabled
-            ColorSelector::new(separator).with_label("Separators").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "separator_color"), // 4: Status - Separators
-            ColorSelector::new(slider_track).with_label("Slider Track").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "slider_track_color"), // 5: Controls - Slider Track
+            ColorSelector::new(slider_track).with_label("Slider Track").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "slider_track_color"), // 4: Controls - Slider Track
             ColorSelector::new(color_borders).with_label("Borders").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "color_borders_color"), // 6: Controls - Borders
             ColorSelector::new(bg).with_label("Low Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_background_color"), // 7: Layout - Low Color
             ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_normal_color"), // 8: Status - Normal
@@ -1724,13 +1715,6 @@ pub fn status_interface_reload() {
     send_ipc_command("spawn cce-status-interface");
 }
 
-fn apply_separator_color(rgb: [u8; 3]) {
-    let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
-    write_config_value("status_separator_color", &hex);
-    send_ipc_command(&format!("layout status_separator_color #{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]));
-    status_interface_reload();
-}
-
 fn apply_visual_guides_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_config_value("visual_guides_color", &hex);
@@ -2503,17 +2487,14 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     // 3. Status Section
     builder.add_section_with_width(&mut final_pc, cw, "Status", false, |sec| {
         sec.spacing(8.0);
-        state.color_selectors[8].color = state.normal_color;
-        sec.widget_full(&mut state.color_selectors[8], 40.0, ctx);
+        state.color_selectors[7].color = state.normal_color;
+        sec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
         sec.spacing(8.0);
         state.color_selectors[3].color = state.disabled_color;
         sec.widget_full(&mut state.color_selectors[3], 40.0, ctx);
         sec.spacing(8.0);
-        state.color_selectors[4].color = state.separator_color;
-        sec.widget_full(&mut state.color_selectors[4], 40.0, ctx);
-        sec.spacing(8.0);
-        state.color_selectors[23].color = state.status_box_background_color;
-        sec.widget_full(&mut state.color_selectors[23], 40.0, ctx);
+        state.color_selectors[22].color = state.status_box_background_color;
+        sec.widget_full(&mut state.color_selectors[22], 40.0, ctx);
         sec.spacing(8.0);
         state.status_box_corner_radius_spinbox.value = state.status_box_corner_radius as i32;
         sec.widget_full(&mut state.status_box_corner_radius_spinbox, 44.0, ctx);
@@ -2523,15 +2504,15 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     // 4. Controls Section
     builder.add_section_with_width(&mut final_pc, cw, "Controls", false, |sec| {
         sec.spacing(8.0);
-        state.color_selectors[6].color = state.color_borders_color;
-        sec.widget_full(&mut state.color_selectors[6], 40.0, ctx);
+        state.color_selectors[5].color = state.color_borders_color;
+        sec.widget_full(&mut state.color_selectors[5], 40.0, ctx);
         sec.spacing(12.0);
 
         // Slider Section
         sec.add_section("Slider", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[5].color = state.slider_track_color;
-            subsec.widget_full(&mut state.color_selectors[5], 40.0, ctx);
+            state.color_selectors[4].color = state.slider_track_color;
+            subsec.widget_full(&mut state.color_selectors[4], 40.0, ctx);
             subsec.spacing(8.0);
             state.slider_height_spinbox.value = state.slider_height as i32;
             subsec.widget_full(&mut state.slider_height_spinbox, 44.0, ctx);
@@ -2543,11 +2524,11 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // MenuBar Section
         sec.add_section("MenuBar", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[9].color = state.paginator_sidebar_color;
-            subsec.widget_full(&mut state.color_selectors[9], 40.0, ctx);
+            state.color_selectors[8].color = state.paginator_sidebar_color;
+            subsec.widget_full(&mut state.color_selectors[8], 40.0, ctx);
             subsec.spacing(8.0);
-            state.color_selectors[11].color = state.menubar_tab_label_color;
-            subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
+            state.color_selectors[10].color = state.menubar_tab_label_color;
+            subsec.widget_full(&mut state.color_selectors[10], 40.0, ctx);
             state.menubar_font_selector.font_family = state.menubar_font.clone();
             subsec.widget_full(&mut state.menubar_font_selector, 44.0, ctx);
             subsec.spacing(8.0);
@@ -2560,11 +2541,11 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // Toggle Section
         sec.add_section("Toggle", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[12].color = state.toggle_enabled_color;
-            subsec.widget_full(&mut state.color_selectors[12], 40.0, ctx);
+            state.color_selectors[11].color = state.toggle_enabled_color;
+            subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
             subsec.spacing(8.0);
-            state.color_selectors[13].color = state.toggle_disabled_color;
-            subsec.widget_full(&mut state.color_selectors[13], 40.0, ctx);
+            state.color_selectors[12].color = state.toggle_disabled_color;
+            subsec.widget_full(&mut state.color_selectors[12], 40.0, ctx);
             subsec.spacing(8.0);
             state.toggle_height_spinbox.value = state.toggle_height as i32;
             subsec.widget_full(&mut state.toggle_height_spinbox, 44.0, ctx);
@@ -2577,8 +2558,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // Breadcrumb Section
         sec.add_section("Breadcrumb", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[15].color = state.breadcrumb_bg_color;
-            subsec.widget_full(&mut state.color_selectors[15], 40.0, ctx);
+            state.color_selectors[14].color = state.breadcrumb_bg_color;
+            subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
             subsec.spacing(8.0);
             state.breadcrumb_font_selector.font_family = state.breadcrumb_font.clone();
             subsec.widget_full(&mut state.breadcrumb_font_selector, 44.0, ctx);
@@ -2697,8 +2678,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
         sec.add_section("Primary Highlight", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[10].color = state.primary_highlight_color;
-            subsec.widget_full(&mut state.color_selectors[10], 40.0, ctx);
+            state.color_selectors[9].color = state.primary_highlight_color;
+            subsec.widget_full(&mut state.color_selectors[9], 40.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(8.0);
@@ -2707,8 +2688,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     // 5. Notification Section
     builder.add_section_with_width(&mut final_pc, cw, "Notification", false, |sec| {
         sec.spacing(8.0);
-        state.color_selectors[17].color = state.notification_bg_color;
-        sec.widget_full(&mut state.color_selectors[17], 40.0, ctx);
+        state.color_selectors[16].color = state.notification_bg_color;
+        sec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
         sec.spacing(8.0);
         state.notification_opacity_spinbox.value = (state.notification_opacity * 100.0).round() as i32;
         sec.widget_full(&mut state.notification_opacity_spinbox, 44.0, ctx);
@@ -2720,8 +2701,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(12.0);
         sec.add_section("Window", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[18].color = state.window_color;
-            subsec.widget_full(&mut state.color_selectors[18], 40.0, ctx);
+            state.color_selectors[17].color = state.window_color;
+            subsec.widget_full(&mut state.color_selectors[17], 40.0, ctx);
             subsec.spacing(8.0);
             state.window_corner_radius_spinbox.value = state.window_corner_radius as i32;
             subsec.widget_full(&mut state.window_corner_radius_spinbox, 44.0, ctx);
@@ -2750,8 +2731,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // Popover Section
         sec.add_section("Popover", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[16].color = state.popover_bg_color;
-            subsec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
+            state.color_selectors[15].color = state.popover_bg_color;
+            subsec.widget_full(&mut state.color_selectors[15], 40.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -2759,8 +2740,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // Desktop Background Section
         sec.add_section("Desktop Background", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[7].color = state.desktop_background_color;
-            subsec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
+            state.color_selectors[6].color = state.desktop_background_color;
+            subsec.widget_full(&mut state.color_selectors[6], 40.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -2867,8 +2848,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // Page child section
         sec.add_section("Page", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[19].color = state.page_color;
-            subsec.widget_full(&mut state.color_selectors[19], 40.0, ctx);
+            state.color_selectors[18].color = state.page_color;
+            subsec.widget_full(&mut state.color_selectors[18], 40.0, ctx);
             subsec.spacing(8.0);
             state.page_opacity_spinbox.value = (state.page_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.page_opacity_spinbox, 44.0, ctx);
@@ -2879,8 +2860,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // Layer child section
         sec.add_section("Layer", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[20].color = state.layer_color;
-            subsec.widget_full(&mut state.color_selectors[20], 40.0, ctx);
+            state.color_selectors[19].color = state.layer_color;
+            subsec.widget_full(&mut state.color_selectors[19], 40.0, ctx);
             subsec.spacing(8.0);
             state.layer_opacity_spinbox.value = (state.layer_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.layer_opacity_spinbox, 44.0, ctx);
@@ -2920,20 +2901,20 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         // ScrollingList Section
         sec.add_section("ScrollingList", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[14].color = state.scrollinglist_bg_color;
-            subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
+            state.color_selectors[13].color = state.scrollinglist_bg_color;
+            subsec.widget_full(&mut state.color_selectors[13], 40.0, ctx);
             subsec.spacing(8.0);
 
             let bg_rgba = state.scrollinglist_entry_bg_color;
-            state.color_selectors[21].color = [bg_rgba[0], bg_rgba[1], bg_rgba[2]];
-            state.color_selectors[21].alpha = bg_rgba[3];
-            subsec.widget_full(&mut state.color_selectors[21], 40.0, ctx);
+            state.color_selectors[20].color = [bg_rgba[0], bg_rgba[1], bg_rgba[2]];
+            state.color_selectors[20].alpha = bg_rgba[3];
+            subsec.widget_full(&mut state.color_selectors[20], 40.0, ctx);
             subsec.spacing(8.0);
 
             let highlight_rgba = state.scrollinglist_entry_highlight_color;
-            state.color_selectors[22].color = [highlight_rgba[0], highlight_rgba[1], highlight_rgba[2]];
-            state.color_selectors[22].alpha = highlight_rgba[3];
-            subsec.widget_full(&mut state.color_selectors[22], 40.0, ctx);
+            state.color_selectors[21].color = [highlight_rgba[0], highlight_rgba[1], highlight_rgba[2]];
+            state.color_selectors[21].alpha = highlight_rgba[3];
+            subsec.widget_full(&mut state.color_selectors[21], 40.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -3118,10 +3099,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.disabled_color = rgb;
             apply_disabled_color(rgb);
         }
-        InterfaceMessage::SetSeparatorColor(rgb) => {
-            state.separator_color = rgb;
-            apply_separator_color(rgb);
-        }
+
         InterfaceMessage::SetVisualGuidesColor(rgb) => {
             state.visual_guides_color = rgb;
             apply_visual_guides_color(rgb);
@@ -3444,7 +3422,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             status_interface_reload();
             propagate_links(state, "menubar_opacity", &opacity.to_string());
         }
-        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickSeparatorColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
+        InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
             let was_bp_hovered = state.button_padding_spinbox.hovered();
             let was_bss_hovered = state.button_strip_spacing_spinbox.hovered();

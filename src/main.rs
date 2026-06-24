@@ -106,6 +106,7 @@ fn make_text_buffer_with_font(
     buf
 }
 
+#[allow(dead_code)]
 struct AppWidget {
     x: f32, y: f32, w: f32, h: f32,
     color: [f32; 4],
@@ -470,28 +471,27 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 1 => self.app.interface.high_color,
                 2 => self.app.interface.visual_guides_color,
                 3 => self.app.interface.disabled_color,
-                4 => self.app.interface.separator_color,
-                5 => self.app.interface.slider_track_color,
-                6 => self.app.interface.color_borders_color,
-                7 => self.app.interface.desktop_background_color,
-                8 => self.app.interface.normal_color,
-                9 => self.app.interface.paginator_sidebar_color,
-                10 => self.app.interface.primary_highlight_color,
-                11 => self.app.interface.menubar_tab_label_color,
-                12 => self.app.interface.toggle_enabled_color,
-                13 => self.app.interface.toggle_disabled_color,
-                14 => self.app.interface.scrollinglist_bg_color,
-                15 => self.app.interface.breadcrumb_bg_color,
-                16 => self.app.interface.popover_bg_color,
-                17 => self.app.interface.notification_bg_color,
-                18 => self.app.interface.window_color,
-                19 => self.app.interface.page_color,
-                20 => self.app.interface.layer_color,
-                23 => self.app.interface.status_box_background_color,
+                4 => self.app.interface.slider_track_color,
+                5 => self.app.interface.color_borders_color,
+                6 => self.app.interface.desktop_background_color,
+                7 => self.app.interface.normal_color,
+                8 => self.app.interface.paginator_sidebar_color,
+                9 => self.app.interface.primary_highlight_color,
+                10 => self.app.interface.menubar_tab_label_color,
+                11 => self.app.interface.toggle_enabled_color,
+                12 => self.app.interface.toggle_disabled_color,
+                13 => self.app.interface.scrollinglist_bg_color,
+                14 => self.app.interface.breadcrumb_bg_color,
+                15 => self.app.interface.popover_bg_color,
+                16 => self.app.interface.notification_bg_color,
+                17 => self.app.interface.window_color,
+                18 => self.app.interface.page_color,
+                19 => self.app.interface.layer_color,
+                22 => self.app.interface.status_box_background_color,
                 _ => self.app.interface.desktop_background_color,
             };
-            if i == 21 || i == 22 {
-                let (state_rgb, state_alpha) = if i == 21 {
+            if i == 20 || i == 21 {
+                let (state_rgb, state_alpha) = if i == 20 {
                     (
                         [
                             self.app.interface.scrollinglist_entry_bg_color[0],
@@ -511,7 +511,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     )
                 };
                 if cp.color != state_rgb || cp.alpha != state_alpha {
-                    color_actions.push(AppAction::Interface(if i == 21 {
+                    color_actions.push(AppAction::Interface(if i == 20 {
                         pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
                     } else {
                         pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
@@ -524,24 +524,23 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
                     2 => pages::interface::InterfaceMessage::SetVisualGuidesColor(cp.color),
                     3 => pages::interface::InterfaceMessage::SetDisabledColor(cp.color),
-                    4 => pages::interface::InterfaceMessage::SetSeparatorColor(cp.color),
-                    5 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
-                    6 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
-                    7 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
-                    8 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
-                    9 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
-                    10 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
-                    11 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
-                    12 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
-                    13 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
-                    14 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
-                    15 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
-                    16 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
-                    17 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
-                    18 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
-                    19 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
-                    20 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
-                    23 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
+                    4 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
+                    5 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
+                    6 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
+                    7 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
+                    8 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
+                    9 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
+                    10 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
+                    11 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
+                    12 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
+                    13 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
+                    14 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
+                    15 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
+                    16 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
+                    17 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                    18 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
+                    19 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
+                    22 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
                     _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                 }));
                 color_changed = true;

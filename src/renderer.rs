@@ -299,32 +299,31 @@ impl SystemInterface {
 
                 
                 // Section 2: Status
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[8], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[3], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[4], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[23], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[22], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_box_corner_radius_spinbox, &mut self.ui_context);
                 
                 // Section 3: Controls (parent of: Slider, MenuBar, Toggles, Spinbox, ColorSelector, Textbox, FontSelector)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[6], &mut self.ui_context);
-                // (Slider child widgets)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[5], &mut self.ui_context);
+                // (Slider child widgets)
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[4], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.slider_height_spinbox, &mut self.ui_context);
                 
                 // (MenuBar child widgets)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[9], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[11], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[8], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[10], &mut self.ui_context);
 
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.button_padding_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.menubar_opacity_spinbox, &mut self.ui_context);
                  // (Toggles child widgets)
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[11], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[12], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_height_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.toggle_corner_radius_spinbox, &mut self.ui_context);
                 
                 // (Breadcrumb child widgets)
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.breadcrumb_font_selector, &mut self.ui_context);
  
                 // (Spinbox child widgets)
@@ -358,14 +357,14 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.label_margin_spinbox, &mut self.ui_context);
                 
                 // Section 4: Indicators (parent of Primary Highlight)
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.color_selectors[10], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.interface.color_selectors[9], &mut self.ui_context);
                 
                 // Section 5: Notification
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[5], &mut self.app.interface.notification_opacity_spinbox, &mut self.ui_context);
                 
                 // Section 6: Surfaces
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[18], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.window_corner_radius_spinbox, &mut self.ui_context);
                 // (Plate child widgets)
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[0], &mut self.ui_context);
@@ -373,9 +372,9 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_opacity_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_corner_radius_spinbox, &mut self.ui_context);
                 // (Popover child widgets)
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[16], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
                 // (Desktop Background child widgets)
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[7], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[6], &mut self.ui_context);
                 
                 // Section 7: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)
@@ -392,7 +391,7 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.fuzzel_box, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.terminal_menu, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.interface.terminal_box, &mut self.ui_context);
-
+ 
                 // Section 8: Containers (parent of ScrollingList, Sections, Graph)
                 // (Sections child widgets)
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.section_padding_spinbox, &mut self.ui_context);
@@ -402,14 +401,14 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.label_offset_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.nested_section_label_font_selector, &mut self.ui_context);
                 // (ScrollingList child widgets)
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[14], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[13], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[20], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[21], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[22], &mut self.ui_context);
                 // (Page child widgets)
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[19], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[18], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.page_opacity_spinbox, &mut self.ui_context);
                 // (Layer child widgets)
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[20], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.color_selectors[19], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.layer_opacity_spinbox, &mut self.ui_context);
                 // (Graph child widgets)
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.interface.graph_show_grid_toggle, &mut self.ui_context);
