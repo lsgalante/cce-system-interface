@@ -261,6 +261,9 @@ impl SystemInterface {
                 if self.app.interface.status_padding_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusPadding(self.app.interface.status_padding_spinbox.value as u16)));
                 }
+                if self.app.interface.status_module_spacing_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusModuleSpacing(self.app.interface.status_module_spacing_spinbox.value as u16)));
+                }
 
                 if self.app.interface.button_padding_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonPadding(self.app.interface.button_padding_spinbox.value as u16)));

@@ -291,6 +291,8 @@ pub struct InterfaceState {
     pub status_box_corner_radius_spinbox: Spinbox,
     pub status_padding: u16,
     pub status_padding_spinbox: Spinbox,
+    pub status_module_spacing: u16,
+    pub status_module_spacing_spinbox: Spinbox,
     pub nested_section_label_alignment: u8,
     pub label_alignment_menu: Dropdown,
     pub nested_section_label_offset: i16,
@@ -524,6 +526,8 @@ impl Default for InterfaceState {
             status_box_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "status_box_corner_radius"),
             status_padding: 8,
             status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Padding").with_unit("px").with_config(CONFIG_PATH, "status_padding"),
+            status_module_spacing: 8,
+            status_module_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "status_module_spacing"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
         }
     }
@@ -567,6 +571,7 @@ pub enum InterfaceMessage {
     SetStatusBoxBackgroundColor([u8; 3]),
     SetStatusBoxCornerRadius(u16),
     SetStatusPadding(u16),
+    SetStatusModuleSpacing(u16),
 
     SetPageMargin(u16),
     SetGridMinColWidth(u16),
@@ -741,6 +746,7 @@ pub fn read_interface_config() -> InterfaceState {
     let status_box_background_color = parse_color_from_key(&content, "status_box_background_color", [0x15, 0x15, 0x20]);
     let status_box_corner_radius = parse_u16_from(&content, "status_box_corner_radius", 4);
     let status_padding = parse_u16_from(&content, "status_padding", 8);
+    let status_module_spacing = parse_u16_from(&content, "status_module_spacing", 8);
     
     InterfaceState {
         windows: read_windows_config(),
@@ -850,6 +856,8 @@ pub fn read_interface_config() -> InterfaceState {
         status_box_corner_radius_spinbox: Spinbox::new(status_box_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "status_box_corner_radius"),
         status_padding,
         status_padding_spinbox: Spinbox::new(status_padding as i32, 0, 32, 1).with_label("Padding").with_unit("px").with_config(CONFIG_PATH, "status_padding"),
+        status_module_spacing,
+        status_module_spacing_spinbox: Spinbox::new(status_module_spacing as i32, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "status_module_spacing"),
         nested_section_label_alignment,
         label_alignment_menu: Dropdown::new(
             vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
@@ -1886,6 +1894,11 @@ fn apply_status_padding(padding: u16) {
     status_interface_reload();
 }
 
+fn apply_status_module_spacing(spacing: u16) {
+    write_config_value("status_module_spacing", &spacing.to_string());
+    status_interface_reload();
+}
+
 
 
 fn apply_window_corner_radius(radius: u16) {
@@ -2514,6 +2527,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.spacing(8.0);
         state.status_padding_spinbox.value = state.status_padding as i32;
         sec.widget_full(&mut state.status_padding_spinbox, 44.0, ctx);
+        sec.spacing(8.0);
+        state.status_module_spacing_spinbox.value = state.status_module_spacing as i32;
+        sec.widget_full(&mut state.status_module_spacing_spinbox, 44.0, ctx);
         sec.spacing(8.0);
     });
 
@@ -3205,6 +3221,11 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.status_padding_spinbox.value = padding as i32;
             apply_status_padding(padding);
         }
+        InterfaceMessage::SetStatusModuleSpacing(spacing) => {
+            state.status_module_spacing = spacing;
+            state.status_module_spacing_spinbox.value = spacing as i32;
+            apply_status_module_spacing(spacing);
+        }
         InterfaceMessage::SetButtonPadding(padding) => {
             state.button_padding = padding;
             apply_button_padding(padding);
@@ -3454,6 +3475,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_page_op_hovered = state.page_opacity_spinbox.hovered();
             let was_layer_op_hovered = state.layer_opacity_spinbox.hovered();
             let was_sp_pad_hovered = state.status_padding_spinbox.hovered();
+            let was_sp_spc_hovered = state.status_module_spacing_spinbox.hovered();
 
             let was_pm_hovered = state.page_margin_spinbox.hovered();
             let was_gm_hovered = state.grid_min_col_width_spinbox.hovered();
@@ -3546,6 +3568,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
             state.window_corner_radius_spinbox.set_hovered(was_wcr_hovered);
             state.status_padding_spinbox.set_hovered(was_sp_pad_hovered);
+            state.status_module_spacing_spinbox.set_hovered(was_sp_spc_hovered);
 
             if typeface_loaded {
                 state.typeface_loaded = typeface_loaded;
