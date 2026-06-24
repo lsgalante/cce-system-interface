@@ -680,7 +680,23 @@ impl SystemInterface {
             let old_scroll = self.scroll_y;
             self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
             if (self.scroll_y - old_scroll).abs() > 0.01 {
-                self.needs_rebuild = true;
+                let actual_dy = self.scroll_y - old_scroll;
+                for w in &mut self.widgets[self.scrollable_widgets_start_idx..] {
+                    w.y -= actual_dy;
+                }
+                for ti in &mut self.text_items[self.scrollable_text_items_start_idx..] {
+                    ti.y -= actual_dy;
+                    if let Some(ref mut b) = ti.bounds {
+                        b[1] -= actual_dy;
+                        b[3] -= actual_dy;
+                    }
+                }
+                for (btn, _) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
+                    if let Some(base) = btn.base_mut() {
+                        base.y -= actual_dy;
+                    }
+                }
+                self.last_scroll_y = self.scroll_y;
                 return true;
             }
         } else {

@@ -630,6 +630,10 @@ impl SystemInterface {
             }
         }
 
+        self.scrollable_widgets_start_idx = widgets.len();
+        self.scrollable_text_items_start_idx = text_items.len();
+        self.scrollable_buttons_start_idx = page_buttons.len();
+
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
 
@@ -812,6 +816,7 @@ impl SystemInterface {
         self.text_items = text_items;
         self.page_buttons = page_buttons;
         self.needs_rebuild = false;
+        self.last_scroll_y = self.scroll_y;
         self.ui_context.clear_dirty();
     }
 
