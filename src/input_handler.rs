@@ -258,6 +258,9 @@ impl SystemInterface {
                 if self.app.interface.status_box_corner_radius_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusBoxCornerRadius(self.app.interface.status_box_corner_radius_spinbox.value as u16)));
                 }
+                if self.app.interface.status_padding_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusPadding(self.app.interface.status_padding_spinbox.value as u16)));
+                }
 
                 if self.app.interface.button_padding_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetButtonPadding(self.app.interface.button_padding_spinbox.value as u16)));

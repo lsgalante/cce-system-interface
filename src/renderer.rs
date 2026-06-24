@@ -143,6 +143,8 @@ impl SystemInterface {
         self.app.interface.custom_multicontrol.set_parent(None, &mut self.ui_context);
         self.app.interface.status_box_corner_radius_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.status_box_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.status_padding_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.status_padding_spinbox.set_parent(None, &mut self.ui_context);
 
         self.app.interface.sans_box.clear_children(&mut self.ui_context); self.app.interface.sans_box.set_parent(None, &mut self.ui_context);
         self.app.interface.serif_box.clear_children(&mut self.ui_context); self.app.interface.serif_box.set_parent(None, &mut self.ui_context);
@@ -303,6 +305,7 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[3], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[22], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_box_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_padding_spinbox, &mut self.ui_context);
                 
                 // Section 3: Controls (parent of: Slider, MenuBar, Toggles, Spinbox, ColorSelector, Textbox, FontSelector)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[5], &mut self.ui_context);
