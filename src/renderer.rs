@@ -821,21 +821,7 @@ impl SystemInterface {
             });
         }
 
-        // Draw global hover highlight if active
-        cce_ui::widget::hover_animation::post_render_check();
-        if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
-            widgets.push(AppWidget {
-                x: qx * s,
-                y: (qy - self.scroll_y) * s,
-                w: qw * s,
-                h: qh * s,
-                color: qc,
-                hover_color: qc,
-                hovering: false,
-                radius: 0.0,
-                corners: (true, true, true, true),
-            });
-        }
+
 
 
 

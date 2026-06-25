@@ -360,7 +360,6 @@ impl cce_ui::engine::Application for SystemInterface {
         self.poll_background_updates();
         if self.tick_internal(dt) {
             *needs_rebuild = true;
-            self.needs_rebuild = true;
         }
         if self.needs_rebuild || self.ui_context.is_dirty() {
             *needs_rebuild = true;
@@ -390,6 +389,21 @@ impl cce_ui::engine::Application for SystemInterface {
         }
         for w in &self.widgets {
             quads.push((w.x, w.y, w.w, w.h, w.radius, w.color, w.corners));
+        }
+
+        // Draw global hover highlight if active
+        let s = scale as f32;
+        cce_ui::widget::hover_animation::post_render_check();
+        if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
+            quads.push((
+                qx * s,
+                (qy - self.scroll_y) * s,
+                qw * s,
+                qh * s,
+                0.0,
+                qc,
+                (true, true, true, true),
+            ));
         }
     }
 
@@ -485,7 +499,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         let mut needs_redraw = false;
         if hover_animation::tick(dt) {
             needs_redraw = true;
-            self.needs_rebuild = true;
         }
         let menubar_changed = self.menubar.tick(dt, &mut self.ui_context);
         let switcher_changed = self.switcher.tick(dt, &mut self.ui_context);
