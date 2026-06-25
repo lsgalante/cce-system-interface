@@ -19,7 +19,10 @@ impl SystemInterface {
             page.clear_children(&mut self.ui_context);
         }
         let page_root = &mut self.pages[page_idx];
-        self.page_sec_containers.clear();
+        for c in &mut self.page_sec_containers {
+            c.clear_children(&mut self.ui_context);
+            c.set_parent(None, &mut self.ui_context);
+        }
 
         // Clear all widgets' hierarchy links
         self.app.processes.services_search_box.clear_children(&mut self.ui_context); self.app.processes.services_search_box.set_parent(None, &mut self.ui_context);
