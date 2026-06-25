@@ -462,6 +462,24 @@ impl SystemInterface {
                 if tf.side_panel_border_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetSidePanelBorderOpacity(tf.side_panel_border_opacity_spinbox.value as u16))));
                 }
+                if tf.fullscreen_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetFullscreenOpacity(tf.fullscreen_opacity_spinbox.value as u16))));
+                }
+                if tf.cascade_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetCascadeOpacity(tf.cascade_opacity_spinbox.value as u16))));
+                }
+                if tf.grid_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetGridOpacity(tf.grid_opacity_spinbox.value as u16))));
+                }
+                if tf.floating_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetFloatingOpacity(tf.floating_opacity_spinbox.value as u16))));
+                }
+                if tf.pinned_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetPinnedOpacity(tf.pinned_opacity_spinbox.value as u16))));
+                }
+                if tf.popup_opacity_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::Windows(pages::interface::WindowsMessage::SetPopupOpacity(tf.popup_opacity_spinbox.value as u16))));
+                }
             }
             Page::Input => {
                 if self.app.input.rate_spinbox.take_change() {

@@ -122,6 +122,18 @@ pub struct WindowsState {
     pub side_panel_border_opacity_spinbox: Spinbox,
     pub blur_enabled: bool,
     pub blur_toggle: Toggle,
+    pub fullscreen_opacity: f32,
+    pub fullscreen_opacity_spinbox: Spinbox,
+    pub cascade_opacity: f32,
+    pub cascade_opacity_spinbox: Spinbox,
+    pub grid_opacity: f32,
+    pub grid_opacity_spinbox: Spinbox,
+    pub floating_opacity: f32,
+    pub floating_opacity_spinbox: Spinbox,
+    pub pinned_opacity: f32,
+    pub pinned_opacity_spinbox: Spinbox,
+    pub popup_opacity: f32,
+    pub popup_opacity_spinbox: Spinbox,
 }
 
 impl Default for WindowsState {
@@ -175,6 +187,18 @@ impl Default for WindowsState {
             side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_config(CONFIG_PATH, "side_panel_border_opacity"),
             blur_enabled: true,
             blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
+            fullscreen_opacity: 0.95,
+            fullscreen_opacity_spinbox: Spinbox::new(95, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "fullscreen_opacity"),
+            cascade_opacity: 0.05,
+            cascade_opacity_spinbox: Spinbox::new(5, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "cascade_opacity"),
+            grid_opacity: 0.05,
+            grid_opacity_spinbox: Spinbox::new(5, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "grid_opacity"),
+            floating_opacity: 0.9,
+            floating_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "floating_opacity"),
+            pinned_opacity: 0.05,
+            pinned_opacity_spinbox: Spinbox::new(5, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "pinned_opacity"),
+            popup_opacity: 0.20,
+            popup_opacity_spinbox: Spinbox::new(20, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "popup_opacity"),
         }
     }
 }
@@ -194,6 +218,12 @@ pub enum WindowsMessage {
     SetSidePanelWidth(u16),
     SetSidePanelBorderGap(u16),
     SetSidePanelBorderOpacity(u16),
+    SetFullscreenOpacity(u16),
+    SetCascadeOpacity(u16),
+    SetGridOpacity(u16),
+    SetFloatingOpacity(u16),
+    SetPinnedOpacity(u16),
+    SetPopupOpacity(u16),
     ToggleBlur,
     Refreshed(WindowsState),
 }
@@ -993,6 +1023,13 @@ pub fn read_windows_config() -> WindowsState {
     let border_blur = parse_bool_from(&content, "border_blur", false);
     let blur_enabled = window_blur || border_blur;
 
+    let fullscreen_op = parse_f32_from(&content, "fullscreen_opacity", 0.95);
+    let cascade_op = parse_f32_from(&content, "cascade_opacity", 0.05);
+    let grid_op = parse_f32_from(&content, "grid_opacity", 0.05);
+    let floating_op = parse_f32_from(&content, "floating_opacity", 0.9);
+    let pinned_op = parse_f32_from(&content, "pinned_opacity", 0.05);
+    let popup_op = parse_f32_from(&content, "popup_opacity", 0.20);
+
     WindowsState {
         fullscreen_border_width: fs,
         cascade_border_width: ca,
@@ -1022,6 +1059,18 @@ pub fn read_windows_config() -> WindowsState {
         side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5).with_config(CONFIG_PATH, "pinned_border_opacity"),
         blur_enabled,
         blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
+        fullscreen_opacity: fullscreen_op,
+        fullscreen_opacity_spinbox: Spinbox::new((fullscreen_op * 100.0).round() as i32, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "fullscreen_opacity"),
+        cascade_opacity: cascade_op,
+        cascade_opacity_spinbox: Spinbox::new((cascade_op * 100.0).round() as i32, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "cascade_opacity"),
+        grid_opacity: grid_op,
+        grid_opacity_spinbox: Spinbox::new((grid_op * 100.0).round() as i32, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "grid_opacity"),
+        floating_opacity: floating_op,
+        floating_opacity_spinbox: Spinbox::new((floating_op * 100.0).round() as i32, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "floating_opacity"),
+        pinned_opacity: pinned_op,
+        pinned_opacity_spinbox: Spinbox::new((pinned_op * 100.0).round() as i32, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "pinned_opacity"),
+        popup_opacity: popup_op,
+        popup_opacity_spinbox: Spinbox::new((popup_op * 100.0).round() as i32, 0, 100, 5).with_label("Window Opacity").with_unit("%").with_config(CONFIG_PATH, "popup_opacity"),
     }
 }
 
@@ -3025,6 +3074,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.windows.spinboxes[0].set_label("Border Width");
             subsec.widget_full(&mut state.windows.spinboxes[0], 44.0, ctx);
             subsec.spacing(8.0);
+            state.windows.fullscreen_opacity_spinbox.set_label("Window Opacity");
+            subsec.widget_full(&mut state.windows.fullscreen_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
 
         // 3. Cascade Section
@@ -3042,6 +3094,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.windows.top_gap_spinbox.set_label("Top Gap");
             subsec.widget_full(&mut state.windows.top_gap_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
+            state.windows.cascade_opacity_spinbox.set_label("Window Opacity");
+            subsec.widget_full(&mut state.windows.cascade_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
 
         // 4. Grid Section
@@ -3053,6 +3108,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.windows.grid_gap_spinbox.set_label("Gap");
             subsec.widget_full(&mut state.windows.grid_gap_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
+            state.windows.grid_opacity_spinbox.set_label("Window Opacity");
+            subsec.widget_full(&mut state.windows.grid_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
         });
 
         // 5. Floating Section
@@ -3060,6 +3118,9 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.windows.spinboxes[3].set_label("Border Width");
             subsec.widget_full(&mut state.windows.spinboxes[3], 44.0, ctx);
+            subsec.spacing(8.0);
+            state.windows.floating_opacity_spinbox.set_label("Window Opacity");
+            subsec.widget_full(&mut state.windows.floating_opacity_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
 
@@ -3095,6 +3156,17 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.spacing(8.0);
             state.windows.side_panel_border_opacity_spinbox.set_label("Border Opacity");
             subsec.widget_full(&mut state.windows.side_panel_border_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+            state.windows.pinned_opacity_spinbox.set_label("Window Opacity");
+            subsec.widget_full(&mut state.windows.pinned_opacity_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+        });
+
+        // 8b. Popup Section
+        sec.add_section("Popup", false, |subsec| {
+            subsec.spacing(8.0);
+            state.windows.popup_opacity_spinbox.set_label("Window Opacity");
+            subsec.widget_full(&mut state.windows.popup_opacity_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
 
@@ -3979,6 +4051,54 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             write_config_value("pinned_border_opacity", &val.to_string());
             send_ipc_command(&format!("layout pinned_border_opacity {}", val));
         }
+        WindowsMessage::SetFullscreenOpacity(v) => {
+            let val = v.min(100);
+            state.fullscreen_opacity = val as f32 / 100.0;
+            state.fullscreen_opacity_spinbox.value = val as i32;
+            let val_str = format!("{:.2}", val as f32 / 100.0);
+            write_config_value("fullscreen_opacity", &val_str);
+            send_ipc_command("reload");
+        }
+        WindowsMessage::SetCascadeOpacity(v) => {
+            let val = v.min(100);
+            state.cascade_opacity = val as f32 / 100.0;
+            state.cascade_opacity_spinbox.value = val as i32;
+            let val_str = format!("{:.2}", val as f32 / 100.0);
+            write_config_value("cascade_opacity", &val_str);
+            send_ipc_command("reload");
+        }
+        WindowsMessage::SetGridOpacity(v) => {
+            let val = v.min(100);
+            state.grid_opacity = val as f32 / 100.0;
+            state.grid_opacity_spinbox.value = val as i32;
+            let val_str = format!("{:.2}", val as f32 / 100.0);
+            write_config_value("grid_opacity", &val_str);
+            send_ipc_command("reload");
+        }
+        WindowsMessage::SetFloatingOpacity(v) => {
+            let val = v.min(100);
+            state.floating_opacity = val as f32 / 100.0;
+            state.floating_opacity_spinbox.value = val as i32;
+            let val_str = format!("{:.2}", val as f32 / 100.0);
+            write_config_value("floating_opacity", &val_str);
+            send_ipc_command("reload");
+        }
+        WindowsMessage::SetPinnedOpacity(v) => {
+            let val = v.min(100);
+            state.pinned_opacity = val as f32 / 100.0;
+            state.pinned_opacity_spinbox.value = val as i32;
+            let val_str = format!("{:.2}", val as f32 / 100.0);
+            write_config_value("pinned_opacity", &val_str);
+            send_ipc_command("reload");
+        }
+        WindowsMessage::SetPopupOpacity(v) => {
+            let val = v.min(100);
+            state.popup_opacity = val as f32 / 100.0;
+            state.popup_opacity_spinbox.value = val as i32;
+            let val_str = format!("{:.2}", val as f32 / 100.0);
+            write_config_value("popup_opacity", &val_str);
+            send_ipc_command("reload");
+        }
 
         WindowsMessage::ToggleBlur => {
             state.blur_enabled = !state.blur_enabled;
@@ -4003,6 +4123,12 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             let side_panel_width_hover = state.side_panel_width_spinbox.hovered();
             let side_panel_border_gap_hover = state.side_panel_border_gap_spinbox.hovered();
             let side_panel_border_opacity_hover = state.side_panel_border_opacity_spinbox.hovered();
+            let fullscreen_opacity_hover = state.fullscreen_opacity_spinbox.hovered();
+            let cascade_opacity_hover = state.cascade_opacity_spinbox.hovered();
+            let grid_opacity_hover = state.grid_opacity_spinbox.hovered();
+            let floating_opacity_hover = state.floating_opacity_spinbox.hovered();
+            let pinned_opacity_hover = state.pinned_opacity_spinbox.hovered();
+            let popup_opacity_hover = state.popup_opacity_spinbox.hovered();
 
             *state = new;
 
@@ -4024,6 +4150,12 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             state.side_panel_width_spinbox.set_hovered(side_panel_width_hover);
             state.side_panel_border_gap_spinbox.set_hovered(side_panel_border_gap_hover);
             state.side_panel_border_opacity_spinbox.set_hovered(side_panel_border_opacity_hover);
+            state.fullscreen_opacity_spinbox.set_hovered(fullscreen_opacity_hover);
+            state.cascade_opacity_spinbox.set_hovered(cascade_opacity_hover);
+            state.grid_opacity_spinbox.set_hovered(grid_opacity_hover);
+            state.floating_opacity_spinbox.set_hovered(floating_opacity_hover);
+            state.pinned_opacity_spinbox.set_hovered(pinned_opacity_hover);
+            state.popup_opacity_spinbox.set_hovered(popup_opacity_hover);
         }
     }
 }

@@ -234,6 +234,19 @@ impl SystemInterface {
         self.app.interface.windows.side_panel_border_opacity_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.windows.side_panel_border_opacity_spinbox.set_parent(None, &mut self.ui_context);
 
+        self.app.interface.windows.fullscreen_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.fullscreen_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.cascade_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.cascade_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.grid_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.grid_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.floating_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.floating_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.pinned_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.pinned_opacity_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.windows.popup_opacity_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.windows.popup_opacity_spinbox.set_parent(None, &mut self.ui_context);
+
         use cce_ui::widget::focus::link_parent_child;
         match self.app.current_page {
             Page::Accounts => {
@@ -451,6 +464,22 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_width_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_border_gap_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.side_panel_border_opacity_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.pinned_opacity_spinbox, &mut self.ui_context);
+
+                // Popup
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.popup_opacity_spinbox, &mut self.ui_context);
+
+                // Fullscreen
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.fullscreen_opacity_spinbox, &mut self.ui_context);
+
+                // Cascade
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.cascade_opacity_spinbox, &mut self.ui_context);
+
+                // Grid
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.grid_opacity_spinbox, &mut self.ui_context);
+
+                // Floating
+                link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.floating_opacity_spinbox, &mut self.ui_context);
 
                 // Effects
                 link_parent_child(&mut self.page_sec_containers[9], &mut self.app.interface.windows.blur_toggle, &mut self.ui_context);
