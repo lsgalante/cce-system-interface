@@ -411,6 +411,10 @@ impl cce_ui::engine::Application for SystemInterface {
         &self.text_items
     }
 
+    fn ui_context(&self) -> Option<&cce_ui::context::UiContext> {
+        Some(&self.ui_context)
+    }
+
     fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
         cce_ui::layout::render_popovers(pc, &self.ui_context);
 
