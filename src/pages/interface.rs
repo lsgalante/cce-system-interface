@@ -232,6 +232,11 @@ pub enum WindowsMessage {
 pub struct InterfaceState {
     pub windows: WindowsState,
     pub desktop_background_color: [u8; 3],
+    pub desktop_grid_color: [u8; 4],
+    pub desktop_grid_scale: u16,
+    pub desktop_grid_scale_spinbox: Spinbox,
+    pub desktop_line_width: u16,
+    pub desktop_line_width_spinbox: Spinbox,
     pub high_color: [u8; 3],
     pub disabled_color: [u8; 3],
     pub visual_guides_color: [u8; 3],
@@ -386,6 +391,11 @@ impl Default for InterfaceState {
         Self {
             windows: WindowsState::default(),
             desktop_background_color: [0, 0, 0],
+            desktop_grid_color: [255, 255, 255, 13],
+            desktop_grid_scale: 100,
+            desktop_grid_scale_spinbox: Spinbox::new(100, 5, 1000, 5).with_label("Grid Scale").with_config(CONFIG_PATH, "desktop_grid_scale"),
+            desktop_line_width: 1,
+            desktop_line_width_spinbox: Spinbox::new(1, 1, 20, 1).with_label("Line Width").with_unit("px").with_config(CONFIG_PATH, "desktop_line_width"),
             high_color: [0x3e, 0x3e, 0x3e],
             disabled_color: [0x55, 0x55, 0x55],
             visual_guides_color: [0xff, 0x8c, 0x00],
@@ -410,7 +420,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([0x55, 0x55, 0x55]).with_label("Disabled").with_config(CONFIG_PATH, "disabled_color"), // 3: Status - Disabled
                 ColorSelector::new([116, 116, 128]).with_label("Slider Track").with_config(CONFIG_PATH, "slider_track_color"), // 4: Controls - Slider Track
                 ColorSelector::new([124, 124, 137]).with_label("Borders").with_config(CONFIG_PATH, "color_borders_color"), // 6: Controls - Borders
-                ColorSelector::new([0, 0, 0]).with_label("Color").with_config(CONFIG_PATH, "desktop_background_color"), // 7: Surfaces - Desktop Background Color
+                ColorSelector::new([0, 0, 0]).with_label("Background Color").with_config(CONFIG_PATH, "desktop_background_color"), // 7: Surfaces - Desktop Background Color
                 ColorSelector::new([0xcc, 0xcc, 0xd8]).with_label("Normal").with_config(CONFIG_PATH, "status_normal_color"), // 8: Status - Normal
                 ColorSelector::new([90, 90, 101]).with_label("Background").with_config(CONFIG_PATH, "paginator_sidebar_color"), // 9: Controls - Paginator Sidebar (now Background)
                 ColorSelector::new([255, 255, 255]).with_label("Primary Highlight").with_config(CONFIG_PATH, "primary_highlight_color"), // 10: Controls - Primary Highlight
@@ -427,6 +437,7 @@ impl Default for InterfaceState {
                 ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background").with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
                 ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight").with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
                 ColorSelector::new([0x15, 0x15, 0x20]).with_label("Background Color").with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
+                ColorSelector::new_rgba([255, 255, 255, 13]).with_label("Grid Color").with_config(CONFIG_PATH, "desktop_grid_color"), // 24: Surfaces - Desktop Grid Color
             ],
             paginator_tab_padding_x: 10,
             paginator_tab_padding_y: 14,
@@ -567,6 +578,9 @@ impl Default for InterfaceState {
 pub enum InterfaceMessage {
     Windows(WindowsMessage),
     SetDesktopBackground([u8; 3]),
+    SetDesktopGridColor([u8; 4]),
+    SetDesktopGridScale(u16),
+    SetDesktopLineWidth(u16),
     SetHighColor([u8; 3]),
     SetDisabledColor([u8; 3]),
     SetVisualGuidesColor([u8; 3]),
@@ -778,9 +792,18 @@ pub fn read_interface_config() -> InterfaceState {
     let status_padding = parse_u16_from(&content, "status_padding", 8);
     let status_module_spacing = parse_u16_from(&content, "status_module_spacing", 8);
     
+    let desktop_grid_color = parse_surfaces_rgba_color(&content, "desktop_grid_color", [255, 255, 255, 13]);
+    let desktop_grid_scale = parse_surfaces_u16(&content, "desktop_grid_scale", 100);
+    let desktop_line_width = parse_surfaces_u16(&content, "desktop_line_width", 1);
+    
     InterfaceState {
         windows: read_windows_config(),
         desktop_background_color: bg,
+        desktop_grid_color,
+        desktop_grid_scale,
+        desktop_grid_scale_spinbox: Spinbox::new(desktop_grid_scale as i32, 5, 1000, 5).with_label("Grid Scale").with_config(CONFIG_PATH, "desktop_grid_scale"),
+        desktop_line_width,
+        desktop_line_width_spinbox: Spinbox::new(desktop_line_width as i32, 1, 20, 1).with_label("Line Width").with_unit("px").with_config(CONFIG_PATH, "desktop_line_width"),
         high_color: border,
         disabled_color: disabled,
         visual_guides_color: visual_guides,
@@ -805,7 +828,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(disabled).with_label("Disabled").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "disabled_color"), // 3: Status - Disabled
             ColorSelector::new(slider_track).with_label("Slider Track").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "slider_track_color"), // 4: Controls - Slider Track
             ColorSelector::new(color_borders).with_label("Borders").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "color_borders_color"), // 6: Controls - Borders
-            ColorSelector::new(bg).with_label("Low Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_background_color"), // 7: Layout - Low Color
+            ColorSelector::new(bg).with_label("Background Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_background_color"), // 7: Layout - Low Color
             ColorSelector::new(normal).with_label("Normal").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_normal_color"), // 8: Status - Normal
             ColorSelector::new(paginator_sidebar).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "paginator_sidebar_color"), // 9: Controls - Paginator Sidebar (now Background)
             ColorSelector::new(primary_highlight).with_label("Primary Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "primary_highlight_color"), // 10: Controls - Primary Highlight
@@ -822,6 +845,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
             ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
             ColorSelector::new(status_box_background_color).with_label("Background Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
+            ColorSelector::new_rgba(desktop_grid_color).with_label("Grid Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_grid_color"), // 24: Surfaces - Desktop Grid Color
         ],
         paginator_tab_padding_x,
         paginator_tab_padding_y,
@@ -1778,6 +1802,22 @@ fn apply_desktop_background(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
     write_surfaces_config_value("desktop_background", &hex);
     send_ipc_command(&format!("layout desktop_background #{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]));
+}
+
+fn apply_desktop_grid_color(rgba: [u8; 4]) {
+    let hex = format!("\"#{:02x}{:02x}{:02x}{:02x}\"", rgba[0], rgba[1], rgba[2], rgba[3]);
+    write_surfaces_config_value("desktop_grid_color", &hex);
+    send_ipc_command(&format!("layout desktop_grid_color #{:02x}{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2], rgba[3]));
+}
+
+fn apply_desktop_grid_scale(val: u16) {
+    write_surfaces_config_value("desktop_grid_scale", &val.to_string());
+    send_ipc_command(&format!("layout desktop_grid_scale {}", val));
+}
+
+fn apply_desktop_line_width(val: u16) {
+    write_surfaces_config_value("desktop_line_width", &val.to_string());
+    send_ipc_command(&format!("layout desktop_line_width {}", val));
 }
 
 fn apply_border_color(rgb: [u8; 3]) {
@@ -2840,11 +2880,25 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         });
         sec.spacing(12.0);
 
-        // Desktop Background Section
-        sec.add_section("Desktop Background", false, |subsec| {
+        // Desktop Section
+        sec.add_section("Desktop", false, |subsec| {
             subsec.spacing(8.0);
             state.color_selectors[6].color = state.desktop_background_color;
             subsec.widget_full(&mut state.color_selectors[6], 40.0, ctx);
+            subsec.spacing(8.0);
+
+            let grid_color_rgba = state.desktop_grid_color;
+            state.color_selectors[23].color = [grid_color_rgba[0], grid_color_rgba[1], grid_color_rgba[2]];
+            state.color_selectors[23].alpha = grid_color_rgba[3];
+            subsec.widget_full(&mut state.color_selectors[23], 40.0, ctx);
+            subsec.spacing(8.0);
+
+            state.desktop_grid_scale_spinbox.value = state.desktop_grid_scale as i32;
+            subsec.widget_full(&mut state.desktop_grid_scale_spinbox, 44.0, ctx);
+            subsec.spacing(8.0);
+
+            state.desktop_line_width_spinbox.value = state.desktop_line_width as i32;
+            subsec.widget_full(&mut state.desktop_line_width_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -3212,6 +3266,18 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::SetDesktopBackground(rgb) => {
             state.desktop_background_color = rgb;
             apply_desktop_background(rgb);
+        }
+        InterfaceMessage::SetDesktopGridColor(rgba) => {
+            state.desktop_grid_color = rgba;
+            apply_desktop_grid_color(rgba);
+        }
+        InterfaceMessage::SetDesktopGridScale(val) => {
+            state.desktop_grid_scale = val;
+            apply_desktop_grid_scale(val);
+        }
+        InterfaceMessage::SetDesktopLineWidth(val) => {
+            state.desktop_line_width = val;
+            apply_desktop_line_width(val);
         }
         InterfaceMessage::SetPageLowColor(rgb) => {
             state.page_low_color = rgb;
@@ -4237,6 +4303,14 @@ fn parse_surfaces_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
     let val = parse_json(content);
     if let Some(s) = val["surfaces"].get(key).and_then(|v| v.as_str()) {
         return parse_hex(s);
+    }
+    default
+}
+
+fn parse_surfaces_rgba_color(content: &str, key: &str, default: [u8; 4]) -> [u8; 4] {
+    let val = parse_json(content);
+    if let Some(s) = val["surfaces"].get(key).and_then(|v| v.as_str()) {
+        return parse_hex_rgba(s);
     }
     default
 }

@@ -84,6 +84,10 @@ impl SystemInterface {
         self.app.interface.graph_gap_width_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.page_margin_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.page_margin_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.desktop_grid_scale_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.desktop_grid_scale_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.desktop_line_width_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.desktop_line_width_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.grid_min_col_width_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.grid_min_col_width_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.spinbox_height_spinbox.clear_children(&mut self.ui_context);
@@ -392,8 +396,11 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_corner_radius_spinbox, &mut self.ui_context);
                 // (Popover child widgets)
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[15], &mut self.ui_context);
-                // (Desktop Background child widgets)
+                // (Desktop child widgets)
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[6], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[23], &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.desktop_grid_scale_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.desktop_line_width_spinbox, &mut self.ui_context);
                 
                 // Section 7: Fonts (parent of System Fonts and Program Fonts)
                 // (System Fonts)

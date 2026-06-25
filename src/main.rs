@@ -547,7 +547,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 22 => self.app.interface.status_box_background_color,
                 _ => self.app.interface.desktop_background_color,
             };
-            if i == 20 || i == 21 {
+            if i == 20 || i == 21 || i == 23 {
                 let (state_rgb, state_alpha) = if i == 20 {
                     (
                         [
@@ -557,7 +557,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         ],
                         self.app.interface.scrollinglist_entry_bg_color[3],
                     )
-                } else {
+                } else if i == 21 {
                     (
                         [
                             self.app.interface.scrollinglist_entry_highlight_color[0],
@@ -566,12 +566,23 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                         ],
                         self.app.interface.scrollinglist_entry_highlight_color[3],
                     )
+                } else {
+                    (
+                        [
+                            self.app.interface.desktop_grid_color[0],
+                            self.app.interface.desktop_grid_color[1],
+                            self.app.interface.desktop_grid_color[2],
+                        ],
+                        self.app.interface.desktop_grid_color[3],
+                    )
                 };
                 if cp.color != state_rgb || cp.alpha != state_alpha {
                     color_actions.push(AppAction::Interface(if i == 20 {
                         pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
-                    } else {
+                    } else if i == 21 {
                         pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
+                    } else {
+                        pages::interface::InterfaceMessage::SetDesktopGridColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
                     }));
                     color_changed = true;
                 }

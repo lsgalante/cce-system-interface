@@ -243,12 +243,19 @@ impl SystemInterface {
                             20 => pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                             21 => pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                             22 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
+                            23 => pages::interface::InterfaceMessage::SetDesktopGridColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
                             _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
                         }));
                     }
                 }
                 if self.app.interface.notification_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetNotificationOpacity(self.app.interface.notification_opacity_spinbox.value as f32 / 100.0)));
+                }
+                if self.app.interface.desktop_grid_scale_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetDesktopGridScale(self.app.interface.desktop_grid_scale_spinbox.value as u16)));
+                }
+                if self.app.interface.desktop_line_width_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetDesktopLineWidth(self.app.interface.desktop_line_width_spinbox.value as u16)));
                 }
                 if self.app.interface.menubar_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetMenubarOpacity(self.app.interface.menubar_opacity_spinbox.value as f32 / 100.0)));
