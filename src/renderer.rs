@@ -700,6 +700,16 @@ impl SystemInterface {
             }
         }
 
+        let page_root = &mut self.pages[page_idx];
+        if page_root.scroll_bar.dragging {
+            self.scroll_y = page_root.scroll_bar.scroll_y;
+        } else {
+            page_root.scroll_y = self.scroll_y;
+            page_root.scroll_bar.scroll_y = self.scroll_y;
+        }
+        page_root.content_h = max_y;
+        page_root.scroll_bar.update(self.scroll_y, max_y, lch);
+
         let scroll_offset_y = self.scroll_y;
 
         for (c, x, y, w, h, r, corners) in &pc.rects {
