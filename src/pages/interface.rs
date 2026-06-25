@@ -1740,18 +1740,20 @@ fn send_ipc_command(cmd: &str) {
 }
 
 fn cce_graph_reload() {
-    let is_running = std::process::Command::new("pgrep")
-        .args(["-f", "cce-graph"])
-        .output()
-        .map(|o| !o.stdout.is_empty())
-        .unwrap_or(false);
-    if is_running {
-        let _ = std::process::Command::new("pkill")
+    std::thread::spawn(|| {
+        let is_running = std::process::Command::new("pgrep")
             .args(["-f", "cce-graph"])
-            .status();
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        send_ipc_command("spawn cce-graph");
-    }
+            .output()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false);
+        if is_running {
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", "cce-graph"])
+                .status();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            send_ipc_command("spawn cce-graph");
+        }
+    });
 }
 
 fn apply_desktop_background(rgb: [u8; 3]) {
@@ -1773,11 +1775,13 @@ fn apply_disabled_color(rgb: [u8; 3]) {
 }
 
 pub fn status_interface_reload() {
-    let _ = std::process::Command::new("pkill")
-        .args(["-f", "cce-status-interface"])
-        .status();
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    send_ipc_command("spawn cce-status-interface");
+    std::thread::spawn(|| {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "cce-status-interface"])
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        send_ipc_command("spawn cce-status-interface");
+    });
 }
 
 fn apply_visual_guides_color(rgb: [u8; 3]) {

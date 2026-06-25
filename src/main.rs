@@ -6,14 +6,22 @@ use cce_system_interface::pages::{self, Page};
 mod input_handler;
 mod renderer;
 
+#[derive(Hash, PartialEq, Eq, Clone)]
+struct BufferCacheKey {
+    text: String,
+    size_milli: u32,
+    font: Option<String>,
+    sans_fallback: String,
+    serif_fallback: String,
+    mono_fallback: String,
+}
+
+std::thread_local! {
+    static BUFFER_CACHE: std::cell::RefCell<std::collections::HashMap<BufferCacheKey, Buffer>> = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
-    let scale = cce_ui::scale::scale_factor();
-    let physical_size = size * scale;
-    let metrics = Metrics::new(physical_size, physical_size * 1.4);
-    let mut buf = Buffer::new(fs, metrics);
-    buf.set_text(fs, text, Attrs::new(), glyphon::Shaping::Advanced);
-    buf.shape_until_scroll(fs, true);
-    buf
+    make_text_buffer_with_font(fs, text, size, None, "", "", "")
 }
 
 fn find_cased_family(fs: &FontSystem, name: &str) -> Option<String> {
@@ -50,6 +58,25 @@ fn make_text_buffer_with_font(
     }
 
     let physical_size = font_size * scale;
+    let size_key = (physical_size * 1000.0).round() as u32;
+
+    let key = BufferCacheKey {
+        text: text.to_string(),
+        size_milli: size_key,
+        font: family_name.clone(),
+        sans_fallback: sans_fallback.to_string(),
+        serif_fallback: serif_fallback.to_string(),
+        mono_fallback: mono_fallback.to_string(),
+    };
+
+    let cached = BUFFER_CACHE.with(|cache| {
+        cache.borrow().get(&key).cloned()
+    });
+
+    if let Some(buf) = cached {
+        return buf;
+    }
+
     let metrics = Metrics::new(physical_size, physical_size * 1.4);
     let mut buf = Buffer::new(fs, metrics);
     let mut attrs = Attrs::new();
@@ -103,6 +130,15 @@ fn make_text_buffer_with_font(
 
     buf.set_text(fs, text, attrs, glyphon::Shaping::Advanced);
     buf.shape_until_scroll(fs, true);
+
+    BUFFER_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() > 3000 {
+            cache.clear();
+        }
+        cache.insert(key, buf.clone());
+    });
+
     buf
 }
 

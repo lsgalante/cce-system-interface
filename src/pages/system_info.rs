@@ -1020,11 +1020,13 @@ fn write_status_underline(val: bool) {
 }
 
 fn status_interface_reload() {
-    let _ = std::process::Command::new("pkill")
-        .args(["-f", "cce-status-interface"])
-        .status();
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    send_ipc_command("spawn cce-status-interface");
+    std::thread::spawn(|| {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "cce-status-interface"])
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        send_ipc_command("spawn cce-status-interface");
+    });
 }
 
 pub async fn fetch_status_state() -> StatusData {
