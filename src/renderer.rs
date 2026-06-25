@@ -137,8 +137,8 @@ impl SystemInterface {
         self.app.interface.button_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.notification_opacity_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.notification_opacity_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.interface.window_corner_radius_spinbox.clear_children(&mut self.ui_context);
-        self.app.interface.window_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.backplate_corner_radius_spinbox.clear_children(&mut self.ui_context);
+        self.app.interface.backplate_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.custom_multicontrol.clear_children(&mut self.ui_context);
         self.app.interface.custom_multicontrol.set_parent(None, &mut self.ui_context);
         self.app.interface.status_box_corner_radius_spinbox.clear_children(&mut self.ui_context);
@@ -381,7 +381,7 @@ impl SystemInterface {
                 
                 // Section 6: Surfaces
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[17], &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.window_corner_radius_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.backplate_corner_radius_spinbox, &mut self.ui_context);
                 // (Plate child widgets)
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.color_selectors[0], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.interface.plate_padding_spinbox, &mut self.ui_context);
@@ -608,12 +608,12 @@ impl SystemInterface {
 
         // Update root window size, background color, opacity, corner radius, and children
         self.root_window.set_rect(0.0, 0.0, sw / s, sh / s);
-        let win_r = self.app.interface.window_color[0] as f32 / 255.0;
-        let win_g = self.app.interface.window_color[1] as f32 / 255.0;
-        let win_b = self.app.interface.window_color[2] as f32 / 255.0;
+        let win_r = self.app.interface.backplate_color[0] as f32 / 255.0;
+        let win_g = self.app.interface.backplate_color[1] as f32 / 255.0;
+        let win_b = self.app.interface.backplate_color[2] as f32 / 255.0;
         let win_a = 1.0f32;
         self.root_window.background_color = Some(cce_ui::color::to_linear([win_r, win_g, win_b, win_a]));
-        self.root_window.radius = self.app.interface.window_corner_radius as f32;
+        self.root_window.radius = self.app.interface.backplate_corner_radius as f32;
         self.root_window.clear_children(&mut self.ui_context);
         self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);

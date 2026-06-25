@@ -204,7 +204,7 @@ struct SystemInterface {
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
     page_sec_containers: Vec<cce_ui::widget::Container>,
-    root_window: cce_ui::widget::Window,
+    root_window: cce_ui::widget::Backplate,
     menubar: cce_ui::widget::Paginator,
     switcher: cce_ui::widget::Switcher,
     pages: Vec<cce_ui::widget::Page>,
@@ -251,9 +251,9 @@ impl cce_ui::engine::Application for SystemInterface {
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
 
-        let win_color = app_state.interface.window_color;
+        let win_color = app_state.interface.backplate_color;
         let win_opacity = 1.0f32;
-        let win_radius = app_state.interface.window_corner_radius;
+        let win_radius = app_state.interface.backplate_corner_radius;
 
         let mut font_system = FontSystem::new();
         font_system.db_mut().load_fonts_dir("/home/lsgalante/Dropbox/Fonts");
@@ -304,7 +304,7 @@ impl cce_ui::engine::Application for SystemInterface {
             audio_source_dragging: None,
             display_brightness_dragging: false,
             page_sec_containers: Vec::new(),
-            root_window: cce_ui::widget::Window::new(0.0, 0.0, 820.0, 680.0)
+            root_window: cce_ui::widget::Backplate::new(0.0, 0.0, 820.0, 680.0)
                 .with_background([
                     win_color[0] as f32 / 255.0,
                     win_color[1] as f32 / 255.0,
@@ -541,7 +541,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 14 => self.app.interface.breadcrumb_bg_color,
                 15 => self.app.interface.popover_bg_color,
                 16 => self.app.interface.notification_bg_color,
-                17 => self.app.interface.window_color,
+                17 => self.app.interface.backplate_color,
                 18 => self.app.interface.page_color,
                 19 => self.app.interface.layer_color,
                 22 => self.app.interface.status_box_background_color,
@@ -594,7 +594,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                     14 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                     15 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                     16 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
-                    17 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                    17 => pages::interface::InterfaceMessage::SetBackplateColor(cp.color),
                     18 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                     19 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                     22 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),

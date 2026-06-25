@@ -237,7 +237,7 @@ impl SystemInterface {
                             14 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
                             15 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
                             16 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
-                            17 => pages::interface::InterfaceMessage::SetWindowColor(cp.color),
+                            17 => pages::interface::InterfaceMessage::SetBackplateColor(cp.color),
                             18 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
                             19 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
                             20 => pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha]),
@@ -321,6 +321,9 @@ impl SystemInterface {
                 }
                 if self.app.interface.plate_corner_radius_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPlateCornerRadius(self.app.interface.plate_corner_radius_spinbox.value as u16)));
+                }
+                if self.app.interface.backplate_corner_radius_spinbox.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetBackplateCornerRadius(self.app.interface.backplate_corner_radius_spinbox.value as u16)));
                 }
                 if self.app.interface.page_opacity_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetPageOpacity(self.app.interface.page_opacity_spinbox.value as f32 / 100.0)));

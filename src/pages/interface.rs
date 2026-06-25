@@ -255,9 +255,9 @@ pub struct InterfaceState {
     pub notification_bg_color: [u8; 3],
     pub notification_opacity: f32,
     pub notification_opacity_spinbox: Spinbox,
-    pub window_color: [u8; 3],
-    pub window_corner_radius: u16,
-    pub window_corner_radius_spinbox: Spinbox,
+    pub backplate_color: [u8; 3],
+    pub backplate_corner_radius: u16,
+    pub backplate_corner_radius_spinbox: Spinbox,
     pub paginator_tab_padding_x: u16,
     pub paginator_tab_padding_y: u16,
     pub button_padding: u16,
@@ -421,7 +421,7 @@ impl Default for InterfaceState {
                 ColorSelector::new([81, 81, 97]).with_label("Background").with_config(CONFIG_PATH, "breadcrumb_bg_color"), // 15: Breadcrumb - Background
                 ColorSelector::new([81, 81, 97]).with_label("Background").with_config(CONFIG_PATH, "popover_bg_color"), // 16: Popover - Background
                 ColorSelector::new([0x08, 0x08, 0x0c]).with_label("Background").with_config(CONFIG_PATH, "notification_bg_color"), // 17: Notification - Background
-                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color").with_config(CONFIG_PATH, "window_color"), // 18: Surfaces - Window Color
+                ColorSelector::new([0x0a, 0x1a, 0x0e]).with_label("Color").with_config(CONFIG_PATH, "backplate_color"), // 18: Surfaces - Backplate Color
                 ColorSelector::new([0, 0, 0]).with_label("Page Color").with_config(CONFIG_PATH, "page_color"), // 19: Containers - Page Color
                 ColorSelector::new([0, 0, 0]).with_label("Layer Color").with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
                 ColorSelector::new_rgba([255, 255, 255, 10]).with_label("Entry Background").with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
@@ -548,9 +548,9 @@ impl Default for InterfaceState {
             notification_bg_color: [0x08, 0x08, 0x0c],
             notification_opacity: 0.9,
             notification_opacity_spinbox: Spinbox::new(90, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "notification_opacity"),
-            window_color: [0x0a, 0x1a, 0x0e],
-            window_corner_radius: 12,
-            window_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "window_corner_radius"),
+            backplate_color: [0x0a, 0x1a, 0x0e],
+            backplate_corner_radius: 12,
+            backplate_corner_radius_spinbox: Spinbox::new(12, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "backplate_corner_radius"),
             status_box_background_color: [0x15, 0x15, 0x20],
             status_box_corner_radius: 4,
             status_box_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "status_box_corner_radius"),
@@ -586,8 +586,8 @@ pub enum InterfaceMessage {
     SetPopoverBgColor([u8; 3]),
     SetNotificationBgColor([u8; 3]),
     SetNotificationOpacity(f32),
-    SetWindowColor([u8; 3]),
-    SetWindowCornerRadius(u16),
+    SetBackplateColor([u8; 3]),
+    SetBackplateCornerRadius(u16),
     SetButtonPadding(u16),
     SetButtonStripSpacing(u16),
     SetSectionPadding(u16),
@@ -771,8 +771,8 @@ pub fn read_interface_config() -> InterfaceState {
     let menubar_opacity = parse_f32_from(&content, "menubar_opacity", 0.90);
     let notification_bg_color = parse_notifications_color(&content, "bg_color", [0x08, 0x08, 0x0c]);
     let notification_opacity = parse_notifications_opacity(&content);
-    let window_color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
-    let window_corner_radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
+    let backplate_color = parse_surfaces_color(&content, "backplate_color", [0x0a, 0x1a, 0x0e]);
+    let backplate_corner_radius = parse_surfaces_u16(&content, "backplate_corner_radius", 12);
     let status_box_background_color = parse_color_from_key(&content, "status_box_background_color", [0x15, 0x15, 0x20]);
     let status_box_corner_radius = parse_u16_from(&content, "status_box_corner_radius", 4);
     let status_padding = parse_u16_from(&content, "status_padding", 8);
@@ -816,7 +816,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(breadcrumb_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "breadcrumb_bg_color"), // 15: Breadcrumb - Background
             ColorSelector::new(popover_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "popover_bg_color"), // 16: Popover - Background
             ColorSelector::new(notification_bg_color).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "notification_bg_color"), // 17: Notification - Background
-            ColorSelector::new(window_color).with_label("Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "window_color"), // 18: Surfaces - Window Color
+            ColorSelector::new(backplate_color).with_label("Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "backplate_color"), // 18: Surfaces - Backplate Color
             ColorSelector::new(page_color).with_label("Page Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "page_color"), // 19: Containers - Page Color
             ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
             ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
@@ -949,9 +949,9 @@ pub fn read_interface_config() -> InterfaceState {
         notification_bg_color,
         notification_opacity,
         notification_opacity_spinbox: Spinbox::new((notification_opacity * 100.0).round() as i32, 0, 100, 5).with_label("Opacity").with_unit("%").with_config(CONFIG_PATH, "notification_opacity"),
-        window_color,
-        window_corner_radius,
-        window_corner_radius_spinbox: Spinbox::new(window_corner_radius as i32, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "window_corner_radius"),
+        backplate_color,
+        backplate_corner_radius,
+        backplate_corner_radius_spinbox: Spinbox::new(backplate_corner_radius as i32, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "backplate_corner_radius"),
         custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
     }
 }
@@ -1925,9 +1925,9 @@ fn apply_notifications_opacity(opacity: f32) {
     send_ipc_command("reload");
 }
 
-fn apply_window_color(rgb: [u8; 3]) {
+fn apply_backplate_color(rgb: [u8; 3]) {
     let hex = format!("\"#{:02x}{:02x}{:02x}\"", rgb[0], rgb[1], rgb[2]);
-    write_surfaces_config_value("window_color", &hex);
+    write_surfaces_config_value("backplate_color", &hex);
     send_ipc_command("reload");
 }
 
@@ -1954,10 +1954,10 @@ fn apply_status_module_spacing(spacing: u16) {
 
 
 
-fn apply_window_corner_radius(radius: u16) {
-    write_surfaces_config_value("window_corner_radius", &radius.to_string());
+fn apply_backplate_corner_radius(radius: u16) {
+    write_surfaces_config_value("backplate_corner_radius", &radius.to_string());
     send_ipc_command("reload");
-    cce_ui::color::set_window_corner_radius(radius as f32);
+    cce_ui::color::set_backplate_corner_radius(radius as f32);
 }
 
 
@@ -2784,13 +2784,13 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     // 6. Surfaces Section
     builder.add_section_with_width(&mut final_pc, cw, "Surfaces", sec_focused.get(6).copied().unwrap_or(false), |sec| {
         sec.spacing(12.0);
-        sec.add_section("Window", false, |subsec| {
+        sec.add_section("Backplate", false, |subsec| {
             subsec.spacing(8.0);
-            state.color_selectors[17].color = state.window_color;
+            state.color_selectors[17].color = state.backplate_color;
             subsec.widget_full(&mut state.color_selectors[17], 40.0, ctx);
             subsec.spacing(8.0);
-            state.window_corner_radius_spinbox.value = state.window_corner_radius as i32;
-            subsec.widget_full(&mut state.window_corner_radius_spinbox, 44.0, ctx);
+            state.backplate_corner_radius_spinbox.value = state.backplate_corner_radius as i32;
+            subsec.widget_full(&mut state.backplate_corner_radius_spinbox, 44.0, ctx);
             subsec.spacing(8.0);
         });
         sec.spacing(12.0);
@@ -3273,15 +3273,15 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.notification_opacity_spinbox.value = (opacity * 100.0).round() as i32;
             apply_notifications_opacity(opacity);
         }
-        InterfaceMessage::SetWindowColor(rgb) => {
-            state.window_color = rgb;
-            apply_window_color(rgb);
+        InterfaceMessage::SetBackplateColor(rgb) => {
+            state.backplate_color = rgb;
+            apply_backplate_color(rgb);
         }
 
-        InterfaceMessage::SetWindowCornerRadius(radius) => {
-            state.window_corner_radius = radius;
-            state.window_corner_radius_spinbox.value = radius as i32;
-            apply_window_corner_radius(radius);
+        InterfaceMessage::SetBackplateCornerRadius(radius) => {
+            state.backplate_corner_radius = radius;
+            state.backplate_corner_radius_spinbox.value = radius as i32;
+            apply_backplate_corner_radius(radius);
         }
         InterfaceMessage::SetStatusBoxBackgroundColor(rgb) => {
             state.status_box_background_color = rgb;
@@ -3578,7 +3578,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
-            let was_wcr_hovered = state.window_corner_radius_spinbox.hovered();
+            let was_wcr_hovered = state.backplate_corner_radius_spinbox.hovered();
             // Preserve typeface fields
             let typeface_loaded = state.typeface_loaded;
             let sans_serif = state.sans_serif.clone();
@@ -3642,7 +3642,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
-            state.window_corner_radius_spinbox.set_hovered(was_wcr_hovered);
+            state.backplate_corner_radius_spinbox.set_hovered(was_wcr_hovered);
             state.status_padding_spinbox.set_hovered(was_sp_pad_hovered);
             state.status_module_spacing_spinbox.set_hovered(was_sp_spc_hovered);
 
@@ -4290,7 +4290,7 @@ mod tests {
         use cce_ui::widget::Element;
         let mut state = InterfaceState::default();
         let mut ctx = cce_ui::context::UiContext::new();
-        let sb = &mut state.window_corner_radius_spinbox;
+        let sb = &mut state.backplate_corner_radius_spinbox;
         sb.set_rect(0.0, 0.0, 100.0, 44.0);
         let res = sb.mouse_input(
             cce_ui::widget::MouseButton::Right,
@@ -5400,27 +5400,27 @@ mod tests {
 
         // 2. Parse opacity/color when missing (should return defaults)
         let content = fs::read_to_string(path_str).unwrap();
-        let color = parse_surfaces_color(&content, "window_color", [0x0a, 0x1a, 0x0e]);
+        let color = parse_surfaces_color(&content, "backplate_color", [0x0a, 0x1a, 0x0e]);
         assert_eq!(color, [0x0a, 0x1a, 0x0e]);
-        let radius = parse_surfaces_u16(&content, "window_corner_radius", 12);
+        let radius = parse_surfaces_u16(&content, "backplate_corner_radius", 12);
         assert_eq!(radius, 12);
 
-        // 5. Write surfaces window_color config
-        write_surfaces_config_value_path(path_str, "window_color", "\"#112233\"");
+        // 5. Write surfaces backplate_color config
+        write_surfaces_config_value_path(path_str, "backplate_color", "\"#112233\"");
         let updated2 = fs::read_to_string(path_str).unwrap();
-        assert!(updated2.contains("\"window_color\": \"#112233\""));
+        assert!(updated2.contains("\"backplate_color\": \"#112233\""));
 
-        // 6. Parse surfaces window_color when present
-        let color2 = parse_surfaces_color(&updated2, "window_color", [0, 0, 0]);
+        // 6. Parse surfaces backplate_color when present
+        let color2 = parse_surfaces_color(&updated2, "backplate_color", [0, 0, 0]);
         assert_eq!(color2, [17, 34, 51]);
 
-        // 7. Write surfaces window_corner_radius config
-        write_surfaces_config_value_path(path_str, "window_corner_radius", "16");
+        // 7. Write surfaces backplate_corner_radius config
+        write_surfaces_config_value_path(path_str, "backplate_corner_radius", "16");
         let updated3 = fs::read_to_string(path_str).unwrap();
-        assert!(updated3.contains("\"window_corner_radius\": 16"));
+        assert!(updated3.contains("\"backplate_corner_radius\": 16"));
 
-        // 8. Parse surfaces window_corner_radius when present
-        let radius2 = parse_surfaces_u16(&updated3, "window_corner_radius", 12);
+        // 8. Parse surfaces backplate_corner_radius when present
+        let radius2 = parse_surfaces_u16(&updated3, "backplate_corner_radius", 12);
         assert_eq!(radius2, 16);
 
         // 9. Write surfaces desktop_background config
