@@ -384,6 +384,7 @@ pub struct InterfaceState {
     pub graph_gap_width: u16,
     pub graph_gap_width_spinbox: Spinbox,
     pub custom_multicontrol: MultiControl,
+    pub layout_status: Option<LayoutStatusInfo>,
 }
 
 impl Default for InterfaceState {
@@ -570,6 +571,7 @@ impl Default for InterfaceState {
             status_module_spacing: 8,
             status_module_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "status_module_spacing"),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
+            layout_status: None,
         }
     }
 }
@@ -675,6 +677,7 @@ pub enum InterfaceMessage {
     PickLayerColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
+    LayoutStatusRefreshed(LayoutStatusInfo),
     SetSans(String),
     SetSerif(String),
     SetMono(String),
@@ -977,6 +980,7 @@ pub fn read_interface_config() -> InterfaceState {
         backplate_corner_radius,
         backplate_corner_radius_spinbox: Spinbox::new(backplate_corner_radius as i32, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "backplate_corner_radius"),
         custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
+        layout_status: None,
     }
 }
 
@@ -1200,29 +1204,30 @@ fn apply_edge_gap(val: u16) {
     send_ipc_command(&format!("layout gap_bottom {}", val));
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
-struct PreviewWindow {
-    app_id: String,
-    title: String,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    tags: u32,
-    _minimized: bool,
-    has_parent: bool,
-    layout_mode: String,
+pub struct PreviewWindow {
+    pub app_id: String,
+    pub title: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub tags: u32,
+    pub _minimized: bool,
+    pub has_parent: bool,
+    pub layout_mode: String,
 }
 
+#[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
-struct LayoutStatusInfo {
-    active_tags: u32,
-    focused_tags: u32,
-    _num_tags: u32,
-    windows: Vec<PreviewWindow>,
-    focused_title: String,
-    focused_layout_mode: String,
+pub struct LayoutStatusInfo {
+    pub active_tags: u32,
+    pub focused_tags: u32,
+    pub _num_tags: u32,
+    pub windows: Vec<PreviewWindow>,
+    pub focused_title: String,
+    pub focused_layout_mode: String,
 }
 
 fn get_closest_tag(x: f64, y: f64) -> i32 {
@@ -1241,7 +1246,7 @@ fn get_closest_tag(x: f64, y: f64) -> i32 {
     best_tag
 }
 
-fn read_current_layout_status() -> LayoutStatusInfo {
+pub fn read_current_layout_status() -> LayoutStatusInfo {
     let mut active_tags = 1;
     let mut focused_tags = 1;
     let mut _num_tags = 4;
@@ -3109,7 +3114,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.add_section("Current Layout", false, |sec_cl| {
             sec_cl.spacing(8.0);
             
-            let info = read_current_layout_status();
+            let info = state.layout_status.as_ref().cloned().unwrap_or_default();
             
             let card_w = (sec_w - 24.0) / 2.0;
             let card_h = 135.0;
@@ -3626,6 +3631,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
+            let layout_status = state.layout_status.clone();
             let was_bp_hovered = state.button_padding_spinbox.hovered();
             let was_bss_hovered = state.button_strip_spacing_spinbox.hovered();
             let was_sp_hovered = state.section_padding_spinbox.hovered();
@@ -3691,6 +3697,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let terminal_size_box = state.terminal_size_box.clone();
 
             *state = new;
+            state.layout_status = layout_status;
 
             state.button_padding_spinbox.set_hovered(was_bp_hovered);
             state.button_strip_spacing_spinbox.set_hovered(was_bss_hovered);
@@ -3798,6 +3805,9 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.status_size_box = new.status_size_box;
             state.fuzzel_size_box = new.fuzzel_size_box;
             state.terminal_size_box = new.terminal_size_box;
+        }
+        InterfaceMessage::LayoutStatusRefreshed(s) => {
+            state.layout_status = Some(s);
         }
         InterfaceMessage::SetSans(sans) => {
             state.sans_serif = sans.clone();

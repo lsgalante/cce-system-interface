@@ -21,6 +21,7 @@ pub struct Watchers {
     pub rx_interface: Receiver<interface::InterfaceState>,
     pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
     pub rx_packages: Receiver<packages::PackagesState>,
+    pub rx_layout_status: Receiver<interface::LayoutStatusInfo>,
 }
 
 fn spawn_bg_active<T, F>(
@@ -215,6 +216,32 @@ pub fn spawn_all(
         rx
     };
 
+    let rx_layout_status = {
+        let (tx, rx) = channel::<interface::LayoutStatusInfo>();
+        let current_page_shared = current_page_shared.clone();
+        tokio::spawn(async move {
+            let mut last_fetch: Option<std::time::Instant> = None;
+            loop {
+                let current_page = current_page_shared.load(Ordering::SeqCst);
+                if current_page == 4 { // Interface is index 4
+                    let should_fetch = match last_fetch {
+                        None => true,
+                        Some(t) => t.elapsed() >= std::time::Duration::from_millis(250),
+                    };
+                    if should_fetch {
+                        let val = tokio::task::spawn_blocking(|| interface::read_current_layout_status()).await;
+                        if let Ok(val) = val {
+                            if tx.send(val).is_err() { break; }
+                        }
+                        last_fetch = Some(std::time::Instant::now());
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        });
+        rx
+    };
+
     let (tx_backup, rx_backup) = channel();
     let rx_packages = spawn_bg_active(current_page_shared.clone(), 5, 30, || packages::fetch_packages_state());
     let (tx_update, rx_update) = channel();
@@ -237,6 +264,7 @@ pub fn spawn_all(
             rx_interface,
             rx_accounts,
             rx_packages,
+            rx_layout_status,
         },
         tx_backup,
         rx_backup,

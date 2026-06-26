@@ -183,6 +183,7 @@ struct SystemInterface {
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
     rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
+    rx_layout_status: std::sync::mpsc::Receiver<pages::interface::LayoutStatusInfo>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
     rx_packages: std::sync::mpsc::Receiver<pages::packages::PackagesState>,
@@ -285,6 +286,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_services: watchers.rx_services,
             rx_interface: watchers.rx_interface,
             rx_accounts: watchers.rx_accounts,
+            rx_layout_status: watchers.rx_layout_status,
             tx_backup,
             rx_backup,
             rx_packages: watchers.rx_packages,
@@ -721,6 +723,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         }
         while let Ok(s) = self.rx_interface.try_recv() {
             interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::Refreshed(s));
+            if self.app.current_page == Page::Interface {
+                self.needs_rebuild = true;
+            }
+        }
+        while let Ok(s) = self.rx_layout_status.try_recv() {
+            interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::LayoutStatusRefreshed(s));
             if self.app.current_page == Page::Interface {
                 self.needs_rebuild = true;
             }
