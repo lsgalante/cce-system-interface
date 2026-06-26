@@ -87,20 +87,20 @@ impl SystemInterface {
                 }
             }
         }
-        if self.app.current_page == Page::System {
+        if self.app.current_page == Page::Interface {
             if self.status_box_opacity_dragging {
                 drag_handled = true;
-                if self.app.system_info.status_box_opacity_slider.drag_update(lx, ly) {
+                if self.app.interface.status_box_opacity_slider.drag_update(lx, ly) {
                     changed = true;
-                    let val = self.app.system_info.status_box_opacity_slider.value();
-                    self.handle_action(&AppAction::SystemInfo(pages::system_info::SystemMessage::StatusSetBoxOpacity(val)));
+                    let val = self.app.interface.status_box_opacity_slider.value();
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::StatusSetBoxOpacity(val)));
                 }
             } else if self.status_box_blur_dragging {
                 drag_handled = true;
-                if self.app.system_info.status_box_blur_slider.drag_update(lx, ly) {
+                if self.app.interface.status_box_blur_slider.drag_update(lx, ly) {
                     changed = true;
-                    let val = self.app.system_info.status_box_blur_slider.value();
-                    self.handle_action(&AppAction::SystemInfo(pages::system_info::SystemMessage::StatusSetBoxBlur(val)));
+                    let val = self.app.interface.status_box_blur_slider.value();
+                    self.handle_action(&AppAction::Interface(pages::interface::InterfaceMessage::StatusSetBoxBlur(val)));
                 }
             }
         }
@@ -235,14 +235,14 @@ impl SystemInterface {
                     self.needs_rebuild = true;
                 }
             }
-            if self.app.current_page == Page::System {
+            if self.app.current_page == Page::Interface {
                 if self.status_box_opacity_dragging {
-                    self.app.system_info.status_box_opacity_slider.drag_end();
+                    self.app.interface.status_box_opacity_slider.drag_end();
                     self.status_box_opacity_dragging = false;
                     self.needs_rebuild = true;
                 }
                 if self.status_box_blur_dragging {
-                    self.app.system_info.status_box_blur_slider.drag_end();
+                    self.app.interface.status_box_blur_slider.drag_end();
                     self.status_box_blur_dragging = false;
                     self.needs_rebuild = true;
                 }
@@ -276,11 +276,11 @@ impl SystemInterface {
                     }
                 }
             }
-            if self.app.current_page == Page::System {
-                if self.app.system_info.status_box_opacity_slider.is_dragging() {
+            if self.app.current_page == Page::Interface {
+                if self.app.interface.status_box_opacity_slider.is_dragging() {
                     self.status_box_opacity_dragging = true;
                 }
-                if self.app.system_info.status_box_blur_slider.is_dragging() {
+                if self.app.interface.status_box_blur_slider.is_dragging() {
                     self.status_box_blur_dragging = true;
                 }
             }
@@ -355,6 +355,18 @@ impl SystemInterface {
                 }
                 if self.app.interface.status_module_spacing_spinbox.take_change() {
                     actions.push(AppAction::Interface(pages::interface::InterfaceMessage::SetStatusModuleSpacing(self.app.interface.status_module_spacing_spinbox.value as u16)));
+                }
+                if self.app.interface.status_separators_toggle.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::StatusToggleSeparators));
+                }
+                if self.app.interface.status_underline_toggle.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::StatusToggleUnderline));
+                }
+                if self.app.interface.status_box_opacity_slider.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::StatusSetBoxOpacity(self.app.interface.status_box_opacity_slider.value())));
+                }
+                if self.app.interface.status_box_blur_slider.take_change() {
+                    actions.push(AppAction::Interface(pages::interface::InterfaceMessage::StatusSetBoxBlur(self.app.interface.status_box_blur_slider.value())));
                 }
 
                 if self.app.interface.button_padding_spinbox.take_change() {
@@ -679,21 +691,7 @@ impl SystemInterface {
                 if self.app.system_info.notifications_duration_spinbox.take_change() {
                     actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::SetNotificationsDuration(self.app.system_info.notifications_duration_spinbox.value)));
                 }
-                if self.app.system_info.status_separators_toggle.take_change() {
-                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusToggleSeparators));
-                }
-                if self.app.system_info.status_underline_toggle.take_change() {
-                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusToggleUnderline));
-                }
-                if self.app.system_info.status_padding_spinbox.take_change() {
-                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusSetPadding(self.app.system_info.status_padding_spinbox.value as u16)));
-                }
-                if self.app.system_info.status_box_opacity_slider.take_change() {
-                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusSetBoxOpacity(self.app.system_info.status_box_opacity_slider.value())));
-                }
-                if self.app.system_info.status_box_blur_slider.take_change() {
-                    actions.push(AppAction::SystemInfo(pages::system_info::SystemMessage::StatusSetBoxBlur(self.app.system_info.status_box_blur_slider.value())));
-                }
+
             }
             Page::Accounts => {
                 if self.app.accounts.adding_new && self.app.accounts.email_box.take_change() {
