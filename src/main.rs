@@ -214,6 +214,7 @@ struct SystemInterface {
     current_page_shared: std::sync::Arc<std::sync::atomic::AtomicU8>,
     sender: calloop::channel::Sender<AppAction>,
     ui_context: cce_ui::context::UiContext,
+    scroll_logs: Vec<String>,
 }
 
 impl cce_ui::engine::Application for SystemInterface {
@@ -322,6 +323,7 @@ impl cce_ui::engine::Application for SystemInterface {
             current_page_shared,
             sender,
             ui_context: cce_ui::context::UiContext::new(),
+            scroll_logs: Vec::new(),
         };
 
         for page in &mut this.pages {
@@ -891,4 +893,17 @@ fn main() {
     INITIAL_PAGE_INDEX.store(initial_page_idx, std::sync::atomic::Ordering::SeqCst);
 
     cce_ui::engine::run::<SystemInterface>();
+}
+
+impl Drop for SystemInterface {
+    fn drop(&mut self) {
+        if !self.scroll_logs.is_empty() {
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/cce-scroll-debug.log") {
+                use std::io::Write;
+                for log in &self.scroll_logs {
+                    let _ = writeln!(file, "{}", log);
+                }
+            }
+        }
+    }
 }

@@ -665,10 +665,10 @@ impl SystemInterface {
     }
 
     pub(crate) fn handle_mouse_wheel_internal(&mut self, delta: &cce_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/cce-scroll-debug.log") {
-            use std::io::Write;
-            let _ = writeln!(file, "handle_mouse_wheel_internal: px={}, py={}, delta={:?}, sidebar_w={}", px, py, delta, self.sidebar_width);
-        }
+        self.scroll_logs.push(format!(
+            "handle_mouse_wheel_internal: px={}, py={}, delta={:?}, sidebar_w={}",
+            px, py, delta, self.sidebar_width
+        ));
         let s = 1.0f32;
         if px >= self.sidebar_width * s {
             let lx = px / s;
