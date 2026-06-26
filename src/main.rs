@@ -204,6 +204,8 @@ struct SystemInterface {
     audio_sink_dragging: Option<usize>,
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
+    status_box_opacity_dragging: bool,
+    status_box_blur_dragging: bool,
     page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
     root_window: cce_ui::widget::Backplate,
     menubar: cce_ui::widget::Paginator,
@@ -309,6 +311,8 @@ impl cce_ui::engine::Application for SystemInterface {
             audio_sink_dragging: None,
             audio_source_dragging: None,
             display_brightness_dragging: false,
+            status_box_opacity_dragging: false,
+            status_box_blur_dragging: false,
             page_sec_containers: Vec::new(),
             root_window: cce_ui::widget::Backplate::new(0.0, 0.0, 820.0, 680.0)
                 .with_background([
@@ -516,19 +520,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         if hover_animation::tick(dt) {
             needs_redraw = true;
         }
-        let menubar_changed = self.menubar.tick(dt, &mut self.ui_context);
-        let switcher_changed = self.switcher.tick(dt, &mut self.ui_context);
-        if menubar_changed || switcher_changed {
+        if self.ui_context.tick(dt) {
             needs_redraw = true;
             self.needs_rebuild = true;
-        }
-        if let Some(root_ptr) = self.get_page_root_widget() {
-            unsafe {
-                if (*root_ptr).tick(dt, &mut self.ui_context) {
-                    needs_redraw = true;
-                    self.needs_rebuild = true;
-                }
-            }
         }
 
         // Asynchronously check color selector changes (e.g. Zenity process exit)

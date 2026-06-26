@@ -297,6 +297,8 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_separators_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_underline_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_box_opacity_slider, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_box_blur_slider, &mut self.ui_context);
             }
             Page::Processes => {
                 self.page_sec_containers.clear();
