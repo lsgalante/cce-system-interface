@@ -203,7 +203,7 @@ struct SystemInterface {
     audio_sink_dragging: Option<usize>,
     audio_source_dragging: Option<usize>,
     display_brightness_dragging: bool,
-    page_sec_containers: Vec<cce_ui::widget::Container>,
+    page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
     root_window: cce_ui::widget::Backplate,
     menubar: cce_ui::widget::Paginator,
     switcher: cce_ui::widget::Switcher,

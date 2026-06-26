@@ -257,7 +257,9 @@ impl SystemInterface {
         use cce_ui::widget::focus::link_parent_child;
         match self.app.current_page {
             Page::Accounts => {
-                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Accounts").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Modify Accounts").with_layout(cce_ui::widget::VerticalLayout::default()));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -273,7 +275,16 @@ impl SystemInterface {
             }
 
             Page::System => {
-                self.page_sec_containers.resize_with(9, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Host Info").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("OS & Kernel").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("CPU Gov").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("GPU Gov").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Power Profile").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Backup Status").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Notifications").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status Bar").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Updates").with_layout(cce_ui::widget::VerticalLayout::default()));
                 for i in 0..9 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -287,7 +298,9 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_padding_spinbox, &mut self.ui_context);
             }
             Page::Processes => {
-                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Processes List").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Services Control").with_layout(cce_ui::widget::VerticalLayout::default()));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -296,14 +309,26 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.processes.services_list_box.scroll_box, &mut self.ui_context);
             }
             Page::Radios => {
-                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Wi-Fi Networks").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Radio Switches").with_layout(cce_ui::widget::VerticalLayout::default()));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.network.wifi_list_box.scroll_box, &mut self.ui_context);
             }
             Page::Interface => {
-                self.page_sec_containers.resize_with(10, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Custom Parameters").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Layout").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Controls").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Indicators").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Notification").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Surfaces").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Fonts").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Containers").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Windows").with_layout(cce_ui::widget::VerticalLayout::default()));
                 
                 for i in 0..10 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
@@ -497,14 +522,17 @@ impl SystemInterface {
 
 
             Page::Input => {
-                self.page_sec_containers.resize_with(7, cce_ui::widget::Container::new);
-                link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
-                link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
-                link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
-                link_parent_child(page_root, &mut self.page_sec_containers[3], &mut self.ui_context);
-                link_parent_child(page_root, &mut self.page_sec_containers[4], &mut self.ui_context);
-                link_parent_child(page_root, &mut self.page_sec_containers[5], &mut self.ui_context);
-                link_parent_child(page_root, &mut self.page_sec_containers[6], &mut self.ui_context);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Touchpad").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Trackpoint").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Keyboard").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Cursor").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Scrolling").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Inertial Input").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Keyboard Bindings").with_layout(cce_ui::widget::VerticalLayout::default()));
+                for i in 0..7 {
+                    link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
+                }
                 
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.dwtp_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox, &mut self.ui_context);
@@ -531,7 +559,9 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[6], &mut self.app.input.keybinds_control, &mut self.ui_context);
             }
             Page::Audio => {
-                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Output").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Input").with_layout(cce_ui::widget::VerticalLayout::default()));
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 
@@ -549,7 +579,11 @@ impl SystemInterface {
                 }
             }
             Page::Display => {
-                self.page_sec_containers.resize_with(4, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Brightness").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Night Light").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Outputs").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Screensaver Settings").with_layout(cce_ui::widget::VerticalLayout::default()));
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
@@ -578,7 +612,9 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.display.screensaver_style_menu, &mut self.ui_context);
             }
             Page::Packages => {
-                self.page_sec_containers.resize_with(2, cce_ui::widget::Container::new);
+                self.page_sec_containers.clear();
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Packages").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System Update").with_layout(cce_ui::widget::VerticalLayout::default()));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
