@@ -201,11 +201,6 @@ struct SystemInterface {
     scrollable_text_items_start_idx: usize,
     scrollable_buttons_start_idx: usize,
     last_scroll_y: f32,
-    audio_sink_dragging: Option<usize>,
-    audio_source_dragging: Option<usize>,
-    display_brightness_dragging: bool,
-    status_box_opacity_dragging: bool,
-    status_box_blur_dragging: bool,
     page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
     root_window: cce_ui::widget::Backplate,
     menubar: cce_ui::widget::Paginator,
@@ -308,11 +303,6 @@ impl cce_ui::engine::Application for SystemInterface {
             scrollable_text_items_start_idx: 0,
             scrollable_buttons_start_idx: 0,
             last_scroll_y: 0.0,
-            audio_sink_dragging: None,
-            audio_source_dragging: None,
-            display_brightness_dragging: false,
-            status_box_opacity_dragging: false,
-            status_box_blur_dragging: false,
             page_sec_containers: Vec::new(),
             root_window: cce_ui::widget::Backplate::new(0.0, 0.0, 820.0, 680.0)
                 .with_background([

@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::Write;
 
-use crate::app::PageContent;
+use crate::app::{AppAction, PageContent};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox, KeybindsControl};
 
@@ -587,6 +587,182 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
         }
         InputMessage::UpdateFingers(fingers) => {
             state.fingers = fingers;
+        }
+    }
+}
+
+impl crate::pages::AppPage for InputState {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        self.tap_toggle.clear_children(ctx);
+        self.tap_toggle.set_parent(None, ctx);
+        self.trackpad.clear_children(ctx);
+        self.trackpad.set_parent(None, ctx);
+
+        self.dwtp_toggle.clear_children(ctx);
+        self.dwtp_toggle.set_parent(None, ctx);
+        self.trackpoint_accel_speed_spinbox.clear_children(ctx);
+        self.trackpoint_accel_speed_spinbox.set_parent(None, ctx);
+        self.trackpoint_accel_profile_menu.clear_children(ctx);
+        self.trackpoint_accel_profile_menu.set_parent(None, ctx);
+
+        self.rate_spinbox.clear_children(ctx);
+        self.rate_spinbox.set_parent(None, ctx);
+        self.delay_spinbox.clear_children(ctx);
+        self.delay_spinbox.set_parent(None, ctx);
+
+        self.cursor_theme_menu.clear_children(ctx);
+        self.cursor_theme_menu.set_parent(None, ctx);
+        self.cursor_size_spinbox.clear_children(ctx);
+        self.cursor_size_spinbox.set_parent(None, ctx);
+
+        self.scroll_toggle.clear_children(ctx);
+        self.scroll_toggle.set_parent(None, ctx);
+        self.scroll_friction_spinbox.clear_children(ctx);
+        self.scroll_friction_spinbox.set_parent(None, ctx);
+        self.natural_toggle.clear_children(ctx);
+        self.natural_toggle.set_parent(None, ctx);
+        self.scroll_speed_spinbox.clear_children(ctx);
+        self.scroll_speed_spinbox.set_parent(None, ctx);
+
+        self.pointer_toggle.clear_children(ctx);
+        self.pointer_toggle.set_parent(None, ctx);
+        self.pointer_friction_spinbox.clear_children(ctx);
+        self.pointer_friction_spinbox.set_parent(None, ctx);
+        self.trackpad_toggle.clear_children(ctx);
+        self.trackpad_toggle.set_parent(None, ctx);
+        self.trackpad_friction_spinbox.clear_children(ctx);
+        self.trackpad_friction_spinbox.set_parent(None, ctx);
+
+        self.zoom_in_box.clear_children(ctx);
+        self.zoom_in_box.set_parent(None, ctx);
+        self.zoom_out_box.clear_children(ctx);
+        self.zoom_out_box.set_parent(None, ctx);
+        self.keybinds_control.clear_children(ctx);
+        self.keybinds_control.set_parent(None, ctx);
+    }
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("Touchpad").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Trackpoint").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Keyboard").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Cursor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Scrolling").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Inertial Input").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Graph").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Keyboard Bindings").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        for i in 0..8 {
+            cce_ui::widget::link_parent_child(page_root, &mut sec_containers[i], ctx);
+        }
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.tap_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.trackpad, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.dwtp_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.trackpoint_accel_speed_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.trackpoint_accel_profile_menu, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.rate_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.delay_spinbox, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.cursor_theme_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.cursor_size_spinbox, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.scroll_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.scroll_friction_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.natural_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.scroll_speed_spinbox, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.pointer_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.pointer_friction_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.trackpad_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.trackpad_friction_spinbox, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.zoom_in_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.zoom_out_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.keybinds_control, ctx);
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        _root_focused: bool,
+        sec_focused: &[bool],
+        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        if self.rate_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyRepeat));
+        }
+        if self.delay_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyRepeat));
+        }
+        if self.scroll_friction_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyScrollFriction));
+        }
+        if self.scroll_speed_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyScrollSpeed));
+        }
+        if self.pointer_friction_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyPointerFriction));
+        }
+        if self.trackpad_friction_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyTrackpadFriction));
+        }
+        if self.trackpoint_accel_speed_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyTrackpointAccelSpeed));
+        }
+        if self.cursor_size_spinbox.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyCursorSize));
+        }
+        if self.tap_toggle.take_change() {
+            actions.push(AppAction::Input(InputMessage::ToggleTapToClick));
+        }
+        if self.scroll_toggle.take_change() {
+            actions.push(AppAction::Input(InputMessage::ToggleInertialScroll));
+        }
+        if self.natural_toggle.take_change() {
+            actions.push(AppAction::Input(InputMessage::ToggleNaturalScroll));
+        }
+        if self.pointer_toggle.take_change() {
+            actions.push(AppAction::Input(InputMessage::ToggleInertialPointer));
+        }
+        if self.trackpad_toggle.take_change() {
+            actions.push(AppAction::Input(InputMessage::ToggleInertialTrackpad));
+        }
+        if self.dwtp_toggle.take_change() {
+            actions.push(AppAction::Input(InputMessage::ToggleDwtp));
+        }
+        if self.trackpoint_accel_profile_menu.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyTrackpointAccelProfile(self.trackpoint_accel_profile_menu.selected)));
+        }
+        if self.cursor_theme_menu.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyCursorTheme(self.cursor_theme_menu.selected)));
+        }
+        if self.zoom_in_box.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyZoomIn));
+        }
+        if self.zoom_out_box.take_change() {
+            actions.push(AppAction::Input(InputMessage::ApplyZoomOut));
+        }
+        if self.keybinds_control.take_change() {
+            actions.push(AppAction::Input(InputMessage::ReloadKeybinds));
         }
     }
 }

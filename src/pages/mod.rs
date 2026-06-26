@@ -56,6 +56,55 @@ impl Page {
     pub fn icon(self) -> &'static str {
         ""
     }
+
+    pub fn index(self) -> usize {
+        Page::ALL.iter().position(|&p| p == self).unwrap()
+    }
+}
+
+pub trait AppPage {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext);
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer>;
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    );
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        root_focused: bool,
+        sec_focused: &[bool],
+        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent;
+
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>);
+
+    fn handle_pointer_move(
+        &mut self,
+        _lx: f32,
+        _ly: f32,
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        false
+    }
+
+    fn handle_pointer_down(&mut self, _lx: f32, _ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        false
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        false
+    }
 }
 
 

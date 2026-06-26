@@ -29,6 +29,8 @@ pub struct AudioState {
     pub source_spinboxes: Vec<Box<Spinbox>>,
     pub sink_sliders: Vec<Box<Slider>>,
     pub source_sliders: Vec<Box<Slider>>,
+    pub sink_dragging: Option<usize>,
+    pub source_dragging: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +130,8 @@ pub async fn fetch_audio_state() -> AudioState {
         source_spinboxes: Vec::new(),
         sink_sliders: Vec::new(),
         source_sliders: Vec::new(),
+        sink_dragging: None,
+        source_dragging: None,
     }
 }
 
@@ -399,6 +403,174 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
                 set_source_mute(id, src.muted);
             }
         }
+    }
+}
+
+impl crate::pages::AppPage for AudioState {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        for sb in &mut self.sink_spinboxes {
+            sb.clear_children(ctx);
+            sb.set_parent(None, ctx);
+        }
+        for sb in &mut self.source_spinboxes {
+            sb.clear_children(ctx);
+            sb.set_parent(None, ctx);
+        }
+        for slider in &mut self.sink_sliders {
+            slider.clear_children(ctx);
+            slider.set_parent(None, ctx);
+        }
+        for slider in &mut self.source_sliders {
+            slider.clear_children(ctx);
+            slider.set_parent(None, ctx);
+        }
+    }
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("Output").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Input").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
+
+        for sb in &mut self.sink_spinboxes {
+            cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut **sb, ctx);
+        }
+        for sb in &mut self.source_spinboxes {
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut **sb, ctx);
+        }
+        for slider in &mut self.sink_sliders {
+            cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut **slider, ctx);
+        }
+        for slider in &mut self.source_sliders {
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut **slider, ctx);
+        }
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        _root_focused: bool,
+        sec_focused: &[bool],
+        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        for (i, sb) in self.sink_spinboxes.iter_mut().enumerate() {
+            if sb.take_change() {
+                let id = self.sinks[i].id;
+                actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
+            }
+        }
+        for (i, sb) in self.source_spinboxes.iter_mut().enumerate() {
+            if sb.take_change() {
+                let id = self.sources[i].id;
+                actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
+            }
+        }
+        for (i, slider) in self.sink_sliders.iter_mut().enumerate() {
+            if slider.take_change() {
+                let id = self.sinks[i].id;
+                actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, slider.value() as f32 / 100.0)));
+            }
+        }
+        for (i, slider) in self.source_sliders.iter_mut().enumerate() {
+            if slider.take_change() {
+                let id = self.sources[i].id;
+                actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, slider.value() as f32 / 100.0)));
+            }
+        }
+    }
+
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        if let Some(idx) = self.sink_dragging {
+            if let Some(slider) = self.sink_sliders.get_mut(idx) {
+                if slider.drag_update(lx, ly) {
+                    let id = self.sinks[idx].id;
+                    let val = slider.value();
+                    if idx < self.sink_spinboxes.len() {
+                        self.sink_spinboxes[idx].value = (val * 100.0).round() as i32;
+                    }
+                    actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, val)));
+                    return true;
+                }
+            }
+        } else if let Some(idx) = self.source_dragging {
+            if let Some(slider) = self.source_sliders.get_mut(idx) {
+                if slider.drag_update(lx, ly) {
+                    let id = self.sources[idx].id;
+                    let val = slider.value();
+                    if idx < self.source_spinboxes.len() {
+                        self.source_spinboxes[idx].value = (val * 100.0).round() as i32;
+                    }
+                    actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, val)));
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn handle_pointer_down(&mut self, _lx: f32, _ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        for (i, s) in self.sink_sliders.iter().enumerate() {
+            if s.is_dragging() {
+                self.sink_dragging = Some(i);
+                return true;
+            }
+        }
+        for (i, s) in self.source_sliders.iter().enumerate() {
+            if s.is_dragging() {
+                self.source_dragging = Some(i);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        let mut any = false;
+        if let Some(idx) = self.sink_dragging {
+            self.sink_sliders[idx].drag_end();
+            self.sink_dragging = None;
+            any = true;
+        }
+        if let Some(idx) = self.source_dragging {
+            self.source_sliders[idx].drag_end();
+            self.source_dragging = None;
+            any = true;
+        }
+        any
     }
 }
 

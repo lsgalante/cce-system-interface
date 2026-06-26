@@ -1,4 +1,4 @@
-use crate::app::{PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
@@ -63,6 +63,7 @@ pub struct DisplayState {
     pub screensaver_lock_screen_toggle: Toggle,
     pub screensaver_style: String,
     pub screensaver_style_menu: Dropdown,
+    pub brightness_dragging: bool,
 }
 
 impl Default for DisplayState {
@@ -91,6 +92,7 @@ impl Default for DisplayState {
                 1,
             ).with_label("Screensaver Style")
             .with_config(CONFIG_PATH, "style"),
+            brightness_dragging: false,
         }
     }
 }
@@ -178,6 +180,7 @@ pub async fn fetch_display_state() -> DisplayState {
             style_idx,
         ).with_label("Screensaver Style")
         .with_config(CONFIG_PATH, "style"),
+        brightness_dragging: false,
     }
 }
 
@@ -451,6 +454,164 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
                 let _ = cce_ui::process::spawn_detached(cmd_fallback);
             }
         }
+    }
+}
+
+impl crate::pages::AppPage for DisplayState {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        self.brightness_spinbox.clear_children(ctx);
+        self.brightness_spinbox.set_parent(None, ctx);
+        self.brightness_slider.clear_children(ctx);
+        self.brightness_slider.set_parent(None, ctx);
+        self.night_light_label.clear_children(ctx);
+        self.night_light_label.set_parent(None, ctx);
+        self.screensaver_enable_toggle.clear_children(ctx);
+        self.screensaver_enable_toggle.set_parent(None, ctx);
+        self.screensaver_lock_screen_toggle.clear_children(ctx);
+        self.screensaver_lock_screen_toggle.set_parent(None, ctx);
+        self.screensaver_timeout_spinbox.clear_children(ctx);
+        self.screensaver_timeout_spinbox.set_parent(None, ctx);
+        self.screensaver_style_menu.clear_children(ctx);
+        self.screensaver_style_menu.set_parent(None, ctx);
+        for out in &mut self.outputs {
+            out.name_label.clear_children(ctx);
+            out.name_label.set_parent(None, ctx);
+            out.resolution_label.clear_children(ctx);
+            out.resolution_label.set_parent(None, ctx);
+            if let Some(ref mut scale_lbl) = out.scale_label {
+                scale_lbl.clear_children(ctx);
+                scale_lbl.set_parent(None, ctx);
+            }
+        }
+    }
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("Brightness").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Night Light").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Outputs").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Screensaver Settings").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[2], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[3], ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.brightness_slider, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.brightness_spinbox, ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.night_light_label, ctx);
+
+        for out in &mut self.outputs {
+            cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut out.name_label, ctx);
+            cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut out.resolution_label, ctx);
+            if let Some(ref mut scale_lbl) = out.scale_label {
+                cce_ui::widget::link_parent_child(&mut sec_containers[2], scale_lbl, ctx);
+            }
+        }
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.screensaver_enable_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.screensaver_lock_screen_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.screensaver_timeout_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.screensaver_style_menu, ctx);
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        _root_focused: bool,
+        _sec_focused: &[bool],
+        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        if self.screensaver_enable_toggle.take_change() {
+            actions.push(AppAction::Display(DisplayMessage::ToggleScreensaverEnable));
+        }
+        if self.screensaver_lock_screen_toggle.take_change() {
+            actions.push(AppAction::Display(DisplayMessage::ToggleScreensaverLockScreen));
+        }
+        if self.screensaver_style_menu.take_change() {
+            actions.push(AppAction::Display(DisplayMessage::SetScreensaverStyle(self.screensaver_style_menu.selected)));
+        }
+        if self.brightness_spinbox.take_change() {
+            actions.push(AppAction::Display(DisplayMessage::BrightnessSet(self.brightness_spinbox.value as u32)));
+        }
+        if self.brightness_slider.take_change() {
+            actions.push(AppAction::Display(DisplayMessage::BrightnessSet((self.brightness_slider.value() * 100.0).round() as u32)));
+        }
+        if self.screensaver_timeout_spinbox.take_change() {
+            actions.push(AppAction::Display(DisplayMessage::SetScreensaverTimeout(self.screensaver_timeout_spinbox.value)));
+        }
+    }
+
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        if self.brightness_dragging {
+            if self.brightness_slider.drag_update(lx, ly) {
+                let val = (self.brightness_slider.value() * 100.0).round() as u32;
+                self.brightness_spinbox.value = val as i32;
+                actions.push(AppAction::Display(DisplayMessage::BrightnessSet(val)));
+                return true;
+            }
+        }
+        false
+    }
+
+    fn handle_pointer_down(&mut self, _lx: f32, _ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        if self.brightness_slider.is_dragging() {
+            self.brightness_dragging = true;
+            return true;
+        }
+        false
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        if self.brightness_dragging {
+            self.brightness_slider.drag_end();
+            self.brightness_dragging = false;
+            return true;
+        }
+        false
     }
 }
 

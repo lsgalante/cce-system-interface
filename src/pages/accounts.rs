@@ -802,3 +802,94 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         }
     }
 }
+
+impl crate::pages::AppPage for AccountsState {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        self.email_box.clear_children(ctx);
+        self.email_box.set_parent(None, ctx);
+        self.password_box.clear_children(ctx);
+        self.password_box.set_parent(None, ctx);
+        self.imap_box.clear_children(ctx);
+        self.imap_box.set_parent(None, ctx);
+        self.smtp_box.clear_children(ctx);
+        self.smtp_box.set_parent(None, ctx);
+        self.oauth_client_id_box.clear_children(ctx);
+        self.oauth_client_id_box.set_parent(None, ctx);
+        self.oauth_client_secret_box.clear_children(ctx);
+        self.oauth_client_secret_box.set_parent(None, ctx);
+    }
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("Accounts").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Modify Accounts").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
+
+        if self.editing_oauth_creds {
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.oauth_client_id_box, ctx);
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.oauth_client_secret_box, ctx);
+        } else if self.adding_new {
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.email_box, ctx);
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.password_box, ctx);
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.imap_box, ctx);
+            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.smtp_box, ctx);
+        }
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        _root_focused: bool,
+        _sec_focused: &[bool],
+        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {
+        if self.adding_new && self.email_box.take_change() {
+            let email_val = self.email_box.text.trim().to_lowercase();
+            if email_val.ends_with("@gmail.com") {
+                self.imap_box.text = "imap.gmail.com:993".to_string();
+                self.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
+                self.smtp_box.text = "smtp.gmail.com:465".to_string();
+                self.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+            } else if email_val.ends_with("@icloud.com") {
+                self.imap_box.text = "imap.mail.me.com:993".to_string();
+                self.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
+                self.smtp_box.text = "smtp.mail.me.com:587".to_string();
+                self.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+            } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
+                self.imap_box.text = "outlook.office365.com:993".to_string();
+                self.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
+                self.smtp_box.text = "smtp.office365.com:587".to_string();
+                self.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+            }
+        }
+    }
+}
+

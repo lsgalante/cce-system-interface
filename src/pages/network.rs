@@ -515,6 +515,73 @@ pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
     }
 }
 
+impl crate::pages::AppPage for NetworkState {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        self.wifi_list_box.scroll_box.clear_children(ctx);
+        self.wifi_list_box.scroll_box.set_parent(None, ctx);
+        self.wifi_toggle.clear_children(ctx);
+        self.wifi_toggle.set_parent(None, ctx);
+        self.bt_toggle.clear_children(ctx);
+        self.bt_toggle.set_parent(None, ctx);
+    }
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("WiFi").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Bluetooth").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
+
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_toggle, ctx);
+        if self.wifi_enabled && !self.available.is_empty() {
+            cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_list_box.scroll_box, ctx);
+        }
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.bt_toggle, ctx);
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        root_focused: bool,
+        _sec_focused: &[bool],
+        layout: &mut dyn LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, root_focused, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        if self.wifi_toggle.take_change() {
+            actions.push(crate::app::AppAction::Radios(NetworkMessage::ToggleWifi));
+        }
+        if self.bt_toggle.take_change() {
+            actions.push(crate::app::AppAction::Radios(NetworkMessage::ToggleBluetooth));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

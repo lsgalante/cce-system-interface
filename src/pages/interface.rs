@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use crate::app::{PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{
     ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle, MultiControl,
@@ -261,6 +261,45 @@ pub enum WindowsMessage {
 }
 
 #[derive(Debug, Clone)]
+pub struct StatusInterfaceControls {
+    pub loaded: bool,
+    pub font_size: u16,
+    pub separators: bool,
+    pub underline: bool,
+    pub running: bool,
+    pub label: Label,
+    pub separators_toggle: Toggle,
+    pub underline_toggle: Toggle,
+    pub box_opacity: f32,
+    pub box_blur: f32,
+    pub box_opacity_slider: Slider,
+    pub box_blur_slider: Slider,
+    pub opacity_dragging: bool,
+    pub blur_dragging: bool,
+}
+
+impl Default for StatusInterfaceControls {
+    fn default() -> Self {
+        Self {
+            loaded: false,
+            font_size: 11,
+            separators: true,
+            underline: true,
+            running: false,
+            label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
+            separators_toggle: Toggle::new().with_label("Show Separators").with_config(CONFIG_PATH, "status_separators"),
+            underline_toggle: Toggle::new().with_label("Show Underline").with_config(CONFIG_PATH, "status_underline"),
+            box_opacity: 1.0,
+            box_blur: 0.0,
+            box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(1.0).with_label("Background Opacity").with_config(CONFIG_PATH, "status_box_opacity"),
+            box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(0.0).with_label("Background Blur").with_config(CONFIG_PATH, "status_box_blur"),
+            opacity_dragging: false,
+            blur_dragging: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct InterfaceState {
     pub windows: WindowsState,
     pub desktop_background_color: [u8; 3],
@@ -360,18 +399,7 @@ pub struct InterfaceState {
     pub status_padding_spinbox: Spinbox,
     pub status_module_spacing: u16,
     pub status_module_spacing_spinbox: Spinbox,
-    pub status_loaded: bool,
-    pub status_font_size: u16,
-    pub status_separators: bool,
-    pub status_underline: bool,
-    pub status_running: bool,
-    pub status_label: Label,
-    pub status_separators_toggle: Toggle,
-    pub status_underline_toggle: Toggle,
-    pub status_box_opacity: f32,
-    pub status_box_blur: f32,
-    pub status_box_opacity_slider: Slider,
-    pub status_box_blur_slider: Slider,
+    pub status_controls: StatusInterfaceControls,
     pub nested_section_label_alignment: u8,
     pub label_alignment_menu: Dropdown,
     pub nested_section_label_offset: i16,
@@ -614,18 +642,7 @@ impl Default for InterfaceState {
             status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Padding").with_unit("px").with_config(CONFIG_PATH, "status_padding"),
             status_module_spacing: 8,
             status_module_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "status_module_spacing"),
-            status_loaded: false,
-            status_font_size: 11,
-            status_separators: true,
-            status_underline: true,
-            status_running: false,
-            status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-            status_separators_toggle: Toggle::new().with_label("Show Separators").with_config(CONFIG_PATH, "status_separators"),
-            status_underline_toggle: Toggle::new().with_label("Show Underline").with_config(CONFIG_PATH, "status_underline"),
-            status_box_opacity: 1.0,
-            status_box_blur: 0.0,
-            status_box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(1.0).with_label("Background Opacity").with_config(CONFIG_PATH, "status_box_opacity"),
-            status_box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(0.0).with_label("Background Blur").with_config(CONFIG_PATH, "status_box_blur"),
+            status_controls: StatusInterfaceControls::default(),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
             layout_status: None,
         }
@@ -978,18 +995,7 @@ pub fn read_interface_config() -> InterfaceState {
         status_padding_spinbox: Spinbox::new(status_padding as i32, 0, 32, 1).with_label("Padding").with_unit("px").with_config(CONFIG_PATH, "status_padding"),
         status_module_spacing,
         status_module_spacing_spinbox: Spinbox::new(status_module_spacing as i32, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "status_module_spacing"),
-        status_loaded: false,
-        status_font_size: 11,
-        status_separators: true,
-        status_underline: true,
-        status_running: false,
-        status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-        status_separators_toggle: Toggle::new().with_label("Show Separators").with_config(CONFIG_PATH, "status_separators"),
-        status_underline_toggle: Toggle::new().with_label("Show Underline").with_config(CONFIG_PATH, "status_underline"),
-        status_box_opacity: 1.0,
-        status_box_blur: 0.0,
-        status_box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(1.0).with_label("Background Opacity").with_config(CONFIG_PATH, "status_box_opacity"),
-        status_box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(0.0).with_label("Background Blur").with_config(CONFIG_PATH, "status_box_blur"),
+        status_controls: StatusInterfaceControls::default(),
         nested_section_label_alignment,
         label_alignment_menu: Dropdown::new(
             vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
@@ -2803,42 +2809,42 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         sec.widget_full(&mut state.status_module_spacing_spinbox, 44.0, ctx);
         sec.spacing(8.0);
 
-        if !state.status_loaded {
+        if !state.status_controls.loaded {
             sec.text("Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_DIM);
             sec.spacing(8.0);
         } else {
             // Status
-            let status_text = if state.status_running { "Status Interface: Running" } else { "Status Interface: Stopped" };
-            let status_color = if state.status_running { [92, 143, 97] } else { [170, 51, 51] };
-            state.status_label.set_text(status_text);
-            state.status_label.set_color(status_color);
-            sec.widget_full(&mut state.status_label, 20.0, ctx);
+            let status_text = if state.status_controls.running { "Status Interface: Running" } else { "Status Interface: Stopped" };
+            let status_color = if state.status_controls.running { [92, 143, 97] } else { [170, 51, 51] };
+            state.status_controls.label.set_text(status_text);
+            state.status_controls.label.set_color(status_color);
+            sec.widget_full(&mut state.status_controls.label, 20.0, ctx);
             sec.spacing(8.0);
 
             // Separators toggle
-            state.status_separators_toggle.set_toggled(state.status_separators);
-            sec.widget_full(&mut state.status_separators_toggle, cce_ui::layout::toggle_height(), ctx);
+            state.status_controls.separators_toggle.set_toggled(state.status_controls.separators);
+            sec.widget_full(&mut state.status_controls.separators_toggle, cce_ui::layout::toggle_height(), ctx);
             sec.spacing(8.0);
 
             // Underline toggle
-            state.status_underline_toggle.set_toggled(state.status_underline);
-            sec.widget_full(&mut state.status_underline_toggle, cce_ui::layout::toggle_height(), ctx);
+            state.status_controls.underline_toggle.set_toggled(state.status_controls.underline);
+            sec.widget_full(&mut state.status_controls.underline_toggle, cce_ui::layout::toggle_height(), ctx);
             sec.spacing(8.0);
 
             // Opacity slider
-            state.status_box_opacity_slider.set_label(&format!("Background Opacity: {}%", (state.status_box_opacity * 100.0).round() as i32));
-            state.status_box_opacity_slider.set_value(state.status_box_opacity);
-            let label_h_op = cce_ui::widget::label_offset(&state.status_box_opacity_slider);
+            state.status_controls.box_opacity_slider.set_label(&format!("Background Opacity: {}%", (state.status_controls.box_opacity * 100.0).round() as i32));
+            state.status_controls.box_opacity_slider.set_value(state.status_controls.box_opacity);
+            let label_h_op = cce_ui::widget::label_offset(&state.status_controls.box_opacity_slider);
             let slider_h_op = cce_ui::layout::slider_height() + label_h_op;
-            sec.widget_full(&mut state.status_box_opacity_slider, slider_h_op, ctx);
+            sec.widget_full(&mut state.status_controls.box_opacity_slider, slider_h_op, ctx);
             sec.spacing(8.0);
 
             // Blur slider
-            state.status_box_blur_slider.set_label(&format!("Background Blur: {}%", (state.status_box_blur * 100.0).round() as i32));
-            state.status_box_blur_slider.set_value(state.status_box_blur);
-            let label_h_bl = cce_ui::widget::label_offset(&state.status_box_blur_slider);
+            state.status_controls.box_blur_slider.set_label(&format!("Background Blur: {}%", (state.status_controls.box_blur * 100.0).round() as i32));
+            state.status_controls.box_blur_slider.set_value(state.status_controls.box_blur);
+            let label_h_bl = cce_ui::widget::label_offset(&state.status_controls.box_blur_slider);
             let slider_h_bl = cce_ui::layout::slider_height() + label_h_bl;
-            sec.widget_full(&mut state.status_box_blur_slider, slider_h_bl, ctx);
+            sec.widget_full(&mut state.status_controls.box_blur_slider, slider_h_bl, ctx);
             sec.spacing(8.0);
 
             // Reload button
@@ -3598,35 +3604,35 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_status_padding(padding);
         }
         InterfaceMessage::StatusRefreshed(new) => {
-            let was_status_hovered = state.status_label.hovered();
-            let was_separators_hovered = state.status_separators_toggle.hovered();
-            let was_underline_hovered = state.status_underline_toggle.hovered();
-            let was_opacity_hovered = state.status_box_opacity_slider.hovered();
-            let was_blur_hovered = state.status_box_blur_slider.hovered();
+            let was_status_hovered = state.status_controls.label.hovered();
+            let was_separators_hovered = state.status_controls.separators_toggle.hovered();
+            let was_underline_hovered = state.status_controls.underline_toggle.hovered();
+            let was_opacity_hovered = state.status_controls.box_opacity_slider.hovered();
+            let was_blur_hovered = state.status_controls.box_blur_slider.hovered();
 
-            state.status_loaded = true;
-            state.status_font_size = new.font_size;
+            state.status_controls.loaded = true;
+            state.status_controls.font_size = new.font_size;
             state.status_padding = new.padding;
-            state.status_separators = new.separators;
-            state.status_underline = new.underline;
-            state.status_running = new.running;
-            state.status_box_opacity = new.bg_opacity;
-            state.status_box_blur = new.bg_blur;
+            state.status_controls.separators = new.separators;
+            state.status_controls.underline = new.underline;
+            state.status_controls.running = new.running;
+            state.status_controls.box_opacity = new.bg_opacity;
+            state.status_controls.box_blur = new.bg_blur;
 
-            state.status_label.set_hovered(was_status_hovered);
-            state.status_separators_toggle.set_hovered(was_separators_hovered);
-            state.status_underline_toggle.set_hovered(was_underline_hovered);
-            state.status_box_opacity_slider.set_hovered(was_opacity_hovered);
-            state.status_box_blur_slider.set_hovered(was_blur_hovered);
+            state.status_controls.label.set_hovered(was_status_hovered);
+            state.status_controls.separators_toggle.set_hovered(was_separators_hovered);
+            state.status_controls.underline_toggle.set_hovered(was_underline_hovered);
+            state.status_controls.box_opacity_slider.set_hovered(was_opacity_hovered);
+            state.status_controls.box_blur_slider.set_hovered(was_blur_hovered);
         }
         InterfaceMessage::StatusToggleSeparators => {
-            state.status_separators = !state.status_separators;
-            write_status_separators(state.status_separators);
+            state.status_controls.separators = !state.status_controls.separators;
+            write_status_separators(state.status_controls.separators);
             status_interface_reload();
         }
         InterfaceMessage::StatusToggleUnderline => {
-            state.status_underline = !state.status_underline;
-            write_status_underline(state.status_underline);
+            state.status_controls.underline = !state.status_controls.underline;
+            write_status_underline(state.status_controls.underline);
             status_interface_reload();
         }
         InterfaceMessage::StatusSetPadding(val) => {
@@ -3635,12 +3641,12 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             status_interface_reload();
         }
         InterfaceMessage::StatusSetBoxOpacity(val) => {
-            state.status_box_opacity = val;
+            state.status_controls.box_opacity = val;
             write_status_box_opacity(val);
             status_interface_reload();
         }
         InterfaceMessage::StatusSetBoxBlur(val) => {
-            state.status_box_blur = val;
+            state.status_controls.box_blur = val;
             write_status_box_blur(val);
             status_interface_reload();
         }
@@ -6101,6 +6107,682 @@ mod tests {
         assert_eq!(read_status_box_blur(), Some(original));
 
         let _ = fs::remove_file(path);
+    }
+}
+
+impl crate::pages::AppPage for InterfaceState {
+    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        for sb in &mut self.windows.spinboxes {
+            sb.clear_children(ctx);
+            sb.set_parent(None, ctx);
+        }
+        self.windows.cascade_offset_spinbox.clear_children(ctx);
+        self.windows.cascade_offset_spinbox.set_parent(None, ctx);
+        self.windows.edge_gap_spinbox.clear_children(ctx);
+        self.windows.edge_gap_spinbox.set_parent(None, ctx);
+        self.windows.top_gap_spinbox.clear_children(ctx);
+        self.windows.top_gap_spinbox.set_parent(None, ctx);
+        self.windows.grid_gap_spinbox.clear_children(ctx);
+        self.windows.grid_gap_spinbox.set_parent(None, ctx);
+        self.windows.transition_duration_spinbox.clear_children(ctx);
+        self.windows.transition_duration_spinbox.set_parent(None, ctx);
+        self.windows.status_height_spinbox.clear_children(ctx);
+        self.windows.status_height_spinbox.set_parent(None, ctx);
+
+        for cs in &mut self.color_selectors {
+            cs.clear_children(ctx);
+            cs.set_parent(None, ctx);
+        }
+        self.menubar_opacity_spinbox.clear_children(ctx);
+        self.menubar_opacity_spinbox.set_parent(None, ctx);
+        self.button_padding_spinbox.clear_children(ctx);
+        self.button_padding_spinbox.set_parent(None, ctx);
+        self.section_padding_spinbox.clear_children(ctx);
+        self.section_padding_spinbox.set_parent(None, ctx);
+        self.label_alignment_menu.clear_children(ctx);
+        self.label_alignment_menu.set_parent(None, ctx);
+        self.label_offset_spinbox.clear_children(ctx);
+        self.label_offset_spinbox.set_parent(None, ctx);
+        self.label_margin_spinbox.clear_children(ctx);
+        self.label_margin_spinbox.set_parent(None, ctx);
+        self.plate_padding_spinbox.clear_children(ctx);
+        self.plate_padding_spinbox.set_parent(None, ctx);
+        self.graph_show_grid_toggle.clear_children(ctx);
+        self.graph_show_grid_toggle.set_parent(None, ctx);
+        self.graph_snap_enabled_toggle.clear_children(ctx);
+        self.graph_snap_enabled_toggle.set_parent(None, ctx);
+        self.graph_uniform_background_toggle.clear_children(ctx);
+        self.graph_uniform_background_toggle.set_parent(None, ctx);
+        self.graph_cell_opacity_spinbox.clear_children(ctx);
+        self.graph_cell_opacity_spinbox.set_parent(None, ctx);
+        self.graph_gap_opacity_spinbox.clear_children(ctx);
+        self.graph_gap_opacity_spinbox.set_parent(None, ctx);
+        self.graph_gap_width_spinbox.clear_children(ctx);
+        self.graph_gap_width_spinbox.set_parent(None, ctx);
+        self.page_margin_spinbox.clear_children(ctx);
+        self.page_margin_spinbox.set_parent(None, ctx);
+        self.desktop_grid_scale_spinbox.clear_children(ctx);
+        self.desktop_grid_scale_spinbox.set_parent(None, ctx);
+        self.desktop_line_width_spinbox.clear_children(ctx);
+        self.desktop_line_width_spinbox.set_parent(None, ctx);
+        self.grid_min_col_width_spinbox.clear_children(ctx);
+        self.grid_min_col_width_spinbox.set_parent(None, ctx);
+        self.spinbox_height_spinbox.clear_children(ctx);
+        self.spinbox_height_spinbox.set_parent(None, ctx);
+        self.spinbox_corner_radius_spinbox.clear_children(ctx);
+        self.spinbox_corner_radius_spinbox.set_parent(None, ctx);
+        self.toggle_height_spinbox.clear_children(ctx);
+        self.toggle_height_spinbox.set_parent(None, ctx);
+        self.toggle_corner_radius_spinbox.clear_children(ctx);
+        self.toggle_corner_radius_spinbox.set_parent(None, ctx);
+
+        self.color_selector_height_spinbox.clear_children(ctx);
+        self.color_selector_height_spinbox.set_parent(None, ctx);
+        self.color_selector_corner_radius_spinbox.clear_children(ctx);
+        self.color_selector_corner_radius_spinbox.set_parent(None, ctx);
+        self.plate_opacity_spinbox.clear_children(ctx);
+        self.plate_opacity_spinbox.set_parent(None, ctx);
+        self.plate_corner_radius_spinbox.clear_children(ctx);
+        self.plate_corner_radius_spinbox.set_parent(None, ctx);
+        self.page_opacity_spinbox.clear_children(ctx);
+        self.page_opacity_spinbox.set_parent(None, ctx);
+        self.layer_opacity_spinbox.clear_children(ctx);
+        self.layer_opacity_spinbox.set_parent(None, ctx);
+
+        self.color_selector_preview_corner_radius_spinbox.clear_children(ctx);
+        self.color_selector_preview_corner_radius_spinbox.set_parent(None, ctx);
+        self.color_selector_preview_margin_spinbox.clear_children(ctx);
+        self.color_selector_preview_margin_spinbox.set_parent(None, ctx);
+        self.textbox_height_spinbox.clear_children(ctx);
+        self.textbox_height_spinbox.set_parent(None, ctx);
+        self.textbox_corner_radius_spinbox.clear_children(ctx);
+        self.textbox_corner_radius_spinbox.set_parent(None, ctx);
+        self.slider_height_spinbox.clear_children(ctx);
+        self.slider_height_spinbox.set_parent(None, ctx);
+        self.color_selector_font_selector.clear_children(ctx);
+        self.color_selector_font_selector.set_parent(None, ctx);
+        self.menubar_font_selector.clear_children(ctx);
+        self.menubar_font_selector.set_parent(None, ctx);
+        self.breadcrumb_font_selector.clear_children(ctx);
+        self.breadcrumb_font_selector.set_parent(None, ctx);
+        self.section_label_font_selector.clear_children(ctx);
+        self.section_label_font_selector.set_parent(None, ctx);
+        self.nested_section_label_font_selector.clear_children(ctx);
+        self.nested_section_label_font_selector.set_parent(None, ctx);
+        self.font_selector_height_spinbox.clear_children(ctx);
+        self.font_selector_height_spinbox.set_parent(None, ctx);
+        self.font_selector_corner_radius_spinbox.clear_children(ctx);
+        self.font_selector_corner_radius_spinbox.set_parent(None, ctx);
+        self.dropdown_height_spinbox.clear_children(ctx);
+        self.dropdown_height_spinbox.set_parent(None, ctx);
+        self.dropdown_corner_radius_spinbox.clear_children(ctx);
+        self.dropdown_corner_radius_spinbox.set_parent(None, ctx);
+        self.button_corner_radius_spinbox.clear_children(ctx);
+        self.button_corner_radius_spinbox.set_parent(None, ctx);
+        self.notification_opacity_spinbox.clear_children(ctx);
+        self.notification_opacity_spinbox.set_parent(None, ctx);
+        self.backplate_corner_radius_spinbox.clear_children(ctx);
+        self.backplate_corner_radius_spinbox.set_parent(None, ctx);
+        self.custom_multicontrol.clear_children(ctx);
+        self.custom_multicontrol.set_parent(None, ctx);
+        self.status_box_corner_radius_spinbox.clear_children(ctx);
+        self.status_box_corner_radius_spinbox.set_parent(None, ctx);
+        self.status_padding_spinbox.clear_children(ctx);
+        self.status_padding_spinbox.set_parent(None, ctx);
+        self.status_controls.separators_toggle.clear_children(ctx);
+        self.status_controls.separators_toggle.set_parent(None, ctx);
+        self.status_controls.underline_toggle.clear_children(ctx);
+        self.status_controls.underline_toggle.set_parent(None, ctx);
+        self.status_controls.box_opacity_slider.clear_children(ctx);
+        self.status_controls.box_opacity_slider.set_parent(None, ctx);
+        self.status_controls.box_blur_slider.clear_children(ctx);
+        self.status_controls.box_blur_slider.set_parent(None, ctx);
+
+        self.sans_box.clear_children(ctx);
+        self.sans_box.set_parent(None, ctx);
+        self.serif_box.clear_children(ctx);
+        self.serif_box.set_parent(None, ctx);
+        self.mono_box.clear_children(ctx);
+        self.mono_box.set_parent(None, ctx);
+        self.borders_box.clear_children(ctx);
+        self.borders_box.set_parent(None, ctx);
+        self.status_box.clear_children(ctx);
+        self.status_box.set_parent(None, ctx);
+        self.fuzzel_box.clear_children(ctx);
+        self.fuzzel_box.set_parent(None, ctx);
+        self.terminal_box.clear_children(ctx);
+        self.terminal_box.set_parent(None, ctx);
+        self.borders_menu.clear_children(ctx);
+        self.borders_menu.set_parent(None, ctx);
+        self.status_menu.clear_children(ctx);
+        self.status_menu.set_parent(None, ctx);
+        self.fuzzel_menu.clear_children(ctx);
+        self.fuzzel_menu.set_parent(None, ctx);
+        self.terminal_menu.clear_children(ctx);
+        self.terminal_menu.set_parent(None, ctx);
+        self.borders_size_box.clear_children(ctx);
+        self.borders_size_box.set_parent(None, ctx);
+        self.status_size_box.clear_children(ctx);
+        self.status_size_box.set_parent(None, ctx);
+        self.fuzzel_size_box.clear_children(ctx);
+        self.fuzzel_size_box.set_parent(None, ctx);
+        self.terminal_size_box.clear_children(ctx);
+        self.terminal_size_box.set_parent(None, ctx);
+
+        for menu in &mut self.windows.tag_layout_menus {
+            menu.clear_children(ctx);
+            menu.set_parent(None, ctx);
+        }
+        self.windows.side_panel_behavior_menu.clear_children(ctx);
+        self.windows.side_panel_behavior_menu.set_parent(None, ctx);
+        self.windows.side_panel_position_menu.clear_children(ctx);
+        self.windows.side_panel_position_menu.set_parent(None, ctx);
+        self.windows.side_panel_width_spinbox.clear_children(ctx);
+        self.windows.side_panel_width_spinbox.set_parent(None, ctx);
+        self.windows.side_panel_border_gap_spinbox.clear_children(ctx);
+        self.windows.side_panel_border_gap_spinbox.set_parent(None, ctx);
+        self.windows.side_panel_border_opacity_spinbox.clear_children(ctx);
+        self.windows.side_panel_border_opacity_spinbox.set_parent(None, ctx);
+
+        self.windows.fullscreen_opacity_spinbox.clear_children(ctx);
+        self.windows.fullscreen_opacity_spinbox.set_parent(None, ctx);
+        self.windows.cascade_opacity_spinbox.clear_children(ctx);
+        self.windows.cascade_opacity_spinbox.set_parent(None, ctx);
+        self.windows.grid_opacity_spinbox.clear_children(ctx);
+        self.windows.grid_opacity_spinbox.set_parent(None, ctx);
+        self.windows.floating_opacity_spinbox.clear_children(ctx);
+        self.windows.floating_opacity_spinbox.set_parent(None, ctx);
+        self.windows.pinned_opacity_spinbox.clear_children(ctx);
+        self.windows.pinned_opacity_spinbox.set_parent(None, ctx);
+        self.windows.popup_opacity_spinbox.clear_children(ctx);
+        self.windows.popup_opacity_spinbox.set_parent(None, ctx);
+        self.windows.blur_toggle.clear_children(ctx);
+        self.windows.blur_toggle.set_parent(None, ctx);
+    }
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("Custom Parameters").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Layout").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Status").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Controls").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Indicators").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Notification").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Surfaces").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Fonts").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Containers").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("Windows").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        for i in 0..10 {
+            cce_ui::widget::link_parent_child(page_root, &mut sec_containers[i], ctx);
+        }
+
+        // Section 0: Custom Parameters
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.custom_multicontrol, ctx);
+
+        // Section 1: Layout
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.color_selectors[1], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.color_selectors[2], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.grid_min_col_width_spinbox, ctx);
+
+        // Section 2: Status
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.color_selectors[7], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.color_selectors[3], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.color_selectors[22], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_box_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_padding_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.separators_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.underline_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.box_opacity_slider, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.box_blur_slider, ctx);
+
+        // Section 3: Controls
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[5], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[4], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.slider_height_spinbox, ctx);
+
+        // Section 4: Indicators
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.color_selectors[11], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.color_selectors[12], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.toggle_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.toggle_corner_radius_spinbox, ctx);
+
+        // Section 5: Notification
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[16], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[17], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[18], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[20], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.notification_opacity_spinbox, ctx);
+
+        // Section 6: Surfaces
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[0], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[6], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[23], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[21], ctx);
+
+        // Section 7: Fonts
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.sans_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.serif_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.mono_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.borders_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.status_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.fuzzel_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.terminal_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.borders_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.status_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.fuzzel_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.terminal_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.borders_size_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.status_size_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.fuzzel_size_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.terminal_size_box, ctx);
+
+        // Section 8: Containers
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[9], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[10], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.button_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[8], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.button_padding_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[14], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[15], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.button_strip_spacing_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[19], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.section_padding_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[13], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.plate_padding_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.plate_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.plate_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.page_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.layer_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.page_margin_spinbox, ctx);
+
+        // Section 9: Windows
+        for menu in &mut self.windows.tag_layout_menus {
+            cce_ui::widget::link_parent_child(&mut sec_containers[9], menu, ctx);
+        }
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_behavior_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_position_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_width_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_border_gap_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_border_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.pinned_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.popup_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.fullscreen_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.cascade_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.grid_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.floating_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.blur_toggle, ctx);
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        _root_focused: bool,
+        sec_focused: &[bool],
+        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        for (i, cp) in self.color_selectors.iter_mut().enumerate() {
+            if cp.take_change() {
+                actions.push(AppAction::Interface(match i {
+                    0 => InterfaceMessage::SetPageLowColor(cp.color),
+                    1 => InterfaceMessage::SetHighColor(cp.color),
+                    2 => InterfaceMessage::SetVisualGuidesColor(cp.color),
+                    3 => InterfaceMessage::SetDisabledColor(cp.color),
+                    4 => InterfaceMessage::SetSliderTrackColor(cp.color),
+                    5 => InterfaceMessage::SetColorBordersColor(cp.color),
+                    6 => InterfaceMessage::SetDesktopBackground(cp.color),
+                    7 => InterfaceMessage::SetNormalColor(cp.color),
+                    8 => InterfaceMessage::SetPaginatorSidebarColor(cp.color),
+                    9 => InterfaceMessage::SetPrimaryHighlightColor(cp.color),
+                    10 => InterfaceMessage::SetMenubarTabLabelColor(cp.color),
+                    11 => InterfaceMessage::SetToggleEnabledColor(cp.color),
+                    12 => InterfaceMessage::SetToggleDisabledColor(cp.color),
+                    13 => InterfaceMessage::SetScrollingListBgColor(cp.color),
+                    14 => InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], 255]),
+                    15 => InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], 255]),
+                    16 => InterfaceMessage::SetBreadcrumbBgColor(cp.color),
+                    17 => InterfaceMessage::SetPopoverBgColor(cp.color),
+                    18 => InterfaceMessage::SetNotificationBgColor(cp.color),
+                    19 => InterfaceMessage::SetBackplateColor(cp.color),
+                    20 => InterfaceMessage::SetPageColor(cp.color),
+                    21 => InterfaceMessage::SetLayerColor(cp.color),
+                    22 => InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
+                    23 => InterfaceMessage::SetDesktopGridColor([cp.color[0], cp.color[1], cp.color[2], 255]),
+                    _ => return,
+                }));
+            }
+        }
+
+        if self.status_box_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetStatusBoxCornerRadius(self.status_box_corner_radius_spinbox.value as u16)));
+        }
+        if self.status_padding_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetStatusPadding(self.status_padding_spinbox.value as u16)));
+        }
+        if self.status_module_spacing_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetStatusModuleSpacing(self.status_module_spacing_spinbox.value as u16)));
+        }
+        if self.status_controls.separators_toggle.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::StatusToggleSeparators));
+        }
+        if self.status_controls.underline_toggle.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::StatusToggleUnderline));
+        }
+        if self.status_controls.box_opacity_slider.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::StatusSetBoxOpacity(self.status_controls.box_opacity_slider.value())));
+        }
+        if self.status_controls.box_blur_slider.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::StatusSetBoxBlur(self.status_controls.box_blur_slider.value())));
+        }
+
+        if self.menubar_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetMenubarOpacity(self.menubar_opacity_spinbox.value as f32 / 100.0)));
+        }
+        if self.button_padding_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetButtonPadding(self.button_padding_spinbox.value as u16)));
+        }
+        if self.button_strip_spacing_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetButtonStripSpacing(self.button_strip_spacing_spinbox.value as u16)));
+        }
+        if self.section_padding_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSectionPadding(self.section_padding_spinbox.value as u16)));
+        }
+        if self.plate_padding_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetPlatePadding(self.plate_padding_spinbox.value as u16)));
+        }
+        if self.plate_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetPlateOpacity(self.plate_opacity_spinbox.value as f32 / 100.0)));
+        }
+        if self.plate_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetPlateCornerRadius(self.plate_corner_radius_spinbox.value as u16)));
+        }
+        if self.page_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetPageOpacity(self.page_opacity_spinbox.value as f32 / 100.0)));
+        }
+        if self.layer_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetLayerOpacity(self.layer_opacity_spinbox.value as f32 / 100.0)));
+        }
+        if self.page_margin_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetPageMargin(self.page_margin_spinbox.value as u16)));
+        }
+        if self.desktop_grid_scale_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetDesktopGridScale(self.desktop_grid_scale_spinbox.value as u16)));
+        }
+        if self.desktop_line_width_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetDesktopLineWidth(self.desktop_line_width_spinbox.value as u16)));
+        }
+        if self.grid_min_col_width_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGridMinColWidth(self.grid_min_col_width_spinbox.value as u16)));
+        }
+        if self.spinbox_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSpinboxHeight(self.spinbox_height_spinbox.value as u16)));
+        }
+        if self.spinbox_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSpinboxCornerRadius(self.spinbox_corner_radius_spinbox.value as u16)));
+        }
+        if self.toggle_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetToggleHeight(self.toggle_height_spinbox.value as u16)));
+        }
+        if self.toggle_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetToggleCornerRadius(self.toggle_corner_radius_spinbox.value as u16)));
+        }
+        if self.color_selector_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetColorSelectorHeight(self.color_selector_height_spinbox.value as u16)));
+        }
+        if self.color_selector_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetColorSelectorCornerRadius(self.color_selector_corner_radius_spinbox.value as u16)));
+        }
+        if self.color_selector_preview_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetColorSelectorPreviewCornerRadius(self.color_selector_preview_corner_radius_spinbox.value as u16)));
+        }
+        if self.color_selector_preview_margin_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetColorSelectorPreviewMargin(self.color_selector_preview_margin_spinbox.value as u16)));
+        }
+        if self.textbox_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetTextboxHeight(self.textbox_height_spinbox.value as u16)));
+        }
+        if self.textbox_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetTextboxCornerRadius(self.textbox_corner_radius_spinbox.value as u16)));
+        }
+        if self.slider_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSliderHeight(self.slider_height_spinbox.value as u16)));
+        }
+
+        if self.label_alignment_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetNestedSectionLabelAlignment(self.label_alignment_menu.selected)));
+        }
+        if self.label_offset_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetNestedSectionLabelOffset(self.label_offset_spinbox.value as i16)));
+        }
+        if self.label_margin_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetLabelMargin(self.label_margin_spinbox.value as u16)));
+        }
+
+        // Fonts
+        if self.sans_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSans(self.sans_box.text.clone())));
+        }
+        if self.serif_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSerif(self.serif_box.text.clone())));
+        }
+        if self.mono_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetMono(self.mono_box.text.clone())));
+        }
+        if self.borders_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetBorders(self.borders_box.text.clone())));
+        }
+        if self.status_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetStatus(self.status_box.text.clone())));
+        }
+        if self.fuzzel_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetFuzzel(self.fuzzel_box.text.clone())));
+        }
+        if self.terminal_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetTerminal(self.terminal_box.text.clone())));
+        }
+        if self.borders_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetBordersMenu(self.borders_menu.selected)));
+        }
+        if self.status_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetStatusMenu(self.status_menu.selected)));
+        }
+        if self.fuzzel_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetFuzzelMenu(self.fuzzel_menu.selected)));
+        }
+        if self.terminal_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetTerminalMenu(self.terminal_menu.selected)));
+        }
+        if self.borders_size_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetBordersSize(self.borders_size_box.value)));
+        }
+        if self.status_size_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetStatusSize(self.status_size_box.value)));
+        }
+        if self.fuzzel_size_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetFuzzelSize(self.fuzzel_size_box.value)));
+        }
+        if self.terminal_size_box.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetTerminalSize(self.terminal_size_box.value)));
+        }
+
+        // Windows Page Settings
+        for (idx, menu) in self.windows.tag_layout_menus.iter_mut().enumerate() {
+            if menu.take_change() {
+                actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetTagLayout(idx, menu.selected))));
+            }
+        }
+        if self.windows.side_panel_behavior_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelBehavior(self.windows.side_panel_behavior_menu.selected))));
+        }
+        if self.windows.side_panel_position_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelPosition(self.windows.side_panel_position_menu.selected))));
+        }
+        if self.windows.side_panel_width_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelWidth(self.windows.side_panel_width_spinbox.value as u16))));
+        }
+        if self.windows.side_panel_border_gap_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelBorderGap(self.windows.side_panel_border_gap_spinbox.value as u16))));
+        }
+        if self.windows.side_panel_border_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelBorderOpacity(self.windows.side_panel_border_opacity_spinbox.value as u16))));
+        }
+        if self.windows.fullscreen_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetFullscreenOpacity(self.windows.fullscreen_opacity_spinbox.value as u16))));
+        }
+        if self.windows.cascade_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetCascadeOpacity(self.windows.cascade_opacity_spinbox.value as u16))));
+        }
+        if self.windows.grid_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetGridOpacity(self.windows.grid_opacity_spinbox.value as u16))));
+        }
+        if self.windows.floating_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetFloatingOpacity(self.windows.floating_opacity_spinbox.value as u16))));
+        }
+        if self.windows.pinned_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetPinnedOpacity(self.windows.pinned_opacity_spinbox.value as u16))));
+        }
+        if self.windows.popup_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetPopupOpacity(self.windows.popup_opacity_spinbox.value as u16))));
+        }
+        if self.windows.blur_toggle.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::ToggleBlur)));
+        }
+
+        // Toggles in font_selector & graph
+        if self.graph_show_grid_toggle.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGraphShowGrid(self.graph_show_grid_toggle.toggled())));
+        }
+        if self.graph_snap_enabled_toggle.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGraphSnapEnabled(self.graph_snap_enabled_toggle.toggled())));
+        }
+        if self.graph_uniform_background_toggle.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGraphUniformBackground(self.graph_uniform_background_toggle.toggled())));
+        }
+        if self.graph_cell_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGraphCellOpacity(self.graph_cell_opacity_spinbox.value as f32 / 100.0)));
+        }
+        if self.graph_gap_opacity_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGraphGapOpacity(self.graph_gap_opacity_spinbox.value as f32 / 100.0)));
+        }
+        if self.graph_gap_width_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetGraphGapWidth(self.graph_gap_width_spinbox.value as u16)));
+        }
+        if self.color_selector_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetColorSelectorFont(self.color_selector_font_selector.font_family.clone())));
+        }
+        if self.menubar_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetMenubarFont(self.menubar_font_selector.font_family.clone())));
+        }
+        if self.breadcrumb_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetBreadcrumbFont(self.breadcrumb_font_selector.font_family.clone())));
+        }
+        if self.section_label_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSectionLabelFont(self.section_label_font_selector.font_family.clone())));
+        }
+        if self.nested_section_label_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetNestedSectionLabelFont(self.nested_section_label_font_selector.font_family.clone())));
+        }
+        if self.font_selector_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetFontSelectorHeight(self.font_selector_height_spinbox.value as u16)));
+        }
+        if self.font_selector_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetFontSelectorCornerRadius(self.font_selector_corner_radius_spinbox.value as u16)));
+        }
+        if self.dropdown_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetDropdownHeight(self.dropdown_height_spinbox.value as u16)));
+        }
+        if self.dropdown_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetDropdownCornerRadius(self.dropdown_corner_radius_spinbox.value as u16)));
+        }
+        if self.button_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetButtonCornerRadius(self.button_corner_radius_spinbox.value as u16)));
+        }
+
+        // Windows Page Settings (rest)
+        if self.windows.status_height_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetStatusHeight(self.windows.status_height_spinbox.value as u16))));
+        }
+        if self.windows.cascade_offset_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetCascadeOffset(self.windows.cascade_offset_spinbox.value as u16))));
+        }
+        if self.windows.edge_gap_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetEdgeGap(self.windows.edge_gap_spinbox.value as u16))));
+        }
+        if self.windows.top_gap_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetTopGap(self.windows.top_gap_spinbox.value as u16))));
+        }
+        if self.windows.grid_gap_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetGridGap(self.windows.grid_gap_spinbox.value as u16))));
+        }
+        if self.windows.transition_duration_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetTransitionDuration(self.windows.transition_duration_spinbox.value as u16))));
+        }
+    }
+
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        if self.status_controls.opacity_dragging {
+            if self.status_controls.box_opacity_slider.drag_update(lx, ly) {
+                let val = self.status_controls.box_opacity_slider.value();
+                actions.push(AppAction::Interface(InterfaceMessage::StatusSetBoxOpacity(val)));
+                return true;
+            }
+        } else if self.status_controls.blur_dragging {
+            if self.status_controls.box_blur_slider.drag_update(lx, ly) {
+                let val = self.status_controls.box_blur_slider.value();
+                actions.push(AppAction::Interface(InterfaceMessage::StatusSetBoxBlur(val)));
+                return true;
+            }
+        }
+        false
+    }
+
+    fn handle_pointer_down(&mut self, _lx: f32, _ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        if self.status_controls.box_opacity_slider.is_dragging() {
+            self.status_controls.opacity_dragging = true;
+            return true;
+        }
+        if self.status_controls.box_blur_slider.is_dragging() {
+            self.status_controls.blur_dragging = true;
+            return true;
+        }
+        false
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        let mut any = false;
+        if self.status_controls.opacity_dragging {
+            self.status_controls.box_opacity_slider.drag_end();
+            self.status_controls.opacity_dragging = false;
+            any = true;
+        }
+        if self.status_controls.blur_dragging {
+            self.status_controls.box_blur_slider.drag_end();
+            self.status_controls.blur_dragging = false;
+            any = true;
+        }
+        any
     }
 }
 

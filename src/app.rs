@@ -44,6 +44,46 @@ impl Default for AppState {
     }
 }
 
+impl AppState {
+    pub fn get_page(&self, page: Page) -> &dyn crate::pages::AppPage {
+        match page {
+            Page::Accounts => &self.accounts,
+            Page::Audio => &self.audio,
+            Page::Display => &self.display,
+            Page::Input => &self.input,
+            Page::Interface => &self.interface,
+            Page::Packages => &self.packages,
+            Page::Processes => &self.processes,
+            Page::Radios => &self.network,
+            Page::Storage => &self.storage,
+            Page::System => &self.system_info,
+        }
+    }
+
+    pub fn get_page_mut(&mut self, page: Page) -> &mut dyn crate::pages::AppPage {
+        match page {
+            Page::Accounts => &mut self.accounts,
+            Page::Audio => &mut self.audio,
+            Page::Display => &mut self.display,
+            Page::Input => &mut self.input,
+            Page::Interface => &mut self.interface,
+            Page::Packages => &mut self.packages,
+            Page::Processes => &mut self.processes,
+            Page::Radios => &mut self.network,
+            Page::Storage => &mut self.storage,
+            Page::System => &mut self.system_info,
+        }
+    }
+
+    pub fn get_current_page(&self) -> &dyn crate::pages::AppPage {
+        self.get_page(self.current_page)
+    }
+
+    pub fn get_current_page_mut(&mut self) -> &mut dyn crate::pages::AppPage {
+        self.get_page_mut(self.current_page)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AppAction {
     Exit,

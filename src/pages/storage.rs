@@ -316,3 +316,57 @@ pub fn update(state: &mut StorageState, msg: StorageMessage) {
         }
     }
 }
+
+impl crate::pages::AppPage for StorageState {
+    fn clear_children(&mut self, _ctx: &mut cce_ui::context::UiContext) {}
+
+    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+        vec![
+            cce_ui::widget::SectionContainer::new("Local Storage").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Memory").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+            cce_ui::widget::SectionContainer::new("Full System Backup").with_layout(cce_ui::widget::AdaptiveGridLayout {
+                min_col_width: 140.0,
+                gap: 8.0,
+                padding_x: 0.0,
+                padding_y: 0.0,
+            }),
+        ]
+    }
+
+    fn link_children(
+        &mut self,
+        page_root: &mut dyn cce_ui::widget::Element,
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        ctx: &mut cce_ui::context::UiContext,
+    ) {
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[2], ctx);
+    }
+
+    fn view(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        _root_focused: bool,
+        _sec_focused: &[bool],
+        layout: &mut dyn LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
+    ) -> crate::app::PageContent {
+        view(self, cx, cy, cw, ch, layout, ctx)
+    }
+
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+}
