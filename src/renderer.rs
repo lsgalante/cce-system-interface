@@ -259,8 +259,8 @@ impl SystemInterface {
         match self.app.current_page {
             Page::Accounts => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Accounts").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Modify Accounts").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Accounts").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Modify Accounts").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -277,15 +277,15 @@ impl SystemInterface {
 
             Page::System => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Host Info").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("OS & Kernel").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("CPU Gov").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("GPU Gov").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Power Profile").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Backup Status").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Notifications").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status Bar").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Updates").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System Actions").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("CPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("GPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("CPU Governor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("GPU Power").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Battery").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System Notifications").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status Interface").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 for i in 0..9 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -300,8 +300,8 @@ impl SystemInterface {
             }
             Page::Processes => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Processes List").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Services Control").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Processes").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Services").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -311,8 +311,8 @@ impl SystemInterface {
             }
             Page::Radios => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Wi-Fi Networks").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Radio Switches").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("WiFi").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Bluetooth").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
@@ -524,45 +524,49 @@ impl SystemInterface {
 
             Page::Input => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Touchpad").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Trackpoint").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Keyboard").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Cursor").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Scrolling").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Inertial Input").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Keyboard Bindings").with_layout(cce_ui::widget::VerticalLayout::default()));
-                for i in 0..7 {
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Touchpad").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Trackpoint").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Keyboard").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Cursor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Scrolling").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Inertial Input").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Graph").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Keyboard Bindings").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                for i in 0..8 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.dwtp_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_speed_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpoint_accel_profile_menu, &mut self.ui_context);
-                
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.rate_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.delay_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.tap_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.input.trackpad, &mut self.ui_context);
 
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_theme_menu, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.cursor_size_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.dwtp_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.trackpoint_accel_speed_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[1], &mut self.app.input.trackpoint_accel_profile_menu, &mut self.ui_context);
                 
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_friction_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.natural_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.scroll_speed_spinbox, &mut self.ui_context);
-                
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.pointer_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.pointer_friction_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.trackpad_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.trackpad_friction_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.rate_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.input.delay_spinbox, &mut self.ui_context);
 
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_in_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.zoom_out_box, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.input.keybinds_control, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.cursor_theme_menu, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[3], &mut self.app.input.cursor_size_spinbox, &mut self.ui_context);
+                
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.scroll_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.scroll_friction_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.natural_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[4], &mut self.app.input.scroll_speed_spinbox, &mut self.ui_context);
+                
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.pointer_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.pointer_friction_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.trackpad_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[5], &mut self.app.input.trackpad_friction_spinbox, &mut self.ui_context);
+
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.input.zoom_in_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[6], &mut self.app.input.zoom_out_box, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[7], &mut self.app.input.keybinds_control, &mut self.ui_context);
             }
             Page::Audio => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Output").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Input").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Output").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Input").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 
@@ -581,18 +585,18 @@ impl SystemInterface {
             }
             Page::Display => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Brightness").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Night Light").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Outputs").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Screensaver Settings").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Brightness").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Night Light").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Outputs").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Screensaver Settings").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 link_parent_child(page_root, &mut self.page_sec_containers[0], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[1], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[2], &mut self.ui_context);
                 link_parent_child(page_root, &mut self.page_sec_containers[3], &mut self.ui_context);
 
                 // Section 0: Brightness
-                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.display.brightness_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[0], &mut self.app.display.brightness_slider, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[0], &mut self.app.display.brightness_spinbox, &mut self.ui_context);
 
                 // Section 1: Night Light
                 link_parent_child(&mut self.page_sec_containers[1], &mut self.app.display.night_light_label, &mut self.ui_context);
@@ -614,8 +618,8 @@ impl SystemInterface {
             }
             Page::Packages => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Packages").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System Update").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Packages").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System Update").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 for i in 0..2 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }

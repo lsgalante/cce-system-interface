@@ -1,5 +1,5 @@
 use crate::app::{PageContent, SectionContextExt};
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
@@ -282,14 +282,12 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
                 (state.brightness / state.max_brightness * 100.0).round() as i32
             } else { 0 };
 
-            let pad = sec.padding();
-            let bar_w = sec.cw - 2.0 * pad - 12.0 - 45.0;
-            let yt = sec.ay();
+            state.brightness_slider.set_label(&format!("Brightness: {}%", bright_pct));
             state.brightness_slider.set_value(bright_pct as f32 / 100.0);
-                        let slider_x = sec.ax(12.0);
-            render_widget(sec.pc, &mut state.brightness_slider, slider_x, yt, bar_w, cce_ui::layout::slider_height(), ctx);
-            sec.text(&format!("{}%", bright_pct), 12.0 + bar_w + 8.0, 7.0, 11.0, TEXT_DIM);
-            sec.spacing(34.0);
+            let label_h = cce_ui::widget::label_offset(&state.brightness_slider);
+            let slider_h = cce_ui::layout::slider_height() + label_h;
+            sec.widget_full(&mut state.brightness_slider, slider_h, ctx);
+            sec.spacing(12.0);
 
             state.brightness_spinbox.value = bright_pct;
             sec.widget_full(&mut state.brightness_spinbox, cce_ui::layout::spinbox_height(), ctx);
@@ -318,9 +316,9 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
         } else {
             for out in &mut state.outputs {
                 sec.add_section(&out.name, false, |subsec| {
-                    subsec.widget(&mut out.resolution_label, 12.0, 240.0, 20.0, ctx);
+                    subsec.widget_full(&mut out.resolution_label, 20.0, ctx);
                     if let Some(ref mut scale_lbl) = out.scale_label {
-                        subsec.widget(scale_lbl, 12.0, 240.0, 20.0, ctx);
+                        subsec.widget_full(scale_lbl, 20.0, ctx);
                     }
                 });
             }
