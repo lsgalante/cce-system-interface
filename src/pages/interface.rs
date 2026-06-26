@@ -1919,13 +1919,49 @@ fn apply_disabled_color(rgb: [u8; 3]) {
 }
 
 pub fn status_interface_reload() {
-    std::thread::spawn(|| {
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", "cce-status-interface"])
-            .status();
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        send_ipc_command("spawn cce-status-interface");
-    });
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    struct StatusDebouncer {
+        last_trigger: Instant,
+        active: bool,
+    }
+
+    impl StatusDebouncer {
+        fn new() -> Self {
+            Self {
+                last_trigger: Instant::now(),
+                active: false,
+            }
+        }
+    }
+
+    static DEBOUNCER: OnceLock<Mutex<StatusDebouncer>> = OnceLock::new();
+    let debouncer = DEBOUNCER.get_or_init(|| Mutex::new(StatusDebouncer::new()));
+    
+    let mut guard = debouncer.lock().unwrap();
+    guard.last_trigger = Instant::now();
+    if !guard.active {
+        guard.active = true;
+        std::thread::spawn(|| {
+            loop {
+                std::thread::sleep(Duration::from_millis(100));
+                let mut guard = DEBOUNCER.get().unwrap().lock().unwrap();
+                if guard.last_trigger.elapsed() >= Duration::from_millis(250) {
+                    guard.active = false;
+                    drop(guard);
+
+                    // Perform the actual reload
+                    let _ = std::process::Command::new("pkill")
+                        .args(["-f", "cce-status-interface"])
+                        .status();
+                    std::thread::sleep(Duration::from_millis(150));
+                    send_ipc_command("spawn cce-status-interface");
+                    break;
+                }
+            }
+        });
+    }
 }
 
 fn write_status_value(key: &str, value: &str) {
