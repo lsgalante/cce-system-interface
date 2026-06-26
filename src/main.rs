@@ -216,6 +216,9 @@ struct SystemInterface {
     sender: calloop::channel::Sender<AppAction>,
     ui_context: cce_ui::context::UiContext,
     scroll_logs: Vec<String>,
+    search_open: bool,
+    search_query: String,
+    search_box: cce_ui::widget::input::TextBox,
 }
 
 impl cce_ui::engine::Application for SystemInterface {
@@ -326,6 +329,11 @@ impl cce_ui::engine::Application for SystemInterface {
             sender,
             ui_context: cce_ui::context::UiContext::new(),
             scroll_logs: Vec::new(),
+            search_open: false,
+            search_query: String::new(),
+            search_box: cce_ui::widget::input::TextBox::new(String::new())
+                .with_placeholder("Search sections & parameters...")
+                .with_draw_bg_border(false),
         };
 
         for page in &mut this.pages {

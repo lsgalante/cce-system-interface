@@ -25,6 +25,7 @@ impl SystemInterface {
         }
 
         // Clear all widgets' hierarchy links
+        self.search_box.clear_children(&mut self.ui_context); self.search_box.set_parent(None, &mut self.ui_context);
         self.app.processes.services_search_box.clear_children(&mut self.ui_context); self.app.processes.services_search_box.set_parent(None, &mut self.ui_context);
         self.app.packages.search_box.clear_children(&mut self.ui_context); self.app.packages.search_box.set_parent(None, &mut self.ui_context);
         self.app.packages.installed_list_box.scroll_box.clear_children(&mut self.ui_context); self.app.packages.installed_list_box.scroll_box.set_parent(None, &mut self.ui_context);
@@ -319,16 +320,16 @@ impl SystemInterface {
             }
             Page::Interface => {
                 self.page_sec_containers.clear();
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Custom Parameters").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Layout").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Controls").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Indicators").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Notification").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Surfaces").with_layout(cce_ui::widget::VerticalLayout::default()));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Fonts").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Custom Parameters").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Layout").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Controls").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Indicators").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Notification").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Surfaces").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Fonts").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Containers").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Windows").with_layout(cce_ui::widget::VerticalLayout::default()));
+                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Windows").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 
                 for i in 0..10 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
@@ -646,7 +647,10 @@ impl SystemInterface {
         let lcx = self.sidebar_width;
         let lcy = self.header_height;
         let lcw = sw / s - self.sidebar_width;
-        let lch = sh / s - self.header_height - self.status_height;
+        let mut lch = sh / s - self.header_height - self.status_height;
+        if self.search_open {
+            lch -= 42.0;
+        }
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
         self.menubar.set_selected_page(page_idx);
@@ -663,15 +667,55 @@ impl SystemInterface {
         self.root_window.clear_children(&mut self.ui_context);
         self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
+        if self.search_open {
+            use cce_ui::widget::focus::link_parent_child;
+            link_parent_child(&mut self.root_window, &mut self.search_box, &mut self.ui_context);
+        }
 
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.menubar, 0.0, self.header_height, self.sidebar_width, sh / s - self.header_height, &mut self.ui_context);
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, sw / s - self.sidebar_width, sh / s - self.header_height, &mut self.ui_context);
+        let switcher_h = if self.search_open {
+            sh / s - self.header_height - 42.0
+        } else {
+            sh / s - self.header_height
+        };
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, sw / s - self.sidebar_width, switcher_h, &mut self.ui_context);
 
         // Render root window recursively
         let mut window_pc = PageContent::new();
         cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, sw / s, sh / s, &mut self.ui_context);
+
+        let mut search_pc = PageContent::new();
+        if self.search_open {
+            search_pc.rects.push((
+                [0.08, 0.08, 0.12, 1.0],
+                self.sidebar_width,
+                sh / s - 42.0,
+                sw / s - self.sidebar_width,
+                42.0,
+                0.0,
+                (false, false, false, false),
+            ));
+            search_pc.rects.push((
+                [0.18, 0.18, 0.24, 1.0],
+                self.sidebar_width,
+                sh / s - 42.0,
+                sw / s - self.sidebar_width,
+                1.0,
+                0.0,
+                (false, false, false, false),
+            ));
+            cce_ui::layout::render_widget(
+                &mut search_pc,
+                &mut self.search_box,
+                self.sidebar_width + 12.0,
+                sh / s - 36.0,
+                sw / s - self.sidebar_width - 24.0,
+                30.0,
+                &mut self.ui_context,
+            );
+        }
 
         // CSD Titlebar removed
 
@@ -711,6 +755,32 @@ impl SystemInterface {
 
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
+
+        if self.search_open && !self.search_query.is_empty() && !self.pages[page_idx].scroll_bar.dragging {
+            let query_lower = self.search_query.to_lowercase();
+            let mut first_match_y = None;
+            for (t, _, _, y, _, _, _) in &pc.texts {
+                if t.to_lowercase().contains(&query_lower) {
+                    first_match_y = Some(*y);
+                    break;
+                }
+            }
+            if let Some(y) = first_match_y {
+                let mut max_y = 0.0f32;
+                for (_, _, y, _, h, _, _) in &pc.rects {
+                    max_y = max_y.max(y + h);
+                }
+                for (_, size, _, y, _, _, _) in &pc.texts {
+                    max_y = max_y.max(y + size);
+                }
+                for (btn, _) in &pc.buttons {
+                    let base = btn.base().unwrap();
+                    max_y = max_y.max(base.y + base.h);
+                }
+                let local_max_scroll_y = (max_y - lch).max(0.0);
+                self.scroll_y = (y - 100.0).clamp(0.0, local_max_scroll_y);
+            }
+        }
 
         let mut popovers = Vec::new();
         Self::collect_popover_rects(&self.pages[page_idx], &mut popovers, &self.ui_context);
@@ -761,6 +831,52 @@ impl SystemInterface {
             let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
                 [bl, bt - scroll_offset_y, br, bb - scroll_offset_y]
             });
+
+            let matched = self.search_open && !self.search_query.is_empty() && t.to_lowercase().contains(&self.search_query.to_lowercase());
+
+            if matched {
+                let text_buf = make_text_buffer_with_font(
+                    &mut self.font_system,
+                    t,
+                    *size * s,
+                    font_opt.as_deref(),
+                    &self.sans_serif_family,
+                    &self.serif_family,
+                    &self.monospace_family,
+                );
+                let scale = cce_ui::scale::scale_factor();
+                let text_w = text_buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0) / scale;
+
+                let pad_x = 4.0;
+                let pad_y = 2.0;
+                let rect_x = *x - pad_x;
+                let rect_y = *y - pad_y;
+                let rect_w = text_w + 2.0 * pad_x;
+                let rect_h = *size + 2.0 * pad_y;
+
+                widgets.push(AppWidget {
+                    x: rect_x * s,
+                    y: (rect_y - scroll_offset_y) * s,
+                    w: rect_w * s,
+                    h: rect_h * s,
+                    color: [0.65, 0.45, 0.05, 0.4],
+                    hover_color: [0.65, 0.45, 0.05, 0.4],
+                    hovering: false,
+                    radius: 3.0 * s,
+                    corners: (true, true, true, true),
+                });
+            }
+
+            let text_color = if self.search_open && !self.search_query.is_empty() {
+                if matched {
+                    [1.0, 0.95, 0.80, 1.0]
+                } else {
+                    [tc[0] * 0.25, tc[1] * 0.25, tc[2] * 0.25, tc[3] * 0.25]
+                }
+            } else {
+                *tc
+            };
+
             text_items.push(TextItem {
                 buffer: make_text_buffer_with_font(
                     &mut self.font_system,
@@ -773,7 +889,7 @@ impl SystemInterface {
                 ),
                 x: *x * s, y: (*y - scroll_offset_y) * s,
                 color: glyphon::Color::rgb(
-                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
+                    (text_color[0] * 255.0) as u8, (text_color[1] * 255.0) as u8, (text_color[2] * 255.0) as u8,
                 ),
                 bounds: shifted_bounds,
             });
@@ -882,6 +998,34 @@ impl SystemInterface {
 
 
 
+
+        for (c, x, y, w, h, r, corners) in &search_pc.rects {
+            widgets.push(AppWidget {
+                x: *x * s, y: *y * s, w: *w * s, h: *h * s,
+                color: *c, hover_color: *c,
+                hovering: false,
+                radius: *r * s,
+                corners: *corners,
+            });
+        }
+        for (t, size, x, y, tc, font_opt, bounds) in &search_pc.texts {
+            text_items.push(TextItem {
+                buffer: make_text_buffer_with_font(
+                    &mut self.font_system,
+                    t,
+                    *size * s,
+                    font_opt.as_deref(),
+                    &self.sans_serif_family,
+                    &self.serif_family,
+                    &self.monospace_family,
+                ),
+                x: *x * s, y: *y * s,
+                color: glyphon::Color::rgb(
+                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
+                ),
+                bounds: *bounds,
+            });
+        }
 
         self.widgets = widgets;
         self.text_items = text_items;

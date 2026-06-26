@@ -11,6 +11,15 @@ impl SystemInterface {
         let s = 1.0f32;
         let lx_no_scroll = x / s;
         let ly_no_scroll = y / s;
+
+        let sh_logical = self.height as f32 / s;
+        if self.search_open && ly_no_scroll >= (sh_logical - 42.0) {
+            let changed = self.search_box.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context);
+            if changed {
+                self.needs_rebuild = true;
+            }
+            return true;
+        }
         
         if cce_ui::widget::context_menu::is_visible() {
             if cce_ui::widget::context_menu::cursor_moved(lx_no_scroll, ly_no_scroll) {
@@ -98,6 +107,23 @@ impl SystemInterface {
         let s = 1.0f32;
         let lx_no_scroll = self.cursor_x / s;
         let ly_no_scroll = self.cursor_y / s;
+
+        let sh_logical = self.height as f32 / s;
+        if self.search_open && ly_no_scroll >= (sh_logical - 42.0) {
+            let handled = self.search_box.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context);
+            if handled {
+                self.needs_rebuild = true;
+            }
+            return true;
+        }
+
+        if self.search_open && state == cce_ui::widget::ElementState::Pressed && ly_no_scroll < (sh_logical - 42.0) {
+            self.search_open = false;
+            self.search_query.clear();
+            self.search_box.set_value_string("");
+            self.ui_context.clear_focus();
+            self.needs_rebuild = true;
+        }
 
         // CSD Close Button Interaction removed
 
@@ -761,6 +787,44 @@ impl SystemInterface {
             }
         }
 
+        if self.search_open {
+            if event.state == cce_ui::widget::ElementState::Pressed
+                && event.logical_key == cce_ui::widget::Key::Named(cce_ui::widget::NamedKey::Escape)
+            {
+                self.search_open = false;
+                self.search_query.clear();
+                self.search_box.set_value_string("");
+                self.ui_context.clear_focus();
+                self.needs_rebuild = true;
+                return true;
+            }
+        }
+
+        let is_text_box_focused = if let Some(focused) = self.ui_context.focused_widget {
+            unsafe { (*focused).as_any().is::<cce_ui::widget::input::TextBox>() }
+        } else {
+            false
+        };
+
+        if !self.search_open && !is_text_box_focused {
+            if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
+                if let cce_ui::widget::Key::Character(ref c) = event.logical_key {
+                    if c == "/" {
+                        self.search_open = true;
+                        self.search_box.set_value_string("");
+                        self.search_query.clear();
+                        let search_box_ptr = &mut self.search_box as *mut cce_ui::widget::input::TextBox;
+                        unsafe {
+                            (*search_box_ptr).focus();
+                        }
+                        self.ui_context.set_focused(&mut self.search_box);
+                        self.needs_rebuild = true;
+                        return true;
+                    }
+                }
+            }
+        }
+
         if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
             let is_nav_key = match (&event.logical_key, event.ctrl) {
                 (cce_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
@@ -787,6 +851,7 @@ impl SystemInterface {
         }
 
         let event_wrapper = cce_ui::widget::Event::KeyInput(event.clone());
+        let mut key_handled = false;
         if let Some(root) = self.get_page_root_widget() {
             if self.ui_context.propagate_event(&event_wrapper, root) {
                 let mut actions = Vec::new();
@@ -795,11 +860,24 @@ impl SystemInterface {
                     self.handle_action(&a);
                 }
                 self.needs_rebuild = true;
-                return true;
+                key_handled = true;
             }
         }
 
-        false
+        if self.search_open {
+            if self.search_box.take_change() {
+                self.search_query = self.search_box.text.clone();
+                self.needs_rebuild = true;
+            }
+            if !self.ui_context.is_focused(&self.search_box) {
+                self.search_open = false;
+                self.search_query.clear();
+                self.search_box.set_value_string("");
+                self.needs_rebuild = true;
+            }
+        }
+
+        key_handled
     }
 }
 
