@@ -710,8 +710,23 @@ impl SystemInterface {
             let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly, local_x: lx, local_y: ly };
             let mut handled = false;
             if let Some(root) = self.get_page_root_widget() {
-                if self.ui_context.propagate_event(&event, root) {
-                    handled = true;
+                unsafe {
+                    for child in (*root).children(&self.ui_context).into_iter().rev() {
+                        let (cx, cy, _, _) = (*child).rect();
+                        let mut local_adjusted = event.clone();
+                        match &mut local_adjusted {
+                            cce_ui::widget::Event::MouseWheel { local_x, local_y, .. } => {
+                                *local_x -= cx;
+                                *local_y -= cy;
+                            }
+                            _ => {}
+                        }
+                        let adjusted_event = (*root).transform_event_for_child(child, local_adjusted, &self.ui_context);
+                        if self.ui_context.propagate_event(&adjusted_event, child) {
+                            handled = true;
+                            break;
+                        }
+                    }
                 }
             }
 
