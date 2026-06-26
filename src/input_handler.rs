@@ -80,7 +80,7 @@ impl SystemInterface {
         }
 
         if !drag_handled {
-            let event = cce_ui::widget::Event::PointerMove { x: lx, y: ly };
+            let event = cce_ui::widget::Event::PointerMove { x: lx, y: ly, local_x: lx, local_y: ly };
             if let Some(root) = self.get_page_root_widget() {
                 if self.ui_context.propagate_event(&event, root) {
                     changed = true;
@@ -196,7 +196,7 @@ impl SystemInterface {
 
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
-        let event = cce_ui::widget::Event::MouseButton { button, state, x: lx, y: ly };
+        let event = cce_ui::widget::Event::MouseButton { button, state, x: lx, y: ly, local_x: lx, local_y: ly };
         if let Some(root) = self.get_page_root_widget() {
             self.ui_context.propagate_event(&event, root);
         }
@@ -681,7 +681,7 @@ impl SystemInterface {
                 }
             }
 
-            let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly };
+            let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly, local_x: lx, local_y: ly };
             let mut handled = false;
             if let Some(root) = self.get_page_root_widget() {
                 if self.ui_context.propagate_event(&event, root) {
