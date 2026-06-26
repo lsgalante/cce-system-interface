@@ -13,7 +13,7 @@ pub struct Watchers {
     pub rx_fingers: Receiver<Vec<Finger>>,
     pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemState>,
-    pub rx_status: Receiver<system_info::StatusData>,
+    pub rx_status: Receiver<interface::StatusData>,
     pub rx_storage: Receiver<storage::StorageState>,
     pub rx_notifications: Receiver<system_info::NotificationsConfig>,
     pub rx_typeface: Receiver<interface::InterfaceState>,
@@ -157,7 +157,7 @@ pub fn spawn_all(
 
     let rx_system = spawn_bg_active(current_page_shared.clone(), 9, 5, || system_info::fetch_system_state());
     let rx_processes = spawn_bg_active(current_page_shared.clone(), 6, 3, || processes::fetch_processes_state());
-    let rx_status = spawn_bg_active(current_page_shared.clone(), 9, 10, || system_info::fetch_status_state());
+    let rx_status = spawn_bg_active(current_page_shared.clone(), 4, 10, || interface::fetch_status_state());
     let rx_storage = spawn_bg_active(current_page_shared.clone(), 8, 10, || storage::fetch_storage_state());
 
     let rx_notifications = {

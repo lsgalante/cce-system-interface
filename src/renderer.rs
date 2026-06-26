@@ -153,6 +153,14 @@ impl SystemInterface {
         self.app.interface.status_box_corner_radius_spinbox.set_parent(None, &mut self.ui_context);
         self.app.interface.status_padding_spinbox.clear_children(&mut self.ui_context);
         self.app.interface.status_padding_spinbox.set_parent(None, &mut self.ui_context);
+        self.app.interface.status_separators_toggle.clear_children(&mut self.ui_context);
+        self.app.interface.status_separators_toggle.set_parent(None, &mut self.ui_context);
+        self.app.interface.status_underline_toggle.clear_children(&mut self.ui_context);
+        self.app.interface.status_underline_toggle.set_parent(None, &mut self.ui_context);
+        self.app.interface.status_box_opacity_slider.clear_children(&mut self.ui_context);
+        self.app.interface.status_box_opacity_slider.set_parent(None, &mut self.ui_context);
+        self.app.interface.status_box_blur_slider.clear_children(&mut self.ui_context);
+        self.app.interface.status_box_blur_slider.set_parent(None, &mut self.ui_context);
 
         self.app.interface.sans_box.clear_children(&mut self.ui_context); self.app.interface.sans_box.set_parent(None, &mut self.ui_context);
         self.app.interface.serif_box.clear_children(&mut self.ui_context); self.app.interface.serif_box.set_parent(None, &mut self.ui_context);
@@ -170,10 +178,7 @@ impl SystemInterface {
         self.app.system_info.gpu_gov_menu.clear_children(&mut self.ui_context); self.app.system_info.gpu_gov_menu.set_parent(None, &mut self.ui_context);
         self.app.system_info.notifications_enable_toggle.clear_children(&mut self.ui_context); self.app.system_info.notifications_enable_toggle.set_parent(None, &mut self.ui_context);
         self.app.system_info.notifications_bell_toggle.clear_children(&mut self.ui_context); self.app.system_info.notifications_bell_toggle.set_parent(None, &mut self.ui_context);
-        self.app.system_info.notifications_duration_spinbox.clear_children(&mut self.ui_context); self.app.system_info.notifications_duration_spinbox.set_parent(None, &mut self.ui_context);
-        self.app.system_info.status_separators_toggle.clear_children(&mut self.ui_context); self.app.system_info.status_separators_toggle.set_parent(None, &mut self.ui_context);
-        self.app.system_info.status_underline_toggle.clear_children(&mut self.ui_context); self.app.system_info.status_underline_toggle.set_parent(None, &mut self.ui_context);
-        self.app.system_info.status_padding_spinbox.clear_children(&mut self.ui_context); self.app.system_info.status_padding_spinbox.set_parent(None, &mut self.ui_context);
+
 
         self.app.input.rate_spinbox.clear_children(&mut self.ui_context); self.app.input.rate_spinbox.set_parent(None, &mut self.ui_context);
         self.app.input.delay_spinbox.clear_children(&mut self.ui_context); self.app.input.delay_spinbox.set_parent(None, &mut self.ui_context);
@@ -285,8 +290,7 @@ impl SystemInterface {
                 self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("GPU Power").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Battery").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
                 self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("System Notifications").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
-                self.page_sec_containers.push(cce_ui::widget::SectionContainer::new("Status Interface").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }));
-                for i in 0..9 {
+                for i in 0..8 {
                     link_parent_child(page_root, &mut self.page_sec_containers[i], &mut self.ui_context);
                 }
                 link_parent_child(&mut self.page_sec_containers[4], &mut self.app.system_info.cpu_gov_menu, &mut self.ui_context);
@@ -294,11 +298,6 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.system_info.notifications_enable_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.system_info.notifications_bell_toggle, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[7], &mut self.app.system_info.notifications_duration_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_separators_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_underline_toggle, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_padding_spinbox, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_box_opacity_slider, &mut self.ui_context);
-                link_parent_child(&mut self.page_sec_containers[8], &mut self.app.system_info.status_box_blur_slider, &mut self.ui_context);
             }
             Page::Processes => {
                 self.page_sec_containers.clear();
@@ -354,6 +353,10 @@ impl SystemInterface {
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.color_selectors[22], &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_box_corner_radius_spinbox, &mut self.ui_context);
                 link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_padding_spinbox, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_separators_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_underline_toggle, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_box_opacity_slider, &mut self.ui_context);
+                link_parent_child(&mut self.page_sec_containers[2], &mut self.app.interface.status_box_blur_slider, &mut self.ui_context);
                 
                 // Section 3: Controls (parent of: Slider, MenuBar, Toggles, Spinbox, ColorSelector, Textbox, FontSelector)
                 link_parent_child(&mut self.page_sec_containers[3], &mut self.app.interface.color_selectors[5], &mut self.ui_context);

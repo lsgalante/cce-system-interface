@@ -176,7 +176,7 @@ struct SystemInterface {
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
-    rx_status: std::sync::mpsc::Receiver<pages::system_info::StatusData>,
+    rx_status: std::sync::mpsc::Receiver<pages::interface::StatusData>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::system_info::NotificationsConfig>,
     rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
@@ -691,8 +691,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_status.try_recv() {
-            system_info::update(&mut self.app.system_info, system_info::SystemMessage::StatusRefreshed(s));
-            if self.app.current_page == Page::System {
+            interface::update(&mut self.app.interface, interface::InterfaceMessage::StatusRefreshed(s));
+            if self.app.current_page == Page::Interface {
                 self.needs_rebuild = true;
             }
         }

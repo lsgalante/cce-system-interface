@@ -1,7 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, Toggle, Spinbox, Slider, Element};
-use crate::pages::interface::{parse_u16_from, parse_f32_from};
+use cce_ui::widget::{Label, Dropdown, InfoBox, Toggle, Spinbox};
 use crate::config_manager::CONFIG_PATH;
 use std::io::Write;
 use std::fs;
@@ -71,21 +70,6 @@ pub struct SystemState {
     pub notifications_duration: i32,
     pub notifications_duration_spinbox: Spinbox,
 
-    // Status Interface fields
-    pub status_loaded: bool,
-    pub status_font_size: u16,
-    pub status_padding: u16,
-    pub status_separators: bool,
-    pub status_underline: bool,
-    pub status_running: bool,
-    pub status_label: Label,
-    pub status_separators_toggle: Toggle,
-    pub status_underline_toggle: Toggle,
-    pub status_padding_spinbox: Spinbox,
-    pub status_box_opacity: f32,
-    pub status_box_blur: f32,
-    pub status_box_opacity_slider: Slider,
-    pub status_box_blur_slider: Slider,
 }
 
 impl Default for SystemState {
@@ -129,20 +113,6 @@ impl Default for SystemState {
                 .with_unit("s")
                 .with_config(&get_config_path(), "duration"),
 
-            status_loaded: false,
-            status_font_size: 11,
-            status_padding: 8,
-            status_separators: true,
-            status_underline: true,
-            status_running: false,
-            status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-            status_separators_toggle: Toggle::new().with_label("Show Separators").with_config(&get_config_path(), "status_separators"),
-            status_underline_toggle: Toggle::new().with_label("Show Underline").with_config(&get_config_path(), "status_underline"),
-            status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Side Padding").with_unit("px").with_config(&get_config_path(), "status_padding"),
-            status_box_opacity: 1.0,
-            status_box_blur: 0.0,
-            status_box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(1.0).with_label("Background Opacity").with_config(&get_config_path(), "status_box_opacity"),
-            status_box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(0.0).with_label("Background Blur").with_config(&get_config_path(), "status_box_blur"),
         }
     }
 }
@@ -165,13 +135,7 @@ pub enum SystemMessage {
     SetNotificationsDuration(i32),
     SendTestNotification,
     NotificationsRefreshed(NotificationsConfig),
-    StatusRefreshed(StatusData),
-    StatusToggleSeparators,
-    StatusToggleUnderline,
-    StatusReload,
-    StatusSetPadding(u16),
-    StatusSetBoxOpacity(f32),
-    StatusSetBoxBlur(f32),
+
 }
 
 // ── zbus proxies ────────────────────────────────────────────────────
@@ -479,21 +443,6 @@ pub async fn fetch_system_state() -> SystemState {
             .with_label("Notification Duration")
             .with_unit("s")
             .with_config(&get_config_path(), "duration"),
-
-        status_loaded: false,
-        status_font_size: 11,
-        status_padding: 8,
-        status_separators: true,
-        status_underline: true,
-        status_running: false,
-        status_label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-        status_separators_toggle: Toggle::new().with_label("Show Separators").with_config(&get_config_path(), "status_separators"),
-        status_underline_toggle: Toggle::new().with_label("Show Underline").with_config(&get_config_path(), "status_underline"),
-        status_padding_spinbox: Spinbox::new(8, 0, 32, 1).with_label("Side Padding").with_unit("px").with_config(&get_config_path(), "status_padding"),
-        status_box_opacity: 1.0,
-        status_box_blur: 0.0,
-        status_box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(1.0).with_label("Background Opacity").with_config(&get_config_path(), "status_box_opacity"),
-        status_box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(0.0).with_label("Background Blur").with_config(&get_config_path(), "status_box_blur"),
     }
 }
 
@@ -744,72 +693,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         sec2.spacing(12.0);
     });
 
-    // ── 9. Status Interface Section ──
-    builder.add_section(&mut final_pc, "Status Interface", sec_focused.get(8).copied().unwrap_or(false), |sec3| {
-        let sec_w = sec3.cw;
-        if !state.status_loaded {
-            sec3.text("Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec3.spacing(18.0);
-        } else {
-            // Status
-            let status_text = if state.status_running { "Status Interface: Running" } else { "Status Interface: Stopped" };
-            let status_color = if state.status_running { [92, 143, 97] } else { [170, 51, 51] };
-            state.status_label.set_text(status_text);
-            state.status_label.set_color(status_color);
-            sec3.widget(&mut state.status_label, 12.0, sec_w - 24.0, 20.0, ctx);
-            sec3.spacing(12.0);
-
-            sec3.spacing(4.0);
-
-            // Separators toggle
-            state.status_separators_toggle.set_toggled(state.status_separators);
-            sec3.widget_full(&mut state.status_separators_toggle, cce_ui::layout::toggle_height(), ctx);
-            sec3.spacing(16.0);
-
-            // Underline toggle
-            state.status_underline_toggle.set_toggled(state.status_underline);
-            sec3.widget_full(&mut state.status_underline_toggle, cce_ui::layout::toggle_height(), ctx);
-            sec3.spacing(16.0);
-
-            // Padding spinbox
-            state.status_padding_spinbox.value = state.status_padding as i32;
-            sec3.widget(&mut state.status_padding_spinbox, 12.0, sec_w - 24.0, 44.0, ctx);
-            sec3.spacing(16.0);
-
-            // Opacity slider
-            state.status_box_opacity_slider.set_label(&format!("Background Opacity: {}%", (state.status_box_opacity * 100.0).round() as i32));
-            state.status_box_opacity_slider.set_value(state.status_box_opacity);
-            let label_h_op = cce_ui::widget::label_offset(&state.status_box_opacity_slider);
-            let slider_h_op = cce_ui::layout::slider_height() + label_h_op;
-            sec3.widget_full(&mut state.status_box_opacity_slider, slider_h_op, ctx);
-            sec3.spacing(16.0);
-
-            // Blur slider
-            state.status_box_blur_slider.set_label(&format!("Background Blur: {}%", (state.status_box_blur * 100.0).round() as i32));
-            state.status_box_blur_slider.set_value(state.status_box_blur);
-            let label_h_bl = cce_ui::widget::label_offset(&state.status_box_blur_slider);
-            let slider_h_bl = cce_ui::layout::slider_height() + label_h_bl;
-            sec3.widget_full(&mut state.status_box_blur_slider, slider_h_bl, ctx);
-            sec3.spacing(16.0);
-
-            // Reload button
-            let yt_reload = sec3.ay();
-            let btn_w = sec_w - 24.0;
-            let button_x = sec3.left + 12.0;
-            sec3.button(
-                "Reload Status Interface",
-                button_x,
-                yt_reload,
-                btn_w,
-                32.0,
-                [0.13, 0.18, 0.14, 1.0],
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::SystemInfo(SystemMessage::StatusReload),
-            );
-            sec3.spacing(12.0);
-        }
-    });
 
     final_pc
 }
@@ -903,56 +786,7 @@ pub fn update(state: &mut SystemState, msg: SystemMessage) {
             state.notifications_bell = new.bell;
             state.notifications_duration = new.duration;
         }
-        SystemMessage::StatusRefreshed(new) => {
-            let was_status_hovered = state.status_label.hovered();
-            let was_separators_hovered = state.status_separators_toggle.hovered();
-            let was_underline_hovered = state.status_underline_toggle.hovered();
-            let was_opacity_hovered = state.status_box_opacity_slider.hovered();
-            let was_blur_hovered = state.status_box_blur_slider.hovered();
 
-            state.status_loaded = true;
-            state.status_font_size = new.font_size;
-            state.status_padding = new.padding;
-            state.status_separators = new.separators;
-            state.status_underline = new.underline;
-            state.status_running = new.running;
-            state.status_box_opacity = new.bg_opacity;
-            state.status_box_blur = new.bg_blur;
-
-            state.status_label.set_hovered(was_status_hovered);
-            state.status_separators_toggle.set_hovered(was_separators_hovered);
-            state.status_underline_toggle.set_hovered(was_underline_hovered);
-            state.status_box_opacity_slider.set_hovered(was_opacity_hovered);
-            state.status_box_blur_slider.set_hovered(was_blur_hovered);
-        }
-        SystemMessage::StatusToggleSeparators => {
-            state.status_separators = !state.status_separators;
-            write_status_separators(state.status_separators);
-            status_interface_reload();
-        }
-        SystemMessage::StatusToggleUnderline => {
-            state.status_underline = !state.status_underline;
-            write_status_underline(state.status_underline);
-            status_interface_reload();
-        }
-        SystemMessage::StatusSetPadding(val) => {
-            state.status_padding = val;
-            write_status_padding(val);
-            status_interface_reload();
-        }
-        SystemMessage::StatusSetBoxOpacity(val) => {
-            state.status_box_opacity = val;
-            write_status_box_opacity(val);
-            status_interface_reload();
-        }
-        SystemMessage::StatusSetBoxBlur(val) => {
-            state.status_box_blur = val;
-            write_status_box_blur(val);
-            status_interface_reload();
-        }
-        SystemMessage::StatusReload => {
-            status_interface_reload();
-        }
     }
 }
 
@@ -1031,93 +865,7 @@ fn get_config_path() -> String {
     }
 }
 
-fn write_status_value(key: &str, value: &str) {
-    crate::pages::interface::write_config_value_path(&get_config_path(), key, value);
-}
 
-fn read_status_font_size() -> Option<u16> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_u16_from(&content, "status_font_size", 11))
-}
-
-fn read_status_padding() -> Option<u16> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_u16_from(&content, "status_padding", 8))
-}
-
-fn write_status_padding(padding: u16) {
-    write_status_value("status_padding", &padding.to_string());
-}
-
-fn read_status_separators() -> Option<bool> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(crate::pages::interface::parse_bool_from(&content, "status_separators", true))
-}
-
-fn write_status_separators(val: bool) {
-    write_status_value("status_separators", &val.to_string());
-}
-
-fn read_status_underline() -> Option<bool> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(crate::pages::interface::parse_bool_from(&content, "status_underline", true))
-}
-
-fn write_status_underline(val: bool) {
-    write_status_value("status_underline", &val.to_string());
-}
-
-fn read_status_box_opacity() -> Option<f32> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_f32_from(&content, "status_box_opacity", 1.0))
-}
-
-fn write_status_box_opacity(val: f32) {
-    write_status_value("status_box_opacity", &val.to_string());
-}
-
-fn read_status_box_blur() -> Option<f32> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_f32_from(&content, "status_box_blur", 0.0))
-}
-
-fn write_status_box_blur(val: f32) {
-    write_status_value("status_box_blur", &val.to_string());
-}
-
-fn status_interface_reload() {
-    std::thread::spawn(|| {
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", "cce-status-interface"])
-            .status();
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        send_ipc_command("spawn cce-status-interface");
-    });
-}
-
-pub async fn fetch_status_state() -> StatusData {
-    let running = tokio::process::Command::new("pgrep")
-        .args(["-f", "cce-status-interface"]).output().await.ok()
-        .map(|o| !o.stdout.is_empty())
-        .unwrap_or(false);
-
-    let font_size = read_status_font_size().unwrap_or(11);
-    let padding = read_status_padding().unwrap_or(8);
-    let separators = read_status_separators().unwrap_or(true);
-    let underline = read_status_underline().unwrap_or(true);
-    let bg_opacity = read_status_box_opacity().unwrap_or(1.0);
-    let bg_blur = read_status_box_blur().unwrap_or(0.0);
-
-    StatusData {
-        font_size,
-        padding,
-        separators,
-        underline,
-        running,
-        bg_opacity,
-        bg_blur,
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1127,7 +875,7 @@ mod tests {
     fn test_view_layout_grid() {
         let mut state = SystemState::default();
         let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
-        let sec_focused = vec![false, false, false, false, false, false, false, false, false];
+        let sec_focused = vec![false, false, false, false, false, false, false, false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
@@ -1177,93 +925,5 @@ mod tests {
         assert_eq!(parse_notifications_duration(content), 10);
     }
 
-    #[test]
-    fn test_read_write_separators() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_separators.json");
-        let path_str = path.to_str().unwrap().to_string();
 
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_separators\": true, \"status_padding\": 8}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_separators().unwrap_or(true);
-        write_status_separators(!original);
-        assert_eq!(read_status_separators(), Some(!original));
-        write_status_separators(original);
-        assert_eq!(read_status_separators(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn test_read_write_padding() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_padding.json");
-        let path_str = path.to_str().unwrap().to_string();
-
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_separators\": true, \"status_padding\": 8}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_padding().unwrap_or(8);
-        write_status_padding(12);
-        assert_eq!(read_status_padding(), Some(12));
-        write_status_padding(original);
-        assert_eq!(read_status_padding(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn test_read_write_underline() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_underline.json");
-        let path_str = path.to_str().unwrap().to_string();
-
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_underline\": true, \"status_padding\": 8}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_underline().unwrap_or(true);
-        write_status_underline(!original);
-        assert_eq!(read_status_underline(), Some(!original));
-        write_status_underline(original);
-        assert_eq!(read_status_underline(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn test_read_write_status_box_opacity() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_box_opacity.json");
-        let path_str = path.to_str().unwrap().to_string();
-
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_box_opacity\": 1.0}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_box_opacity().unwrap_or(1.0);
-        write_status_box_opacity(0.75);
-        assert_eq!(read_status_box_opacity(), Some(0.75));
-        write_status_box_opacity(original);
-        assert_eq!(read_status_box_opacity(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn test_read_write_status_box_blur() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_box_blur.json");
-        let path_str = path.to_str().unwrap().to_string();
-
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_box_blur\": 0.0}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_box_blur().unwrap_or(0.0);
-        write_status_box_blur(0.5);
-        assert_eq!(read_status_box_blur(), Some(0.5));
-        write_status_box_blur(original);
-        assert_eq!(read_status_box_blur(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
 }
