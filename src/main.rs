@@ -294,8 +294,8 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_update,
 
             scale_factor: 1.0,
-            width: 552,
-            height: 1128,
+            width: 820,
+            height: 680,
             needs_rebuild: true,
             scroll_y: 0.0,
             max_scroll_y: 0.0,
@@ -338,6 +338,7 @@ impl cce_ui::engine::Application for SystemInterface {
         this.root_window.add_child(this.switcher.as_ptr(), &mut this.ui_context);
 
         this.rebuild_layout(820.0, 680.0);
+        this.needs_rebuild = true;
         this
     }
 
@@ -363,6 +364,9 @@ impl cce_ui::engine::Application for SystemInterface {
     }
 
     fn tick(&mut self, dt: f32, needs_rebuild: &mut bool) {
+        if self.needs_rebuild {
+            self.rebuild_layout(self.width as f32, self.height as f32);
+        }
         self.poll_background_updates();
         if self.tick_internal(dt) {
             *needs_rebuild = true;
