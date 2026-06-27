@@ -365,12 +365,22 @@ impl SystemInterface {
         let event_wrapper = cce_ui::widget::Event::KeyInput(event.clone());
         let mut key_handled = false;
         if let Some(root) = self.get_page_root_widget() {
+            let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+            let old_page_scroll = self.pages[page_idx].scroll_y;
+
             if self.ui_context.propagate_event(&event_wrapper, root) {
                 let mut actions = Vec::new();
                 self.propagate_widget_changes(&mut actions);
                 for a in actions {
                     self.handle_action(&a);
                 }
+                self.needs_rebuild = true;
+                key_handled = true;
+            }
+
+            let new_page_scroll = self.pages[page_idx].scroll_y;
+            if (new_page_scroll - old_page_scroll).abs() > 0.01 {
+                self.scroll_y = new_page_scroll;
                 self.needs_rebuild = true;
                 key_handled = true;
             }
