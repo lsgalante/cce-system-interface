@@ -40,71 +40,24 @@ fn get_socket_path() -> String {
 
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WidthParam {
-    Fullscreen, Cascade, Grid, Floating,
-}
-
-impl WidthParam {
-    pub const ALL: [WidthParam; 4] = [
-        WidthParam::Fullscreen, WidthParam::Cascade, WidthParam::Grid,
-        WidthParam::Floating,
-    ];
-    pub fn key(self) -> &'static str {
-        match self {
-            WidthParam::Fullscreen => "fullscreen_border_width",
-            WidthParam::Cascade => "cascade_border_width",
-            WidthParam::Grid => "grid_border_width",
-            WidthParam::Floating => "floating_border_width",
-        }
-    }
-    pub fn label(self) -> &'static str {
-        match self {
-            WidthParam::Fullscreen => "Fullscreen",
-            WidthParam::Cascade => "Cascade",
-            WidthParam::Grid => "Grid",
-            WidthParam::Floating => "Floating",
-        }
-    }
-}
-
-fn make_spinboxes(fs: u16, ca: u16, g: u16, fl: u16) -> Vec<Spinbox> {
-    vec![
-        Spinbox::new(fs as i32, 0, 100, 1).with_config(CONFIG_PATH, "fullscreen_border_width"),
-        Spinbox::new(ca as i32, 0, 100, 1).with_config(CONFIG_PATH, "cascade_border_width"),
-        Spinbox::new(g as i32, 0, 100, 1).with_config(CONFIG_PATH, "grid_border_width"),
-        Spinbox::new(fl as i32, 0, 100, 1).with_config(CONFIG_PATH, "floating_border_width"),
-    ]
-}
-
 #[derive(Debug, Clone)]
 pub struct WindowsState {
-    pub fullscreen_border_width: u16,
-    pub cascade_border_width: u16,
-    pub grid_border_width: u16,
-    pub floating_border_width: u16,
     pub cascade_offset: u16,
     pub edge_gap: u16,
     pub top_gap: u16,
-    pub grid_gap: u16,
     pub status_height: u16,
     pub transition_duration: u16,
-    pub spinboxes: Vec<Spinbox>,
     pub cascade_offset_spinbox: Spinbox,
     pub edge_gap_spinbox: Spinbox,
     pub top_gap_spinbox: Spinbox,
-    pub grid_gap_spinbox: Spinbox,
     pub status_height_spinbox: Spinbox,
     pub transition_duration_spinbox: Spinbox,
-    pub tag_layout_menus: Vec<Dropdown>,
     pub side_panel_behavior_menu: Dropdown,
     pub side_panel_position_menu: Dropdown,
     pub side_panel_width: u16,
     pub side_panel_width_spinbox: Spinbox,
     pub side_panel_border_gap: u16,
     pub side_panel_border_gap_spinbox: Spinbox,
-    pub side_panel_border_opacity: u16,
-    pub side_panel_border_opacity_spinbox: Spinbox,
     pub blur_enabled: bool,
     pub blur_toggle: Toggle,
     pub fullscreen_opacity: f32,
@@ -124,36 +77,16 @@ pub struct WindowsState {
 impl Default for WindowsState {
     fn default() -> Self {
         Self {
-            fullscreen_border_width: 0,
-            cascade_border_width: 6,
-            grid_border_width: 6,
-            floating_border_width: 6,
             cascade_offset: 20,
             edge_gap: 48,
             top_gap: 48,
-            grid_gap: 6,
             status_height: 24,
             transition_duration: 300,
-            spinboxes: make_spinboxes(0, 6, 6, 6),
             cascade_offset_spinbox: Spinbox::new(20, 0, 200, 1).with_config(CONFIG_PATH, "cascade_offset"),
             edge_gap_spinbox: Spinbox::new(48, 0, 200, 1).with_config(CONFIG_PATH, "edge_gap"),
             top_gap_spinbox: Spinbox::new(48, 0, 200, 1).with_config(CONFIG_PATH, "gap_top"),
-            grid_gap_spinbox: Spinbox::new(6, 0, 200, 1).with_config(CONFIG_PATH, "grid_gap"),
             status_height_spinbox: Spinbox::new(24, 0, 100, 1).with_config(CONFIG_PATH, "bar_height"),
             transition_duration_spinbox: Spinbox::new(300, 0, 2000, 50).with_config(CONFIG_PATH, "transition_duration"),
-            tag_layout_menus: (1..=4).map(|i| {
-                Dropdown::new(
-                    vec![
-                        "Cascade".to_string(),
-                        "Grid".to_string(),
-                        "Fullscreen".to_string(),
-                        "Floating".to_string(),
-                        "Popup".to_string(),
-                    ],
-                    0
-                ).with_label(&format!("Tag {}", i))
-                .with_config(CONFIG_PATH, "tag_layout")
-            }).collect(),
             side_panel_behavior_menu: Dropdown::new(
                 vec!["Above".to_string(), "Inline".to_string()],
                 1,
@@ -168,8 +101,6 @@ impl Default for WindowsState {
             side_panel_width_spinbox: Spinbox::new(360, 0, 2000, 10).with_config(CONFIG_PATH, "side_panel_width"),
             side_panel_border_gap: 0,
             side_panel_border_gap_spinbox: Spinbox::new(0, 0, 500, 1).with_config(CONFIG_PATH, "side_panel_border_gap"),
-            side_panel_border_opacity: 100,
-            side_panel_border_opacity_spinbox: Spinbox::new(100, 0, 100, 5).with_config(CONFIG_PATH, "side_panel_border_opacity"),
             blur_enabled: true,
             blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
             fullscreen_opacity: 0.95,
@@ -190,19 +121,15 @@ impl Default for WindowsState {
 
 #[derive(Debug, Clone)]
 pub enum WindowsMessage {
-    SetWidth(WidthParam, u16),
     SetCascadeOffset(u16),
     SetEdgeGap(u16),
     SetTopGap(u16),
-    SetGridGap(u16),
     SetTransitionDuration(u16),
     SetStatusHeight(u16),
-    SetTagLayout(usize, usize),
     SetSidePanelBehavior(usize),
     SetSidePanelPosition(usize),
     SetSidePanelWidth(u16),
     SetSidePanelBorderGap(u16),
-    SetSidePanelBorderOpacity(u16),
     SetFullscreenOpacity(u16),
     SetCascadeOpacity(u16),
     SetGridOpacity(u16),
@@ -1006,31 +933,11 @@ pub fn read_interface_config() -> InterfaceState {
 
 pub fn read_windows_config() -> WindowsState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let fs = parse_u16_from(&content, "fullscreen_border_width", 0);
-    let ca = parse_u16_from(&content, "cascade_border_width", 6);
-    let g = parse_u16_from(&content, "grid_border_width", 6);
-    let fl = parse_u16_from(&content, "floating_border_width", 6);
     let co = parse_u16_from(&content, "cascade_offset", 20);
     let gl = parse_u16_from(&content, "gap_left", 48);
     let gt = parse_u16_from(&content, "gap_top", 48);
-    let gg = parse_u16_from(&content, "grid_gap", 6);
     let sh = parse_u16_from(&content, "bar_height", 24);
     let td = parse_u16_from(&content, "transition_duration", 300);
-
-    let tag_modes = parse_tag_layouts_from_config(&content);
-    let dropdown_options = vec![
-        "Cascade".to_string(),
-        "Grid".to_string(),
-        "Fullscreen".to_string(),
-        "Floating".to_string(),
-        "Popup".to_string(),
-    ];
-    let tag_layout_menus = (1..=4).map(|i| {
-        let mode_str = &tag_modes[i - 1];
-        let idx = dropdown_options.iter().position(|opt| opt.to_lowercase() == mode_str.to_lowercase()).unwrap_or(0);
-        Dropdown::new(dropdown_options.clone(), idx).with_label(&format!("Tag {}", i))
-            .with_config(CONFIG_PATH, "tag_layout")
-    }).collect();
 
     let mut side_panel_behavior = parse_string_from(&content, "pinned_behavior", "");
     if side_panel_behavior.is_empty() {
@@ -1061,10 +968,6 @@ pub fn read_windows_config() -> WindowsState {
     let mut spbg = parse_u16_from(&content, "pinned_border_gap", 9999);
     if spbg == 9999 {
         spbg = parse_u16_from(&content, "side_panel_border_gap", 0);
-    }
-    let mut spbo = parse_u16_from(&content, "pinned_border_opacity", 9999);
-    if spbo == 9999 {
-        spbo = parse_u16_from(&content, "side_panel_border_opacity", 100);
     }
 
     let window_blur = parse_bool_from(&content, "window_blur", false);
@@ -1097,32 +1000,22 @@ pub fn read_windows_config() -> WindowsState {
     }
 
     WindowsState {
-        fullscreen_border_width: fs,
-        cascade_border_width: ca,
-        grid_border_width: g,
-        floating_border_width: fl,
         cascade_offset: co,
         edge_gap: gl,
         top_gap: gt,
-        grid_gap: gg,
         status_height: sh,
         transition_duration: td,
-        spinboxes: make_spinboxes(fs, ca, g, fl),
         cascade_offset_spinbox: Spinbox::new(co as i32, 0, 200, 1).with_config(CONFIG_PATH, "cascade_offset"),
         edge_gap_spinbox: Spinbox::new(gl as i32, 0, 200, 1).with_config(CONFIG_PATH, "edge_gap"),
         top_gap_spinbox: Spinbox::new(gt as i32, 0, 200, 1).with_config(CONFIG_PATH, "gap_top"),
-        grid_gap_spinbox: Spinbox::new(gg as i32, 0, 200, 1).with_config(CONFIG_PATH, "grid_gap"),
         status_height_spinbox: Spinbox::new(sh as i32, 0, 100, 1).with_config(CONFIG_PATH, "bar_height"),
         transition_duration_spinbox: Spinbox::new(td as i32, 0, 2000, 50).with_config(CONFIG_PATH, "transition_duration"),
-        tag_layout_menus,
         side_panel_behavior_menu,
         side_panel_position_menu,
         side_panel_width: spw,
         side_panel_width_spinbox: Spinbox::new(spw as i32, 0, 2000, 10).with_config(CONFIG_PATH, "pinned_width"),
         side_panel_border_gap: spbg,
         side_panel_border_gap_spinbox: Spinbox::new(spbg as i32, 0, 500, 1).with_config(CONFIG_PATH, "pinned_border_gap"),
-        side_panel_border_opacity: spbo,
-        side_panel_border_opacity_spinbox: Spinbox::new(spbo as i32, 0, 100, 5).with_config(CONFIG_PATH, "pinned_border_opacity"),
         blur_enabled,
         blur_toggle: Toggle::new().with_label("Blur").with_config(CONFIG_PATH, "window_blur"),
         fullscreen_opacity: fullscreen_op,
@@ -1140,74 +1033,6 @@ pub fn read_windows_config() -> WindowsState {
     }
 }
 
-fn parse_tag_layouts_from_config(content: &str) -> Vec<String> {
-    let val = parse_json(content);
-    let mut modes = vec!["cascade".to_string(); 4];
-    if let Some(arr) = val.get("tag_layout").and_then(|t| t.as_array()) {
-        for item in arr {
-            if let (Some(tag), Some(mode)) = (
-                item.get("tag").and_then(|t| t.as_u64()),
-                item.get("mode").and_then(|m| m.as_str())
-            ) {
-                if tag >= 1 && tag <= 4 {
-                    modes[tag as usize - 1] = mode.to_string();
-                }
-            }
-        }
-    }
-    modes
-}
-
-fn write_tag_layout(tag_num: usize, mode_str: &str) -> bool {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let mut val = parse_json(&content);
-    
-    let mut found = false;
-    if let Some(arr) = val.get_mut("tag_layout").and_then(|t| t.as_array_mut()) {
-        for item in arr.iter_mut() {
-            if item.get("tag").and_then(|t| t.as_u64()) == Some(tag_num as u64) {
-                if let Some(obj) = item.as_object_mut() {
-                    obj.insert("mode".to_string(), serde_json::json!(mode_str.to_lowercase()));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if !found {
-            arr.push(serde_json::json!({
-                "tag": tag_num,
-                "mode": mode_str.to_lowercase()
-            }));
-        }
-    } else {
-        let arr = vec![serde_json::json!({
-            "tag": tag_num,
-            "mode": mode_str.to_lowercase()
-        })];
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("tag_layout".to_string(), serde_json::Value::Array(arr));
-        }
-    }
-    
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        return fs::write(CONFIG_PATH, updated_str).is_ok();
-    }
-    false
-}
-
-fn apply_all_widths(s: &WindowsState) {
-    let w = |k: &str, v: u16| { write_config_value(k, &v.to_string()); send_ipc_command(&format!("layout {} {}", k, v)); };
-    w("fullscreen_border_width", s.fullscreen_border_width);
-    w("cascade_border_width", s.cascade_border_width);
-    w("grid_border_width", s.grid_border_width);
-    w("floating_border_width", s.floating_border_width);
-    w("cascade_offset", s.cascade_offset);
-    w("gap_left", s.edge_gap);
-    w("gap_right", s.edge_gap);
-    w("gap_bottom", s.edge_gap);
-    w("gap_top", s.top_gap);
-    w("transition_duration", s.transition_duration);
-}
 
 fn apply_single_layout_param(key: &str, val: u16) {
     write_config_value(key, &val.to_string());
@@ -1226,26 +1051,7 @@ fn apply_edge_gap(val: u16) {
 
 
 
-fn set_width(state: &mut WindowsState, param: WidthParam, val: u16) {
-    let val = val.min(100);
-    match param {
-        WidthParam::Fullscreen => state.fullscreen_border_width = val,
-        WidthParam::Cascade => state.cascade_border_width = val,
-        WidthParam::Grid => state.grid_border_width = val,
-        WidthParam::Floating => state.floating_border_width = val,
-    }
-    state.spinboxes[param_idx(param)].value = val as i32;
-    apply_all_widths(state);
-}
 
-fn param_idx(p: WidthParam) -> usize {
-    match p {
-        WidthParam::Fullscreen => 0,
-        WidthParam::Cascade => 1,
-        WidthParam::Grid => 2,
-        WidthParam::Floating => 3,
-    }
-}
 
 fn parse_json(content: &str) -> serde_json::Value {
     serde_json::from_str(content).unwrap_or_default()
@@ -1477,8 +1283,6 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                 if let Ok(val) = val_str.parse::<u16>() {
                     state.layout_grid_gap = val;
                     state.layout_grid_gap_spinbox.value = val as i32;
-                    state.windows.grid_gap = val;
-                    state.windows.grid_gap_spinbox.value = val as i32;
                     apply_layout_grid_gap(val);
                 }
             }
@@ -2949,16 +2753,12 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
         // 2. Fullscreen Section
         sec.add_section("Fullscreen", false, |subsec| {
-            state.windows.spinboxes[0].set_label("Border Width");
-            subsec.widget_full(&mut state.windows.spinboxes[0], 44.0, ctx);
             state.windows.fullscreen_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.fullscreen_opacity_spinbox, 44.0, ctx);
         });
 
         // 3. Cascade Section
         sec.add_section("Cascade", false, |subsec| {
-            state.windows.spinboxes[1].set_label("Border Width");
-            subsec.widget_full(&mut state.windows.spinboxes[1], 44.0, ctx);
             state.windows.cascade_offset_spinbox.set_label("Offset");
             subsec.widget_full(&mut state.windows.cascade_offset_spinbox, 44.0, ctx);
             state.windows.edge_gap_spinbox.set_label("Edge Gap");
@@ -2971,18 +2771,12 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
         // 4. Grid Section
         sec.add_section("Grid", false, |subsec| {
-            state.windows.spinboxes[2].set_label("Border Width");
-            subsec.widget_full(&mut state.windows.spinboxes[2], 44.0, ctx);
-            state.windows.grid_gap_spinbox.set_label("Gap");
-            subsec.widget_full(&mut state.windows.grid_gap_spinbox, 44.0, ctx);
             state.windows.grid_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.grid_opacity_spinbox, 44.0, ctx);
         });
 
         // 5. Floating Section
         sec.add_section("Floating", false, |subsec| {
-            state.windows.spinboxes[3].set_label("Border Width");
-            subsec.widget_full(&mut state.windows.spinboxes[3], 44.0, ctx);
             state.windows.floating_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.floating_opacity_spinbox, 44.0, ctx);
         });
@@ -2993,13 +2787,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.windows.transition_duration_spinbox, 44.0, ctx);
         });
 
-        // 7. Default Layouts Section
-        sec.add_section("Default Layouts", false, |subsec| {
-            for i in 0..4 {
-                subsec.widget_full(&mut state.windows.tag_layout_menus[i], 44.0, ctx);
-            }
-        });
-
         // 8. Pinned Section
         sec.add_section("Pinned", false, |subsec| {
             subsec.widget_full(&mut state.windows.side_panel_behavior_menu, 44.0, ctx);
@@ -3008,8 +2795,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.windows.side_panel_width_spinbox, 44.0, ctx);
             state.windows.side_panel_border_gap_spinbox.set_label("Border Gap");
             subsec.widget_full(&mut state.windows.side_panel_border_gap_spinbox, 44.0, ctx);
-            state.windows.side_panel_border_opacity_spinbox.set_label("Border Opacity");
-            subsec.widget_full(&mut state.windows.side_panel_border_opacity_spinbox, 44.0, ctx);
             state.windows.pinned_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.pinned_opacity_spinbox, 44.0, ctx);
         });
@@ -3241,8 +3026,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let gap = gap.min(200);
             state.layout_grid_gap = gap;
             state.layout_grid_gap_spinbox.value = gap as i32;
-            state.windows.grid_gap = gap;
-            state.windows.grid_gap_spinbox.value = gap as i32;
             apply_layout_grid_gap(gap);
             propagate_links(state, "grid_gap", &gap.to_string());
         }
@@ -3845,12 +3628,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             write_terminal_size(val as u16);
         }
         InterfaceMessage::Windows(sub_msg) => {
-            if let WindowsMessage::SetGridGap(v) = sub_msg {
-                let val = v.min(200);
-                state.layout_grid_gap = val;
-                state.layout_grid_gap_spinbox.value = val as i32;
-                cce_ui::layout::set_grid_gap(val as f32);
-            }
             update_windows(&mut state.windows, sub_msg);
         }
     }
@@ -3858,7 +3635,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
 
 pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
     match msg {
-        WindowsMessage::SetWidth(p, v) => set_width(state, p, v),
         WindowsMessage::SetCascadeOffset(v) => {
             let val = v.min(200);
             state.cascade_offset = val;
@@ -3877,12 +3653,6 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             state.top_gap_spinbox.value = val as i32;
             apply_single_layout_param("gap_top", val);
         }
-        WindowsMessage::SetGridGap(v) => {
-            let val = v.min(200);
-            state.grid_gap = val;
-            state.grid_gap_spinbox.value = val as i32;
-            apply_single_layout_param("grid_gap", val);
-        }
         WindowsMessage::SetTransitionDuration(v) => {
             let val = v.min(2000);
             state.transition_duration = val;
@@ -3894,15 +3664,6 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             state.status_height = val;
             state.status_height_spinbox.value = val as i32;
             apply_single_layout_param("bar_height", val);
-        }
-        WindowsMessage::SetTagLayout(tag, idx) => {
-            if tag >= 1 && tag <= 4 && idx < 5 {
-                state.tag_layout_menus[tag - 1].selected = idx;
-                let modes = vec!["cascade", "grid", "fullscreen", "floating", "popup"];
-                let mode_str = modes[idx];
-                write_tag_layout(tag, mode_str);
-                send_ipc_command(&format!("tag-layout {} {}", tag, mode_str));
-            }
         }
         WindowsMessage::SetSidePanelBehavior(idx) => {
             if idx < 2 {
@@ -3934,13 +3695,7 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             write_config_value("pinned_border_gap", &val.to_string());
             send_ipc_command(&format!("layout pinned_border_gap {}", val));
         }
-        WindowsMessage::SetSidePanelBorderOpacity(v) => {
-            let val = v.min(100);
-            state.side_panel_border_opacity = val;
-            state.side_panel_border_opacity_spinbox.value = val as i32;
-            write_config_value("pinned_border_opacity", &val.to_string());
-            send_ipc_command(&format!("layout pinned_border_opacity {}", val));
-        }
+
         WindowsMessage::SetFullscreenOpacity(v) => {
             let val = v.min(100);
             state.fullscreen_opacity = val as f32 / 100.0;
@@ -4000,19 +3755,15 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
         WindowsMessage::Refreshed(new) => {
             // Restore hover states
             let blur_hover = state.blur_toggle.hovered();
-            let tag_layout_menus_hover: Vec<bool> = state.tag_layout_menus.iter().map(|m| m.hovered()).collect();
             let side_panel_behavior_hover = state.side_panel_behavior_menu.hovered();
             let side_panel_position_hover = state.side_panel_position_menu.hovered();
-            let spinboxes_hover: Vec<bool> = state.spinboxes.iter().map(|sb| sb.hovered()).collect();
             let cascade_offset_hover = state.cascade_offset_spinbox.hovered();
             let edge_gap_hover = state.edge_gap_spinbox.hovered();
             let top_gap_hover = state.top_gap_spinbox.hovered();
-            let grid_gap_hover = state.grid_gap_spinbox.hovered();
             let status_height_hover = state.status_height_spinbox.hovered();
             let transition_duration_hover = state.transition_duration_spinbox.hovered();
             let side_panel_width_hover = state.side_panel_width_spinbox.hovered();
             let side_panel_border_gap_hover = state.side_panel_border_gap_spinbox.hovered();
-            let side_panel_border_opacity_hover = state.side_panel_border_opacity_spinbox.hovered();
             let fullscreen_opacity_hover = state.fullscreen_opacity_spinbox.hovered();
             let cascade_opacity_hover = state.cascade_opacity_spinbox.hovered();
             let grid_opacity_hover = state.grid_opacity_spinbox.hovered();
@@ -4023,23 +3774,15 @@ pub fn update_windows(state: &mut WindowsState, msg: WindowsMessage) {
             *state = new;
 
             state.blur_toggle.set_hovered(blur_hover);
-            for (menu, hover) in state.tag_layout_menus.iter_mut().zip(tag_layout_menus_hover) {
-                menu.set_hovered(hover);
-            }
             state.side_panel_behavior_menu.set_hovered(side_panel_behavior_hover);
             state.side_panel_position_menu.set_hovered(side_panel_position_hover);
-            for (sb, hover) in state.spinboxes.iter_mut().zip(spinboxes_hover) {
-                sb.set_hovered(hover);
-            }
             state.cascade_offset_spinbox.set_hovered(cascade_offset_hover);
             state.edge_gap_spinbox.set_hovered(edge_gap_hover);
             state.top_gap_spinbox.set_hovered(top_gap_hover);
-            state.grid_gap_spinbox.set_hovered(grid_gap_hover);
             state.status_height_spinbox.set_hovered(status_height_hover);
             state.transition_duration_spinbox.set_hovered(transition_duration_hover);
             state.side_panel_width_spinbox.set_hovered(side_panel_width_hover);
             state.side_panel_border_gap_spinbox.set_hovered(side_panel_border_gap_hover);
-            state.side_panel_border_opacity_spinbox.set_hovered(side_panel_border_opacity_hover);
             state.fullscreen_opacity_spinbox.set_hovered(fullscreen_opacity_hover);
             state.cascade_opacity_spinbox.set_hovered(cascade_opacity_hover);
             state.grid_opacity_spinbox.set_hovered(grid_opacity_hover);
@@ -5451,13 +5194,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_tag_layouts_empty() {
-        let content = "";
-        let modes = parse_tag_layouts_from_config(content);
-        assert_eq!(modes, vec!["cascade", "cascade", "cascade", "cascade"]);
-    }
-
-    #[test]
     fn test_parse_side_panel_width_default() {
         let content = "";
         let width = parse_u16_from(content, "side_panel_width", 360);
@@ -5486,42 +5222,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_tag_layouts_single() {
-        let content = r#"{
-            "layout": {"gap": 10},
-            "tag_layout": [
-                {"tag": 2, "mode": "grid"}
-            ]
-        }"#;
-        let modes = parse_tag_layouts_from_config(content);
-        assert_eq!(modes, vec!["cascade", "grid", "cascade", "cascade"]);
-    }
-
-    #[test]
-    fn test_parse_tag_layouts_multiple() {
-        let content = r#"{
-            "tag_layout": [
-                {"tag": 1, "mode": "fullscreen"},
-                {"tag": 4, "mode": "floating"}
-            ]
-        }"#;
-        let modes = parse_tag_layouts_from_config(content);
-        assert_eq!(modes, vec!["fullscreen", "cascade", "cascade", "floating"]);
-    }
-
-    #[test]
-    fn test_parse_tag_layouts_out_of_bounds() {
-        let content = r#"{
-            "tag_layout": [
-                {"tag": 5, "mode": "grid"},
-                {"tag": 0, "mode": "popup"}
-            ]
-        }"#;
-        let modes = parse_tag_layouts_from_config(content);
-        assert_eq!(modes, vec!["cascade", "cascade", "cascade", "cascade"]);
-    }
-
-    #[test]
     fn test_view_layout_grid() {
         let mut state = InterfaceState::default();
         let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
@@ -5534,7 +5234,7 @@ mod tests {
         use cce_ui::widget::Element;
         let mut state = InterfaceState::default();
         let mut ctx = cce_ui::context::UiContext::new();
-        let sb = &mut state.windows.spinboxes[0];
+        let sb = &mut state.windows.cascade_offset_spinbox;
         sb.set_rect(0.0, 0.0, 100.0, 44.0);
         let res = sb.mouse_input(
             cce_ui::widget::MouseButton::Right,
@@ -5552,7 +5252,7 @@ mod tests {
         use cce_ui::widget::Element;
         let mut state = InterfaceState::default();
         let mut ctx = cce_ui::context::UiContext::new();
-        let sb = &mut state.windows.spinboxes[0];
+        let sb = &mut state.windows.cascade_offset_spinbox;
         sb.set_rect(0.0, 0.0, 100.0, 44.0);
         let res = sb.mouse_input(
             cce_ui::widget::MouseButton::Right,
@@ -5629,18 +5329,12 @@ mod tests {
 
 impl crate::pages::AppPage for InterfaceState {
     fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        for sb in &mut self.windows.spinboxes {
-            sb.clear_children(ctx);
-            sb.set_parent(None, ctx);
-        }
         self.windows.cascade_offset_spinbox.clear_children(ctx);
         self.windows.cascade_offset_spinbox.set_parent(None, ctx);
         self.windows.edge_gap_spinbox.clear_children(ctx);
         self.windows.edge_gap_spinbox.set_parent(None, ctx);
         self.windows.top_gap_spinbox.clear_children(ctx);
         self.windows.top_gap_spinbox.set_parent(None, ctx);
-        self.windows.grid_gap_spinbox.clear_children(ctx);
-        self.windows.grid_gap_spinbox.set_parent(None, ctx);
         self.windows.transition_duration_spinbox.clear_children(ctx);
         self.windows.transition_duration_spinbox.set_parent(None, ctx);
         self.windows.status_height_spinbox.clear_children(ctx);
@@ -5786,10 +5480,6 @@ impl crate::pages::AppPage for InterfaceState {
         self.terminal_size_box.clear_children(ctx);
         self.terminal_size_box.set_parent(None, ctx);
 
-        for menu in &mut self.windows.tag_layout_menus {
-            menu.clear_children(ctx);
-            menu.set_parent(None, ctx);
-        }
         self.windows.side_panel_behavior_menu.clear_children(ctx);
         self.windows.side_panel_behavior_menu.set_parent(None, ctx);
         self.windows.side_panel_position_menu.clear_children(ctx);
@@ -5798,8 +5488,6 @@ impl crate::pages::AppPage for InterfaceState {
         self.windows.side_panel_width_spinbox.set_parent(None, ctx);
         self.windows.side_panel_border_gap_spinbox.clear_children(ctx);
         self.windows.side_panel_border_gap_spinbox.set_parent(None, ctx);
-        self.windows.side_panel_border_opacity_spinbox.clear_children(ctx);
-        self.windows.side_panel_border_opacity_spinbox.set_parent(None, ctx);
 
         self.windows.fullscreen_opacity_spinbox.clear_children(ctx);
         self.windows.fullscreen_opacity_spinbox.set_parent(None, ctx);
@@ -5922,14 +5610,10 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.page_margin_spinbox, ctx);
 
         // Section 9: Windows
-        for menu in &mut self.windows.tag_layout_menus {
-            cce_ui::widget::link_parent_child(&mut sec_containers[9], menu, ctx);
-        }
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_behavior_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_position_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_width_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_border_gap_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_border_opacity_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.pinned_opacity_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.popup_opacity_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.fullscreen_opacity_spinbox, ctx);
@@ -6136,11 +5820,6 @@ impl crate::pages::AppPage for InterfaceState {
         }
 
         // Windows Page Settings
-        for (idx, menu) in self.windows.tag_layout_menus.iter_mut().enumerate() {
-            if menu.take_change() {
-                actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetTagLayout(idx, menu.selected))));
-            }
-        }
         if self.windows.side_panel_behavior_menu.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelBehavior(self.windows.side_panel_behavior_menu.selected))));
         }
@@ -6153,9 +5832,7 @@ impl crate::pages::AppPage for InterfaceState {
         if self.windows.side_panel_border_gap_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelBorderGap(self.windows.side_panel_border_gap_spinbox.value as u16))));
         }
-        if self.windows.side_panel_border_opacity_spinbox.take_change() {
-            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetSidePanelBorderOpacity(self.windows.side_panel_border_opacity_spinbox.value as u16))));
-        }
+
         if self.windows.fullscreen_opacity_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetFullscreenOpacity(self.windows.fullscreen_opacity_spinbox.value as u16))));
         }
@@ -6240,9 +5917,6 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.windows.top_gap_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetTopGap(self.windows.top_gap_spinbox.value as u16))));
-        }
-        if self.windows.grid_gap_spinbox.take_change() {
-            actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetGridGap(self.windows.grid_gap_spinbox.value as u16))));
         }
         if self.windows.transition_duration_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::Windows(WindowsMessage::SetTransitionDuration(self.windows.transition_duration_spinbox.value as u16))));
