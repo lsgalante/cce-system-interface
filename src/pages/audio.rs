@@ -234,10 +234,8 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     builder.add_section(&mut final_pc, "Output", sec_focused.first().copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading output devices...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else if state.sinks.is_empty() {
             sec.text("No output devices found", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         }
 
         if state.loaded {
@@ -250,11 +248,8 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 
                 sec.add_section(&sec_title, false, |subsec| {
                     if !sink.active {
-                        subsec.spacing(8.0);
                         subsec.text("Device is inactive.", 12.0, 0.0, 12.0, TEXT_DIM);
-                        subsec.spacing(8.0);
                     } else {
-                        subsec.spacing(8.0);
                         let label = if sink.muted {
                             format!("Volume: {:.0}%  (muted)", sink.volume * 100.0)
                         } else {
@@ -302,10 +297,8 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     builder.add_section(&mut final_pc, "Input", sec_focused.get(1).copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading input devices...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else if state.sources.is_empty() {
             sec.text("No input devices found", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         }
 
         if state.loaded {
@@ -318,11 +311,8 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 
                 sec.add_section(&sec_title, false, |subsec| {
                     if !src.active {
-                        subsec.spacing(8.0);
                         subsec.text("Device is inactive.", 12.0, 0.0, 12.0, TEXT_DIM);
-                        subsec.spacing(8.0);
                     } else {
-                        subsec.spacing(8.0);
                         let label = if src.muted {
                             format!("Volume: {:.0}%  (muted)", src.volume * 100.0)
                         } else {

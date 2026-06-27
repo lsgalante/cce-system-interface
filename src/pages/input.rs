@@ -390,87 +390,68 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
     builder.add_section(&mut final_pc, "Touchpad", false, |sec| {
         state.tap_toggle.set_toggled(state.tap_to_click);
         sec.widget_full(&mut state.tap_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(8.0);
 
         // Built-in trackpad visualizer widget
         let pad_h = 158.0;
         state.trackpad.set_fingers(state.fingers.clone());
         sec.widget_full(&mut state.trackpad, pad_h, ctx);
-        sec.spacing(12.0);
     });
 
     // ── Trackpoint ──
     builder.add_section(&mut final_pc, "Trackpoint", sec_focused.first().copied().unwrap_or(false), |sec| {
         state.dwtp_toggle.set_toggled(state.dwtp);
         sec.widget_full(&mut state.dwtp_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.trackpoint_accel_speed_spinbox, 44.0, ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.trackpoint_accel_profile_menu, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // ── Keyboard ──
     builder.add_section(&mut final_pc, "Keyboard", sec_focused.get(1).copied().unwrap_or(false), |sec| {
         sec.widget_full(&mut state.rate_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
 
         sec.widget_full(&mut state.delay_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // ── Cursor ──
     builder.add_section(&mut final_pc, "Cursor", sec_focused.get(2).copied().unwrap_or(false), |sec| {
         sec.widget_full(&mut state.cursor_theme_menu, 44.0, ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.cursor_size_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // ── Scrolling ──
     builder.add_section(&mut final_pc, "Scrolling", sec_focused.get(3).copied().unwrap_or(false), |sec| {
         state.scroll_toggle.set_toggled(state.inertial_scroll);
         sec.widget_full(&mut state.scroll_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.scroll_friction_spinbox, 44.0, ctx);
-        sec.spacing(12.0);
 
         state.natural_toggle.set_toggled(state.natural_scroll);
         sec.widget_full(&mut state.natural_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.scroll_speed_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // ── Inertial Input ──
     builder.add_section(&mut final_pc, "Inertial Input", sec_focused.get(4).copied().unwrap_or(false), |sec| {
         state.pointer_toggle.set_toggled(state.inertial_pointer);
         sec.widget_full(&mut state.pointer_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.pointer_friction_spinbox, 44.0, ctx);
-        sec.spacing(16.0);
 
         state.trackpad_toggle.set_toggled(state.inertial_trackpad);
         sec.widget_full(&mut state.trackpad_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.trackpad_friction_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // ── Graph ──
     builder.add_section(&mut final_pc, "Graph", sec_focused.get(5).copied().unwrap_or(false), |sec| {
         sec.widget_full(&mut state.zoom_in_box, 44.0, ctx);
-        sec.spacing(12.0);
 
         sec.widget_full(&mut state.zoom_out_box, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // ── Keyboard Bindings ──

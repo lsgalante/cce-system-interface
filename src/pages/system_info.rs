@@ -26,17 +26,6 @@ pub struct NotificationsConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct StatusData {
-    pub font_size: u16,
-    pub padding: u16,
-    pub separators: bool,
-    pub underline: bool,
-    pub running: bool,
-    pub bg_opacity: f32,
-    pub bg_blur: f32,
-}
-
-#[derive(Debug, Clone)]
 pub struct SystemState {
     pub hostname: String,
     pub kernel: String,
@@ -465,10 +454,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     builder.add_section(&mut final_pc, "System", false, |sec| {
         if !state.loaded {
             sec.text("Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
-            sec.spacing(10.0);
         } else {
             sec.text(&format!("{}  —  Linux {}", state.hostname, state.kernel), 12.0, 0.0, 14.0, TEXT_FG);
-            sec.spacing(10.0);
             sec.text(&format!("Uptime: {}", state.uptime), 12.0, 0.0, 12.0, TEXT_DIM);
         }
     });
@@ -500,26 +487,21 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 _ => {}
             }
         }
-        sec.spacing(12.0);
     });
 
     // ── 3. CPU Section ──
     builder.add_section(&mut final_pc, "CPU", false, |sec| {
         if !state.loaded {
             sec.text("Loading CPU model and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
-            sec.spacing(10.0);
         } else {
             // CPU Info Label
             sec.widget(&mut state.cpu_label, 12.0, sec.cw - 24.0, 26.0, ctx);
-            sec.spacing(12.0);
 
             // CPU Usage Label
             sec.widget(&mut state.cpu_usage_label, 12.0, sec.cw - 24.0, 26.0, ctx);
-            sec.spacing(12.0);
 
             // CPU Temp Label
             sec.widget(&mut state.cpu_temp_label, 12.0, sec.cw - 24.0, 26.0, ctx);
-            sec.spacing(12.0);
         }
     });
 
@@ -527,10 +509,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     builder.add_section(&mut final_pc, "GPU", false, |sec_gpu| {
         if !state.loaded {
             sec_gpu.text("Loading GPU models...", 12.0, 0.0, 12.0, TEXT_FG);
-            sec_gpu.spacing(10.0);
         } else {
-            for (i, gpu_lbl) in state.gpu_labels.iter_mut().enumerate() {
-                if i > 0 { sec_gpu.spacing(12.0); }
+            for gpu_lbl in state.gpu_labels.iter_mut() {
                 sec_gpu.widget(gpu_lbl, 12.0, sec_gpu.cw - 24.0, 26.0, ctx);
             }
         }
@@ -541,10 +521,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let rx = sec_gov.left;
         if !state.loaded {
             sec_gov.text("Loading CPU governor...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec_gov.spacing(18.0);
         } else {
             sec_gov.widget(&mut state.cpu_gov_menu, 12.0, sec_gov.cw - 24.0, 26.0, ctx);
-            sec_gov.spacing(12.0);
 
             let (info_title, info_lines) = if state.cpu_powersave {
                 (
@@ -568,7 +546,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             let info_h = 80.0;
             let info_y = sec_gov.ay();
             render_widget(sec_gov.pc, &mut info_box, rx + 12.0, info_y, sec_gov.cw - 24.0, info_h, ctx);
-            sec_gov.spacing(info_h + 12.0);
         }
     });
 
@@ -577,10 +554,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let rx = sec_gpow.left;
         if !state.loaded {
             sec_gpow.text("Loading GPU power status...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec_gpow.spacing(18.0);
         } else {
             sec_gpow.widget(&mut state.gpu_gov_menu, 12.0, sec_gpow.cw - 24.0, 26.0, ctx);
-            sec_gpow.spacing(12.0);
 
             let (info_title, info_lines) = if state.gpu_powersave {
                 (
@@ -604,7 +579,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             let info_h = 80.0;
             let info_y = sec_gpow.ay();
             render_widget(sec_gpow.pc, &mut info_box, rx + 12.0, info_y, sec_gpow.cw - 24.0, info_h, ctx);
-            sec_gpow.spacing(info_h + 12.0);
         }
     });
 
@@ -612,7 +586,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     builder.add_section(&mut final_pc, "Battery", false, |sec_bat| {
         if !state.loaded {
             sec_bat.text("Loading battery status...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec_bat.spacing(18.0);
         } else {
             let bat = &state.battery;
             let bat_icon = match bat.state.as_str() {
@@ -627,12 +600,10 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
             let pct_str = format!("{} {:.0}%", bat_icon, bat.percentage);
             sec_bat.text(&pct_str, 12.0, 0.0, 24.0, pct_color);
-            sec_bat.spacing(30.0);
 
             let state_str = format!("{}  •  {:.1}W  •  {:.1}/{:.1} Wh",
                 bat.state, bat.energy_rate, bat.energy, bat.energy_full);
             sec_bat.text(&state_str, 12.0, 0.0, 12.0, TEXT_DIM);
-            sec_bat.spacing(18.0);
 
             let time_str = if bat.time_to_empty > 0 {
                 format!("Time remaining: {}", format_duration(bat.time_to_empty))
@@ -641,16 +612,13 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             } else { String::new() };
             if !time_str.is_empty() {
                 sec_bat.text(&time_str, 12.0, 0.0, 12.0, TEXT_DIM);
-                sec_bat.spacing(18.0);
             }
 
             let detail_str = format!("{}  {}", bat.vendor, bat.model);
             sec_bat.text(&detail_str, 12.0, 0.0, 11.0, TEXT_DIM);
-            sec_bat.spacing(20.0);
 
             let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
             sec_bat.text(ac_str, 12.0, 0.0, 14.0, TEXT_FG);
-            sec_bat.spacing(20.0);
         }
     });
 
@@ -659,16 +627,13 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let sec_w = sec2.cw;
         state.notifications_enable_toggle.set_toggled(state.notifications_enable);
         sec2.widget_full(&mut state.notifications_enable_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec2.spacing(8.0);
 
         state.notifications_bell_toggle.set_toggled(state.notifications_bell);
         sec2.widget_full(&mut state.notifications_bell_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec2.spacing(16.0);
 
         state.notifications_duration_spinbox.value = state.notifications_duration;
         state.notifications_duration_spinbox.set_label("Notification Duration");
         sec2.widget(&mut state.notifications_duration_spinbox, 14.0, sec_w - 28.0, 44.0, ctx);
-        sec2.spacing(16.0);
 
         let btn_h = 32.0;
         let btn_y = sec2.ay();
@@ -690,7 +655,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 AppAction::SystemInfo(SystemMessage::SendTestNotification),
             );
         }
-        sec2.spacing(12.0);
     });
 
 

@@ -176,7 +176,6 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading storage usage...", 12.0, 0.0, 12.0, TEXT_FG);
-            sec.spacing(18.0);
         } else {
             let disk_pct = if state.disk_total > 0.0 {
                 state.disk_used / state.disk_total * 100.0
@@ -189,7 +188,6 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
                 &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
                 100.0, 0.0, 12.0, TEXT_FG,
             );
-            sec.spacing(18.0);
 
             let bar_w = sec_w - 24.0;
             let yt = sec.ay();
@@ -205,7 +203,6 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
-            sec.spacing(18.0);
         } else {
             let ram_pct = if state.ram_total > 0.0 {
                 state.ram_used / state.ram_total * 100.0
@@ -218,7 +215,6 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
                 &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
                 100.0, 0.0, 12.0, TEXT_FG,
             );
-            sec.spacing(18.0);
 
             let bar_w = sec_w - 24.0;
             let yt = sec.ay();
@@ -233,40 +229,33 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
     builder.add_section(&mut final_pc, "Full System Backup", false, |sec| {
         if !state.backup_loaded {
             sec.text("Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else {
             // Status Row
             sec.text("Backup Status", 12.0, 0.0, 12.0, LABEL_FG);
             let status_text = if state.backup_in_progress { "Backing up..." } else { "Idle" };
             let status_color = if state.backup_in_progress { GREEN } else { TEXT_FG };
             sec.text(status_text, 120.0, 0.0, 12.0, status_color);
-            sec.spacing(18.0);
 
             // Last Backup Row
             sec.text("Last Backup", 12.0, 0.0, 12.0, LABEL_FG);
             sec.text(&state.last_backup_time, 120.0, 0.0, 12.0, TEXT_FG);
-            sec.spacing(18.0);
 
             // Backup Size Row
             sec.text("Archive Size", 12.0, 0.0, 12.0, LABEL_FG);
             sec.text(&state.backup_size, 120.0, 0.0, 12.0, TEXT_FG);
-            sec.spacing(18.0);
 
             // Target Directories Row
             sec.text("Backup Targets", 12.0, 0.0, 12.0, LABEL_FG);
             sec.text("Entire Filesystem (/)  [Preserving attributes]", 120.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
 
             // Destination Archive Row
             sec.text("Destination", 12.0, 0.0, 12.0, LABEL_FG);
             sec.text("USB Drive (/mnt/usb or /run/media/...)", 120.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(24.0);
 
             // Error message if present
             if let Some(ref err) = state.error_message {
                 sec.text("Error:", 12.0, 0.0, 12.0, RED);
                 sec.text(err, 60.0, 0.0, 11.0, RED);
-                sec.spacing(18.0);
             }
 
             // Action Button
@@ -283,7 +272,6 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
             if let Some(&(x, w)) = cols.first() {
                 sec.button(btn_label, x, yt, w, btn_h, bg, hover, WHITE, action.clone());
             }
-            sec.spacing(12.0);
         }
     });
 

@@ -1,25 +1,14 @@
 use std::fs;
 use std::io::Write;
-use crate::app::{AppAction, PageContent, SectionContextExt};
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use crate::app::{AppAction, PageContent};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{
     ColorSelector, Spinbox, Element, Dropdown, TextBox, FontSelector, Toggle, MultiControl,
-    LayoutPreview, PreviewLayoutMode, Label, Slider
+    Slider
 };
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-interface/links.json";
-
-#[derive(Debug, Clone)]
-pub struct StatusData {
-    pub font_size: u16,
-    pub padding: u16,
-    pub separators: bool,
-    pub underline: bool,
-    pub running: bool,
-    pub bg_opacity: f32,
-    pub bg_blur: f32,
-}
 
 thread_local! {
     static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
@@ -49,43 +38,7 @@ fn get_socket_path() -> String {
     }
 }
 
-fn get_status_socket_path() -> String {
-    match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/cce-status-{}.sock", display),
-        Err(_) => "/tmp/cce-status.sock".to_string(),
-    }
-}
 
-fn query_ipc(cmd: &str) -> String {
-    use std::io::{Read, Write};
-    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_socket_path()) {
-        let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(20)));
-        let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(20)));
-        if stream.write_all(format!("{}\n", cmd).as_bytes()).is_ok() {
-            let mut reply = String::new();
-            if stream.read_to_string(&mut reply).is_ok() {
-                return reply;
-            }
-        }
-    }
-    String::new()
-}
-
-fn query_status(sub: &str) -> String {
-    use std::io::{BufRead, Write};
-    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_status_socket_path()) {
-        let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(20)));
-        let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(20)));
-        if stream.write_all(format!("{}\n", sub).as_bytes()).is_ok() {
-            let mut reader = std::io::BufReader::new(stream);
-            let mut line = String::new();
-            if reader.read_line(&mut line).is_ok() {
-                return line;
-            }
-        }
-    }
-    String::new()
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WidthParam {
@@ -262,14 +215,6 @@ pub enum WindowsMessage {
 
 #[derive(Debug, Clone)]
 pub struct StatusInterfaceControls {
-    pub loaded: bool,
-    pub font_size: u16,
-    pub separators: bool,
-    pub underline: bool,
-    pub running: bool,
-    pub label: Label,
-    pub separators_toggle: Toggle,
-    pub underline_toggle: Toggle,
     pub box_opacity: f32,
     pub box_blur: f32,
     pub box_opacity_slider: Slider,
@@ -280,19 +225,13 @@ pub struct StatusInterfaceControls {
 
 impl Default for StatusInterfaceControls {
     fn default() -> Self {
+        let opacity = read_status_box_opacity().unwrap_or(1.0);
+        let blur = read_status_box_blur().unwrap_or(0.0);
         Self {
-            loaded: false,
-            font_size: 11,
-            separators: true,
-            underline: true,
-            running: false,
-            label: Label::new("Status Interface: Stopped").with_font_size(14.0).with_color([170, 51, 51]),
-            separators_toggle: Toggle::new().with_label("Show Separators").with_config(CONFIG_PATH, "status_separators"),
-            underline_toggle: Toggle::new().with_label("Show Underline").with_config(CONFIG_PATH, "status_underline"),
-            box_opacity: 1.0,
-            box_blur: 0.0,
-            box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(1.0).with_label("Background Opacity").with_config(CONFIG_PATH, "status_box_opacity"),
-            box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(0.0).with_label("Background Blur").with_config(CONFIG_PATH, "status_box_blur"),
+            box_opacity: opacity,
+            box_blur: blur,
+            box_opacity_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(opacity).with_label("Background Opacity").with_config(CONFIG_PATH, "status_box_opacity"),
+            box_blur_slider: Slider::new().with_range(0.0, 100.0).with_scroll(true).with_value(blur).with_label("Background Blur").with_config(CONFIG_PATH, "status_box_blur"),
             opacity_dragging: false,
             blur_dragging: false,
         }
@@ -359,6 +298,8 @@ pub struct InterfaceState {
     pub page_margin_spinbox: Spinbox,
     pub grid_min_col_width: u16,
     pub grid_min_col_width_spinbox: Spinbox,
+    pub layout_grid_gap: u16,
+    pub layout_grid_gap_spinbox: Spinbox,
     pub spinbox_height: u16,
     pub spinbox_height_spinbox: Spinbox,
     pub spinbox_corner_radius: u16,
@@ -456,7 +397,6 @@ pub struct InterfaceState {
     pub graph_gap_width: u16,
     pub graph_gap_width_spinbox: Spinbox,
     pub custom_multicontrol: MultiControl,
-    pub layout_status: Option<LayoutStatusInfo>,
 }
 
 impl Default for InterfaceState {
@@ -537,6 +477,8 @@ impl Default for InterfaceState {
             page_margin_spinbox: Spinbox::new(20, 0, 100, 1).with_label("Page Margin").with_unit("px").with_config(CONFIG_PATH, "page_margin"),
             grid_min_col_width: 260,
             grid_min_col_width_spinbox: Spinbox::new(260, 100, 1000, 10).with_label("Minimum Width").with_unit("px").with_config(CONFIG_PATH, "grid_min_col_width"),
+            layout_grid_gap: 8,
+            layout_grid_gap_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Gap").with_unit("px").with_config(CONFIG_PATH, "grid_gap"),
             spinbox_height: 26,
             spinbox_height_spinbox: Spinbox::new(26, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "spinbox_height"),
             spinbox_corner_radius: 4,
@@ -644,7 +586,6 @@ impl Default for InterfaceState {
             status_module_spacing_spinbox: Spinbox::new(8, 0, 100, 1).with_label("Spacing").with_unit("px").with_config(CONFIG_PATH, "status_module_spacing"),
             status_controls: StatusInterfaceControls::default(),
             custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
-            layout_status: None,
         }
     }
 }
@@ -694,6 +635,7 @@ pub enum InterfaceMessage {
 
     SetPageMargin(u16),
     SetGridMinColWidth(u16),
+    SetLayoutGridGap(u16),
     SetSpinboxHeight(u16),
     SetSpinboxCornerRadius(u16),
     SetToggleHeight(u16),
@@ -750,11 +692,6 @@ pub enum InterfaceMessage {
     PickLayerColor,
     Refreshed(InterfaceState),
     TypefaceRefreshed(InterfaceState),
-    LayoutStatusRefreshed(LayoutStatusInfo),
-    StatusRefreshed(StatusData),
-    StatusToggleSeparators,
-    StatusToggleUnderline,
-    StatusReload,
     StatusSetPadding(u16),
     StatusSetBoxOpacity(f32),
     StatusSetBoxBlur(f32),
@@ -833,6 +770,7 @@ pub fn read_interface_config() -> InterfaceState {
 
     let page_margin = parse_u16_from(&content, "page_margin", 20);
     let grid_min_col_width = parse_u16_from(&content, "grid_min_col_width", 260);
+    let layout_grid_gap = parse_u16_from(&content, "grid_gap", 8);
     let spinbox_height = parse_u16_from(&content, "spinbox_height", 26);
     let spinbox_corner_radius = parse_u16_from(&content, "spinbox_corner_radius", 4);
     let toggle_height = parse_u16_from(&content, "toggle_height", 44);
@@ -955,6 +893,8 @@ pub fn read_interface_config() -> InterfaceState {
         page_margin_spinbox: Spinbox::new(page_margin as i32, 0, 100, 1).with_label("Page Margin").with_unit("px").with_config(CONFIG_PATH, "page_margin"),
         grid_min_col_width,
         grid_min_col_width_spinbox: Spinbox::new(grid_min_col_width as i32, 100, 1000, 10).with_label("Minimum Width").with_unit("px").with_config(CONFIG_PATH, "grid_min_col_width"),
+        layout_grid_gap,
+        layout_grid_gap_spinbox: Spinbox::new(layout_grid_gap as i32, 0, 100, 1).with_label("Gap").with_unit("px").with_config(CONFIG_PATH, "grid_gap"),
         spinbox_height,
         spinbox_height_spinbox: Spinbox::new(spinbox_height as i32, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "spinbox_height"),
         spinbox_corner_radius,
@@ -1061,7 +1001,6 @@ pub fn read_interface_config() -> InterfaceState {
         backplate_corner_radius,
         backplate_corner_radius_spinbox: Spinbox::new(backplate_corner_radius as i32, 0, 100, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "backplate_corner_radius"),
         custom_multicontrol: MultiControl::new("custom_parameters".to_string()).with_label("custom_parameters"),
-        layout_status: None,
     }
 }
 
@@ -1285,145 +1224,7 @@ fn apply_edge_gap(val: u16) {
     send_ipc_command(&format!("layout gap_bottom {}", val));
 }
 
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-pub struct PreviewWindow {
-    pub app_id: String,
-    pub title: String,
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    pub tags: u32,
-    pub _minimized: bool,
-    pub has_parent: bool,
-    pub layout_mode: String,
-}
 
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-pub struct LayoutStatusInfo {
-    pub active_tags: u32,
-    pub focused_tags: u32,
-    pub _num_tags: u32,
-    pub windows: Vec<PreviewWindow>,
-    pub focused_title: String,
-    pub focused_layout_mode: String,
-}
-
-fn get_closest_tag(x: f64, y: f64) -> i32 {
-    let centers = [(0.0, 0.0), (2000.0, 0.0), (0.0, 2000.0), (2000.0, 2000.0)];
-    let mut min_dist = f64::MAX;
-    let mut best_tag = 1;
-    for (i, &(cx, cy)) in centers.iter().enumerate() {
-        let dx = x - cx;
-        let dy = y - cy;
-        let dist = dx * dx + dy * dy;
-        if dist < min_dist {
-            min_dist = dist;
-            best_tag = (i + 1) as i32;
-        }
-    }
-    best_tag
-}
-
-pub fn read_current_layout_status() -> LayoutStatusInfo {
-    let mut active_tags = 1;
-    let mut focused_tags = 1;
-    let mut _num_tags = 4;
-
-    let tags_content = query_status("tags");
-    if let Some(pan_idx) = tags_content.find("Pan: (") {
-        let coords_str = &tags_content[pan_idx + "Pan: (".len()..];
-        if let Some(end_idx) = coords_str.find(")") {
-            let parts: Vec<&str> = coords_str[..end_idx].split(',').collect();
-            if parts.len() == 2 {
-                let pan_x = parts[0].trim().parse::<f64>().unwrap_or(0.0);
-                let pan_y = parts[1].trim().parse::<f64>().unwrap_or(0.0);
-                let best_tag = get_closest_tag(pan_x, pan_y);
-                active_tags = 1 << (best_tag - 1);
-                focused_tags = active_tags;
-            }
-        }
-    }
-
-    let focused_title = query_status("title").trim().to_string();
-    let focused_layout_mode = query_status("layout").trim().to_string();
-
-    let windows_content = query_ipc("windows");
-
-    let mut windows = Vec::new();
-    for line in windows_content.lines() {
-        if !line.starts_with("window ") { continue; }
-        
-        let mut app_id = String::new();
-        let mut title = String::new();
-        let mut x = 0.0;
-        let mut y = 0.0;
-        let mut w = 0.0;
-        let mut h = 0.0;
-        let mut tags = 0;
-        let mut minimized = false;
-        let mut has_parent = false;
-        let mut layout_mode = "Cascade".to_string();
-        
-        let parts = line.strip_prefix("window ").unwrap_or(line);
-        
-        let get_val = |p: &str, k: &str| -> Option<String> {
-            if let Some(idx) = p.find(k) {
-                let start = idx + k.len();
-                let mut end = p.len();
-                let next_keys = [
-                    " app_id=", " title=", " mode=", " decoration=", " presentation=",
-                    " tags=", " x=", " y=", " w=", " h=", " has_parent=", " minimized="
-                ];
-                for nk in next_keys {
-                    if nk != k {
-                        if let Some(nidx) = p[start..].find(nk) {
-                            end = end.min(start + nidx);
-                        }
-                    }
-                }
-                Some(p[start..end].trim().to_string())
-            } else {
-                None
-            }
-        };
-
-        if let Some(val) = get_val(parts, "app_id=") { app_id = val; }
-        if let Some(val) = get_val(parts, "title=") { title = val; }
-        if let Some(val) = get_val(parts, "x=") { x = val.parse().unwrap_or(0.0); }
-        if let Some(val) = get_val(parts, "y=") { y = val.parse().unwrap_or(0.0); }
-        if let Some(val) = get_val(parts, "w=") { w = val.parse().unwrap_or(0.0); }
-        if let Some(val) = get_val(parts, "h=") { h = val.parse().unwrap_or(0.0); }
-        if let Some(val) = get_val(parts, "tags=") { tags = val.parse().unwrap_or(0); }
-        if let Some(val) = get_val(parts, "minimized=") { minimized = val == "true"; }
-        if let Some(val) = get_val(parts, "has_parent=") { has_parent = val == "true"; }
-        if let Some(val) = get_val(parts, "mode=") { layout_mode = val; }
-
-        windows.push(PreviewWindow {
-            app_id,
-            title,
-            x,
-            y,
-            w,
-            h,
-            tags,
-            _minimized: minimized,
-            has_parent,
-            layout_mode,
-        });
-    }
-
-    LayoutStatusInfo {
-        active_tags,
-        focused_tags,
-        _num_tags,
-        windows,
-        focused_title,
-        focused_layout_mode,
-    }
-}
 
 fn set_width(state: &mut WindowsState, param: WidthParam, val: u16) {
     let val = val.min(100);
@@ -1670,6 +1471,15 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     state.grid_min_col_width = val;
                     state.grid_min_col_width_spinbox.value = val as i32;
                     apply_grid_min_col_width(val);
+                }
+            }
+            "grid_gap" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.layout_grid_gap = val;
+                    state.layout_grid_gap_spinbox.value = val as i32;
+                    state.windows.grid_gap = val;
+                    state.windows.grid_gap_spinbox.value = val as i32;
+                    apply_layout_grid_gap(val);
                 }
             }
             "spinbox_height" => {
@@ -1968,11 +1778,7 @@ fn write_status_value(key: &str, value: &str) {
     write_config_value_path(&get_config_path(), key, value);
 }
 
-fn read_status_font_size() -> Option<u16> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_u16_from(&content, "status_font_size", 11))
-}
-
+#[allow(dead_code)]
 fn read_status_padding() -> Option<u16> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
     Some(parse_u16_from(&content, "status_padding", 8))
@@ -1980,24 +1786,6 @@ fn read_status_padding() -> Option<u16> {
 
 fn write_status_padding(padding: u16) {
     write_status_value("status_padding", &padding.to_string());
-}
-
-fn read_status_separators() -> Option<bool> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_bool_from(&content, "status_separators", true))
-}
-
-fn write_status_separators(val: bool) {
-    write_status_value("status_separators", &val.to_string());
-}
-
-fn read_status_underline() -> Option<bool> {
-    let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_bool_from(&content, "status_underline", true))
-}
-
-fn write_status_underline(val: bool) {
-    write_status_value("status_underline", &val.to_string());
 }
 
 fn read_status_box_opacity() -> Option<f32> {
@@ -2016,30 +1804,6 @@ fn read_status_box_blur() -> Option<f32> {
 
 fn write_status_box_blur(val: f32) {
     write_status_value("status_box_blur", &val.to_string());
-}
-
-pub async fn fetch_status_state() -> StatusData {
-    let running = tokio::process::Command::new("pgrep")
-        .args(["-f", "cce-status-interface"]).output().await.ok()
-        .map(|o| !o.stdout.is_empty())
-        .unwrap_or(false);
-
-    let font_size = read_status_font_size().unwrap_or(11);
-    let padding = read_status_padding().unwrap_or(8);
-    let separators = read_status_separators().unwrap_or(true);
-    let underline = read_status_underline().unwrap_or(true);
-    let bg_opacity = read_status_box_opacity().unwrap_or(1.0);
-    let bg_blur = read_status_box_blur().unwrap_or(0.0);
-
-    StatusData {
-        font_size,
-        padding,
-        separators,
-        underline,
-        running,
-        bg_opacity,
-        bg_blur,
-    }
 }
 
 
@@ -2284,6 +2048,12 @@ fn apply_page_margin(margin: u16) {
 fn apply_grid_min_col_width(width: u16) {
     write_config_value("grid_min_col_width", &width.to_string());
     cce_ui::layout::set_grid_min_col_width(width as f32);
+}
+
+fn apply_layout_grid_gap(gap: u16) {
+    write_config_value("grid_gap", &gap.to_string());
+    cce_ui::layout::set_grid_gap(gap as f32);
+    send_ipc_command(&format!("layout grid_gap {}", gap));
 }
 
 fn apply_section_padding(padding: u16) {
@@ -2795,371 +2565,235 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
     // 1. Custom Parameters Section
     builder.add_section_with_width(&mut final_pc, cw, "Custom Parameters", false, |sec| {
-        sec.spacing(8.0);
         let h = state.custom_multicontrol.preferred_height().unwrap_or(100.0);
         sec.widget_full(&mut state.custom_multicontrol, h, ctx);
-        sec.spacing(8.0);
     });
 
     // 2. Layout Section
     builder.add_section_with_width(&mut final_pc, cw, "Layout", false, |sec| {
-        sec.spacing(8.0);
         state.color_selectors[1].color = state.high_color;
         sec.widget_full(&mut state.color_selectors[1], 40.0, ctx);
-        sec.spacing(8.0);
         state.color_selectors[2].color = state.visual_guides_color;
         sec.widget_full(&mut state.color_selectors[2], 40.0, ctx);
-        sec.spacing(12.0);
 
         // Grid Layout child section
         sec.add_section("Adaptive Grid", false, |subsec| {
-            subsec.spacing(8.0);
             state.grid_min_col_width_spinbox.value = state.grid_min_col_width as i32;
             subsec.widget_full(&mut state.grid_min_col_width_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
+            state.layout_grid_gap_spinbox.value = state.layout_grid_gap as i32;
+            subsec.widget_full(&mut state.layout_grid_gap_spinbox, 44.0, ctx);
         });
-        sec.spacing(12.0);
     });
 
 
     // 3. Status Section
     builder.add_section_with_width(&mut final_pc, cw, "Status", false, |sec| {
-        const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-        sec.spacing(8.0);
         state.color_selectors[7].color = state.normal_color;
         sec.widget_full(&mut state.color_selectors[7], 40.0, ctx);
-        sec.spacing(8.0);
         state.color_selectors[3].color = state.disabled_color;
         sec.widget_full(&mut state.color_selectors[3], 40.0, ctx);
-        sec.spacing(8.0);
         state.color_selectors[22].color = state.status_box_background_color;
         sec.widget_full(&mut state.color_selectors[22], 40.0, ctx);
-        sec.spacing(8.0);
         state.status_box_corner_radius_spinbox.value = state.status_box_corner_radius as i32;
         sec.widget_full(&mut state.status_box_corner_radius_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
         state.status_padding_spinbox.value = state.status_padding as i32;
         sec.widget_full(&mut state.status_padding_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
         state.status_module_spacing_spinbox.value = state.status_module_spacing as i32;
         sec.widget_full(&mut state.status_module_spacing_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
 
-        if !state.status_controls.loaded {
-            sec.text("Loading Status Interface status...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(8.0);
-        } else {
-            // Status
-            let status_text = if state.status_controls.running { "Status Interface: Running" } else { "Status Interface: Stopped" };
-            let status_color = if state.status_controls.running { [92, 143, 97] } else { [170, 51, 51] };
-            state.status_controls.label.set_text(status_text);
-            state.status_controls.label.set_color(status_color);
-            sec.widget_full(&mut state.status_controls.label, 20.0, ctx);
-            sec.spacing(8.0);
+        // Opacity slider
+        state.status_controls.box_opacity_slider.set_label(&format!("Background Opacity: {}%", (state.status_controls.box_opacity * 100.0).round() as i32));
+        state.status_controls.box_opacity_slider.set_value(state.status_controls.box_opacity);
+        let label_h_op = cce_ui::widget::label_offset(&state.status_controls.box_opacity_slider);
+        let slider_h_op = cce_ui::layout::slider_height() + label_h_op;
+        sec.widget_full(&mut state.status_controls.box_opacity_slider, slider_h_op, ctx);
 
-            // Separators toggle
-            state.status_controls.separators_toggle.set_toggled(state.status_controls.separators);
-            sec.widget_full(&mut state.status_controls.separators_toggle, cce_ui::layout::toggle_height(), ctx);
-            sec.spacing(8.0);
-
-            // Underline toggle
-            state.status_controls.underline_toggle.set_toggled(state.status_controls.underline);
-            sec.widget_full(&mut state.status_controls.underline_toggle, cce_ui::layout::toggle_height(), ctx);
-            sec.spacing(8.0);
-
-            // Opacity slider
-            state.status_controls.box_opacity_slider.set_label(&format!("Background Opacity: {}%", (state.status_controls.box_opacity * 100.0).round() as i32));
-            state.status_controls.box_opacity_slider.set_value(state.status_controls.box_opacity);
-            let label_h_op = cce_ui::widget::label_offset(&state.status_controls.box_opacity_slider);
-            let slider_h_op = cce_ui::layout::slider_height() + label_h_op;
-            sec.widget_full(&mut state.status_controls.box_opacity_slider, slider_h_op, ctx);
-            sec.spacing(8.0);
-
-            // Blur slider
-            state.status_controls.box_blur_slider.set_label(&format!("Background Blur: {}%", (state.status_controls.box_blur * 100.0).round() as i32));
-            state.status_controls.box_blur_slider.set_value(state.status_controls.box_blur);
-            let label_h_bl = cce_ui::widget::label_offset(&state.status_controls.box_blur_slider);
-            let slider_h_bl = cce_ui::layout::slider_height() + label_h_bl;
-            sec.widget_full(&mut state.status_controls.box_blur_slider, slider_h_bl, ctx);
-            sec.spacing(8.0);
-
-            // Reload button
-            let yt_reload = sec.ay();
-            let btn_w = cw - 24.0;
-            let button_x = sec.left + 12.0;
-            sec.button(
-                "Reload Status Interface",
-                button_x,
-                yt_reload,
-                btn_w,
-                32.0,
-                [0.13, 0.18, 0.14, 1.0],
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                crate::app::AppAction::Interface(InterfaceMessage::StatusReload),
-            );
-            sec.spacing(12.0);
-        }
+        // Blur slider
+        state.status_controls.box_blur_slider.set_label(&format!("Background Blur: {}%", (state.status_controls.box_blur * 100.0).round() as i32));
+        state.status_controls.box_blur_slider.set_value(state.status_controls.box_blur);
+        let label_h_bl = cce_ui::widget::label_offset(&state.status_controls.box_blur_slider);
+        let slider_h_bl = cce_ui::layout::slider_height() + label_h_bl;
+        sec.widget_full(&mut state.status_controls.box_blur_slider, slider_h_bl, ctx);
     });
 
     // 4. Controls Section
     builder.add_section_with_width(&mut final_pc, cw, "Controls", false, |sec| {
-        sec.spacing(8.0);
         state.color_selectors[5].color = state.color_borders_color;
         sec.widget_full(&mut state.color_selectors[5], 40.0, ctx);
-        sec.spacing(12.0);
 
         // Slider Section
         sec.add_section("Slider", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[4].color = state.slider_track_color;
             subsec.widget_full(&mut state.color_selectors[4], 40.0, ctx);
-            subsec.spacing(8.0);
             state.slider_height_spinbox.value = state.slider_height as i32;
             subsec.widget_full(&mut state.slider_height_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
 
         // MenuBar Section
         sec.add_section("MenuBar", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[8].color = state.paginator_sidebar_color;
             subsec.widget_full(&mut state.color_selectors[8], 40.0, ctx);
-            subsec.spacing(8.0);
             state.color_selectors[10].color = state.menubar_tab_label_color;
             subsec.widget_full(&mut state.color_selectors[10], 40.0, ctx);
             state.menubar_font_selector.font_family = state.menubar_font.clone();
             subsec.widget_full(&mut state.menubar_font_selector, 44.0, ctx);
-            subsec.spacing(8.0);
             state.menubar_opacity_spinbox.value = (state.menubar_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.menubar_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Toggle Section
         sec.add_section("Toggle", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[11].color = state.toggle_enabled_color;
             subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
-            subsec.spacing(8.0);
             state.color_selectors[12].color = state.toggle_disabled_color;
             subsec.widget_full(&mut state.color_selectors[12], 40.0, ctx);
-            subsec.spacing(8.0);
             state.toggle_height_spinbox.value = state.toggle_height as i32;
             subsec.widget_full(&mut state.toggle_height_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.toggle_corner_radius_spinbox.value = state.toggle_corner_radius as i32;
             subsec.widget_full(&mut state.toggle_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // Breadcrumb Section
         sec.add_section("Breadcrumb", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[14].color = state.breadcrumb_bg_color;
             subsec.widget_full(&mut state.color_selectors[14], 40.0, ctx);
-            subsec.spacing(8.0);
             state.breadcrumb_font_selector.font_family = state.breadcrumb_font.clone();
             subsec.widget_full(&mut state.breadcrumb_font_selector, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
 
         // Spinbox Section
         sec.add_section("Spinbox", false, |subsec| {
-            subsec.spacing(8.0);
             state.spinbox_height_spinbox.value = state.spinbox_height as i32;
             subsec.widget_full(&mut state.spinbox_height_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
 
             state.spinbox_corner_radius_spinbox.value = state.spinbox_corner_radius as i32;
             subsec.widget_full(&mut state.spinbox_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // ColorSelector Section
         sec.add_section("ColorSelector", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selector_height_spinbox.value = state.color_selector_height as i32;
             subsec.widget_full(&mut state.color_selector_height_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
 
             state.color_selector_preview_corner_radius_spinbox.value = state.color_selector_preview_corner_radius as i32;
             subsec.widget_full(&mut state.color_selector_preview_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(12.0);
 
             state.color_selector_preview_margin_spinbox.value = state.color_selector_preview_margin as i32;
             subsec.widget_full(&mut state.color_selector_preview_margin_spinbox, 44.0, ctx);
-            subsec.spacing(12.0);
 
             state.color_selector_corner_radius_spinbox.value = state.color_selector_corner_radius as i32;
             subsec.widget_full(&mut state.color_selector_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
 
             state.color_selector_font_selector.font_family = state.color_selector_font.clone();
             subsec.widget_full(&mut state.color_selector_font_selector, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Textbox Section
         sec.add_section("Textbox", false, |subsec| {
-            subsec.spacing(8.0);
             state.textbox_height_spinbox.value = state.textbox_height as i32;
             subsec.widget_full(&mut state.textbox_height_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.textbox_corner_radius_spinbox.value = state.textbox_corner_radius as i32;
             subsec.widget_full(&mut state.textbox_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // FontSelector Section
         sec.add_section("FontSelector", false, |subsec| {
-            subsec.spacing(8.0);
             state.font_selector_height_spinbox.value = state.font_selector_height as i32;
             subsec.widget_full(&mut state.font_selector_height_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.font_selector_corner_radius_spinbox.value = state.font_selector_corner_radius as i32;
             subsec.widget_full(&mut state.font_selector_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Dropdown Section
         sec.add_section("Dropdown", false, |subsec| {
-            subsec.spacing(8.0);
             state.dropdown_height_spinbox.value = state.dropdown_height as i32;
             subsec.widget_full(&mut state.dropdown_height_spinbox, 44.0, ctx);
-            subsec.spacing(4.0);
             state.dropdown_corner_radius_spinbox.value = state.dropdown_corner_radius as i32;
             subsec.widget_full(&mut state.dropdown_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Button Section
         sec.add_section("Button", false, |subsec| {
-            subsec.spacing(8.0);
             state.button_corner_radius_spinbox.value = state.button_corner_radius as i32;
             subsec.widget_full(&mut state.button_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // ButtonStrip Section
         sec.add_section("ButtonStrip", false, |subsec| {
-            subsec.spacing(8.0);
             state.button_padding_spinbox.value = state.button_padding as i32;
             subsec.widget_full(&mut state.button_padding_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.button_strip_spacing_spinbox.value = state.button_strip_spacing as i32;
             subsec.widget_full(&mut state.button_strip_spacing_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Labels Section
         sec.add_section("Labels", false, |subsec| {
-            subsec.spacing(8.0);
             state.label_margin_spinbox.value = state.label_margin as i32;
             subsec.widget_full(&mut state.label_margin_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(8.0);
     });
 
     // 5. Indicators Section
     builder.add_section_with_width(&mut final_pc, cw, "Indicators", false, |sec| {
-        sec.spacing(8.0);
         sec.add_section("Primary Highlight", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[9].color = state.primary_highlight_color;
             subsec.widget_full(&mut state.color_selectors[9], 40.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(8.0);
     });
 
     // 5. Notification Section
     builder.add_section_with_width(&mut final_pc, cw, "Notification", false, |sec| {
-        sec.spacing(8.0);
         state.color_selectors[16].color = state.notification_bg_color;
         sec.widget_full(&mut state.color_selectors[16], 40.0, ctx);
-        sec.spacing(8.0);
         state.notification_opacity_spinbox.value = (state.notification_opacity * 100.0).round() as i32;
         sec.widget_full(&mut state.notification_opacity_spinbox, 44.0, ctx);
-        sec.spacing(8.0);
     });
 
     // 6. Surfaces Section
     builder.add_section_with_width(&mut final_pc, cw, "Surfaces", sec_focused.get(6).copied().unwrap_or(false), |sec| {
-        sec.spacing(12.0);
         sec.add_section("Backplate", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[17].color = state.backplate_color;
             subsec.widget_full(&mut state.color_selectors[17], 40.0, ctx);
-            subsec.spacing(8.0);
             state.backplate_corner_radius_spinbox.value = state.backplate_corner_radius as i32;
             subsec.widget_full(&mut state.backplate_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Plate child section
         sec.add_section("Plate", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[0].color = state.page_low_color;
             subsec.widget_full(&mut state.color_selectors[0], 40.0, ctx);
-            subsec.spacing(8.0);
             state.plate_padding_spinbox.value = state.plate_padding as i32;
             subsec.widget_full(&mut state.plate_padding_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.plate_opacity_spinbox.value = (state.plate_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.plate_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.plate_corner_radius_spinbox.value = state.plate_corner_radius as i32;
             subsec.widget_full(&mut state.plate_corner_radius_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Popover Section
         sec.add_section("Popover", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[15].color = state.popover_bg_color;
             subsec.widget_full(&mut state.color_selectors[15], 40.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Desktop Section
         sec.add_section("Desktop", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[6].color = state.desktop_background_color;
             subsec.widget_full(&mut state.color_selectors[6], 40.0, ctx);
-            subsec.spacing(8.0);
 
             let grid_color_rgba = state.desktop_grid_color;
             state.color_selectors[23].color = [grid_color_rgba[0], grid_color_rgba[1], grid_color_rgba[2]];
             state.color_selectors[23].alpha = grid_color_rgba[3];
             subsec.widget_full(&mut state.color_selectors[23], 40.0, ctx);
-            subsec.spacing(8.0);
 
             state.desktop_grid_scale_spinbox.value = state.desktop_grid_scale as i32;
             subsec.widget_full(&mut state.desktop_grid_scale_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
 
             state.desktop_line_width_spinbox.value = state.desktop_line_width as i32;
             subsec.widget_full(&mut state.desktop_line_width_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
     });
 
 
@@ -3168,38 +2802,29 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
     // 7. Fonts Section
     builder.add_section_with_width(&mut final_pc, cw, "Fonts", sec_focused.get(7).copied().unwrap_or(false), |sec| {
-        sec.spacing(8.0);
 
         // System Fonts Section
         sec.add_section("System Fonts", false, |subsec| {
-            subsec.spacing(8.0);
 
             if !state.typeface_loaded {
                 subsec.text("Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-                subsec.spacing(18.0);
             } else {
                 // Sans-Serif
                 subsec.widget_full(&mut state.sans_box, 44.0, ctx);
-                subsec.spacing(12.0);
 
                 // Serif
                 subsec.widget_full(&mut state.serif_box, 44.0, ctx);
-                subsec.spacing(12.0);
 
                 // Monospace
                 subsec.widget_full(&mut state.mono_box, 44.0, ctx);
-                subsec.spacing(8.0);
             }
         });
-        sec.spacing(12.0);
 
         // Program Fonts Section
         sec.add_section("Program Fonts", false, |subsec| {
-            subsec.spacing(8.0);
 
             if !state.typeface_loaded {
                 subsec.text("Loading typefaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-                subsec.spacing(18.0);
             } else {
                 // Window Borders
                 let start_y = subsec.ay();
@@ -3210,9 +2835,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                     state.borders_size_box.set_row_rect(cols[1].0, cols[1].1);
                     cce_ui::layout::render_widget(subsec.pc, &mut state.borders_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
-                subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.borders_box, 44.0, ctx);
-                subsec.spacing(16.0);
 
                 // Status Interface
                 let start_y = subsec.ay();
@@ -3223,9 +2846,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                     state.status_size_box.set_row_rect(cols[1].0, cols[1].1);
                     cce_ui::layout::render_widget(subsec.pc, &mut state.status_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
-                subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.status_box, 44.0, ctx);
-                subsec.spacing(16.0);
 
                 // Fuzzel
                 let start_y = subsec.ay();
@@ -3236,9 +2857,7 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                     state.fuzzel_size_box.set_row_rect(cols[1].0, cols[1].1);
                     cce_ui::layout::render_widget(subsec.pc, &mut state.fuzzel_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
-                subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.fuzzel_box, 44.0, ctx);
-                subsec.spacing(16.0);
 
                 // Terminal
                 let start_y = subsec.ay();
@@ -3249,270 +2868,164 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                     state.terminal_size_box.set_row_rect(cols[1].0, cols[1].1);
                     cce_ui::layout::render_widget(subsec.pc, &mut state.terminal_size_box, cols[1].0, start_y, cols[1].1, widget_h, ctx);
                 }
-                subsec.spacing(widget_h);
                 subsec.widget_full(&mut state.terminal_box, 44.0, ctx);
-                subsec.spacing(8.0);
             }
         });
-        sec.spacing(8.0);
     });
 
     builder.add_section_with_width(&mut final_pc, cw, "Containers", sec_focused.get(8).copied().unwrap_or(false), |sec| {
-        sec.spacing(12.0);
 
         // Page child section
         sec.add_section("Page", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[18].color = state.page_color;
             subsec.widget_full(&mut state.color_selectors[18], 40.0, ctx);
-            subsec.spacing(8.0);
             state.page_opacity_spinbox.value = (state.page_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.page_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Layer child section
         sec.add_section("Layer", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[19].color = state.layer_color;
             subsec.widget_full(&mut state.color_selectors[19], 40.0, ctx);
-            subsec.spacing(8.0);
             state.layer_opacity_spinbox.value = (state.layer_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.layer_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Section child section
         sec.add_section("Section", false, |subsec| {
-            subsec.spacing(8.0);
             state.section_padding_spinbox.value = state.section_padding as i32;
             subsec.widget_full(&mut state.section_padding_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.page_margin_spinbox.value = state.page_margin as i32;
             subsec.widget_full(&mut state.page_margin_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.section_label_font_selector.font_family = state.section_label_font.clone();
             subsec.widget_full(&mut state.section_label_font_selector, 44.0, ctx);
-            subsec.spacing(12.0);
 
             // Nested Section child section
             subsec.add_section("Nested Section", false, |subsubsec| {
-                subsubsec.spacing(8.0);
                 subsubsec.widget_full(&mut state.label_alignment_menu, 44.0, ctx);
-                subsubsec.spacing(8.0);
                 state.label_offset_spinbox.value = state.nested_section_label_offset as i32;
                 subsubsec.widget_full(&mut state.label_offset_spinbox, 44.0, ctx);
-                subsubsec.spacing(8.0);
                 state.nested_section_label_font_selector.font_family = state.nested_section_label_font.clone();
                 subsubsec.widget_full(&mut state.nested_section_label_font_selector, 44.0, ctx);
-                subsubsec.spacing(8.0);
             });
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // ScrollingList Section
         sec.add_section("ScrollingList", false, |subsec| {
-            subsec.spacing(8.0);
             state.color_selectors[13].color = state.scrollinglist_bg_color;
             subsec.widget_full(&mut state.color_selectors[13], 40.0, ctx);
-            subsec.spacing(8.0);
 
             let bg_rgba = state.scrollinglist_entry_bg_color;
             state.color_selectors[20].color = [bg_rgba[0], bg_rgba[1], bg_rgba[2]];
             state.color_selectors[20].alpha = bg_rgba[3];
             subsec.widget_full(&mut state.color_selectors[20], 40.0, ctx);
-            subsec.spacing(8.0);
 
             let highlight_rgba = state.scrollinglist_entry_highlight_color;
             state.color_selectors[21].color = [highlight_rgba[0], highlight_rgba[1], highlight_rgba[2]];
             state.color_selectors[21].alpha = highlight_rgba[3];
             subsec.widget_full(&mut state.color_selectors[21], 40.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
 
         // Graph child section
         sec.add_section("Graph", false, |subsec| {
-            subsec.spacing(8.0);
             state.graph_show_grid_toggle.set_toggled(state.graph_show_grid);
             subsec.widget_full(&mut state.graph_show_grid_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(8.0);
             state.graph_snap_enabled_toggle.set_toggled(state.graph_snap_enabled);
             subsec.widget_full(&mut state.graph_snap_enabled_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(8.0);
             state.graph_uniform_background_toggle.set_toggled(state.graph_uniform_background);
             subsec.widget_full(&mut state.graph_uniform_background_toggle, state.toggle_height as f32, ctx);
-            subsec.spacing(8.0);
             state.graph_cell_opacity_spinbox.value = (state.graph_cell_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.graph_cell_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.graph_gap_opacity_spinbox.value = (state.graph_gap_opacity * 100.0).round() as i32;
             subsec.widget_full(&mut state.graph_gap_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.graph_gap_width_spinbox.value = state.graph_gap_width as i32;
             subsec.widget_full(&mut state.graph_gap_width_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
-        sec.spacing(12.0);
     });
 
     // 10. Windows Section
     builder.add_section_with_width(&mut final_pc, cw, "Windows", sec_focused.get(9).copied().unwrap_or(false), |sec| {
-        sec.spacing(8.0);
-        
-        // 1. Current Layout Preview
-        sec.add_section("Current Layout", false, |sec_cl| {
-            sec_cl.spacing(8.0);
-            
-            let info = state.layout_status.as_ref().cloned().unwrap_or_default();
-            
-            let card_w = (sec_w - 24.0) / 2.0;
-            let card_h = 135.0;
-            let rx = sec_cl.left;
-            
-            for tag_idx in 0..4 {
-                let col = tag_idx % 2;
-                let row = tag_idx / 2;
-                let tx = rx + 8.0 + col as f32 * (card_w + 8.0);
-                let ty = sec_cl.ay() + row as f32 * (card_h + 8.0);
-                
-                let is_active = (info.active_tags & (1 << tag_idx)) != 0;
-                let layout_idx = state.windows.tag_layout_menus.get(tag_idx).map(|m| m.selected).unwrap_or(0);
-                let mode = match layout_idx {
-                    1 => PreviewLayoutMode::Cascade,
-                    2 => PreviewLayoutMode::Stack,
-                    3 => PreviewLayoutMode::Grid,
-                    4 => PreviewLayoutMode::LeftTiled,
-                    5 => PreviewLayoutMode::RightTiled,
-                    6 => PreviewLayoutMode::Equal,
-                    7 => PreviewLayoutMode::Spiral,
-                    8 => PreviewLayoutMode::Floating,
-                    _ => PreviewLayoutMode::Fullscreen,
-                };
 
-                let mut preview = LayoutPreview::new(mode)
-                    .with_active(is_active)
-                    .with_label(&format!("TAG {}", tag_idx + 1));
-                render_widget(sec_cl.pc, &mut preview, tx, ty, card_w, card_h, ctx);
-            }
-            
-            sec_cl.content_y += 2.0 * (card_h + 8.0) + 4.0;
-        });
 
         // 2. Fullscreen Section
         sec.add_section("Fullscreen", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.spinboxes[0].set_label("Border Width");
             subsec.widget_full(&mut state.windows.spinboxes[0], 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.fullscreen_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.fullscreen_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 3. Cascade Section
         sec.add_section("Cascade", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.spinboxes[1].set_label("Border Width");
             subsec.widget_full(&mut state.windows.spinboxes[1], 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.cascade_offset_spinbox.set_label("Offset");
             subsec.widget_full(&mut state.windows.cascade_offset_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.edge_gap_spinbox.set_label("Edge Gap");
             subsec.widget_full(&mut state.windows.edge_gap_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.top_gap_spinbox.set_label("Top Gap");
             subsec.widget_full(&mut state.windows.top_gap_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.cascade_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.cascade_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 4. Grid Section
         sec.add_section("Grid", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.spinboxes[2].set_label("Border Width");
             subsec.widget_full(&mut state.windows.spinboxes[2], 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.grid_gap_spinbox.set_label("Gap");
             subsec.widget_full(&mut state.windows.grid_gap_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.grid_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.grid_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 5. Floating Section
         sec.add_section("Floating", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.spinboxes[3].set_label("Border Width");
             subsec.widget_full(&mut state.windows.spinboxes[3], 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.floating_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.floating_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 6. Movement Section
         sec.add_section("Movement", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.transition_duration_spinbox.set_label("Duration (ms)");
             subsec.widget_full(&mut state.windows.transition_duration_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 7. Default Layouts Section
         sec.add_section("Default Layouts", false, |subsec| {
-            subsec.spacing(8.0);
             for i in 0..4 {
                 subsec.widget_full(&mut state.windows.tag_layout_menus[i], 44.0, ctx);
-                subsec.spacing(8.0);
             }
         });
 
         // 8. Pinned Section
         sec.add_section("Pinned", false, |subsec| {
-            subsec.spacing(8.0);
             subsec.widget_full(&mut state.windows.side_panel_behavior_menu, 44.0, ctx);
-            subsec.spacing(8.0);
             subsec.widget_full(&mut state.windows.side_panel_position_menu, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.side_panel_width_spinbox.set_label("Default Width");
             subsec.widget_full(&mut state.windows.side_panel_width_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.side_panel_border_gap_spinbox.set_label("Border Gap");
             subsec.widget_full(&mut state.windows.side_panel_border_gap_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.side_panel_border_opacity_spinbox.set_label("Border Opacity");
             subsec.widget_full(&mut state.windows.side_panel_border_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
             state.windows.pinned_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.pinned_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 8b. Popup Section
         sec.add_section("Popup", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.popup_opacity_spinbox.set_label("Backplate Opacity");
             subsec.widget_full(&mut state.windows.popup_opacity_spinbox, 44.0, ctx);
-            subsec.spacing(8.0);
         });
 
         // 9. Effects Section
         sec.add_section("Effects", false, |subsec| {
-            subsec.spacing(8.0);
             state.windows.blur_toggle.set_toggled(state.windows.blur_enabled);
             subsec.widget_full(&mut state.windows.blur_toggle, cce_ui::layout::toggle_height(), ctx);
-            subsec.spacing(8.0);
         });
 
-        sec.spacing(8.0);
     });
 
     final_pc
@@ -3639,38 +3152,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.status_padding_spinbox.value = padding as i32;
             apply_status_padding(padding);
         }
-        InterfaceMessage::StatusRefreshed(new) => {
-            let was_status_hovered = state.status_controls.label.hovered();
-            let was_separators_hovered = state.status_controls.separators_toggle.hovered();
-            let was_underline_hovered = state.status_controls.underline_toggle.hovered();
-            let was_opacity_hovered = state.status_controls.box_opacity_slider.hovered();
-            let was_blur_hovered = state.status_controls.box_blur_slider.hovered();
-
-            state.status_controls.loaded = true;
-            state.status_controls.font_size = new.font_size;
-            state.status_padding = new.padding;
-            state.status_controls.separators = new.separators;
-            state.status_controls.underline = new.underline;
-            state.status_controls.running = new.running;
-            state.status_controls.box_opacity = new.bg_opacity;
-            state.status_controls.box_blur = new.bg_blur;
-
-            state.status_controls.label.set_hovered(was_status_hovered);
-            state.status_controls.separators_toggle.set_hovered(was_separators_hovered);
-            state.status_controls.underline_toggle.set_hovered(was_underline_hovered);
-            state.status_controls.box_opacity_slider.set_hovered(was_opacity_hovered);
-            state.status_controls.box_blur_slider.set_hovered(was_blur_hovered);
-        }
-        InterfaceMessage::StatusToggleSeparators => {
-            state.status_controls.separators = !state.status_controls.separators;
-            write_status_separators(state.status_controls.separators);
-            status_interface_reload();
-        }
-        InterfaceMessage::StatusToggleUnderline => {
-            state.status_controls.underline = !state.status_controls.underline;
-            write_status_underline(state.status_controls.underline);
-            status_interface_reload();
-        }
         InterfaceMessage::StatusSetPadding(val) => {
             state.status_padding = val;
             write_status_padding(val);
@@ -3684,9 +3165,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         InterfaceMessage::StatusSetBoxBlur(val) => {
             state.status_controls.box_blur = val;
             write_status_box_blur(val);
-            status_interface_reload();
-        }
-        InterfaceMessage::StatusReload => {
             status_interface_reload();
         }
         InterfaceMessage::SetStatusModuleSpacing(spacing) => {
@@ -3758,6 +3236,15 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.grid_min_col_width = width;
             apply_grid_min_col_width(width);
             propagate_links(state, "grid_min_col_width", &width.to_string());
+        }
+        InterfaceMessage::SetLayoutGridGap(gap) => {
+            let gap = gap.min(200);
+            state.layout_grid_gap = gap;
+            state.layout_grid_gap_spinbox.value = gap as i32;
+            state.windows.grid_gap = gap;
+            state.windows.grid_gap_spinbox.value = gap as i32;
+            apply_layout_grid_gap(gap);
+            propagate_links(state, "grid_gap", &gap.to_string());
         }
         InterfaceMessage::SetSpinboxHeight(height) => {
             state.spinbox_height = height;
@@ -3934,7 +3421,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
         }
         InterfaceMessage::PickLowColor | InterfaceMessage::PickHighColor | InterfaceMessage::PickDisabledColor | InterfaceMessage::PickVisualGuides | InterfaceMessage::PickSliderTrackColor | InterfaceMessage::PickPageLowColor | InterfaceMessage::PickColorBordersColor | InterfaceMessage::PickNormalColor | InterfaceMessage::PickPaginatorSidebarColor | InterfaceMessage::PickPrimaryHighlightColor | InterfaceMessage::PickMenubarTabLabelColor | InterfaceMessage::PickToggleEnabledColor | InterfaceMessage::PickToggleDisabledColor | InterfaceMessage::PickScrollingListBgColor | InterfaceMessage::PickScrollingListEntryBgColor | InterfaceMessage::PickScrollingListEntryHighlightColor | InterfaceMessage::PickBreadcrumbBgColor | InterfaceMessage::PickPopoverBgColor | InterfaceMessage::PickNotificationBgColor | InterfaceMessage::PickWindowColor | InterfaceMessage::PickPageColor | InterfaceMessage::PickLayerColor => {}
         InterfaceMessage::Refreshed(new) => {
-            let layout_status = state.layout_status.clone();
             let was_bp_hovered = state.button_padding_spinbox.hovered();
             let was_bss_hovered = state.button_strip_spacing_spinbox.hovered();
             let was_sp_hovered = state.section_padding_spinbox.hovered();
@@ -4000,7 +3486,6 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let terminal_size_box = state.terminal_size_box.clone();
 
             *state = new;
-            state.layout_status = layout_status;
 
             state.button_padding_spinbox.set_hovered(was_bp_hovered);
             state.button_strip_spacing_spinbox.set_hovered(was_bss_hovered);
@@ -4109,9 +3594,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.fuzzel_size_box = new.fuzzel_size_box;
             state.terminal_size_box = new.terminal_size_box;
         }
-        InterfaceMessage::LayoutStatusRefreshed(s) => {
-            state.layout_status = Some(s);
-        }
+
         InterfaceMessage::SetSans(sans) => {
             state.sans_serif = sans.clone();
             state.sans_box.text = sans;
@@ -4362,6 +3845,12 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             write_terminal_size(val as u16);
         }
         InterfaceMessage::Windows(sub_msg) => {
+            if let WindowsMessage::SetGridGap(v) = sub_msg {
+                let val = v.min(200);
+                state.layout_grid_gap = val;
+                state.layout_grid_gap_spinbox.value = val as i32;
+                cce_ui::layout::set_grid_gap(val as f32);
+            }
             update_windows(&mut state.windows, sub_msg);
         }
     }
@@ -5327,6 +4816,34 @@ mod tests {
     }
 
     #[test]
+    fn test_read_write_layout_grid_gap() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_layout_grid_gap_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse grid_gap when missing (should return default 8)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "grid_gap", 8);
+        assert_eq!(val, 8);
+
+        // 3. Write grid_gap config
+        assert!(write_config_value_path(path_str, "grid_gap", "12"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"grid_gap\": 12"));
+
+        // 4. Parse grid_gap when present (should return written value 12)
+        let val2 = parse_u16_from(&updated, "grid_gap", 8);
+        assert_eq!(val2, 12);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
     fn test_read_write_color_selector_preview_corner_radius() {
         let dir = std::env::temp_dir();
         let path = dir.join("test_color_selector_preview_corner_radius_config.toml");
@@ -6056,24 +5573,6 @@ mod tests {
     }
 
     #[test]
-    fn test_read_write_separators() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_separators.json");
-        let path_str = path.to_str().unwrap().to_string();
-
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_separators\": true, \"status_padding\": 8}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_separators().unwrap_or(true);
-        write_status_separators(!original);
-        assert_eq!(read_status_separators(), Some(!original));
-        write_status_separators(original);
-        assert_eq!(read_status_separators(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
     fn test_read_write_padding() {
         let dir = std::env::temp_dir();
         let path = dir.join("test_status_padding.json");
@@ -6087,24 +5586,6 @@ mod tests {
         assert_eq!(read_status_padding(), Some(12));
         write_status_padding(original);
         assert_eq!(read_status_padding(), Some(original));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn test_read_write_underline() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_status_underline.json");
-        let path_str = path.to_str().unwrap().to_string();
-
-        let _ = fs::write(&path_str, "{\"layout\": {\"status_underline\": true, \"status_padding\": 8}}");
-        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str));
-
-        let original = read_status_underline().unwrap_or(true);
-        write_status_underline(!original);
-        assert_eq!(read_status_underline(), Some(!original));
-        write_status_underline(original);
-        assert_eq!(read_status_underline(), Some(original));
 
         let _ = fs::remove_file(path);
     }
@@ -6203,6 +5684,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.desktop_line_width_spinbox.set_parent(None, ctx);
         self.grid_min_col_width_spinbox.clear_children(ctx);
         self.grid_min_col_width_spinbox.set_parent(None, ctx);
+        self.layout_grid_gap_spinbox.clear_children(ctx);
+        self.layout_grid_gap_spinbox.set_parent(None, ctx);
         self.spinbox_height_spinbox.clear_children(ctx);
         self.spinbox_height_spinbox.set_parent(None, ctx);
         self.spinbox_corner_radius_spinbox.clear_children(ctx);
@@ -6265,10 +5748,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.status_box_corner_radius_spinbox.set_parent(None, ctx);
         self.status_padding_spinbox.clear_children(ctx);
         self.status_padding_spinbox.set_parent(None, ctx);
-        self.status_controls.separators_toggle.clear_children(ctx);
-        self.status_controls.separators_toggle.set_parent(None, ctx);
-        self.status_controls.underline_toggle.clear_children(ctx);
-        self.status_controls.underline_toggle.set_parent(None, ctx);
+        self.status_module_spacing_spinbox.clear_children(ctx);
+        self.status_module_spacing_spinbox.set_parent(None, ctx);
         self.status_controls.box_opacity_slider.clear_children(ctx);
         self.status_controls.box_opacity_slider.set_parent(None, ctx);
         self.status_controls.box_blur_slider.clear_children(ctx);
@@ -6368,6 +5849,7 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.color_selectors[1], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.color_selectors[2], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.grid_min_col_width_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.layout_grid_gap_spinbox, ctx);
 
         // Section 2: Status
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.color_selectors[7], ctx);
@@ -6375,8 +5857,7 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.color_selectors[22], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_box_corner_radius_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_padding_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.separators_toggle, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.underline_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_module_spacing_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.box_opacity_slider, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.box_blur_slider, ctx);
 
@@ -6514,12 +5995,6 @@ impl crate::pages::AppPage for InterfaceState {
         if self.status_module_spacing_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetStatusModuleSpacing(self.status_module_spacing_spinbox.value as u16)));
         }
-        if self.status_controls.separators_toggle.take_change() {
-            actions.push(AppAction::Interface(InterfaceMessage::StatusToggleSeparators));
-        }
-        if self.status_controls.underline_toggle.take_change() {
-            actions.push(AppAction::Interface(InterfaceMessage::StatusToggleUnderline));
-        }
         if self.status_controls.box_opacity_slider.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::StatusSetBoxOpacity(self.status_controls.box_opacity_slider.value())));
         }
@@ -6565,6 +6040,9 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.grid_min_col_width_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetGridMinColWidth(self.grid_min_col_width_spinbox.value as u16)));
+        }
+        if self.layout_grid_gap_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetLayoutGridGap(self.layout_grid_gap_spinbox.value as u16)));
         }
         if self.spinbox_height_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetSpinboxHeight(self.spinbox_height_spinbox.value as u16)));

@@ -279,7 +279,6 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
     builder.add_section(&mut final_pc, "Brightness", false, |sec| {
         if !state.loaded {
             sec.text("Loading display settings...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else {
             let bright_pct = if state.max_brightness > 0.0 {
                 (state.brightness / state.max_brightness * 100.0).round() as i32
@@ -290,11 +289,9 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
             let label_h = cce_ui::widget::label_offset(&state.brightness_slider);
             let slider_h = cce_ui::layout::slider_height() + label_h;
             sec.widget_full(&mut state.brightness_slider, slider_h, ctx);
-            sec.spacing(12.0);
 
             state.brightness_spinbox.value = bright_pct;
             sec.widget_full(&mut state.brightness_spinbox, cce_ui::layout::spinbox_height(), ctx);
-            sec.spacing(12.0);
         }
     });
 
@@ -302,12 +299,10 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
     builder.add_section(&mut final_pc, "Night Light", false, |sec| {
         if !state.loaded {
             sec.text("Loading...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else {
             let nl_label = if state.night_light { "Night Light: ON" } else { "Night Light: OFF" };
             state.night_light_label.set_text(nl_label);
             sec.widget(&mut state.night_light_label, 12.0, sec_w - 24.0, 20.0, ctx);
-            sec.spacing(8.0);
         }
     });
 
@@ -315,7 +310,6 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
     builder.add_section(&mut final_pc, "Outputs", false, |sec| {
         if !state.loaded {
             sec.text("Loading outputs...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else {
             for out in &mut state.outputs {
                 sec.add_section(&out.name, false, |subsec| {
@@ -332,18 +326,14 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
     builder.add_section(&mut final_pc, "Screensaver Settings", false, |sec| {
         state.screensaver_enable_toggle.set_toggled(state.screensaver_enable);
         sec.widget_full(&mut state.screensaver_enable_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(8.0);
 
         state.screensaver_lock_screen_toggle.set_toggled(state.screensaver_lock_screen);
         sec.widget_full(&mut state.screensaver_lock_screen_toggle, cce_ui::layout::toggle_height(), ctx);
-        sec.spacing(16.0);
 
                 state.screensaver_timeout_spinbox.value = state.screensaver_timeout;
         sec.widget_full(&mut state.screensaver_timeout_spinbox, cce_ui::layout::spinbox_height(), ctx);
-        sec.spacing(16.0);
 
         sec.widget_full(&mut state.screensaver_style_menu, cce_ui::layout::dropdown_height(), ctx);
-        sec.spacing(24.0);
 
         let btn_h = 32.0;
         let btn_y = sec.ay();
@@ -361,7 +351,6 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
                 crate::app::AppAction::Display(DisplayMessage::StartScreensaverPreview),
             );
         }
-        sec.spacing(12.0);
     });
 
     final_pc

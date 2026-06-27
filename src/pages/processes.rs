@@ -115,7 +115,6 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
         let rx = sec.left;
         if !state.loaded {
             sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
-            sec.spacing(10.0);
         } else {
             // Scrolling box configuration for process list
             let list_box_x = rx + 12.0;
@@ -176,7 +175,6 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
         let sec_w = sec.cw;
         if !state.services_loaded {
             sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else {
             // Tab header buttons: System Services, User Services
             let tab_w = (sec_w - 24.0 - 8.0) / 2.0;

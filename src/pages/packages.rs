@@ -335,7 +335,6 @@ pub fn view(
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading package lists...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(18.0);
         } else {
             // Tab header: Installed, Updates
             let tab_w = (sec_w - 24.0 - 8.0) / 2.0;
@@ -467,12 +466,10 @@ pub fn view(
             }
 
             sec.content_y += list_box_h;
-            sec.spacing(16.0);
 
             sec.add_section("Package Info", false, |subsec| {
                 if state.loading_info {
                     subsec.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
-                    subsec.spacing(18.0);
                 } else if let Some(ref pkg_name) = state.selected_package {
                     if let Some(ref info_raw) = state.selected_package_info {
                         let mut parsed = parse_package_info(info_raw);
@@ -481,7 +478,6 @@ pub fn view(
                         }
 
                         subsec.text(&parsed.name, 12.0, 0.0, 13.0, WHITE);
-                        subsec.spacing(20.0);
 
                         let render_detail = |sub: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
                             sub.text(key, 12.0, 0.0, 11.0, TEXT_DIM);
@@ -493,10 +489,8 @@ pub fn view(
                             let lines = wrap_text(val, max_chars);
                             for line in &lines {
                                 sub.text(line, val_start_x, 0.0, 11.0, TEXT_FG);
-                                sub.spacing(14.0);
                             }
                             if lines.is_empty() {
-                                sub.spacing(14.0);
                             }
                         };
 
@@ -518,14 +512,11 @@ pub fn view(
                         }
                         if !parsed.description.is_empty() {
                             subsec.separator();
-                            subsec.spacing(4.0);
                             render_detail(subsec, "Description:", &parsed.description);
                         }
                         if !parsed.required_by.is_empty() && parsed.required_by != "None" {
                             subsec.separator();
-                            subsec.spacing(4.0);
                             subsec.text("Required By:", 12.0, 0.0, 11.0, TEXT_DIM);
-                            subsec.spacing(14.0);
 
                             let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
                             let cols_count = 3;
@@ -541,17 +532,14 @@ pub fn view(
                                         subsec.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
                                     }
                                 }
-                                subsec.spacing(btn_h + 6.0);
                             }
                         }
                         if !parsed.commands.is_empty() {
                             subsec.separator();
-                            subsec.spacing(4.0);
                             render_detail(subsec, "Commands:", &parsed.commands);
                         }
 
                         if state.active_tab == PackageTab::Installed {
-                            subsec.spacing(12.0);
                             let btn_h = 32.0;
                             let btn_y = subsec.ay();
                             let (btn_lbl, bg, hover, action) = if state.uninstalling {
@@ -563,15 +551,12 @@ pub fn view(
                             if let Some(&(x, w)) = cols.first() {
                                 subsec.button(btn_lbl, x, btn_y, w, btn_h, bg, hover, WHITE, action);
                             }
-                            subsec.spacing(12.0);
                         }
                     } else {
                         subsec.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
-                        subsec.spacing(18.0);
                     }
                 } else {
                     subsec.text("Select a package to view details.", 12.0, 0.0, 12.0, TEXT_DIM);
-                    subsec.spacing(18.0);
                 }
             });
         }
@@ -581,17 +566,14 @@ pub fn view(
     builder.add_section(&mut final_pc, "System Update", sec_focused.get(1).copied().unwrap_or(false), |sec2| {
         if !state.loaded {
             sec2.text("Loading update status...", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec2.spacing(18.0);
         } else {
             // Display summaries
             sec2.text("Installed Packages:", 12.0, 0.0, 12.0, TEXT_DIM);
             sec2.text(&format!("{}", state.installed.len()), 150.0, 0.0, 12.0, TEXT_FG);
-            sec2.spacing(18.0);
 
             sec2.text("Available Updates:", 12.0, 0.0, 12.0, TEXT_DIM);
             let updates_color = if state.updates.is_empty() { TEXT_FG } else { ACCENT };
             sec2.text(&format!("{}", state.updates.len()), 150.0, 0.0, 12.0, updates_color);
-            sec2.spacing(18.0);
 
             let status_lbl = if state.updating {
                 "Updating..."
@@ -602,19 +584,15 @@ pub fn view(
             };
             sec2.text("Status:", 12.0, 0.0, 12.0, TEXT_DIM);
             sec2.text(status_lbl, 150.0, 0.0, 12.0, if state.updating { ACCENT } else { TEXT_FG });
-            sec2.spacing(24.0);
 
             if let Some(ref res) = state.last_update_res {
                 match res {
                     Ok(_) => {
                         sec2.text("Last update succeeded!", 12.0, 0.0, 12.0, ACCENT);
-                        sec2.spacing(18.0);
                     }
                     Err(err) => {
                         sec2.text("Last update failed:", 12.0, 0.0, 12.0, RED);
-                        sec2.spacing(8.0);
                         sec2.text(err, 12.0, 0.0, 11.0, RED);
-                        sec2.spacing(18.0);
                     }
                 }
             }
@@ -632,7 +610,6 @@ pub fn view(
             if let Some(&(x, w)) = cols.first() {
                 sec2.button(btn_lbl, x, btn_y, w, btn_h, bg, hover, WHITE, action);
             }
-            sec2.spacing(12.0);
         }
     });
 

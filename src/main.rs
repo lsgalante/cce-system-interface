@@ -176,14 +176,12 @@ struct SystemInterface {
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
     rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
-    rx_status: std::sync::mpsc::Receiver<pages::interface::StatusData>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::system_info::NotificationsConfig>,
     rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
     rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
-    rx_layout_status: std::sync::mpsc::Receiver<pages::interface::LayoutStatusInfo>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
     rx_packages: std::sync::mpsc::Receiver<pages::packages::PackagesState>,
@@ -279,14 +277,12 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_fingers: watchers.rx_fingers,
             rx_processes: watchers.rx_processes,
             rx_system: watchers.rx_system,
-            rx_status: watchers.rx_status,
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
             rx_typeface: watchers.rx_typeface,
             rx_services: watchers.rx_services,
             rx_interface: watchers.rx_interface,
             rx_accounts: watchers.rx_accounts,
-            rx_layout_status: watchers.rx_layout_status,
             tx_backup,
             rx_backup,
             rx_packages: watchers.rx_packages,
@@ -684,12 +680,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_status.try_recv() {
-            interface::update(&mut self.app.interface, interface::InterfaceMessage::StatusRefreshed(s));
-            if self.app.current_page == Page::Interface {
-                self.needs_rebuild = true;
-            }
-        }
         while let Ok(s) = self.rx_storage.try_recv() {
             storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s));
             if self.app.current_page == Page::Storage {
@@ -723,12 +713,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_layout_status.try_recv() {
-            interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::LayoutStatusRefreshed(s));
-            if self.app.current_page == Page::Interface {
-                self.needs_rebuild = true;
-            }
-        }
+
         while let Ok(s) = self.rx_accounts.try_recv() {
             accounts::update(&mut self.app.accounts, accounts::AccountsMessage::Refreshed(s));
             if self.app.current_page == Page::Accounts {

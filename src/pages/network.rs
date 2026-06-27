@@ -290,7 +290,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
 
         if !state.loaded {
             sec.text("Loading WiFi interfaces...", margin, 0.0, 12.0, TEXT_DIM);
-            sec.spacing(12.0 + row_gap);
         } else {
             let wifi_btn_w = if sec_w < 200.0 { 40.0 } else { 60.0 };
             let wifi_btn_x = margin;
@@ -298,7 +297,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             state.wifi_toggle.set_toggled(state.wifi_enabled);
             state.wifi_toggle.set_label(if state.wifi_enabled { "ON" } else { "OFF" });
             sec.widget(&mut state.wifi_toggle, wifi_btn_x, wifi_btn_w, 28.0, ctx);
-            sec.spacing(row_gap);
 
             if state.wifi_enabled {
                 let status_y = sec.ay();
@@ -379,10 +377,8 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
 
         if !state.loaded {
             sec.text("Loading Bluetooth status...", margin, 0.0, font_size, TEXT_DIM);
-            sec.spacing(font_size + row_gap);
         } else if !state.bt_installed {
             sec.text("Bluetooth tools (bluez) not installed", margin, 0.0, font_size, TEXT_DIM);
-            sec.spacing(font_size + row_gap);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
             let yt = sec.ay();
             sec.button("Install Tools", sec.ax(margin), yt, btn_w, btn_h,
@@ -391,7 +387,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             sec.content_y = yt + btn_h + row_gap;
         } else if !state.bt_service_active {
             sec.text("Bluetooth service is stopped", margin, 0.0, font_size, TEXT_DIM);
-            sec.spacing(font_size + row_gap);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
             let yt = sec.ay();
             sec.button("Start Service", sec.ax(margin), yt, btn_w, btn_h,
@@ -417,7 +412,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 if state.bt_enabled {
                     let no_devices_msg = if bt_sec_w < 200.0 { "No paired devices" } else { "No paired devices found" };
                     sec.text(no_devices_msg, margin, 0.0, font_size, TEXT_DIM);
-                    sec.spacing(font_size + row_gap);
                 }
             } else {
                 let item_h = 22.0;
