@@ -11,7 +11,7 @@ const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
 const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-settings/links.json";
 
 thread_local! {
-    static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+    pub(crate) static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
     static TEST_LINKS_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
 }
 
@@ -31,7 +31,7 @@ fn get_links_path_val() -> String {
     }
 }
 
-fn get_config_path() -> String {
+pub(crate) fn get_config_path() -> String {
     #[cfg(test)]
     {
         TEST_CONFIG_PATH.with(|p| {

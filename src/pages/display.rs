@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::pages::interface::get_config_path;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
@@ -136,7 +137,7 @@ fn parse_screensaver_style(content: &str) -> String {
 }
 
 pub fn write_config_value(key: &str, value: &str) {
-    cce_ui::config::write_config_value(CONFIG_PATH, key, value, "screensaver");
+    cce_ui::config::write_config_value(&get_config_path(), key, value, "screensaver");
 }
 
 pub async fn fetch_display_state() -> DisplayState {
@@ -147,7 +148,7 @@ pub async fn fetch_display_state() -> DisplayState {
         (brightness / max_brightness * 100.0).round() as i32
     } else { 50 };
 
-    let content = std::fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let content = std::fs::read_to_string(&get_config_path()).unwrap_or_default();
     let screensaver_enable = parse_screensaver_enable(&content);
     let screensaver_timeout = parse_screensaver_timeout(&content);
     let screensaver_lock_screen = parse_screensaver_lock_screen(&content);
@@ -205,8 +206,12 @@ async fn fetch_outputs() -> Vec<DisplayOutput> {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
 
+    let content = std::fs::read_to_string(&get_config_path()).unwrap_or_default();
+    let config_val = parse_json(&content);
+
     let mut displays = Vec::new();
     let mut current: Option<DisplayOutput> = None;
+    let mut current_config_scale = None;
 
     for line in output.lines() {
         let trimmed = line.trim();
@@ -221,9 +226,14 @@ async fn fetch_outputs() -> Vec<DisplayOutput> {
             let scale_spinbox = Spinbox::new(100, 100, 300, 25)
                 .with_label("Scale")
                 .with_decimals(2);
+
+            let key = format!("scale_{}", name);
+            current_config_scale = config_val["display"].get(&key).and_then(|v| v.as_f64()).map(|f| f as f32);
+            let scale_val = current_config_scale.unwrap_or(1.0);
+
             current = Some(DisplayOutput {
                 name, resolution: String::new(), refresh: String::new(),
-                scale: 1.0, connected: true,
+                scale: scale_val, connected: true,
                 name_label,
                 resolution_label,
                 scale_label: None,
@@ -239,7 +249,9 @@ async fn fetch_outputs() -> Vec<DisplayOutput> {
                     if hz_idx > 0 { out.refresh = parts[hz_idx - 1].to_string(); }
                 }
             } else if let Some(rest) = trimmed.strip_prefix("Scale:") {
-                out.scale = rest.trim().parse::<f32>().unwrap_or(1.0);
+                if current_config_scale.is_none() {
+                    out.scale = rest.trim().parse::<f32>().unwrap_or(1.0);
+                }
             } else if trimmed.starts_with("Enabled:") && trimmed.contains("no") {
                 out.connected = false;
             }
@@ -267,10 +279,7 @@ fn spawn_brightness(pct: u32) {
         .args(["set", &format!("{}%", pct), "-n"]).spawn();
 }
 
-fn spawn_scale(output_name: &str, scale: f32) {
-    let _ = tokio::process::Command::new("wlr-randr")
-        .args(["--output", output_name, "--scale", &format!("{:.2}", scale)]).spawn();
-}
+
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 #[allow(dead_code)]
@@ -425,7 +434,12 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
                 out.scale = scale;
                 out.scale_spinbox.value = (scale * 100.0).round() as i32;
                 out.update_labels();
-                spawn_scale(&name, scale);
+                cce_ui::config::write_config_value(
+                    &get_config_path(),
+                    &format!("scale_{}", name),
+                    &scale.to_string(),
+                    "display",
+                );
             }
         }
         DisplayMessage::ToggleScreensaverEnable => {
@@ -682,6 +696,28 @@ mod tests {
         } else {
             panic!("Expected AppAction::Display(DisplayMessage::ScaleSet)");
         }
+    }
+
+    #[test]
+    fn test_read_write_display_scale() {
+        use crate::pages::interface::TEST_CONFIG_PATH;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_display_scale_config.json");
+        let path_str = path.to_str().unwrap().to_string();
+
+        let initial_content = "{\"display\": {\"scale_eDP-1\": 1.25}}";
+        std::fs::write(&path_str, initial_content).unwrap();
+
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str.clone()));
+
+        cce_ui::config::write_config_value(&get_config_path(), "scale_eDP-1", "1.5", "display");
+
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = None);
+
+        let updated = std::fs::read_to_string(&path_str).unwrap();
+        assert!(updated.contains("\"scale_eDP-1\": 1.5"));
+
+        let _ = std::fs::remove_file(path);
     }
 }
 
