@@ -237,6 +237,7 @@ pub struct InterfaceState {
     pub menubar_tab_label_color: [u8; 3],
     pub toggle_enabled_color: [u8; 3],
     pub toggle_disabled_color: [u8; 3],
+    pub toggle_bg_color: [u8; 3],
     pub scrollinglist_bg_color: [u8; 3],
     pub scrollinglist_entry_bg_color: [u8; 4],
     pub scrollinglist_entry_highlight_color: [u8; 4],
@@ -286,6 +287,8 @@ pub struct InterfaceState {
     pub toggle_height_spinbox: Spinbox,
     pub toggle_corner_radius: u16,
     pub toggle_corner_radius_spinbox: Spinbox,
+    pub toggle_border_width: u16,
+    pub toggle_border_width_spinbox: Spinbox,
 
     pub color_selector_height: u16,
     pub color_selector_height_spinbox: Spinbox,
@@ -363,6 +366,8 @@ pub struct InterfaceState {
     pub nested_section_label_font_selector: FontSelector,
     pub breadcrumb_font: String,
     pub breadcrumb_font_selector: FontSelector,
+    pub toggle_font: String,
+    pub toggle_font_selector: FontSelector,
     // Graph configuration fields
     pub graph_show_grid: bool,
     pub graph_show_grid_toggle: Toggle,
@@ -401,6 +406,7 @@ impl Default for InterfaceState {
             menubar_tab_label_color: [230, 230, 242],
             toggle_enabled_color: [104, 217, 165],
             toggle_disabled_color: [135, 135, 148],
+            toggle_bg_color: [116, 116, 128],
             scrollinglist_bg_color: [81, 81, 97],
             scrollinglist_entry_bg_color: [255, 255, 255, 10],
             scrollinglist_entry_highlight_color: [255, 255, 255, 204],
@@ -431,6 +437,7 @@ impl Default for InterfaceState {
                 ColorSelector::new_rgba([255, 255, 255, 204]).with_label("Entry Highlight").with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
                 ColorSelector::new([0x15, 0x15, 0x20]).with_label("Background Color").with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
                 ColorSelector::new_rgba([255, 255, 255, 13]).with_label("Grid Color").with_config(CONFIG_PATH, "desktop_grid_color"), // 24: Surfaces - Desktop Grid Color
+                ColorSelector::new([116, 116, 128]).with_label("Background").with_config(CONFIG_PATH, "toggle_bg_color"), // 24: Toggles - Background
             ],
             paginator_tab_padding_x: 10,
             paginator_tab_padding_y: 14,
@@ -467,6 +474,8 @@ impl Default for InterfaceState {
             toggle_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "toggle_height"),
             toggle_corner_radius: 4,
             toggle_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "toggle_corner_radius"),
+            toggle_border_width: 1,
+            toggle_border_width_spinbox: Spinbox::new(1, 0, 10, 1).with_label("Border Width").with_unit("px").with_config(CONFIG_PATH, "toggle_border_width"),
 
             color_selector_height: 22,
             color_selector_height_spinbox: Spinbox::new(22, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "color_selector_height"),
@@ -539,6 +548,8 @@ impl Default for InterfaceState {
             nested_section_label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Label").with_config(CONFIG_PATH, "nested_section_label_font"),
             breadcrumb_font: "Outfit".to_string(),
             breadcrumb_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "breadcrumb_font"),
+            toggle_font: "Outfit".to_string(),
+            toggle_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "toggle_font"),
             graph_show_grid: true,
             graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
             graph_snap_enabled: true,
@@ -622,6 +633,9 @@ pub enum InterfaceMessage {
     SetSpinboxCornerRadius(u16),
     SetToggleHeight(u16),
     SetToggleCornerRadius(u16),
+    SetToggleBgColor([u8; 3]),
+    SetToggleBorderWidth(u16),
+    SetToggleFont(String),
 
     SetColorSelectorHeight(u16),
     SetColorSelectorCornerRadius(u16),
@@ -730,6 +744,8 @@ pub fn read_interface_config() -> InterfaceState {
 
     let toggle_disabled = parse_color_from_key(&content, "toggle_disabled_color", [135, 135, 148]);
 
+    let toggle_bg = parse_color_from_key(&content, "toggle_bg_color", [116, 116, 128]);
+
     let scrollinglist_bg = parse_color_from_key(&content, "scrollinglist_bg_color", [81, 81, 97]);
     let scrollinglist_entry_bg = parse_rgba_color_from_key(&content, "scrollinglist_entry_bg_color", [255, 255, 255, 10]);
     let scrollinglist_entry_highlight = parse_rgba_color_from_key(&content, "scrollinglist_entry_highlight_color", [255, 255, 255, 204]);
@@ -758,6 +774,7 @@ pub fn read_interface_config() -> InterfaceState {
     let spinbox_corner_radius = parse_u16_from(&content, "spinbox_corner_radius", 4);
     let toggle_height = parse_u16_from(&content, "toggle_height", 44);
     let toggle_corner_radius = parse_u16_from(&content, "toggle_corner_radius", 4);
+    let toggle_border_width = parse_u16_from(&content, "toggle_border_width", 1);
 
     let color_selector_height = parse_u16_from(&content, "color_selector_height", 22);
     let color_selector_corner_radius = parse_u16_from(&content, "color_selector_corner_radius", 4);
@@ -777,6 +794,16 @@ pub fn read_interface_config() -> InterfaceState {
     let section_label_font = parse_string_from(&content, "section_label_font", "Outfit");
     let nested_section_label_font = parse_string_from(&content, "nested_section_label_font", "Outfit");
     let breadcrumb_font = parse_string_from(&content, "breadcrumb_font", "Outfit");
+    let toggle_font = parse_string_from(&content, "toggle_font", "Outfit");
+
+    cce_ui::layout::set_toggle_border_width(toggle_border_width as f32);
+    cce_ui::layout::set_toggle_font(&toggle_font);
+    cce_ui::color::set_toggle_bg_color(cce_ui::color::to_linear([
+        toggle_bg[0] as f32 / 255.0,
+        toggle_bg[1] as f32 / 255.0,
+        toggle_bg[2] as f32 / 255.0,
+        1.0,
+    ]));
     let nested_section_label_alignment = parse_u16_from(&content, "nested_section_label_alignment", 0) as u8;
     let nested_section_label_offset = parse_i16_from(&content, "nested_section_label_offset", 0);
     let label_margin = parse_u16_from(&content, "label_margin", 6);
@@ -821,6 +848,7 @@ pub fn read_interface_config() -> InterfaceState {
         menubar_tab_label_color: menubar_tab_label,
         toggle_enabled_color: toggle_enabled,
         toggle_disabled_color: toggle_disabled,
+        toggle_bg_color: toggle_bg,
         scrollinglist_bg_color: scrollinglist_bg,
         scrollinglist_entry_bg_color: scrollinglist_entry_bg,
         scrollinglist_entry_highlight_color: scrollinglist_entry_highlight,
@@ -849,8 +877,8 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
             ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
             ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
-            ColorSelector::new(status_box_background_color).with_label("Background Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
             ColorSelector::new_rgba(desktop_grid_color).with_label("Grid Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_grid_color"), // 24: Surfaces - Desktop Grid Color
+            ColorSelector::new(toggle_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "toggle_bg_color"), // 24: Toggles - Background
         ],
         paginator_tab_padding_x,
         paginator_tab_padding_y,
@@ -887,6 +915,8 @@ pub fn read_interface_config() -> InterfaceState {
         toggle_height_spinbox: Spinbox::new(toggle_height as i32, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "toggle_height"),
         toggle_corner_radius,
         toggle_corner_radius_spinbox: Spinbox::new(toggle_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "toggle_corner_radius"),
+        toggle_border_width,
+        toggle_border_width_spinbox: Spinbox::new(toggle_border_width as i32, 0, 10, 1).with_label("Border Width").with_unit("px").with_config(CONFIG_PATH, "toggle_border_width"),
 
         color_selector_height,
         color_selector_height_spinbox: Spinbox::new(color_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "color_selector_height"),
@@ -966,6 +996,8 @@ pub fn read_interface_config() -> InterfaceState {
         nested_section_label_font_selector: FontSelector::new(nested_section_label_font.clone()).with_label("Label").with_config(CONFIG_PATH, "nested_section_label_font"),
         breadcrumb_font: breadcrumb_font.clone(),
         breadcrumb_font_selector: FontSelector::new(breadcrumb_font.clone()).with_label("Font").with_config(CONFIG_PATH, "breadcrumb_font"),
+        toggle_font: toggle_font.clone(),
+        toggle_font_selector: FontSelector::new(toggle_font.clone()).with_label("Font").with_config(CONFIG_PATH, "toggle_font"),
         graph_show_grid,
         graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
         graph_snap_enabled,
@@ -1372,6 +1404,26 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     state.toggle_corner_radius_spinbox.value = val as i32;
                     apply_toggle_corner_radius(val);
                 }
+            }
+            "toggle_bg_color" => {
+                let trimmed = val_str.trim().trim_matches('"');
+                let rgb = parse_hex(trimmed);
+                state.toggle_bg_color = rgb;
+                state.color_selectors[24].color = rgb;
+                apply_toggle_bg_color(rgb);
+            }
+            "toggle_border_width" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.toggle_border_width = val;
+                    state.toggle_border_width_spinbox.value = val as i32;
+                    apply_toggle_border_width(val);
+                }
+            }
+            "toggle_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.toggle_font = font.clone();
+                state.toggle_font_selector.font_family = font.clone();
+                apply_toggle_font(&font);
             }
 
             "color_selector_height" => {
@@ -1951,6 +2003,27 @@ fn apply_toggle_corner_radius(radius: u16) {
     cce_ui::layout::set_toggle_corner_radius(radius as f32);
 }
 
+fn apply_toggle_border_width(width: u16) {
+    write_config_value("toggle_border_width", &width.to_string());
+    cce_ui::layout::set_toggle_border_width(width as f32);
+}
+
+fn apply_toggle_bg_color(rgb: [u8; 3]) {
+    let hex = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
+    write_config_value("toggle_bg_color", &hex);
+    cce_ui::color::set_toggle_bg_color(cce_ui::color::to_linear([
+        rgb[0] as f32 / 255.0,
+        rgb[1] as f32 / 255.0,
+        rgb[2] as f32 / 255.0,
+        1.0,
+    ]));
+}
+
+fn apply_toggle_font(font: &str) {
+    write_config_value("toggle_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_toggle_font(font);
+}
+
 
 fn apply_color_selector_height(height: u16) {
     write_config_value("color_selector_height", &height.to_string());
@@ -2525,10 +2598,16 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.color_selectors[11], 40.0, ctx);
             state.color_selectors[12].color = state.toggle_disabled_color;
             subsec.widget_full(&mut state.color_selectors[12], 40.0, ctx);
+            state.color_selectors[24].color = state.toggle_bg_color;
+            subsec.widget_full(&mut state.color_selectors[24], 40.0, ctx);
             state.toggle_height_spinbox.value = state.toggle_height as i32;
             subsec.widget_full(&mut state.toggle_height_spinbox, 44.0, ctx);
             state.toggle_corner_radius_spinbox.value = state.toggle_corner_radius as i32;
             subsec.widget_full(&mut state.toggle_corner_radius_spinbox, 44.0, ctx);
+            state.toggle_border_width_spinbox.value = state.toggle_border_width as i32;
+            subsec.widget_full(&mut state.toggle_border_width_spinbox, 44.0, ctx);
+            state.toggle_font_selector.font_family = state.toggle_font.clone();
+            subsec.widget_full(&mut state.toggle_font_selector, 44.0, ctx);
         });
 
         // Breadcrumb Section
@@ -3121,6 +3200,22 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.toggle_corner_radius = radius;
             apply_toggle_corner_radius(radius);
             propagate_links(state, "toggle_corner_radius", &radius.to_string());
+        }
+        InterfaceMessage::SetToggleBgColor(rgb) => {
+            state.toggle_bg_color = rgb;
+            apply_toggle_bg_color(rgb);
+            let hex = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
+            propagate_links(state, "toggle_bg_color", &hex);
+        }
+        InterfaceMessage::SetToggleBorderWidth(width) => {
+            state.toggle_border_width = width;
+            apply_toggle_border_width(width);
+            propagate_links(state, "toggle_border_width", &width.to_string());
+        }
+        InterfaceMessage::SetToggleFont(font) => {
+            state.toggle_font = font.clone();
+            apply_toggle_font(&font);
+            propagate_links(state, "toggle_font", &format!("\"{}\"", font));
         }
 
         InterfaceMessage::SetColorSelectorHeight(height) => {
@@ -4356,6 +4451,75 @@ mod tests {
     }
 
     #[test]
+    fn test_read_write_toggle_bg_color() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_toggle_bg_color_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_color_from_key(&content, "toggle_bg_color", [116, 116, 128]);
+        assert_eq!(val, [116, 116, 128]);
+
+        assert!(write_config_value_path(path_str, "toggle_bg_color", "\"#123456\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"toggle_bg_color\": \"#123456\""));
+
+        let val2 = parse_color_from_key(&updated, "toggle_bg_color", [116, 116, 128]);
+        assert_eq!(val2, [18, 52, 86]);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_toggle_border_width() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_toggle_border_width_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "toggle_border_width", 1);
+        assert_eq!(val, 1);
+
+        assert!(write_config_value_path(path_str, "toggle_border_width", "3"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"toggle_border_width\": 3"));
+
+        let val2 = parse_u16_from(&updated, "toggle_border_width", 1);
+        assert_eq!(val2, 3);
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_toggle_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_toggle_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "toggle_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "toggle_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"toggle_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "toggle_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
     fn test_read_write_slider_corner_radius() {
         let dir = std::env::temp_dir();
         let path = dir.join("test_slider_corner_radius_config.toml");
@@ -5500,6 +5664,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.toggle_height_spinbox.set_parent(None, ctx);
         self.toggle_corner_radius_spinbox.clear_children(ctx);
         self.toggle_corner_radius_spinbox.set_parent(None, ctx);
+        self.toggle_border_width_spinbox.clear_children(ctx);
+        self.toggle_border_width_spinbox.set_parent(None, ctx);
 
         self.color_selector_height_spinbox.clear_children(ctx);
         self.color_selector_height_spinbox.set_parent(None, ctx);
@@ -5532,6 +5698,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.menubar_font_selector.set_parent(None, ctx);
         self.breadcrumb_font_selector.clear_children(ctx);
         self.breadcrumb_font_selector.set_parent(None, ctx);
+        self.toggle_font_selector.clear_children(ctx);
+        self.toggle_font_selector.set_parent(None, ctx);
         self.section_label_font_selector.clear_children(ctx);
         self.section_label_font_selector.set_parent(None, ctx);
         self.nested_section_label_font_selector.clear_children(ctx);
@@ -5679,6 +5847,9 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[12], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.toggle_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.toggle_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[24], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.toggle_border_width_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.toggle_font_selector, ctx);
         // Breadcrumb
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[14], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.breadcrumb_font_selector, ctx);
@@ -5832,6 +6003,7 @@ impl crate::pages::AppPage for InterfaceState {
                     21 => InterfaceMessage::SetLayerColor(cp.color),
                     22 => InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
                     23 => InterfaceMessage::SetDesktopGridColor([cp.color[0], cp.color[1], cp.color[2], 255]),
+                    24 => InterfaceMessage::SetToggleBgColor(cp.color),
                     _ => return,
                 }));
             }
@@ -5906,6 +6078,9 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.toggle_corner_radius_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetToggleCornerRadius(self.toggle_corner_radius_spinbox.value as u16)));
+        }
+        if self.toggle_border_width_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetToggleBorderWidth(self.toggle_border_width_spinbox.value as u16)));
         }
         if self.color_selector_height_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetColorSelectorHeight(self.color_selector_height_spinbox.value as u16)));
@@ -6052,6 +6227,9 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.breadcrumb_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetBreadcrumbFont(self.breadcrumb_font_selector.font_family.clone())));
+        }
+        if self.toggle_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetToggleFont(self.toggle_font_selector.font_family.clone())));
         }
         if self.section_label_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetSectionLabelFont(self.section_label_font_selector.font_family.clone())));
