@@ -368,6 +368,8 @@ pub struct InterfaceState {
     pub breadcrumb_font_selector: FontSelector,
     pub toggle_font: String,
     pub toggle_font_selector: FontSelector,
+    pub font_selector_font: String,
+    pub font_selector_font_selector: FontSelector,
     // Graph configuration fields
     pub graph_show_grid: bool,
     pub graph_show_grid_toggle: Toggle,
@@ -550,6 +552,8 @@ impl Default for InterfaceState {
             breadcrumb_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "breadcrumb_font"),
             toggle_font: "Outfit".to_string(),
             toggle_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "toggle_font"),
+            font_selector_font: "Outfit".to_string(),
+            font_selector_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "font_selector_font"),
             graph_show_grid: true,
             graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
             graph_snap_enabled: true,
@@ -647,6 +651,7 @@ pub enum InterfaceMessage {
     SetSliderCornerRadius(u16),
     SetFontSelectorHeight(u16),
     SetFontSelectorCornerRadius(u16),
+    SetFontSelectorFont(String),
     SetDropdownHeight(u16),
     SetDropdownCornerRadius(u16),
     SetButtonCornerRadius(u16),
@@ -795,6 +800,8 @@ pub fn read_interface_config() -> InterfaceState {
     let nested_section_label_font = parse_string_from(&content, "nested_section_label_font", "Outfit");
     let breadcrumb_font = parse_string_from(&content, "breadcrumb_font", "Outfit");
     let toggle_font = parse_string_from(&content, "toggle_font", "Outfit");
+    let font_selector_font = parse_string_from(&content, "font_selector_font", "Outfit");
+    cce_ui::layout::set_font_selector_font(&font_selector_font);
 
     cce_ui::layout::set_toggle_border_width(toggle_border_width as f32);
     cce_ui::layout::set_toggle_font(&toggle_font);
@@ -999,6 +1006,8 @@ pub fn read_interface_config() -> InterfaceState {
         breadcrumb_font_selector: FontSelector::new(breadcrumb_font.clone()).with_label("Font").with_config(CONFIG_PATH, "breadcrumb_font"),
         toggle_font: toggle_font.clone(),
         toggle_font_selector: FontSelector::new(toggle_font.clone()).with_label("Font").with_config(CONFIG_PATH, "toggle_font"),
+        font_selector_font: font_selector_font.clone(),
+        font_selector_font_selector: FontSelector::new(font_selector_font.clone()).with_label("Font").with_config(CONFIG_PATH, "font_selector_font"),
         graph_show_grid,
         graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
         graph_snap_enabled,
@@ -1425,6 +1434,12 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                 state.toggle_font = font.clone();
                 state.toggle_font_selector.font_family = font.clone();
                 apply_toggle_font(&font);
+            }
+            "font_selector_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.font_selector_font = font.clone();
+                state.font_selector_font_selector.font_family = font.clone();
+                apply_font_selector_font(&font);
             }
 
             "color_selector_height" => {
@@ -2023,6 +2038,11 @@ fn apply_toggle_bg_color(rgb: [u8; 3]) {
 fn apply_toggle_font(font: &str) {
     write_config_value("toggle_font", &format!("\"{}\"", font));
     cce_ui::layout::set_toggle_font(font);
+}
+
+fn apply_font_selector_font(font: &str) {
+    write_config_value("font_selector_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_font_selector_font(font);
 }
 
 
@@ -2661,6 +2681,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.font_selector_height_spinbox, 44.0, ctx);
             state.font_selector_corner_radius_spinbox.value = state.font_selector_corner_radius as i32;
             subsec.widget_full(&mut state.font_selector_corner_radius_spinbox, 44.0, ctx);
+            state.font_selector_font_selector.font_family = state.font_selector_font.clone();
+            subsec.widget_full(&mut state.font_selector_font_selector, 44.0, ctx);
         });
 
         // Dropdown Section
@@ -3269,6 +3291,11 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_font_selector_corner_radius(radius);
             propagate_links(state, "font_selector_corner_radius", &radius.to_string());
         }
+        InterfaceMessage::SetFontSelectorFont(font) => {
+            state.font_selector_font = font.clone();
+            apply_font_selector_font(&font);
+            propagate_links(state, "font_selector_font", &format!("\"{}\"", font));
+        }
         InterfaceMessage::SetDropdownHeight(height) => {
             state.dropdown_height = height;
             apply_dropdown_height(height);
@@ -3411,6 +3438,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_fsh_hovered = state.font_selector_height_spinbox.hovered();
             let was_fscr_hovered = state.font_selector_corner_radius_spinbox.hovered();
             let was_bfs_hovered = state.breadcrumb_font_selector.hovered();
+            let was_fsfs_hovered = state.font_selector_font_selector.hovered();
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
@@ -3475,6 +3503,7 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.font_selector_height_spinbox.set_hovered(was_fsh_hovered);
             state.font_selector_corner_radius_spinbox.set_hovered(was_fscr_hovered);
             state.breadcrumb_font_selector.set_hovered(was_bfs_hovered);
+            state.font_selector_font_selector.set_hovered(was_fsfs_hovered);
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
@@ -4515,6 +4544,29 @@ mod tests {
         assert!(updated.contains("\"toggle_font\": \"Inter\""));
 
         let val2 = parse_string_from(&updated, "toggle_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_font_selector_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_font_selector_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "font_selector_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "font_selector_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"font_selector_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "font_selector_font", "Outfit");
         assert_eq!(val2, "Inter");
 
         let _ = fs::remove_file(path_str);
@@ -5701,6 +5753,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.breadcrumb_font_selector.set_parent(None, ctx);
         self.toggle_font_selector.clear_children(ctx);
         self.toggle_font_selector.set_parent(None, ctx);
+        self.font_selector_font_selector.clear_children(ctx);
+        self.font_selector_font_selector.set_parent(None, ctx);
         self.section_label_font_selector.clear_children(ctx);
         self.section_label_font_selector.set_parent(None, ctx);
         self.nested_section_label_font_selector.clear_children(ctx);
@@ -5869,6 +5923,7 @@ impl crate::pages::AppPage for InterfaceState {
         // FontSelector
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_font_selector, ctx);
         // Dropdown
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_corner_radius_spinbox, ctx);
@@ -6231,6 +6286,9 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.toggle_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetToggleFont(self.toggle_font_selector.font_family.clone())));
+        }
+        if self.font_selector_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetFontSelectorFont(self.font_selector_font_selector.font_family.clone())));
         }
         if self.section_label_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetSectionLabelFont(self.section_label_font_selector.font_family.clone())));
