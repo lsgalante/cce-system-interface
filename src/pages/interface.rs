@@ -12,6 +12,23 @@ const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-settings/links.
 
 thread_local! {
     static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+    static TEST_LINKS_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+}
+
+fn get_links_path_val() -> String {
+    #[cfg(test)]
+    {
+        TEST_LINKS_PATH.with(|p| {
+            if let Some(path) = p.borrow().as_ref() {
+                return path.clone();
+            }
+            LINKS_PATH.to_string()
+        })
+    }
+    #[cfg(not(test))]
+    {
+        LINKS_PATH.to_string()
+    }
 }
 
 fn get_config_path() -> String {
@@ -1137,11 +1154,11 @@ fn parse_hex_rgba(s: &str) -> [u8; 4] {
 }
 
 pub fn write_config_value(key: &str, value: &str) -> bool {
-    write_config_value_path(CONFIG_PATH, key, value)
+    write_config_value_path(&get_config_path(), key, value)
 }
 
 pub fn get_links() -> Vec<(String, String)> {
-    get_links_path(LINKS_PATH)
+    get_links_path(&get_links_path_val())
 }
 
 pub fn get_links_path(path: &str) -> Vec<(String, String)> {
@@ -5034,60 +5051,60 @@ mod tests {
 
     #[test]
     fn test_widget_value_linking() {
-        let original_links = fs::read_to_string(LINKS_PATH).unwrap_or_default();
-        if let Some(parent) = std::path::Path::new(LINKS_PATH).parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
+        let dir = std::env::temp_dir();
+        let config_path = dir.join("test_linking_config.json");
+        let links_path = dir.join("test_linking_links.json");
+
+        let config_path_str = config_path.to_str().unwrap().to_string();
+        let links_path_str = links_path.to_str().unwrap().to_string();
+
         let test_links = r#"{
             "spinbox_height": "textbox_height",
             "textbox_height": "dropdown_height"
         }"#;
-        fs::write(LINKS_PATH, test_links).unwrap();
-
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_linking_config.toml");
-        let path_str = path.to_str().unwrap();
+        fs::write(&links_path, test_links).unwrap();
 
         let initial_content = "{\"layout\": {\"spinbox_height\": 28, \"textbox_height\": 28, \"dropdown_height\": 28, \"button_corner_radius\": 4}}";
-        fs::write(path_str, initial_content).unwrap();
+        fs::write(&config_path, initial_content).unwrap();
 
-        assert!(write_config_value_path(path_str, "spinbox_height", "32"));
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(config_path_str));
+        TEST_LINKS_PATH.with(|p| *p.borrow_mut() = Some(links_path_str));
 
-        if !original_links.is_empty() {
-            let _ = fs::write(LINKS_PATH, original_links);
-        } else {
-            let _ = fs::remove_file(LINKS_PATH);
-        }
+        assert!(write_config_value("spinbox_height", "32"));
 
-        let updated = fs::read_to_string(path_str).unwrap();
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = None);
+        TEST_LINKS_PATH.with(|p| *p.borrow_mut() = None);
+
+        let updated = fs::read_to_string(&config_path).unwrap();
         assert!(updated.contains("\"spinbox_height\": 32"));
         assert!(updated.contains("\"textbox_height\": 32"));
         assert!(updated.contains("\"dropdown_height\": 32"));
         assert!(updated.contains("\"button_corner_radius\": 4"));
 
-        let _ = fs::remove_file(path_str);
+        let _ = fs::remove_file(config_path);
+        let _ = fs::remove_file(links_path);
     }
 
     #[test]
     fn test_propagate_links() {
-        let original_config = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-        let original_links = fs::read_to_string(LINKS_PATH).unwrap_or_default();
+        let dir = std::env::temp_dir();
+        let config_path = dir.join("test_propagate_links_config.json");
+        let links_path = dir.join("test_propagate_links_links.json");
 
-        if let Some(parent) = std::path::Path::new(CONFIG_PATH).parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        if let Some(parent) = std::path::Path::new(LINKS_PATH).parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
+        let config_path_str = config_path.to_str().unwrap().to_string();
+        let links_path_str = links_path.to_str().unwrap().to_string();
 
         let test_config = "{\"layout\": {\"spinbox_height\": 28, \"textbox_height\": 28, \"dropdown_height\": 28}}";
-        fs::write(CONFIG_PATH, test_config).unwrap();
+        fs::write(&config_path, test_config).unwrap();
 
         let test_links = r#"{
             "spinbox_height": "textbox_height",
             "textbox_height": "dropdown_height"
         }"#;
-        fs::write(LINKS_PATH, test_links).unwrap();
+        fs::write(&links_path, test_links).unwrap();
+
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(config_path_str));
+        TEST_LINKS_PATH.with(|p| *p.borrow_mut() = Some(links_path_str));
 
         let mut state = InterfaceState::default();
         state.spinbox_height = 36;
@@ -5099,16 +5116,11 @@ mod tests {
 
         propagate_links(&mut state, "spinbox_height", "36");
 
-        if !original_config.is_empty() {
-            let _ = fs::write(CONFIG_PATH, original_config);
-        } else {
-            let _ = fs::remove_file(CONFIG_PATH);
-        }
-        if !original_links.is_empty() {
-            let _ = fs::write(LINKS_PATH, original_links);
-        } else {
-            let _ = fs::remove_file(LINKS_PATH);
-        }
+        TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = None);
+        TEST_LINKS_PATH.with(|p| *p.borrow_mut() = None);
+
+        let _ = fs::remove_file(config_path);
+        let _ = fs::remove_file(links_path);
 
         assert_eq!(state.spinbox_height, 36);
         assert_eq!(state.textbox_height, 36);
