@@ -1,6 +1,6 @@
 use crate::{SystemInterface, AppWidget, make_text_buffer, make_text_buffer_with_font};
-use cce_system_interface::app::PageContent;
-use cce_system_interface::pages::Page;
+use cce_system_settings::app::PageContent;
+use cce_system_settings::pages::Page;
 use cce_ui::widget::{Element, TextItem, PageSelector};
 
 impl SystemInterface {
@@ -316,7 +316,7 @@ impl SystemInterface {
             let scale = cce_ui::scale::scale_factor();
             let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0) / scale;
             let lh = label_size * s * 1.4;
-            let mut left_align = btn.left_align;
+            let mut left_align = btn.justify == cce_ui::widget::Justification::Left;
 
             // Auto-detect if inside a ScrollBox to apply left alignment by default
             if !left_align && base.w >= 60.0 {

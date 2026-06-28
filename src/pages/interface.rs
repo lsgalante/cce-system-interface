@@ -8,7 +8,7 @@ use cce_ui::widget::{
 };
 
 const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
-const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-interface/links.json";
+const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-settings/links.json";
 
 thread_local! {
     static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
@@ -250,6 +250,8 @@ pub struct InterfaceState {
     pub textbox_corner_radius_spinbox: Spinbox,
     pub slider_height: u16,
     pub slider_height_spinbox: Spinbox,
+    pub slider_corner_radius: u16,
+    pub slider_corner_radius_spinbox: Spinbox,
     pub font_selector_height: u16,
     pub font_selector_height_spinbox: Spinbox,
     pub font_selector_corner_radius: u16,
@@ -333,9 +335,9 @@ impl Default for InterfaceState {
             desktop_background_color: [0, 0, 0],
             desktop_grid_color: [255, 255, 255, 13],
             desktop_grid_scale: 100,
-            desktop_grid_scale_spinbox: Spinbox::new(100, 5, 1000, 5).with_label("Grid Scale").with_config(CONFIG_PATH, "desktop_grid_scale"),
+            desktop_grid_scale_spinbox: Spinbox::new(100, 5, 1000, 5).with_label("Grid Cell Size").with_config(CONFIG_PATH, "desktop_grid_scale"),
             desktop_line_width: 1,
-            desktop_line_width_spinbox: Spinbox::new(1, 1, 20, 1).with_label("Line Width").with_unit("px").with_config(CONFIG_PATH, "desktop_line_width"),
+            desktop_line_width_spinbox: Spinbox::new(1, 0, 100, 1).with_label("Grid Gap").with_unit("px").with_config(CONFIG_PATH, "desktop_line_width"),
             high_color: [0x3e, 0x3e, 0x3e],
             disabled_color: [0x55, 0x55, 0x55],
             visual_guides_color: [0xff, 0x8c, 0x00],
@@ -429,6 +431,8 @@ impl Default for InterfaceState {
             textbox_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Border Radius").with_unit("px").with_config(CONFIG_PATH, "textbox_corner_radius"),
             slider_height: 28,
             slider_height_spinbox: Spinbox::new(28, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "slider_height"),
+            slider_corner_radius: 4,
+            slider_corner_radius_spinbox: Spinbox::new(4, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "slider_corner_radius"),
             font_selector_height: 44,
             font_selector_height_spinbox: Spinbox::new(44, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "font_selector_height"),
             font_selector_corner_radius: 4,
@@ -575,6 +579,7 @@ pub enum InterfaceMessage {
     SetTextboxHeight(u16),
     SetTextboxCornerRadius(u16),
     SetSliderHeight(u16),
+    SetSliderCornerRadius(u16),
     SetFontSelectorHeight(u16),
     SetFontSelectorCornerRadius(u16),
     SetDropdownHeight(u16),
@@ -710,6 +715,7 @@ pub fn read_interface_config() -> InterfaceState {
     let textbox_height = parse_u16_from(&content, "textbox_height", 44);
     let textbox_corner_radius = parse_u16_from(&content, "textbox_corner_radius", 4);
     let slider_height = parse_u16_from(&content, "slider_height", 28);
+    let slider_corner_radius = parse_u16_from(&content, "slider_corner_radius", 4);
     let font_selector_height = parse_u16_from(&content, "font_selector_height", 44);
     let font_selector_corner_radius = parse_u16_from(&content, "font_selector_corner_radius", 4);
     let dropdown_height = parse_u16_from(&content, "dropdown_height", 44);
@@ -749,9 +755,9 @@ pub fn read_interface_config() -> InterfaceState {
         desktop_background_color: bg,
         desktop_grid_color,
         desktop_grid_scale,
-        desktop_grid_scale_spinbox: Spinbox::new(desktop_grid_scale as i32, 5, 1000, 5).with_label("Grid Scale").with_config(CONFIG_PATH, "desktop_grid_scale"),
+        desktop_grid_scale_spinbox: Spinbox::new(desktop_grid_scale as i32, 5, 1000, 5).with_label("Grid Cell Size").with_config(CONFIG_PATH, "desktop_grid_scale"),
         desktop_line_width,
-        desktop_line_width_spinbox: Spinbox::new(desktop_line_width as i32, 1, 20, 1).with_label("Line Width").with_unit("px").with_config(CONFIG_PATH, "desktop_line_width"),
+        desktop_line_width_spinbox: Spinbox::new(desktop_line_width as i32, 0, 100, 1).with_label("Grid Gap").with_unit("px").with_config(CONFIG_PATH, "desktop_line_width"),
         high_color: border,
         disabled_color: disabled,
         visual_guides_color: visual_guides,
@@ -845,6 +851,8 @@ pub fn read_interface_config() -> InterfaceState {
         textbox_corner_radius_spinbox: Spinbox::new(textbox_corner_radius as i32, 0, 50, 1).with_label("Border Radius").with_unit("px").with_config(CONFIG_PATH, "textbox_corner_radius"),
         slider_height,
         slider_height_spinbox: Spinbox::new(slider_height as i32, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "slider_height"),
+        slider_corner_radius,
+        slider_corner_radius_spinbox: Spinbox::new(slider_corner_radius as i32, 0, 50, 1).with_label("Corner Radius").with_unit("px").with_config(CONFIG_PATH, "slider_corner_radius"),
         font_selector_height,
         font_selector_height_spinbox: Spinbox::new(font_selector_height as i32, 10, 100, 1).with_label("Height").with_unit("px").with_config(CONFIG_PATH, "font_selector_height"),
         font_selector_corner_radius,
@@ -1362,6 +1370,13 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                     state.slider_height = val;
                     state.slider_height_spinbox.value = val as i32;
                     apply_slider_height(val);
+                }
+            }
+            "slider_corner_radius" => {
+                if let Ok(val) = val_str.parse::<u16>() {
+                    state.slider_corner_radius = val;
+                    state.slider_corner_radius_spinbox.value = val as i32;
+                    apply_slider_corner_radius(val);
                 }
             }
             "font_selector_height" => {
@@ -1921,6 +1936,11 @@ fn apply_slider_height(height: u16) {
     cce_ui::layout::set_slider_height(height as f32);
 }
 
+fn apply_slider_corner_radius(radius: u16) {
+    write_config_value("slider_corner_radius", &radius.to_string());
+    cce_ui::layout::set_slider_corner_radius(radius as f32);
+}
+
 
 fn apply_font_selector_height(height: u16) {
     write_config_value("font_selector_height", &height.to_string());
@@ -2431,6 +2451,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.color_selectors[4], 40.0, ctx);
             state.slider_height_spinbox.value = state.slider_height as i32;
             subsec.widget_full(&mut state.slider_height_spinbox, 44.0, ctx);
+            state.slider_corner_radius_spinbox.value = state.slider_corner_radius as i32;
+            subsec.widget_full(&mut state.slider_corner_radius_spinbox, 44.0, ctx);
         });
 
 
@@ -3084,6 +3106,11 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.slider_height = height;
             apply_slider_height(height);
             propagate_links(state, "slider_height", &height.to_string());
+        }
+        InterfaceMessage::SetSliderCornerRadius(radius) => {
+            state.slider_corner_radius = radius;
+            apply_slider_corner_radius(radius);
+            propagate_links(state, "slider_corner_radius", &radius.to_string());
         }
         InterfaceMessage::SetFontSelectorHeight(height) => {
             state.font_selector_height = height;
@@ -4277,6 +4304,34 @@ mod tests {
     }
 
     #[test]
+    fn test_read_write_slider_corner_radius() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_slider_corner_radius_config.toml");
+        let path_str = path.to_str().unwrap();
+
+        // 1. Initial configuration
+        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        // 2. Parse slider_corner_radius when missing (should return default 4)
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_u16_from(&content, "slider_corner_radius", 4);
+        assert_eq!(val, 4);
+
+        // 3. Write slider_corner_radius config
+        assert!(write_config_value_path(path_str, "slider_corner_radius", "6"));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"slider_corner_radius\": 6"));
+
+        // 4. Parse slider_corner_radius when present (should return written value 6)
+        let val2 = parse_u16_from(&updated, "slider_corner_radius", 4);
+        assert_eq!(val2, 6);
+
+        // Clean up
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
     fn test_read_write_plate_opacity() {
         let dir = std::env::temp_dir();
         let path = dir.join("test_plate_opacity_config.toml");
@@ -4980,6 +5035,9 @@ mod tests {
     #[test]
     fn test_widget_value_linking() {
         let original_links = fs::read_to_string(LINKS_PATH).unwrap_or_default();
+        if let Some(parent) = std::path::Path::new(LINKS_PATH).parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
         let test_links = r#"{
             "spinbox_height": "textbox_height",
             "textbox_height": "dropdown_height"
@@ -5014,6 +5072,13 @@ mod tests {
     fn test_propagate_links() {
         let original_config = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
         let original_links = fs::read_to_string(LINKS_PATH).unwrap_or_default();
+
+        if let Some(parent) = std::path::Path::new(CONFIG_PATH).parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        if let Some(parent) = std::path::Path::new(LINKS_PATH).parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
 
         let test_config = "{\"layout\": {\"spinbox_height\": 28, \"textbox_height\": 28, \"dropdown_height\": 28}}";
         fs::write(CONFIG_PATH, test_config).unwrap();
@@ -5412,6 +5477,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.textbox_corner_radius_spinbox.set_parent(None, ctx);
         self.slider_height_spinbox.clear_children(ctx);
         self.slider_height_spinbox.set_parent(None, ctx);
+        self.slider_corner_radius_spinbox.clear_children(ctx);
+        self.slider_corner_radius_spinbox.set_parent(None, ctx);
         self.color_selector_font_selector.clear_children(ctx);
         self.color_selector_font_selector.set_parent(None, ctx);
         self.menubar_font_selector.clear_children(ctx);
@@ -5551,27 +5618,72 @@ impl crate::pages::AppPage for InterfaceState {
 
         // Section 3: Controls
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[5], ctx);
+        // Slider
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[4], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.slider_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.slider_corner_radius_spinbox, ctx);
+        // MenuBar
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[8], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[10], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.menubar_font_selector, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.menubar_opacity_spinbox, ctx);
+        // Toggle
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[11], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[12], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.toggle_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.toggle_corner_radius_spinbox, ctx);
+        // Breadcrumb
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[14], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.breadcrumb_font_selector, ctx);
+        // Spinbox
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.spinbox_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.spinbox_corner_radius_spinbox, ctx);
+        // ColorSelector
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_preview_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_preview_margin_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_font_selector, ctx);
+        // Textbox
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.textbox_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.textbox_corner_radius_spinbox, ctx);
+        // FontSelector
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_corner_radius_spinbox, ctx);
+        // Dropdown
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_height_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_corner_radius_spinbox, ctx);
+        // Button
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_corner_radius_spinbox, ctx);
+        // ButtonStrip
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_padding_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_strip_spacing_spinbox, ctx);
+        // Labels
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.label_margin_spinbox, ctx);
 
         // Section 4: Indicators
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.color_selectors[11], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.color_selectors[12], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.toggle_height_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.toggle_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.color_selectors[9], ctx);
 
         // Section 5: Notification
         cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[16], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[17], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[18], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.color_selectors[20], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.notification_opacity_spinbox, ctx);
 
         // Section 6: Surfaces
+        // Backplate
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[17], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.backplate_corner_radius_spinbox, ctx);
+        // Plate
         cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[0], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.plate_padding_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.plate_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.plate_corner_radius_spinbox, ctx);
+        // Popover
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[15], ctx);
+        // Desktop
         cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[6], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[23], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.color_selectors[21], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.desktop_grid_scale_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.desktop_line_width_spinbox, ctx);
 
         // Section 7: Fonts
         cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.sans_box, ctx);
@@ -5591,23 +5703,31 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.terminal_size_box, ctx);
 
         // Section 8: Containers
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[9], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[10], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.button_corner_radius_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[8], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.button_padding_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[14], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[15], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.button_strip_spacing_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[19], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.section_padding_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[13], ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.plate_padding_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.plate_opacity_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.plate_corner_radius_spinbox, ctx);
+        // Page
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[18], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.page_opacity_spinbox, ctx);
+        // Layer
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[19], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.layer_opacity_spinbox, ctx);
+        // Section
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.section_padding_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.page_margin_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.section_label_font_selector, ctx);
+        // Nested Section
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.label_alignment_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.label_offset_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.nested_section_label_font_selector, ctx);
+        // ScrollingList
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[13], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[20], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[21], ctx);
+        // Graph
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_show_grid_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_snap_enabled_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_uniform_background_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_cell_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_gap_opacity_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_gap_width_spinbox, ctx);
 
         // Section 9: Windows
         cce_ui::widget::link_parent_child(&mut sec_containers[9], &mut self.windows.side_panel_behavior_menu, ctx);
@@ -5760,6 +5880,9 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.slider_height_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetSliderHeight(self.slider_height_spinbox.value as u16)));
+        }
+        if self.slider_corner_radius_spinbox.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSliderCornerRadius(self.slider_corner_radius_spinbox.value as u16)));
         }
 
         if self.label_alignment_menu.take_change() {

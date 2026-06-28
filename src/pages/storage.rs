@@ -43,7 +43,7 @@ pub enum StorageMessage {
 }
 
 fn status_path() -> String {
-    format!("{}/.config/cce-system-interface/backup_status.txt", std::env::var("HOME").unwrap_or_default())
+    format!("{}/.config/cce-system-settings/backup_status.txt", std::env::var("HOME").unwrap_or_default())
 }
 
 pub fn read_backup_status() -> (String, String, Option<String>) {
@@ -111,7 +111,7 @@ pub async fn fetch_storage_state() -> StorageState {
 pub async fn run_backup() -> Result<(String, String), String> {
     // Run the backup system helper script via pkexec (graphical auth prompt)
     let output = tokio::process::Command::new("pkexec")
-        .arg("/home/lsgalante/.local/share/cce-system-interface/helpers/backup-system.sh")
+        .arg("/home/lsgalante/.local/share/cce-system-settings/helpers/backup-system.sh")
         .output()
         .await
         .map_err(|e| format!("Failed to run backup script: {}", e))?;

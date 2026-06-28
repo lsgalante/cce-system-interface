@@ -1,8 +1,8 @@
 use cce_ui::widget::{Finger, hover_animation, Element, PageSelector};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
-use cce_system_interface::app::{AppAction, AppState};
-use cce_system_interface::pages::{self, Page};
+use cce_system_settings::app::{AppAction, AppState};
+use cce_system_settings::pages::{self, Page};
 mod input_handler;
 mod renderer;
 
@@ -232,7 +232,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let current_page_shared = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(initial_page_idx as u8));
 
         let (watchers, tx_backup, rx_backup, tx_update, rx_update) =
-            cce_system_interface::watchers::spawn_all(current_page_shared.clone());
+            cce_system_settings::watchers::spawn_all(current_page_shared.clone());
 
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::interface::read_preferred_fonts();
 
@@ -340,8 +340,8 @@ impl cce_ui::engine::Application for SystemInterface {
 
     fn settings(&self) -> cce_ui::engine::WindowSettings {
         cce_ui::engine::WindowSettings {
-            title: "CCE System Interface".to_string(),
-            app_id: "cce-system-interface".to_string(),
+            title: "CCE System Settings".to_string(),
+            app_id: "cce-system-settings".to_string(),
             width: 820,
             height: 680,
             fullscreen: false,
