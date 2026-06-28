@@ -330,6 +330,10 @@ pub struct InterfaceState {
     pub label_offset_spinbox: Spinbox,
     pub label_margin: u16,
     pub label_margin_spinbox: Spinbox,
+    pub scrollinglist_justification: u8,
+    pub scrollinglist_justification_menu: Dropdown,
+    pub scrollinglist_font: String,
+    pub scrollinglist_font_selector: FontSelector,
     // Typeface state fields
     pub typeface_loaded: bool,
     pub sans_serif: String,
@@ -529,6 +533,14 @@ impl Default for InterfaceState {
             label_offset_spinbox: Spinbox::new(0, -100, 100, 1).with_label("Label Offset").with_unit("px").with_config(CONFIG_PATH, "nested_section_label_offset"),
             label_margin: 6,
             label_margin_spinbox: Spinbox::new(6, 0, 100, 1).with_label("Label Margin").with_unit("px").with_config(CONFIG_PATH, "label_margin"),
+            scrollinglist_justification: 0,
+            scrollinglist_justification_menu: Dropdown::new(
+                vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
+                0,
+            ).with_label("Entry Justification")
+            .with_config(CONFIG_PATH, "scrollinglist_justification"),
+            scrollinglist_font: "Outfit".to_string(),
+            scrollinglist_font_selector: FontSelector::new("Outfit".to_string()).with_label("Entry Font").with_config(CONFIG_PATH, "scrollinglist_font"),
             typeface_loaded: false,
             sans_serif: String::new(),
             serif: String::new(),
@@ -697,6 +709,8 @@ pub enum InterfaceMessage {
     SetNestedSectionLabelFont(String),
     SetNestedSectionLabelAlignment(usize),
     SetNestedSectionLabelOffset(i16),
+    SetScrollingListFont(String),
+    SetScrollingListJustification(usize),
     SetLabelMargin(u16),
     SetGraphShowGrid(bool),
     SetGraphSnapEnabled(bool),
@@ -837,6 +851,10 @@ pub fn read_interface_config() -> InterfaceState {
     let toggle_font = parse_string_from(&content, "toggle_font", "Outfit");
     let font_selector_font = parse_string_from(&content, "font_selector_font", "Outfit");
     cce_ui::layout::set_font_selector_font(&font_selector_font);
+    let scrollinglist_justification = parse_u16_from(&content, "scrollinglist_justification", 0) as u8;
+    let scrollinglist_font = parse_string_from(&content, "scrollinglist_font", "Outfit");
+    cce_ui::layout::set_scrollinglist_font(&scrollinglist_font);
+    cce_ui::layout::set_scrollinglist_justification(scrollinglist_justification);
     let button_strip_font = parse_string_from(&content, "button_strip_font", "Outfit");
     cce_ui::layout::set_button_strip_font(&button_strip_font);
     let button_font = parse_string_from(&content, "button_font", "Outfit");
@@ -1014,6 +1032,13 @@ pub fn read_interface_config() -> InterfaceState {
             vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
             nested_section_label_alignment as usize,
         ).with_label("Label Alignment").with_config(CONFIG_PATH, "nested_section_label_alignment"),
+        scrollinglist_justification,
+        scrollinglist_justification_menu: Dropdown::new(
+            vec!["Left".to_string(), "Center".to_string(), "Right".to_string()],
+            scrollinglist_justification as usize,
+        ).with_label("Entry Justification").with_config(CONFIG_PATH, "scrollinglist_justification"),
+        scrollinglist_font: scrollinglist_font.clone(),
+        scrollinglist_font_selector: FontSelector::new(scrollinglist_font).with_label("Entry Font").with_config(CONFIG_PATH, "scrollinglist_font"),
         nested_section_label_offset,
         label_offset_spinbox: Spinbox::new(nested_section_label_offset as i32, -100, 100, 1).with_label("Label Offset").with_unit("px").with_config(CONFIG_PATH, "nested_section_label_offset"),
         label_margin,
@@ -2282,6 +2307,16 @@ fn apply_nested_section_label_alignment(align: u8) {
     cce_ui::layout::set_nested_section_label_alignment(align);
 }
 
+fn apply_scrollinglist_font(font: &str) {
+    write_config_value("scrollinglist_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_scrollinglist_font(font);
+}
+
+fn apply_scrollinglist_justification(just: u8) {
+    write_config_value("scrollinglist_justification", &just.to_string());
+    cce_ui::layout::set_scrollinglist_justification(just);
+}
+
 fn apply_nested_section_label_offset(offset: i16) {
     write_config_value("nested_section_label_offset", &offset.to_string());
     cce_ui::layout::set_nested_section_label_offset(offset as f32);
@@ -3054,6 +3089,12 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             state.color_selectors[21].color = [highlight_rgba[0], highlight_rgba[1], highlight_rgba[2]];
             state.color_selectors[21].alpha = highlight_rgba[3];
             subsec.widget_full(&mut state.color_selectors[21], 40.0, ctx);
+
+            state.scrollinglist_justification_menu.selected = state.scrollinglist_justification as usize;
+            subsec.widget_full(&mut state.scrollinglist_justification_menu, 44.0, ctx);
+
+            state.scrollinglist_font_selector.font_family = state.scrollinglist_font.clone();
+            subsec.widget_full(&mut state.scrollinglist_font_selector, 44.0, ctx);
         });
 
         // Graph child section
@@ -3529,6 +3570,16 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.nested_section_label_alignment = idx as u8;
             state.label_alignment_menu.selected = idx;
             apply_nested_section_label_alignment(idx as u8);
+        }
+        InterfaceMessage::SetScrollingListFont(font) => {
+            state.scrollinglist_font = font.clone();
+            state.scrollinglist_font_selector.font_family = font.clone();
+            apply_scrollinglist_font(&font);
+        }
+        InterfaceMessage::SetScrollingListJustification(idx) => {
+            state.scrollinglist_justification = idx as u8;
+            state.scrollinglist_justification_menu.selected = idx;
+            apply_scrollinglist_justification(idx as u8);
         }
         InterfaceMessage::SetNestedSectionLabelOffset(offset) => {
             state.nested_section_label_offset = offset;
@@ -6060,6 +6111,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.section_padding_spinbox.set_parent(None, ctx);
         self.label_alignment_menu.clear_children(ctx);
         self.label_alignment_menu.set_parent(None, ctx);
+        self.scrollinglist_justification_menu.clear_children(ctx);
+        self.scrollinglist_justification_menu.set_parent(None, ctx);
         self.label_offset_spinbox.clear_children(ctx);
         self.label_offset_spinbox.set_parent(None, ctx);
         self.label_margin_spinbox.clear_children(ctx);
@@ -6152,6 +6205,8 @@ impl crate::pages::AppPage for InterfaceState {
         self.section_label_font_selector.set_parent(None, ctx);
         self.nested_section_label_font_selector.clear_children(ctx);
         self.nested_section_label_font_selector.set_parent(None, ctx);
+        self.scrollinglist_font_selector.clear_children(ctx);
+        self.scrollinglist_font_selector.set_parent(None, ctx);
         self.font_selector_height_spinbox.clear_children(ctx);
         self.font_selector_height_spinbox.set_parent(None, ctx);
         self.font_selector_corner_radius_spinbox.clear_children(ctx);
@@ -6394,6 +6449,8 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[13], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[20], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.color_selectors[21], ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.scrollinglist_justification_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.scrollinglist_font_selector, ctx);
         // Graph
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_show_grid_toggle, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[8], &mut self.graph_snap_enabled_toggle, ctx);
@@ -6565,6 +6622,9 @@ impl crate::pages::AppPage for InterfaceState {
         if self.label_alignment_menu.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetNestedSectionLabelAlignment(self.label_alignment_menu.selected)));
         }
+        if self.scrollinglist_justification_menu.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetScrollingListJustification(self.scrollinglist_justification_menu.selected)));
+        }
         if self.label_offset_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetNestedSectionLabelOffset(self.label_offset_spinbox.value as i16)));
         }
@@ -6715,6 +6775,9 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.nested_section_label_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetNestedSectionLabelFont(self.nested_section_label_font_selector.font_family.clone())));
+        }
+        if self.scrollinglist_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetScrollingListFont(self.scrollinglist_font_selector.font_family.clone())));
         }
         if self.font_selector_height_spinbox.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetFontSelectorHeight(self.font_selector_height_spinbox.value as u16)));
