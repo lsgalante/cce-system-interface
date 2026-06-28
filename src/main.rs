@@ -301,6 +301,7 @@ impl cce_ui::engine::Application for SystemInterface {
             last_scroll_y: 0.0,
             page_sec_containers: Vec::new(),
             root_window: cce_ui::widget::Backplate::new(0.0, 0.0, 820.0, 680.0)
+                .with_movable(false)
                 .with_background([
                     win_color[0] as f32 / 255.0,
                     win_color[1] as f32 / 255.0,

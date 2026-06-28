@@ -370,6 +370,20 @@ pub struct InterfaceState {
     pub toggle_font_selector: FontSelector,
     pub font_selector_font: String,
     pub font_selector_font_selector: FontSelector,
+    pub button_strip_font: String,
+    pub button_strip_font_selector: FontSelector,
+    pub button_font: String,
+    pub button_font_selector: FontSelector,
+    pub label_font: String,
+    pub label_font_selector: FontSelector,
+    pub dropdown_font: String,
+    pub dropdown_font_selector: FontSelector,
+    pub textbox_font: String,
+    pub textbox_font_selector: FontSelector,
+    pub spinbox_font: String,
+    pub spinbox_font_selector: FontSelector,
+    pub slider_font: String,
+    pub slider_font_selector: FontSelector,
     // Graph configuration fields
     pub graph_show_grid: bool,
     pub graph_show_grid_toggle: Toggle,
@@ -554,6 +568,20 @@ impl Default for InterfaceState {
             toggle_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "toggle_font"),
             font_selector_font: "Outfit".to_string(),
             font_selector_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "font_selector_font"),
+            button_strip_font: "Outfit".to_string(),
+            button_strip_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "button_strip_font"),
+            button_font: "Outfit".to_string(),
+            button_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "button_font"),
+            label_font: "Outfit".to_string(),
+            label_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "label_font"),
+            dropdown_font: "Outfit".to_string(),
+            dropdown_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "dropdown_font"),
+            textbox_font: "Outfit".to_string(),
+            textbox_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "textbox_font"),
+            spinbox_font: "monospace".to_string(),
+            spinbox_font_selector: FontSelector::new("monospace".to_string()).with_label("Font").with_config(CONFIG_PATH, "spinbox_font"),
+            slider_font: "Outfit".to_string(),
+            slider_font_selector: FontSelector::new("Outfit".to_string()).with_label("Font").with_config(CONFIG_PATH, "slider_font"),
             graph_show_grid: true,
             graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
             graph_snap_enabled: true,
@@ -652,6 +680,13 @@ pub enum InterfaceMessage {
     SetFontSelectorHeight(u16),
     SetFontSelectorCornerRadius(u16),
     SetFontSelectorFont(String),
+    SetButtonStripFont(String),
+    SetButtonFont(String),
+    SetLabelFont(String),
+    SetDropdownFont(String),
+    SetTextboxFont(String),
+    SetSpinboxFont(String),
+    SetSliderFont(String),
     SetDropdownHeight(u16),
     SetDropdownCornerRadius(u16),
     SetButtonCornerRadius(u16),
@@ -802,6 +837,20 @@ pub fn read_interface_config() -> InterfaceState {
     let toggle_font = parse_string_from(&content, "toggle_font", "Outfit");
     let font_selector_font = parse_string_from(&content, "font_selector_font", "Outfit");
     cce_ui::layout::set_font_selector_font(&font_selector_font);
+    let button_strip_font = parse_string_from(&content, "button_strip_font", "Outfit");
+    cce_ui::layout::set_button_strip_font(&button_strip_font);
+    let button_font = parse_string_from(&content, "button_font", "Outfit");
+    cce_ui::layout::set_button_font(&button_font);
+    let label_font = parse_string_from(&content, "label_font", "Outfit");
+    cce_ui::layout::set_label_font(&label_font);
+    let dropdown_font = parse_string_from(&content, "dropdown_font", "Outfit");
+    cce_ui::layout::set_dropdown_font(&dropdown_font);
+    let textbox_font = parse_string_from(&content, "textbox_font", "Outfit");
+    cce_ui::layout::set_textbox_font(&textbox_font);
+    let spinbox_font = parse_string_from(&content, "spinbox_font", "monospace");
+    cce_ui::layout::set_spinbox_font(&spinbox_font);
+    let slider_font = parse_string_from(&content, "slider_font", "Outfit");
+    cce_ui::layout::set_slider_font(&slider_font);
 
     cce_ui::layout::set_toggle_border_width(toggle_border_width as f32);
     cce_ui::layout::set_toggle_font(&toggle_font);
@@ -1008,6 +1057,20 @@ pub fn read_interface_config() -> InterfaceState {
         toggle_font_selector: FontSelector::new(toggle_font.clone()).with_label("Font").with_config(CONFIG_PATH, "toggle_font"),
         font_selector_font: font_selector_font.clone(),
         font_selector_font_selector: FontSelector::new(font_selector_font.clone()).with_label("Font").with_config(CONFIG_PATH, "font_selector_font"),
+        button_strip_font: button_strip_font.clone(),
+        button_strip_font_selector: FontSelector::new(button_strip_font.clone()).with_label("Font").with_config(CONFIG_PATH, "button_strip_font"),
+        button_font: button_font.clone(),
+        button_font_selector: FontSelector::new(button_font.clone()).with_label("Font").with_config(CONFIG_PATH, "button_font"),
+        label_font: label_font.clone(),
+        label_font_selector: FontSelector::new(label_font.clone()).with_label("Font").with_config(CONFIG_PATH, "label_font"),
+        dropdown_font: dropdown_font.clone(),
+        dropdown_font_selector: FontSelector::new(dropdown_font.clone()).with_label("Font").with_config(CONFIG_PATH, "dropdown_font"),
+        textbox_font: textbox_font.clone(),
+        textbox_font_selector: FontSelector::new(textbox_font.clone()).with_label("Font").with_config(CONFIG_PATH, "textbox_font"),
+        spinbox_font: spinbox_font.clone(),
+        spinbox_font_selector: FontSelector::new(spinbox_font.clone()).with_label("Font").with_config(CONFIG_PATH, "spinbox_font"),
+        slider_font: slider_font.clone(),
+        slider_font_selector: FontSelector::new(slider_font.clone()).with_label("Font").with_config(CONFIG_PATH, "slider_font"),
         graph_show_grid,
         graph_show_grid_toggle: Toggle::new().with_label("Show Grid").with_config(CONFIG_PATH, "graph_show_grid"),
         graph_snap_enabled,
@@ -1440,6 +1503,48 @@ pub fn propagate_links(state: &mut InterfaceState, key: &str, val_str: &str) {
                 state.font_selector_font = font.clone();
                 state.font_selector_font_selector.font_family = font.clone();
                 apply_font_selector_font(&font);
+            }
+            "button_strip_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.button_strip_font = font.clone();
+                state.button_strip_font_selector.font_family = font.clone();
+                apply_button_strip_font(&font);
+            }
+            "button_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.button_font = font.clone();
+                state.button_font_selector.font_family = font.clone();
+                apply_button_font(&font);
+            }
+            "label_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.label_font = font.clone();
+                state.label_font_selector.font_family = font.clone();
+                apply_label_font(&font);
+            }
+            "dropdown_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.dropdown_font = font.clone();
+                state.dropdown_font_selector.font_family = font.clone();
+                apply_dropdown_font(&font);
+            }
+            "textbox_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.textbox_font = font.clone();
+                state.textbox_font_selector.font_family = font.clone();
+                apply_textbox_font(&font);
+            }
+            "spinbox_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.spinbox_font = font.clone();
+                state.spinbox_font_selector.font_family = font.clone();
+                apply_spinbox_font(&font);
+            }
+            "slider_font" => {
+                let font = val_str.trim_matches('"').to_string();
+                state.slider_font = font.clone();
+                state.slider_font_selector.font_family = font.clone();
+                apply_slider_font(&font);
             }
 
             "color_selector_height" => {
@@ -2045,6 +2150,41 @@ fn apply_font_selector_font(font: &str) {
     cce_ui::layout::set_font_selector_font(font);
 }
 
+fn apply_button_strip_font(font: &str) {
+    write_config_value("button_strip_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_button_strip_font(font);
+}
+
+fn apply_button_font(font: &str) {
+    write_config_value("button_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_button_font(font);
+}
+
+fn apply_label_font(font: &str) {
+    write_config_value("label_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_label_font(font);
+}
+
+fn apply_dropdown_font(font: &str) {
+    write_config_value("dropdown_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_dropdown_font(font);
+}
+
+fn apply_textbox_font(font: &str) {
+    write_config_value("textbox_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_textbox_font(font);
+}
+
+fn apply_spinbox_font(font: &str) {
+    write_config_value("spinbox_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_spinbox_font(font);
+}
+
+fn apply_slider_font(font: &str) {
+    write_config_value("slider_font", &format!("\"{}\"", font));
+    cce_ui::layout::set_slider_font(font);
+}
+
 
 fn apply_color_selector_height(height: u16) {
     write_config_value("color_selector_height", &height.to_string());
@@ -2587,9 +2727,6 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
     // 4. Controls Section
     builder.add_section_with_width(&mut final_pc, cw, "Controls", false, |sec| {
-        state.color_selectors[5].color = state.color_borders_color;
-        sec.widget_full(&mut state.color_selectors[5], 40.0, ctx);
-
         // Slider Section
         sec.add_section("Slider", false, |subsec| {
             state.color_selectors[4].color = state.slider_track_color;
@@ -2598,6 +2735,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.slider_height_spinbox, 44.0, ctx);
             state.slider_corner_radius_spinbox.value = state.slider_corner_radius as i32;
             subsec.widget_full(&mut state.slider_corner_radius_spinbox, 44.0, ctx);
+            state.slider_font_selector.font_family = state.slider_font.clone();
+            subsec.widget_full(&mut state.slider_font_selector, 44.0, ctx);
         });
 
 
@@ -2647,6 +2786,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
             state.spinbox_corner_radius_spinbox.value = state.spinbox_corner_radius as i32;
             subsec.widget_full(&mut state.spinbox_corner_radius_spinbox, 44.0, ctx);
+            state.spinbox_font_selector.font_family = state.spinbox_font.clone();
+            subsec.widget_full(&mut state.spinbox_font_selector, 44.0, ctx);
         });
 
         // ColorSelector Section
@@ -2673,6 +2814,8 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.textbox_height_spinbox, 44.0, ctx);
             state.textbox_corner_radius_spinbox.value = state.textbox_corner_radius as i32;
             subsec.widget_full(&mut state.textbox_corner_radius_spinbox, 44.0, ctx);
+            state.textbox_font_selector.font_family = state.textbox_font.clone();
+            subsec.widget_full(&mut state.textbox_font_selector, 44.0, ctx);
         });
 
         // FontSelector Section
@@ -2691,12 +2834,16 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.dropdown_height_spinbox, 44.0, ctx);
             state.dropdown_corner_radius_spinbox.value = state.dropdown_corner_radius as i32;
             subsec.widget_full(&mut state.dropdown_corner_radius_spinbox, 44.0, ctx);
+            state.dropdown_font_selector.font_family = state.dropdown_font.clone();
+            subsec.widget_full(&mut state.dropdown_font_selector, 44.0, ctx);
         });
 
         // Button Section
         sec.add_section("Button", false, |subsec| {
             state.button_corner_radius_spinbox.value = state.button_corner_radius as i32;
             subsec.widget_full(&mut state.button_corner_radius_spinbox, 44.0, ctx);
+            state.button_font_selector.font_family = state.button_font.clone();
+            subsec.widget_full(&mut state.button_font_selector, 44.0, ctx);
         });
 
         // ButtonStrip Section
@@ -2705,12 +2852,16 @@ pub fn view(state: &mut InterfaceState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             subsec.widget_full(&mut state.button_padding_spinbox, 44.0, ctx);
             state.button_strip_spacing_spinbox.value = state.button_strip_spacing as i32;
             subsec.widget_full(&mut state.button_strip_spacing_spinbox, 44.0, ctx);
+            state.button_strip_font_selector.font_family = state.button_strip_font.clone();
+            subsec.widget_full(&mut state.button_strip_font_selector, 44.0, ctx);
         });
 
         // Labels Section
         sec.add_section("Labels", false, |subsec| {
             state.label_margin_spinbox.value = state.label_margin as i32;
             subsec.widget_full(&mut state.label_margin_spinbox, 44.0, ctx);
+            state.label_font_selector.font_family = state.label_font.clone();
+            subsec.widget_full(&mut state.label_font_selector, 44.0, ctx);
         });
     });
 
@@ -3296,6 +3447,41 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             apply_font_selector_font(&font);
             propagate_links(state, "font_selector_font", &format!("\"{}\"", font));
         }
+        InterfaceMessage::SetButtonStripFont(font) => {
+            state.button_strip_font = font.clone();
+            apply_button_strip_font(&font);
+            propagate_links(state, "button_strip_font", &format!("\"{}\"", font));
+        }
+        InterfaceMessage::SetButtonFont(font) => {
+            state.button_font = font.clone();
+            apply_button_font(&font);
+            propagate_links(state, "button_font", &format!("\"{}\"", font));
+        }
+        InterfaceMessage::SetLabelFont(font) => {
+            state.label_font = font.clone();
+            apply_label_font(&font);
+            propagate_links(state, "label_font", &format!("\"{}\"", font));
+        }
+        InterfaceMessage::SetDropdownFont(font) => {
+            state.dropdown_font = font.clone();
+            apply_dropdown_font(&font);
+            propagate_links(state, "dropdown_font", &format!("\"{}\"", font));
+        }
+        InterfaceMessage::SetTextboxFont(font) => {
+            state.textbox_font = font.clone();
+            apply_textbox_font(&font);
+            propagate_links(state, "textbox_font", &format!("\"{}\"", font));
+        }
+        InterfaceMessage::SetSpinboxFont(font) => {
+            state.spinbox_font = font.clone();
+            apply_spinbox_font(&font);
+            propagate_links(state, "spinbox_font", &format!("\"{}\"", font));
+        }
+        InterfaceMessage::SetSliderFont(font) => {
+            state.slider_font = font.clone();
+            apply_slider_font(&font);
+            propagate_links(state, "slider_font", &format!("\"{}\"", font));
+        }
         InterfaceMessage::SetDropdownHeight(height) => {
             state.dropdown_height = height;
             apply_dropdown_height(height);
@@ -3439,6 +3625,22 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             let was_fscr_hovered = state.font_selector_corner_radius_spinbox.hovered();
             let was_bfs_hovered = state.breadcrumb_font_selector.hovered();
             let was_fsfs_hovered = state.font_selector_font_selector.hovered();
+            let was_bsfs_hovered = state.button_strip_font_selector.hovered();
+            let was_bfsn_hovered = state.button_font_selector.hovered();
+            let was_lfs_hovered = state.label_font_selector.hovered();
+            let was_dfs_hovered = state.dropdown_font_selector.hovered();
+            let was_tbfs_hovered = state.textbox_font_selector.hovered();
+            let was_sfs_hovered = state.spinbox_font_selector.hovered();
+            let was_slfs_hovered = state.slider_font_selector.hovered();
+
+            let button_strip_font = state.button_strip_font.clone();
+            let button_font = state.button_font.clone();
+            let label_font = state.label_font.clone();
+            let dropdown_font = state.dropdown_font.clone();
+            let textbox_font = state.textbox_font.clone();
+            let spinbox_font = state.spinbox_font.clone();
+            let slider_font = state.slider_font.clone();
+
             let was_lm_hovered = state.label_margin_spinbox.hovered();
             let was_mo_hovered = state.menubar_opacity_spinbox.hovered();
             let was_no_hovered = state.notification_opacity_spinbox.hovered();
@@ -3504,6 +3706,22 @@ pub fn update(state: &mut InterfaceState, msg: InterfaceMessage) {
             state.font_selector_corner_radius_spinbox.set_hovered(was_fscr_hovered);
             state.breadcrumb_font_selector.set_hovered(was_bfs_hovered);
             state.font_selector_font_selector.set_hovered(was_fsfs_hovered);
+            state.button_strip_font_selector.set_hovered(was_bsfs_hovered);
+            state.button_font_selector.set_hovered(was_bfsn_hovered);
+            state.label_font_selector.set_hovered(was_lfs_hovered);
+            state.dropdown_font_selector.set_hovered(was_dfs_hovered);
+            state.textbox_font_selector.set_hovered(was_tbfs_hovered);
+            state.spinbox_font_selector.set_hovered(was_sfs_hovered);
+            state.slider_font_selector.set_hovered(was_slfs_hovered);
+
+            state.button_strip_font = button_strip_font;
+            state.button_font = button_font;
+            state.label_font = label_font;
+            state.dropdown_font = dropdown_font;
+            state.textbox_font = textbox_font;
+            state.spinbox_font = spinbox_font;
+            state.slider_font = slider_font;
+
             state.label_margin_spinbox.set_hovered(was_lm_hovered);
             state.menubar_opacity_spinbox.set_hovered(was_mo_hovered);
             state.notification_opacity_spinbox.set_hovered(was_no_hovered);
@@ -4567,6 +4785,167 @@ mod tests {
         assert!(updated.contains("\"font_selector_font\": \"Inter\""));
 
         let val2 = parse_string_from(&updated, "font_selector_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_button_strip_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_button_strip_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "button_strip_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "button_strip_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"button_strip_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "button_strip_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_button_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_button_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "button_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "button_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"button_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "button_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_label_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_label_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "label_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "label_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"label_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "label_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_dropdown_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_dropdown_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "dropdown_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "dropdown_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"dropdown_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "dropdown_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_textbox_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_textbox_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "textbox_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "textbox_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"textbox_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "textbox_font", "Outfit");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_spinbox_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_spinbox_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "spinbox_font", "monospace");
+        assert_eq!(val, "monospace");
+
+        assert!(write_config_value_path(path_str, "spinbox_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"spinbox_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "spinbox_font", "monospace");
+        assert_eq!(val2, "Inter");
+
+        let _ = fs::remove_file(path_str);
+    }
+
+    #[test]
+    fn test_read_write_slider_font() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_slider_font_config.json");
+        let path_str = path.to_str().unwrap();
+
+        let initial_content = "{\"layout\": {\"gap\": 18}}";
+        fs::write(path_str, initial_content).unwrap();
+
+        let content = fs::read_to_string(path_str).unwrap();
+        let val = parse_string_from(&content, "slider_font", "Outfit");
+        assert_eq!(val, "Outfit");
+
+        assert!(write_config_value_path(path_str, "slider_font", "\"Inter\""));
+        let updated = fs::read_to_string(path_str).unwrap();
+        assert!(updated.contains("\"slider_font\": \"Inter\""));
+
+        let val2 = parse_string_from(&updated, "slider_font", "Outfit");
         assert_eq!(val2, "Inter");
 
         let _ = fs::remove_file(path_str);
@@ -5755,6 +6134,20 @@ impl crate::pages::AppPage for InterfaceState {
         self.toggle_font_selector.set_parent(None, ctx);
         self.font_selector_font_selector.clear_children(ctx);
         self.font_selector_font_selector.set_parent(None, ctx);
+        self.button_strip_font_selector.clear_children(ctx);
+        self.button_strip_font_selector.set_parent(None, ctx);
+        self.button_font_selector.clear_children(ctx);
+        self.button_font_selector.set_parent(None, ctx);
+        self.label_font_selector.clear_children(ctx);
+        self.label_font_selector.set_parent(None, ctx);
+        self.dropdown_font_selector.clear_children(ctx);
+        self.dropdown_font_selector.set_parent(None, ctx);
+        self.textbox_font_selector.clear_children(ctx);
+        self.textbox_font_selector.set_parent(None, ctx);
+        self.spinbox_font_selector.clear_children(ctx);
+        self.spinbox_font_selector.set_parent(None, ctx);
+        self.slider_font_selector.clear_children(ctx);
+        self.slider_font_selector.set_parent(None, ctx);
         self.section_label_font_selector.clear_children(ctx);
         self.section_label_font_selector.set_parent(None, ctx);
         self.nested_section_label_font_selector.clear_children(ctx);
@@ -5887,11 +6280,11 @@ impl crate::pages::AppPage for InterfaceState {
         cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_controls.box_blur_slider, ctx);
 
         // Section 3: Controls
-        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[5], ctx);
         // Slider
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[4], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.slider_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.slider_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.slider_font_selector, ctx);
         // MenuBar
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[8], ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selectors[10], ctx);
@@ -5911,6 +6304,7 @@ impl crate::pages::AppPage for InterfaceState {
         // Spinbox
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.spinbox_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.spinbox_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.spinbox_font_selector, ctx);
         // ColorSelector
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.color_selector_preview_corner_radius_spinbox, ctx);
@@ -5920,6 +6314,7 @@ impl crate::pages::AppPage for InterfaceState {
         // Textbox
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.textbox_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.textbox_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.textbox_font_selector, ctx);
         // FontSelector
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.font_selector_corner_radius_spinbox, ctx);
@@ -5927,13 +6322,17 @@ impl crate::pages::AppPage for InterfaceState {
         // Dropdown
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_height_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.dropdown_font_selector, ctx);
         // Button
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_corner_radius_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_font_selector, ctx);
         // ButtonStrip
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_padding_spinbox, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_strip_spacing_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.button_strip_font_selector, ctx);
         // Labels
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.label_margin_spinbox, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.label_font_selector, ctx);
 
         // Section 4: Indicators
         cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.color_selectors[9], ctx);
@@ -6289,6 +6688,27 @@ impl crate::pages::AppPage for InterfaceState {
         }
         if self.font_selector_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetFontSelectorFont(self.font_selector_font_selector.font_family.clone())));
+        }
+        if self.button_strip_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetButtonStripFont(self.button_strip_font_selector.font_family.clone())));
+        }
+        if self.button_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetButtonFont(self.button_font_selector.font_family.clone())));
+        }
+        if self.label_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetLabelFont(self.label_font_selector.font_family.clone())));
+        }
+        if self.dropdown_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetDropdownFont(self.dropdown_font_selector.font_family.clone())));
+        }
+        if self.textbox_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetTextboxFont(self.textbox_font_selector.font_family.clone())));
+        }
+        if self.spinbox_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSpinboxFont(self.spinbox_font_selector.font_family.clone())));
+        }
+        if self.slider_font_selector.take_change() {
+            actions.push(AppAction::Interface(InterfaceMessage::SetSliderFont(self.slider_font_selector.font_family.clone())));
         }
         if self.section_label_font_selector.take_change() {
             actions.push(AppAction::Interface(InterfaceMessage::SetSectionLabelFont(self.section_label_font_selector.font_family.clone())));
