@@ -14,10 +14,12 @@ pub struct DisplayOutput {
     pub name_label: Label,
     pub resolution_label: Label,
     pub scale_label: Option<Label>,
+    pub scale_spinbox: Spinbox,
 }
 
 impl DisplayOutput {
     pub fn update_labels(&mut self) {
+        self.scale_spinbox.value = (self.scale * 100.0).round() as i32;
         if self.connected {
             self.name_label.set_text(&self.name);
             self.resolution_label.set_text(&format!("{} @ {}Hz", self.resolution, self.refresh));
@@ -101,6 +103,7 @@ impl Default for DisplayState {
 pub enum DisplayMessage {
     Refreshed(DisplayState),
     BrightnessSet(u32),
+    ScaleSet(String, f32),
     ToggleScreensaverEnable,
     ToggleScreensaverLockScreen,
     SetScreensaverTimeout(i32),
@@ -215,12 +218,16 @@ async fn fetch_outputs() -> Vec<DisplayOutput> {
             let name = trimmed.split_whitespace().next().unwrap_or("").to_string();
             let name_label = Label::new(&name).with_font_size(12.0).with_color([212, 212, 212]);
             let resolution_label = Label::new("").with_font_size(12.0).with_color([212, 212, 212]);
+            let scale_spinbox = Spinbox::new(100, 100, 300, 25)
+                .with_label("Scale")
+                .with_decimals(2);
             current = Some(DisplayOutput {
                 name, resolution: String::new(), refresh: String::new(),
                 scale: 1.0, connected: true,
                 name_label,
                 resolution_label,
                 scale_label: None,
+                scale_spinbox,
             });
             continue;
         }
@@ -258,6 +265,11 @@ async fn is_night_light_on() -> bool {
 fn spawn_brightness(pct: u32) {
     let _ = tokio::process::Command::new("brightnessctl")
         .args(["set", &format!("{}%", pct), "-n"]).spawn();
+}
+
+fn spawn_scale(output_name: &str, scale: f32) {
+    let _ = tokio::process::Command::new("wlr-randr")
+        .args(["--output", output_name, "--scale", &format!("{:.2}", scale)]).spawn();
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
@@ -317,6 +329,9 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, layout
                     if let Some(ref mut scale_lbl) = out.scale_label {
                         subsec.widget_full(scale_lbl, 20.0, ctx);
                     }
+                    if out.connected {
+                        subsec.widget_full(&mut out.scale_spinbox, cce_ui::layout::spinbox_height(), ctx);
+                    }
                 });
             }
         }
@@ -367,7 +382,8 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
                 hovers.insert(out.name.clone(), (
                     out.name_label.hovered(),
                     out.resolution_label.hovered(),
-                    out.scale_label.as_ref().map(|l| l.hovered()).unwrap_or(false)
+                    out.scale_label.as_ref().map(|l| l.hovered()).unwrap_or(false),
+                    out.scale_spinbox.hovered()
                 ));
             }
 
@@ -387,12 +403,13 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
             state.screensaver_style_menu.set_hovered(style_hover);
 
             for out in &mut state.outputs {
-                if let Some(&(name_h, res_h, scale_h)) = hovers.get(&out.name) {
+                if let Some(&(name_h, res_h, scale_h, spin_h)) = hovers.get(&out.name) {
                     out.name_label.set_hovered(name_h);
                     out.resolution_label.set_hovered(res_h);
                     if let Some(ref mut scale_lbl) = out.scale_label {
                         scale_lbl.set_hovered(scale_h);
                     }
+                    out.scale_spinbox.set_hovered(spin_h);
                 }
             }
         }
@@ -402,6 +419,14 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage) {
             spawn_brightness(pct);
             state.brightness_spinbox.value = pct as i32;
             state.brightness_slider.set_value(pct as f32 / 100.0);
+        }
+        DisplayMessage::ScaleSet(name, scale) => {
+            if let Some(out) = state.outputs.iter_mut().find(|o| o.name == name) {
+                out.scale = scale;
+                out.scale_spinbox.value = (scale * 100.0).round() as i32;
+                out.update_labels();
+                spawn_scale(&name, scale);
+            }
         }
         DisplayMessage::ToggleScreensaverEnable => {
             state.screensaver_enable = !state.screensaver_enable;
@@ -471,6 +496,8 @@ impl crate::pages::AppPage for DisplayState {
                 scale_lbl.clear_children(ctx);
                 scale_lbl.set_parent(None, ctx);
             }
+            out.scale_spinbox.clear_children(ctx);
+            out.scale_spinbox.set_parent(None, ctx);
         }
     }
 
@@ -525,6 +552,9 @@ impl crate::pages::AppPage for DisplayState {
             if let Some(ref mut scale_lbl) = out.scale_label {
                 cce_ui::widget::link_parent_child(&mut sec_containers[2], scale_lbl, ctx);
             }
+            if out.connected {
+                cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut out.scale_spinbox, ctx);
+            }
         }
 
         cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.screensaver_enable_toggle, ctx);
@@ -565,6 +595,14 @@ impl crate::pages::AppPage for DisplayState {
         }
         if self.screensaver_timeout_spinbox.take_change() {
             actions.push(AppAction::Display(DisplayMessage::SetScreensaverTimeout(self.screensaver_timeout_spinbox.value)));
+        }
+        for out in &mut self.outputs {
+            if out.connected && out.scale_spinbox.take_change() {
+                actions.push(AppAction::Display(DisplayMessage::ScaleSet(
+                    out.name.clone(),
+                    out.scale_spinbox.value as f32 / 100.0,
+                )));
+            }
         }
     }
 
@@ -607,6 +645,7 @@ impl crate::pages::AppPage for DisplayState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pages::AppPage;
 
     #[test]
     fn test_view_layout_grid() {
@@ -614,6 +653,35 @@ mod tests {
         let mut layout = cce_ui::layout::AdaptiveGrid::new(260.0, 20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
+
+    #[test]
+    fn test_scale_spinbox_propagation() {
+        let mut state = DisplayState::default();
+        let mut out = DisplayOutput {
+            name: "eDP-1".to_string(),
+            resolution: "1920x1080".to_string(),
+            refresh: "60".to_string(),
+            scale: 1.0,
+            connected: true,
+            name_label: Label::new("eDP-1"),
+            resolution_label: Label::new("1920x1080 @ 60Hz"),
+            scale_label: None,
+            scale_spinbox: Spinbox::new(100, 100, 300, 25).with_label("Scale").with_decimals(2),
+        };
+        out.scale_spinbox.value = 125;
+        out.scale_spinbox.just_changed = true;
+        state.outputs.push(out);
+
+        let mut actions = Vec::new();
+        state.propagate_widget_changes(&mut actions);
+        assert_eq!(actions.len(), 1);
+        if let AppAction::Display(DisplayMessage::ScaleSet(name, scale)) = &actions[0] {
+            assert_eq!(name, "eDP-1");
+            assert_eq!(*scale, 1.25);
+        } else {
+            panic!("Expected AppAction::Display(DisplayMessage::ScaleSet)");
+        }
     }
 }
 
