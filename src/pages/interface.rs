@@ -877,6 +877,7 @@ pub fn read_interface_config() -> InterfaceState {
             ColorSelector::new(layer_color).with_label("Layer Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "layer_color"), // 20: Containers - Layer Color
             ColorSelector::new_rgba(scrollinglist_entry_bg).with_label("Entry Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_bg_color"), // 21: ScrollingList - Entry Background
             ColorSelector::new_rgba(scrollinglist_entry_highlight).with_label("Entry Highlight").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "scrollinglist_entry_highlight_color"), // 22: ScrollingList - Entry Highlight
+            ColorSelector::new(status_box_background_color).with_label("Background Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "status_box_background_color"), // 23: Status - Background Color
             ColorSelector::new_rgba(desktop_grid_color).with_label("Grid Color").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "desktop_grid_color"), // 24: Surfaces - Desktop Grid Color
             ColorSelector::new(toggle_bg).with_label("Background").with_font_family(&color_selector_font).with_config(CONFIG_PATH, "toggle_bg_color"), // 24: Toggles - Background
         ],
