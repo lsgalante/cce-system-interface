@@ -1,6 +1,6 @@
 use crate::SystemInterface;
-use cce_system_settings::app::AppAction;
-use cce_system_settings::pages::{self, Page};
+use cce_settings::app::AppAction;
+use cce_settings::pages::{self, Page};
 use cce_ui::widget::Element;
 
 impl SystemInterface {

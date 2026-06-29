@@ -1,6 +1,6 @@
 use crate::{SystemInterface, AppWidget, make_text_buffer, make_text_buffer_with_font};
-use cce_system_settings::app::PageContent;
-use cce_system_settings::pages::Page;
+use cce_settings::app::PageContent;
+use cce_settings::pages::Page;
 use cce_ui::widget::{Element, TextItem, PageSelector};
 
 impl SystemInterface {

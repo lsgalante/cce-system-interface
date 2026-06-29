@@ -1,7 +1,7 @@
 use std::fs;
 use serde_json::Value;
 
-pub const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
+pub const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
 
 pub fn read_config_file() -> String {
     fs::read_to_string(CONFIG_PATH).unwrap_or_default()
@@ -19,13 +19,13 @@ fn perform_rolling_backup(path: &str) {
         return;
     }
     for i in (1..=4).rev() {
-        let src = format!("{}/config.json.{}.bak", backup_dir, i);
-        let dst = format!("{}/config.json.{}.bak", backup_dir, i + 1);
+        let src = format!("{}/config.kdl.{}.bak", backup_dir, i);
+        let dst = format!("{}/config.kdl.{}.bak", backup_dir, i + 1);
         if std::path::Path::new(&src).exists() {
             let _ = fs::rename(src, dst);
         }
     }
-    let dst = format!("{}/config.json.1.bak", backup_dir);
+    let dst = format!("{}/config.kdl.1.bak", backup_dir);
     let _ = fs::copy(path, dst);
 }
 

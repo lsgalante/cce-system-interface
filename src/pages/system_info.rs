@@ -176,14 +176,14 @@ fn format_duration(secs: i64) -> String {
 fn spawn_cpu_power(powersave: bool) {
     let script = if powersave { "cpu-powersave-on" } else { "cpu-powersave-off" };
     let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(format!("/home/lsgalante/.local/share/cce-system-settings/helpers/{}", script));
+    cmd.arg(format!("/home/lsgalante/.local/share/cce-settings/helpers/{}", script));
     let _ = cce_ui::process::spawn_detached(cmd);
 }
 
 fn spawn_gpu_power(powersave: bool) {
     let script = if powersave { "gpu-powersave-on" } else { "gpu-powersave-off" };
     let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(format!("/home/lsgalante/.local/share/cce-system-settings/helpers/{}", script));
+    cmd.arg(format!("/home/lsgalante/.local/share/cce-settings/helpers/{}", script));
     let _ = cce_ui::process::spawn_detached(cmd);
 }
 
@@ -776,7 +776,7 @@ pub fn read_notifications_config() -> NotificationsConfig {
 }
 
 fn parse_json(content: &str) -> serde_json::Value {
-    serde_json::from_str(content).unwrap_or_default()
+    cce_ui::config::parse_kdl_to_json(content)
 }
 
 fn parse_notifications_enable(content: &str) -> bool {
@@ -904,12 +904,12 @@ fn get_config_path() -> String {
             if let Some(path) = p.borrow().as_ref() {
                 return path.clone();
             }
-            "/home/lsgalante/.config/cce/config.json".to_string()
+            "/home/lsgalante/.config/cce/config.kdl".to_string()
         })
     }
     #[cfg(not(test))]
     {
-        "/home/lsgalante/.config/cce/config.json".to_string()
+        "/home/lsgalante/.config/cce/config.kdl".to_string()
     }
 }
 
@@ -937,39 +937,31 @@ mod tests {
 
     #[test]
     fn test_parse_notifications_enable_explicit() {
-        let content = "{\"notifications\": {\"enable\": false}}";
+        let content = "notifications {\n    enable (bool)false\n}\n";
         assert!(!parse_notifications_enable(content));
 
-        let content = "{\"notifications\": {\"enable\": true}}";
+        let content = "notifications {\n    enable (bool)true\n}\n";
         assert!(parse_notifications_enable(content));
     }
 
     #[test]
     fn test_parse_notifications_enable_other_sections() {
-        let content = r#"{
-            "layout": {"enable": false},
-            "notifications": {"enable": true},
-            "input": {"enable": false}
-        }"#;
+        let content = "layout {\n    enable (bool)false\n}\nnotifications {\n    enable (bool)true\n}\ninput {\n    enable (bool)false\n}\n";
         assert!(parse_notifications_enable(content));
 
-        let content = r#"{
-            "layout": {"enable": true},
-            "notifications": {"enable": false},
-            "input": {"enable": true}
-        }"#;
+        let content = "layout {\n    enable (bool)true\n}\nnotifications {\n    enable (bool)false\n}\ninput {\n    enable (bool)true\n}\n";
         assert!(!parse_notifications_enable(content));
     }
 
     #[test]
     fn test_parse_notifications_duration_default() {
         assert_eq!(parse_notifications_duration(""), 5);
-        assert_eq!(parse_notifications_duration("{\"notifications\": {}}"), 5);
+        assert_eq!(parse_notifications_duration("notifications {}"), 5);
     }
 
     #[test]
     fn test_parse_notifications_duration_explicit() {
-        let content = "{\"notifications\": {\"duration\": 10}}";
+        let content = "notifications {\n    duration (i64)10\n}\n";
         assert_eq!(parse_notifications_duration(content), 10);
     }
 

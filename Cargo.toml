@@ -1,5 +1,5 @@
 [package]
-name = "cce-system-settings"
+name = "cce-settings"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,12 +20,13 @@ zbus = "5"
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+kdl = "4.6"
 reqwest = { version = "0.12", features = ["json"] }
 
 [lib]
-name = "cce_system_settings"
+name = "cce_settings"
 path = "src/lib.rs"
 
 [[bin]]
 path = "src/main.rs"
-name = "cce-system-settings"
+name = "cce-settings"

@@ -1,8 +1,8 @@
 use cce_ui::widget::{Finger, hover_animation, Element, PageSelector};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
-use cce_system_settings::app::{AppAction, AppState};
-use cce_system_settings::pages::{self, Page};
+use cce_settings::app::{AppAction, AppState};
+use cce_settings::pages::{self, Page};
 mod input_handler;
 mod renderer;
 
@@ -233,7 +233,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let current_page_shared = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(initial_page_idx as u8));
 
         let (watchers, tx_backup, rx_backup, tx_update, rx_update) =
-            cce_system_settings::watchers::spawn_all(current_page_shared.clone());
+            cce_settings::watchers::spawn_all(current_page_shared.clone());
 
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::interface::read_preferred_fonts();
 
@@ -289,7 +289,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_packages: watchers.rx_packages,
             tx_update,
             rx_update,
-            last_write_mtime: std::fs::metadata("/home/lsgalante/.config/cce/config.json")
+            last_write_mtime: std::fs::metadata("/home/lsgalante/.config/cce/config.kdl")
                 .and_then(|m| m.modified())
                 .unwrap_or_else(|_| std::time::SystemTime::now()),
 
@@ -346,7 +346,7 @@ impl cce_ui::engine::Application for SystemInterface {
     fn settings(&self) -> cce_ui::engine::WindowSettings {
         cce_ui::engine::WindowSettings {
             title: "CCE System Settings".to_string(),
-            app_id: "cce-system-settings".to_string(),
+            app_id: "cce-settings".to_string(),
             width: 820,
             height: 680,
             fullscreen: false,
@@ -360,7 +360,7 @@ impl cce_ui::engine::Application for SystemInterface {
             return;
         }
         self.handle_action(&msg);
-        if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.json") {
+        if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.kdl") {
             if let Ok(mtime) = metadata.modified() {
                 self.last_write_mtime = mtime;
             }
@@ -384,7 +384,7 @@ impl cce_ui::engine::Application for SystemInterface {
             self.handle_action(&action);
         }
         if has_actions {
-            if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.json") {
+            if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.kdl") {
                 if let Ok(mtime) = metadata.modified() {
                     self.last_write_mtime = mtime;
                 }
@@ -879,16 +879,15 @@ fn main() {
     let mut initial_page = Page::ALL[0];
 
     // Try to load last_page from config
-    let config_path = "/home/lsgalante/.config/cce/config.json";
+    let config_path = "/home/lsgalante/.config/cce/config.kdl";
     if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(last_page_val) = val.pointer("/layout/last_page").and_then(|v| v.as_str()) {
-                let last_page_val = last_page_val.trim_matches('"').trim_matches('\'').trim().to_lowercase();
-                for page in Page::ALL {
-                    if page.label().to_lowercase() == last_page_val {
-                        initial_page = page;
-                        break;
-                    }
+        let val = cce_ui::config::parse_kdl_to_json(&content);
+        if let Some(last_page_val) = val.pointer("/layout/last_page").and_then(|v| v.as_str()) {
+            let last_page_val = last_page_val.trim_matches('"').trim_matches('\'').trim().to_lowercase();
+            for page in Page::ALL {
+                if page.label().to_lowercase() == last_page_val {
+                    initial_page = page;
+                    break;
                 }
             }
         }

@@ -3,7 +3,7 @@ use crate::pages::interface::get_config_path;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Label, Element, Toggle, Dropdown, Slider};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
 
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -113,7 +113,7 @@ pub enum DisplayMessage {
 }
 
 fn parse_json(content: &str) -> serde_json::Value {
-    serde_json::from_str(content).unwrap_or_default()
+    cce_ui::config::parse_kdl_to_json(content)
 }
 
 fn parse_screensaver_enable(content: &str) -> bool {
@@ -702,10 +702,10 @@ mod tests {
     fn test_read_write_display_scale() {
         use crate::pages::interface::TEST_CONFIG_PATH;
         let dir = std::env::temp_dir();
-        let path = dir.join("test_display_scale_config.json");
+        let path = dir.join("test_display_scale_config.kdl");
         let path_str = path.to_str().unwrap().to_string();
 
-        let initial_content = "{\"display\": {\"scale_eDP-1\": 1.25}}";
+        let initial_content = "display {\n    scale_eDP-1 (f64)1.25\n}\n";
         std::fs::write(&path_str, initial_content).unwrap();
 
         TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(path_str.clone()));
@@ -715,7 +715,8 @@ mod tests {
         TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = None);
 
         let updated = std::fs::read_to_string(&path_str).unwrap();
-        assert!(updated.contains("\"scale_eDP-1\": 1.5"));
+        assert!(updated.contains("scale_eDP-1"));
+        assert!(updated.contains("1.5"));
 
         let _ = std::fs::remove_file(path);
     }

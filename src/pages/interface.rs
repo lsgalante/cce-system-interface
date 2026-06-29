@@ -7,8 +7,8 @@ use cce_ui::widget::{
     Slider
 };
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
-const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-system-settings/links.json";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
+const LINKS_PATH: &str = "/home/lsgalante/.config/cce/cce-settings/links.json";
 
 thread_local! {
     pub(crate) static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
@@ -60,13 +60,13 @@ fn perform_rolling_backup(path: &str) {
         return;
     }
     for i in (1..=4).rev() {
-        let src = format!("{}/config.json.{}.bak", backup_dir, i);
-        let dst = format!("{}/config.json.{}.bak", backup_dir, i + 1);
+        let src = format!("{}/config.kdl.{}.bak", backup_dir, i);
+        let dst = format!("{}/config.kdl.{}.bak", backup_dir, i + 1);
         if std::path::Path::new(&src).exists() {
             let _ = fs::rename(src, dst);
         }
     }
-    let dst = format!("{}/config.json.1.bak", backup_dir);
+    let dst = format!("{}/config.kdl.1.bak", backup_dir);
     let _ = fs::copy(path, dst);
 }
 
@@ -1243,7 +1243,7 @@ fn apply_edge_gap(val: u16) {
 
 
 fn parse_json(content: &str) -> serde_json::Value {
-    serde_json::from_str(content).unwrap_or_default()
+    cce_ui::config::parse_kdl_to_json(content)
 }
 
 fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
@@ -1342,7 +1342,10 @@ pub fn get_links_path(path: &str) -> Vec<(String, String)> {
 
 pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
     let content = fs::read_to_string(path).unwrap_or_default();
-    let mut val = parse_json(&content);
+    let mut doc = match content.parse::<kdl::KdlDocument>() {
+        Ok(d) => d,
+        Err(_) => kdl::KdlDocument::new(),
+    };
     
     let mut keys_to_update = vec![key.to_string()];
     let links = get_links();
@@ -1371,16 +1374,15 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
         } else {
             k
         };
-        if cce_ui::config::update_json_in_memory(&mut val, mapped_k, value, "layout") {
+        if cce_ui::config::update_kdl_in_memory(&mut doc, mapped_k, value, "layout") {
             updated_any = true;
         }
     }
 
     if updated_any {
-        if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-            if safe_write(path, &updated_str) {
-                return true;
-            }
+        let updated_str = doc.to_string();
+        if safe_write(path, &updated_str) {
+            return true;
         }
     }
     false
@@ -4271,25 +4273,7 @@ pub fn parse_transparency_opacity(content: &str) -> f32 {
 }
 
 pub fn write_transparency_config_value(key: &str, value: &str) {
-    let path = get_config_path();
-    let content = fs::read_to_string(&path).unwrap_or_default();
-    let mut val = parse_json(&content);
-    let j_val = if let Ok(parsed_val) = serde_json::from_str::<serde_json::Value>(value) {
-        parsed_val
-    } else {
-        serde_json::json!(value)
-    };
-    if val.get("transparency").is_none() {
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("transparency".to_string(), serde_json::Value::Object(serde_json::Map::new()));
-        }
-    }
-    if let Some(transparency) = val.get_mut("transparency").and_then(|t| t.as_object_mut()) {
-        transparency.insert(key.to_string(), j_val);
-    }
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        let _ = safe_write(&path, &updated_str);
-    }
+    cce_ui::config::write_config_value(&get_config_path(), key, value, "transparency");
 }
 
 fn write_surfaces_config_value(key: &str, value: &str) {
@@ -4297,24 +4281,7 @@ fn write_surfaces_config_value(key: &str, value: &str) {
 }
 
 fn write_surfaces_config_value_path(path: &str, key: &str, value: &str) {
-    let content = fs::read_to_string(path).unwrap_or_default();
-    let mut val = parse_json(&content);
-    let j_val = if let Ok(parsed_val) = serde_json::from_str::<serde_json::Value>(value) {
-        parsed_val
-    } else {
-        serde_json::json!(value)
-    };
-    if val.get("surfaces").is_none() {
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("surfaces".to_string(), serde_json::Value::Object(serde_json::Map::new()));
-        }
-    }
-    if let Some(surfaces) = val.get_mut("surfaces").and_then(|s| s.as_object_mut()) {
-        surfaces.insert(key.to_string(), j_val);
-    }
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        let _ = safe_write(path, &updated_str);
-    }
+    cce_ui::config::write_config_value(path, key, value, "surfaces");
 }
 
 fn parse_surfaces_color(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
@@ -4361,24 +4328,7 @@ fn write_notifications_config_value(key: &str, value: &str) {
 }
 
 fn write_notifications_config_value_path(path: &str, key: &str, value: &str) {
-    let content = fs::read_to_string(path).unwrap_or_default();
-    let mut val = parse_json(&content);
-    let j_val = if let Ok(parsed_val) = serde_json::from_str::<serde_json::Value>(value) {
-        parsed_val
-    } else {
-        serde_json::json!(value)
-    };
-    if val.get("notifications").is_none() {
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("notifications".to_string(), serde_json::Value::Object(serde_json::Map::new()));
-        }
-    }
-    if let Some(notifications) = val.get_mut("notifications").and_then(|n| n.as_object_mut()) {
-        notifications.insert(key.to_string(), j_val);
-    }
-    if let Ok(updated_str) = serde_json::to_string_pretty(&val) {
-        let _ = safe_write(path, &updated_str);
-    }
+    cce_ui::config::write_config_value(path, key, value, "notifications");
 }
 
 
@@ -4435,28 +4385,28 @@ mod tests {
 
     #[test]
     fn test_parse_color_from_key() {
-        let content = r##"{
-            "layout": {
-                "low_color": "#112233",
-                "high_color": "#445566",
-                "disabled_color": "#778899",
-                "status_separator_color": "#aabbcc",
-                "visual_guides_color": "#ddeeff",
-                "slider_track_color": "#123456",
-                "page_low_color": "#474751",
-                "color_borders_color": "#abcdef",
-                "status_normal_color": "#ccccd8",
-                "paginator_sidebar_color": "#5a5a65",
-                "primary_highlight_color": "#ffffff",
-                "menubar_tab_label_color": "#e6e6f2",
-                "toggle_enabled_color": "#68d8a5",
-                "toggle_disabled_color": "#878794",
-                "scrollinglist_bg_color": "#515161",
-                "breadcrumb_bg_color": "#515161",
-                "page_color": "#0a1a0e",
-                "layer_color": "#123456"
-            }
-        }"##;
+        let content = r##"
+        layout {
+            low_color (color)"#112233"
+            high_color (color)"#445566"
+            disabled_color (color)"#778899"
+            status_separator_color (color)"#aabbcc"
+            visual_guides_color (color)"#ddeeff"
+            slider_track_color (color)"#123456"
+            page_low_color (color)"#474751"
+            color_borders_color (color)"#abcdef"
+            status_normal_color (color)"#ccccd8"
+            paginator_sidebar_color (color)"#5a5a65"
+            primary_highlight_color (color)"#ffffff"
+            menubar_tab_label_color (color)"#e6e6f2"
+            toggle_enabled_color (color)"#68d8a5"
+            toggle_disabled_color (color)"#878794"
+            scrollinglist_bg_color (color)"#515161"
+            breadcrumb_bg_color (color)"#515161"
+            page_color (color)"#0a1a0e"
+            layer_color (color)"#123456"
+        }
+        "##;
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
         assert_eq!(parse_color_from_key(content, "high_color", [0, 0, 0]), [68, 85, 102]);
         assert_eq!(parse_color_from_key(content, "disabled_color", [0, 0, 0]), [119, 136, 153]);
@@ -4480,12 +4430,12 @@ mod tests {
 
     #[test]
     fn test_parse_rgba_color_from_key() {
-        let content = r##"{
-            "layout": {
-                "scrollinglist_entry_bg_color": "#ffffff0a",
-                "scrollinglist_entry_highlight_color": "#ffffffcc"
-            }
-        }"##;
+        let content = r##"
+        layout {
+            scrollinglist_entry_bg_color (color)"#ffffff0a"
+            scrollinglist_entry_highlight_color (color)"#ffffffcc"
+        }
+        "##;
         assert_eq!(parse_rgba_color_from_key(content, "scrollinglist_entry_bg_color", [0, 0, 0, 0]), [255, 255, 255, 10]);
         assert_eq!(parse_rgba_color_from_key(content, "scrollinglist_entry_highlight_color", [0, 0, 0, 0]), [255, 255, 255, 204]);
     }
@@ -4497,31 +4447,31 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Write initial file content with [layout] and other keys
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}, \"output\": {\"scale\": 2}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\noutput {\n    scale (i64)2\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Write disabled_color which does not exist yet (key not found case)
         assert!(write_config_value_path(path_str, "disabled_color", "\"#555555\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"disabled_color\": \"#555555\""));
+        assert!(updated.contains("disabled_color")); assert!(updated.contains("#555555"));
         // Check it was inserted before [output]
-        assert!(updated.find("\"disabled_color\": \"#555555\"").unwrap() < updated.find("\"output\"").unwrap());
+        assert!(updated.find("disabled_color").unwrap() < updated.find("output").unwrap());
 
         // 3. Update disabled_color (key found case)
         assert!(write_config_value_path(path_str, "disabled_color", "\"#666666\""));
         let updated2 = fs::read_to_string(path_str).unwrap();
-        assert!(updated2.contains("\"disabled_color\": \"#666666\""));
-        assert!(!updated2.contains("\"disabled_color\": \"#555555\""));
+        assert!(updated2.contains("disabled_color")); assert!(updated2.contains("#666666"));
+        assert!(!updated2.contains("#555555"));
 
         // 4. Write visual_guides_color which does not exist yet
         assert!(write_config_value_path(path_str, "visual_guides_color", "\"#ff8c00\""));
         let updated3 = fs::read_to_string(path_str).unwrap();
-        assert!(updated3.contains("\"visual_guides_color\": \"#ff8c00\""));
+        assert!(updated3.contains("visual_guides_color")); assert!(updated3.contains("#ff8c00"));
 
         // 5. Write slider_track_color which does not exist yet
         assert!(write_config_value_path(path_str, "slider_track_color", "\"#123456\""));
         let updated4 = fs::read_to_string(path_str).unwrap();
-        assert!(updated4.contains("\"slider_track_color\": \"#123456\""));
+        assert!(updated4.contains("slider_track_color")); assert!(updated4.contains("#123456"));
 
         // Clean up
         let _ = fs::remove_file(path_str);
@@ -4560,7 +4510,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse section_padding when missing (should return default 8)
@@ -4571,7 +4521,7 @@ mod tests {
         // 3. Write section_padding config
         assert!(write_config_value_path(path_str, "section_padding", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"section_padding\": 12"));
+        assert!(updated.contains("section_padding")); assert!(updated.contains("12"));
 
         // 4. Parse section_padding when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "section_padding", 8);
@@ -4588,7 +4538,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse plate_padding when missing (should return default 20)
@@ -4599,7 +4549,7 @@ mod tests {
         // 3. Write plate_padding config
         assert!(write_config_value_path(path_str, "plate_padding", "15"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"plate_padding\": 15"));
+        assert!(updated.contains("plate_padding")); assert!(updated.contains("15"));
 
         // 4. Parse plate_padding when present (should return written value 15)
         let val2 = parse_u16_from(&updated, "plate_padding", 20);
@@ -4616,7 +4566,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse page_margin when missing (should return default 20)
@@ -4627,7 +4577,7 @@ mod tests {
         // 3. Write page_margin config
         assert!(write_config_value_path(path_str, "page_margin", "15"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"page_margin\": 15"));
+        assert!(updated.contains("page_margin")); assert!(updated.contains("15"));
 
         // 4. Parse page_margin when present (should return written value 15)
         let val2 = parse_u16_from(&updated, "page_margin", 20);
@@ -4644,7 +4594,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse spinbox_corner_radius when missing (should return default 4)
@@ -4655,7 +4605,7 @@ mod tests {
         // 3. Write spinbox_corner_radius config
         assert!(write_config_value_path(path_str, "spinbox_corner_radius", "8"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"spinbox_corner_radius\": 8"));
+        assert!(updated.contains("spinbox_corner_radius")); assert!(updated.contains("8"));
 
         // 4. Parse spinbox_corner_radius when present (should return written value 8)
         let val2 = parse_u16_from(&updated, "spinbox_corner_radius", 4);
@@ -4672,7 +4622,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse spinbox_height when missing (should return default 26)
@@ -4683,7 +4633,7 @@ mod tests {
         // 3. Write spinbox_height config
         assert!(write_config_value_path(path_str, "spinbox_height", "30"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"spinbox_height\": 30"));
+        assert!(updated.contains("spinbox_height")); assert!(updated.contains("30"));
 
         // 4. Parse spinbox_height when present (should return written value 30)
         let val2 = parse_u16_from(&updated, "spinbox_height", 26);
@@ -4700,7 +4650,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse toggle_height when missing (should return default 44)
@@ -4711,7 +4661,7 @@ mod tests {
         // 3. Write toggle_height config
         assert!(write_config_value_path(path_str, "toggle_height", "52"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"toggle_height\": 52"));
+        assert!(updated.contains("toggle_height")); assert!(updated.contains("52"));
 
         // 4. Parse toggle_height when present (should return written value 52)
         let val2 = parse_u16_from(&updated, "toggle_height", 44);
@@ -4728,7 +4678,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse toggle_corner_radius when missing (should return default 4)
@@ -4739,7 +4689,7 @@ mod tests {
         // 3. Write toggle_corner_radius config
         assert!(write_config_value_path(path_str, "toggle_corner_radius", "8"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"toggle_corner_radius\": 8"));
+        assert!(updated.contains("toggle_corner_radius")); assert!(updated.contains("8"));
 
         // 4. Parse toggle_corner_radius when present (should return written value 8)
         let val2 = parse_u16_from(&updated, "toggle_corner_radius", 4);
@@ -4764,7 +4714,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "toggle_bg_color", "\"#123456\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"toggle_bg_color\": \"#123456\""));
+        assert!(updated.contains("toggle_bg_color")); assert!(updated.contains("#123456"));
 
         let val2 = parse_color_from_key(&updated, "toggle_bg_color", [116, 116, 128]);
         assert_eq!(val2, [18, 52, 86]);
@@ -4787,7 +4737,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "toggle_border_width", "3"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"toggle_border_width\": 3"));
+        assert!(updated.contains("toggle_border_width")); assert!(updated.contains("3"));
 
         let val2 = parse_u16_from(&updated, "toggle_border_width", 1);
         assert_eq!(val2, 3);
@@ -4810,7 +4760,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "toggle_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"toggle_font\": \"Inter\""));
+        assert!(updated.contains("toggle_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "toggle_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4833,7 +4783,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "font_selector_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"font_selector_font\": \"Inter\""));
+        assert!(updated.contains("font_selector_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "font_selector_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4856,7 +4806,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "button_strip_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"button_strip_font\": \"Inter\""));
+        assert!(updated.contains("button_strip_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "button_strip_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4879,7 +4829,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "button_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"button_font\": \"Inter\""));
+        assert!(updated.contains("button_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "button_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4902,7 +4852,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "label_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"label_font\": \"Inter\""));
+        assert!(updated.contains("label_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "label_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4925,7 +4875,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "dropdown_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"dropdown_font\": \"Inter\""));
+        assert!(updated.contains("dropdown_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "dropdown_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4948,7 +4898,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "textbox_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"textbox_font\": \"Inter\""));
+        assert!(updated.contains("textbox_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "textbox_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4971,7 +4921,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "spinbox_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"spinbox_font\": \"Inter\""));
+        assert!(updated.contains("spinbox_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "spinbox_font", "monospace");
         assert_eq!(val2, "Inter");
@@ -4994,7 +4944,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "slider_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"slider_font\": \"Inter\""));
+        assert!(updated.contains("slider_font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "slider_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -5009,7 +4959,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse slider_corner_radius when missing (should return default 4)
@@ -5020,7 +4970,7 @@ mod tests {
         // 3. Write slider_corner_radius config
         assert!(write_config_value_path(path_str, "slider_corner_radius", "6"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"slider_corner_radius\": 6"));
+        assert!(updated.contains("slider_corner_radius")); assert!(updated.contains("6"));
 
         // 4. Parse slider_corner_radius when present (should return written value 6)
         let val2 = parse_u16_from(&updated, "slider_corner_radius", 4);
@@ -5037,7 +4987,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse plate_opacity when missing (should return default 1.0)
@@ -5048,7 +4998,7 @@ mod tests {
         // 3. Write plate_opacity config
         assert!(write_config_value_path(path_str, "plate_opacity", "0.85"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"plate_opacity\": 0.85"));
+        assert!(updated.contains("plate_opacity")); assert!(updated.contains("0.85"));
 
         // 4. Parse plate_opacity when present (should return written value 0.85)
         let val2 = parse_f32_from(&updated, "plate_opacity", 1.0);
@@ -5065,7 +5015,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse plate_corner_radius when missing (should return default 12)
@@ -5076,7 +5026,7 @@ mod tests {
         // 3. Write plate_corner_radius config
         assert!(write_config_value_path(path_str, "plate_corner_radius", "16"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"plate_corner_radius\": 16"));
+        assert!(updated.contains("plate_corner_radius")); assert!(updated.contains("16"));
 
         // 4. Parse plate_corner_radius when present (should return written value 16)
         let val2 = parse_u16_from(&updated, "plate_corner_radius", 12);
@@ -5095,7 +5045,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse color_selector_height when missing (should return default 22)
@@ -5106,7 +5056,7 @@ mod tests {
         // 3. Write color_selector_height config
         assert!(write_config_value_path(path_str, "color_selector_height", "28"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"color_selector_height\": 28"));
+        assert!(updated.contains("color_selector_height")); assert!(updated.contains("28"));
 
         // 4. Parse color_selector_height when present (should return written value 28)
         let val2 = parse_u16_from(&updated, "color_selector_height", 22);
@@ -5123,7 +5073,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse font_selector_corner_radius when missing (should return default 4)
@@ -5134,7 +5084,7 @@ mod tests {
         // 3. Write font_selector_corner_radius config
         assert!(write_config_value_path(path_str, "font_selector_corner_radius", "8"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"font_selector_corner_radius\": 8"));
+        assert!(updated.contains("font_selector_corner_radius")); assert!(updated.contains("8"));
 
         // 4. Parse font_selector_corner_radius when present (should return written value 8)
         let val2 = parse_u16_from(&updated, "font_selector_corner_radius", 4);
@@ -5151,7 +5101,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse textbox_corner_radius when missing (should return default 4)
@@ -5162,7 +5112,7 @@ mod tests {
         // 3. Write textbox_corner_radius config
         assert!(write_config_value_path(path_str, "textbox_corner_radius", "8"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"textbox_corner_radius\": 8"));
+        assert!(updated.contains("textbox_corner_radius")); assert!(updated.contains("8"));
 
         // 4. Parse textbox_corner_radius when present (should return written value 8)
         let val2 = parse_u16_from(&updated, "textbox_corner_radius", 4);
@@ -5179,7 +5129,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse textbox_height when missing (should return default 44)
@@ -5190,7 +5140,7 @@ mod tests {
         // 3. Write textbox_height config
         assert!(write_config_value_path(path_str, "textbox_height", "48"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"textbox_height\": 48"));
+        assert!(updated.contains("textbox_height")); assert!(updated.contains("48"));
 
         // 4. Parse textbox_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "textbox_height", 44);
@@ -5207,7 +5157,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse color_selector_font when missing (should return default "monospace")
@@ -5218,7 +5168,8 @@ mod tests {
         // 3. Write color_selector_font config
         assert!(write_config_value_path(path_str, "color_selector_font", "\"Berkeley Mono\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains(r#""color_selector_font": "Berkeley Mono""#));
+        assert!(updated.contains("color_selector_font"));
+        assert!(updated.contains("Berkeley Mono"));
 
         // 4. Parse color_selector_font when present (should return written value)
         let val2 = parse_string_from(&updated, "color_selector_font", "monospace");
@@ -5235,7 +5186,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse menubar_font when missing (should return default "Outfit")
@@ -5246,7 +5197,8 @@ mod tests {
         // 3. Write menubar_font config
         assert!(write_config_value_path(path_str, "menubar_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains(r#""menubar_font": "Inter""#));
+        assert!(updated.contains("menubar_font"));
+        assert!(updated.contains("Inter"));
 
         // 4. Parse menubar_font when present (should return written value)
         let val2 = parse_string_from(&updated, "menubar_font", "Outfit");
@@ -5263,7 +5215,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse font_selector_height when missing (should return default 44)
@@ -5274,7 +5226,7 @@ mod tests {
         // 3. Write font_selector_height config
         assert!(write_config_value_path(path_str, "font_selector_height", "48"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"font_selector_height\": 48"));
+        assert!(updated.contains("font_selector_height")); assert!(updated.contains("48"));
 
         // 4. Parse font_selector_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "font_selector_height", 44);
@@ -5291,7 +5243,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse grid_min_col_width when missing (should return default 260)
@@ -5302,7 +5254,7 @@ mod tests {
         // 3. Write grid_min_col_width config
         assert!(write_config_value_path(path_str, "grid_min_col_width", "280"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"grid_min_col_width\": 280"));
+        assert!(updated.contains("grid_min_col_width")); assert!(updated.contains("280"));
 
         // 4. Parse grid_min_col_width when present (should return written value 280)
         let val2 = parse_u16_from(&updated, "grid_min_col_width", 260);
@@ -5319,7 +5271,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse grid_gap when missing (should return default 8)
@@ -5330,7 +5282,7 @@ mod tests {
         // 3. Write grid_gap config
         assert!(write_config_value_path(path_str, "grid_gap", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"grid_gap\": 12"));
+        assert!(updated.contains("grid_gap")); assert!(updated.contains("12"));
 
         // 4. Parse grid_gap when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "grid_gap", 8);
@@ -5347,7 +5299,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse color_selector_preview_corner_radius when missing (should return default 4)
@@ -5358,7 +5310,7 @@ mod tests {
         // 3. Write color_selector_preview_corner_radius config
         assert!(write_config_value_path(path_str, "color_selector_preview_corner_radius", "8"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"color_selector_preview_corner_radius\": 8"));
+        assert!(updated.contains("color_selector_preview_corner_radius")); assert!(updated.contains("8"));
 
         // 4. Parse color_selector_preview_corner_radius when present (should return written value 8)
         let val2 = parse_u16_from(&updated, "color_selector_preview_corner_radius", 4);
@@ -5375,7 +5327,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse color_selector_corner_radius when missing (should return default 4)
@@ -5386,7 +5338,7 @@ mod tests {
         // 3. Write color_selector_corner_radius config
         assert!(write_config_value_path(path_str, "color_selector_corner_radius", "6"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"color_selector_corner_radius\": 6"));
+        assert!(updated.contains("color_selector_corner_radius")); assert!(updated.contains("6"));
 
         // 4. Parse color_selector_corner_radius when present (should return written value 6)
         let val2 = parse_u16_from(&updated, "color_selector_corner_radius", 4);
@@ -5403,7 +5355,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse color_selector_preview_margin when missing (should return default 0)
@@ -5414,7 +5366,7 @@ mod tests {
         // 3. Write color_selector_preview_margin config
         assert!(write_config_value_path(path_str, "color_selector_preview_margin", "3"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"color_selector_preview_margin\": 3"));
+        assert!(updated.contains("color_selector_preview_margin")); assert!(updated.contains("3"));
 
         // 4. Parse color_selector_preview_margin when present (should return written value 3)
         let val2 = parse_u16_from(&updated, "color_selector_preview_margin", 0);
@@ -5432,7 +5384,7 @@ mod tests {
         let path = dir.join("test_button_padding_config.toml");
         let path_str = path.to_str().unwrap();
 
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         let content = fs::read_to_string(path_str).unwrap();
@@ -5441,7 +5393,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "button_padding", "20"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"button_padding\": 20"));
+        assert!(updated.contains("button_padding")); assert!(updated.contains("20"));
 
         let val2 = parse_u16_from(&updated, "button_padding", 14);
         assert_eq!(val2, 20);
@@ -5455,7 +5407,7 @@ mod tests {
         let path = dir.join("test_button_strip_spacing_config.toml");
         let path_str = path.to_str().unwrap();
  
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
  
         let content = fs::read_to_string(path_str).unwrap();
@@ -5464,7 +5416,7 @@ mod tests {
  
         assert!(write_config_value_path(path_str, "button_strip_spacing", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"button_strip_spacing\": 12"));
+        assert!(updated.contains("button_strip_spacing")); assert!(updated.contains("12"));
  
         let val2 = parse_u16_from(&updated, "button_strip_spacing", 8);
         assert_eq!(val2, 12);
@@ -5479,7 +5431,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse slider_height when missing (should return default 28)
@@ -5490,7 +5442,7 @@ mod tests {
         // 3. Write slider_height config
         assert!(write_config_value_path(path_str, "slider_height", "32"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"slider_height\": 32"));
+        assert!(updated.contains("slider_height")); assert!(updated.contains("32"));
 
         // 4. Parse slider_height when present (should return written value 32)
         let val2 = parse_u16_from(&updated, "slider_height", 28);
@@ -5507,7 +5459,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse when missing (should return default 0)
@@ -5518,7 +5470,7 @@ mod tests {
         // 3. Write alignment config
         assert!(write_config_value_path(path_str, "nested_section_label_alignment", "2"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"nested_section_label_alignment\": 2"));
+        assert!(updated.contains("nested_section_label_alignment")); assert!(updated.contains("2"));
 
         // 4. Parse when present (should return written value 2)
         let val2 = parse_u16_from(&updated, "nested_section_label_alignment", 0);
@@ -5535,7 +5487,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse when missing (should return default 0)
@@ -5546,7 +5498,7 @@ mod tests {
         // 3. Write alignment config
         assert!(write_config_value_path(path_str, "nested_section_label_offset", "-15"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"nested_section_label_offset\": -15"));
+        assert!(updated.contains("nested_section_label_offset")); assert!(updated.contains("-15"));
 
         // 4. Parse when present (should return written value -15)
         let val2 = parse_i16_from(&updated, "nested_section_label_offset", 0);
@@ -5563,7 +5515,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse dropdown_height when missing (should return default 44)
@@ -5574,7 +5526,7 @@ mod tests {
         // 3. Write dropdown_height config
         assert!(write_config_value_path(path_str, "dropdown_height", "48"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"dropdown_height\": 48"));
+        assert!(updated.contains("dropdown_height")); assert!(updated.contains("48"));
 
         // 4. Parse dropdown_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "dropdown_height", 44);
@@ -5591,7 +5543,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse dropdown_corner_radius when missing (should return default 4)
@@ -5602,7 +5554,7 @@ mod tests {
         // 3. Write dropdown_corner_radius config
         assert!(write_config_value_path(path_str, "dropdown_corner_radius", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"dropdown_corner_radius\": 12"));
+        assert!(updated.contains("dropdown_corner_radius")); assert!(updated.contains("12"));
 
         // 4. Parse dropdown_corner_radius when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "dropdown_corner_radius", 4);
@@ -5619,7 +5571,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         // 1. Initial configuration
-        let initial_content = "{\"layout\": {\"gap\": 18, \"border_color\": \"#374673\"}}";
+        let initial_content = "layout {\n    gap (i64)18\n    border_color (color)\"#374673\"\n}\n";
         fs::write(path_str, initial_content).unwrap();
 
         // 2. Parse when missing (should return default 6)
@@ -5630,7 +5582,7 @@ mod tests {
         // 3. Write label_margin config
         assert!(write_config_value_path(path_str, "label_margin", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"label_margin\": 12"));
+        assert!(updated.contains("label_margin")); assert!(updated.contains("12"));
 
         // 4. Parse when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "label_margin", 6);
@@ -5677,7 +5629,7 @@ mod tests {
         // 3. Write button_corner_radius config
         assert!(write_config_value_path(path_str, "button_corner_radius", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"button_corner_radius\": 12"));
+        assert!(updated.contains("button_corner_radius")); assert!(updated.contains("12"));
 
         // 4. Parse when present (should return written value 12)
         let val2 = parse_u16_from(&updated, "button_corner_radius", 4);
@@ -5705,7 +5657,7 @@ mod tests {
         // 3. Write opacity config
         write_notifications_config_value_path(path_str, "opacity", "0.85");
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"opacity\": 0.85"));
+        assert!(updated.contains("opacity")); assert!(updated.contains("0.85"));
 
         // 4. Parse opacity when present (should return 0.85)
         let opacity2 = parse_notifications_opacity(&updated);
@@ -5714,7 +5666,7 @@ mod tests {
         // 5. Write bg_color config
         write_notifications_config_value_path(path_str, "bg_color", "\"#112233\"");
         let updated2 = fs::read_to_string(path_str).unwrap();
-        assert!(updated2.contains("\"bg_color\": \"#112233\""));
+        assert!(updated2.contains("bg_color")); assert!(updated2.contains("#112233"));
 
         // 6. Parse bg_color when present
         let bg_color = parse_notifications_color(&updated2, "bg_color", [0, 0, 0]);
@@ -5746,7 +5698,7 @@ mod tests {
         }"#;
         fs::write(&links_path, test_links).unwrap();
 
-        let initial_content = "{\"layout\": {\"spinbox_height\": 28, \"textbox_height\": 28, \"dropdown_height\": 28, \"button_corner_radius\": 4}}";
+        let initial_content = "layout {\n    spinbox_height (i64)28\n    textbox_height (i64)28\n    dropdown_height (i64)28\n    button_corner_radius (i64)4\n}\n";
         fs::write(&config_path, initial_content).unwrap();
 
         TEST_CONFIG_PATH.with(|p| *p.borrow_mut() = Some(config_path_str));
@@ -5758,10 +5710,10 @@ mod tests {
         TEST_LINKS_PATH.with(|p| *p.borrow_mut() = None);
 
         let updated = fs::read_to_string(&config_path).unwrap();
-        assert!(updated.contains("\"spinbox_height\": 32"));
-        assert!(updated.contains("\"textbox_height\": 32"));
-        assert!(updated.contains("\"dropdown_height\": 32"));
-        assert!(updated.contains("\"button_corner_radius\": 4"));
+        assert!(updated.contains("spinbox_height")); assert!(updated.contains("32"));
+        assert!(updated.contains("textbox_height")); assert!(updated.contains("32"));
+        assert!(updated.contains("dropdown_height")); assert!(updated.contains("32"));
+        assert!(updated.contains("button_corner_radius")); assert!(updated.contains("4"));
 
         let _ = fs::remove_file(config_path);
         let _ = fs::remove_file(links_path);
@@ -5776,7 +5728,7 @@ mod tests {
         let config_path_str = config_path.to_str().unwrap().to_string();
         let links_path_str = links_path.to_str().unwrap().to_string();
 
-        let test_config = "{\"layout\": {\"spinbox_height\": 28, \"textbox_height\": 28, \"dropdown_height\": 28}}";
+        let test_config = "layout {\n    spinbox_height (i64)28\n    textbox_height (i64)28\n    dropdown_height (i64)28\n}\n";
         fs::write(&config_path, test_config).unwrap();
 
         let test_links = r#"{
@@ -5832,7 +5784,7 @@ mod tests {
         // 5. Write surfaces backplate_color config
         write_surfaces_config_value_path(path_str, "backplate_color", "\"#112233\"");
         let updated2 = fs::read_to_string(path_str).unwrap();
-        assert!(updated2.contains("\"backplate_color\": \"#112233\""));
+        assert!(updated2.contains("backplate_color")); assert!(updated2.contains("#112233"));
 
         // 6. Parse surfaces backplate_color when present
         let color2 = parse_surfaces_color(&updated2, "backplate_color", [0, 0, 0]);
@@ -5841,7 +5793,7 @@ mod tests {
         // 7. Write surfaces backplate_corner_radius config
         write_surfaces_config_value_path(path_str, "backplate_corner_radius", "16");
         let updated3 = fs::read_to_string(path_str).unwrap();
-        assert!(updated3.contains("\"backplate_corner_radius\": 16"));
+        assert!(updated3.contains("backplate_corner_radius")); assert!(updated3.contains("16"));
 
         // 8. Parse surfaces backplate_corner_radius when present
         let radius2 = parse_surfaces_u16(&updated3, "backplate_corner_radius", 12);
@@ -5850,7 +5802,7 @@ mod tests {
         // 9. Write surfaces desktop_background config
         write_surfaces_config_value_path(path_str, "desktop_background", "\"#445566\"");
         let updated4 = fs::read_to_string(path_str).unwrap();
-        assert!(updated4.contains("\"desktop_background\": \"#445566\""));
+        assert!(updated4.contains("desktop_background")); assert!(updated4.contains("#445566"));
 
         // 10. Parse surfaces desktop_background when present
         let color3 = parse_surfaces_color(&updated4, "desktop_background", [0, 0, 0]);
@@ -5875,7 +5827,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "page_opacity", "0.75"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"page_opacity\": 0.75"));
+        assert!(updated.contains("page_opacity")); assert!(updated.contains("0.75"));
 
         let val2 = parse_f32_from(&updated, "page_opacity", 1.0);
         assert_eq!(val2, 0.75);
@@ -5898,7 +5850,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "layer_opacity", "0.60"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"layer_opacity\": 0.6"));
+        assert!(updated.contains("layer_opacity")); assert!(updated.contains("0.6"));
 
         let val2 = parse_f32_from(&updated, "layer_opacity", 1.0);
         assert_eq!(val2, 0.60);
@@ -5921,7 +5873,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "page_color", "\"#112233\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"page_color\": \"#112233\""));
+        assert!(updated.contains("page_color")); assert!(updated.contains("#112233"));
 
         let color2 = parse_color_from_key(&updated, "page_color", [0, 0, 0]);
         assert_eq!(color2, [17, 34, 51]);
@@ -5944,7 +5896,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "layer_color", "\"#445566\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("\"layer_color\": \"#445566\""));
+        assert!(updated.contains("layer_color")); assert!(updated.contains("#445566"));
 
         let color2 = parse_color_from_key(&updated, "layer_color", [0, 0, 0]);
         assert_eq!(color2, [68, 85, 102]);

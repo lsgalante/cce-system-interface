@@ -5,7 +5,7 @@ use crate::app::{AppAction, PageContent};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Toggle, Trackpad, Dropdown, Finger, Element, TextBox, KeybindsControl};
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.json";
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
 
 fn get_socket_path() -> String {
     match std::env::var("WAYLAND_DISPLAY") {
@@ -288,7 +288,7 @@ pub fn read_input_config() -> InputState {
 }
 
 fn parse_json(content: &str) -> serde_json::Value {
-    serde_json::from_str(content).unwrap_or_default()
+    cce_ui::config::parse_kdl_to_json(content)
 }
 
 fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
@@ -774,11 +774,11 @@ mod tests {
 
     #[test]
     fn test_parse_scrolling_params() {
-        let content = r#"{"input": {"natural_scroll": true}, "inertial": {"scroll_speed": 2.5}}"#;
+        let content = "input {\n    natural_scroll (bool)true\n}\ninertial {\n    scroll_speed (f64)2.5\n}\n";
         assert_eq!(parse_bool_from_default(content, "natural_scroll", false), true);
         assert_eq!(parse_f32_key(content, "scroll_speed", 1.0), 2.5);
 
-        let empty_content = "{}";
+        let empty_content = "";
         assert_eq!(parse_bool_from_default(empty_content, "natural_scroll", false), false);
         assert_eq!(parse_f32_key(empty_content, "scroll_speed", 1.0), 1.0);
     }

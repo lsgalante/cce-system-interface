@@ -107,7 +107,7 @@ pub fn spawn_all(
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
-                        let mtime = std::fs::metadata("/home/lsgalante/.config/cce/config.json")
+                        let mtime = std::fs::metadata("/home/lsgalante/.config/cce/config.kdl")
                             .and_then(|m| m.modified())
                             .unwrap_or_else(|_| std::time::SystemTime::now());
                         let val = tokio::task::spawn_blocking(|| input::read_input_config()).await;
@@ -203,7 +203,7 @@ pub fn spawn_all(
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
-                        let mtime = std::fs::metadata("/home/lsgalante/.config/cce/config.json")
+                        let mtime = std::fs::metadata("/home/lsgalante/.config/cce/config.kdl")
                             .and_then(|m| m.modified())
                             .unwrap_or_else(|_| std::time::SystemTime::now());
                         let val = tokio::task::spawn_blocking(|| interface::read_interface_config()).await;
