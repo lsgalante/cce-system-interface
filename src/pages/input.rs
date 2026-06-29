@@ -395,6 +395,11 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         let pad_h = 158.0;
         state.trackpad.set_fingers(state.fingers.clone());
         sec.widget_full(&mut state.trackpad, pad_h, ctx);
+
+        state.trackpad_toggle.set_toggled(state.inertial_trackpad);
+        sec.widget_full(&mut state.trackpad_toggle, cce_ui::layout::toggle_height(), ctx);
+
+        sec.widget_full(&mut state.trackpad_friction_spinbox, 44.0, ctx);
     });
 
     // ── Trackpoint ──
@@ -440,11 +445,6 @@ pub fn view(state: &mut InputState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         sec.widget_full(&mut state.pointer_toggle, cce_ui::layout::toggle_height(), ctx);
 
         sec.widget_full(&mut state.pointer_friction_spinbox, 44.0, ctx);
-
-        state.trackpad_toggle.set_toggled(state.inertial_trackpad);
-        sec.widget_full(&mut state.trackpad_toggle, cce_ui::layout::toggle_height(), ctx);
-
-        sec.widget_full(&mut state.trackpad_friction_spinbox, 44.0, ctx);
     });
 
     // ── Graph ──
@@ -647,6 +647,8 @@ impl crate::pages::AppPage for InputState {
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.tap_toggle, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.trackpad, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.trackpad_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.trackpad_friction_spinbox, ctx);
 
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.dwtp_toggle, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.trackpoint_accel_speed_spinbox, ctx);
@@ -665,8 +667,6 @@ impl crate::pages::AppPage for InputState {
 
         cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.pointer_toggle, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.pointer_friction_spinbox, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.trackpad_toggle, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.trackpad_friction_spinbox, ctx);
 
         cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.zoom_in_box, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[6], &mut self.zoom_out_box, ctx);
