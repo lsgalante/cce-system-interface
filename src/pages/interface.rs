@@ -1247,29 +1247,21 @@ fn parse_json(content: &str) -> serde_json::Value {
 }
 
 fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
-    if let Some(obj) = val.as_object() {
-        let (sec, node, prop) = cce_ui::config::map_legacy_key(key, "layout");
-        if let Some(sec_val) = obj.get(&sec) {
-            if let Some(node_val) = sec_val.get(&node) {
-                if let Some(prop_name) = prop {
-                    if let Some(prop_val) = node_val.get(&prop_name) {
-                        return Some(prop_val);
-                    }
-                } else {
-                    return Some(node_val);
-                }
+    let mut current = val;
+    for part in key.split('.') {
+        if let Some(obj) = current.as_object() {
+            if let Some(next) = obj.get(part) {
+                current = next;
+            } else {
+                return None;
             }
-        }
-        for (_, sec_val) in obj.iter() {
-            if let Some(sec_obj) = sec_val.as_object() {
-                if let Some(v) = sec_obj.get(key) {
-                    return Some(v);
-                }
-            }
+        } else {
+            return None;
         }
     }
-    None
+    Some(current)
 }
+
 
 pub fn parse_string_from(content: &str, key: &str, default: &str) -> String {
     let val = parse_json(content);
@@ -1377,16 +1369,7 @@ pub fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
 
     let mut updated_any = false;
     for k in &keys_to_update {
-        let mapped_k = if k == key {
-            match key {
-                // Removed low_color
-                "high_color" => "border_color",
-                _ => k,
-            }
-        } else {
-            k
-        };
-        if cce_ui::config::update_kdl_in_memory(&mut doc, mapped_k, value, "layout") {
+        if cce_ui::config::update_kdl_in_memory(&mut doc, k, value, "layout") {
             updated_any = true;
         }
     }
@@ -1863,29 +1846,29 @@ fn write_status_value(key: &str, value: &str) {
 #[allow(dead_code)]
 fn read_status_padding() -> Option<u16> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_u16_from(&content, "status_padding", 8))
+    Some(parse_u16_from(&content, "layout.status_padding", 8))
 }
 
 fn write_status_padding(padding: u16) {
-    write_status_value("status_padding", &padding.to_string());
+    write_status_value("layout.status_padding", &padding.to_string());
 }
 
 fn read_status_box_opacity() -> Option<f32> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_f32_from(&content, "status_box_opacity", 1.0))
+    Some(parse_f32_from(&content, "style.status.box_opacity", 1.0))
 }
 
 fn write_status_box_opacity(val: f32) {
-    write_status_value("status_box_opacity", &val.to_string());
+    write_status_value("style.status.box_opacity", &val.to_string());
 }
 
 fn read_status_box_blur() -> Option<f32> {
     let content = std::fs::read_to_string(&get_config_path()).ok()?;
-    Some(parse_f32_from(&content, "status_box_blur", 0.0))
+    Some(parse_f32_from(&content, "style.status.box_blur", 0.0))
 }
 
 fn write_status_box_blur(val: f32) {
-    write_status_value("status_box_blur", &val.to_string());
+    write_status_value("style.status.box_blur", &val.to_string());
 }
 
 
@@ -4357,7 +4340,94 @@ mod tests {
         assert_eq!(parse_hex("invalid"), [0x0a, 0x1a, 0x0e]);
     }
 
+    fn map_test_key(key: &str) -> String {
+        if key.contains('.') {
+            return key.to_string();
+        }
+        let (sec, node, prop) = cce_ui::config::parse_config_path(
+            &match key {
+                "border_color" | "high_color" => "style.border.color".to_string(),
+                "border_width" => "style.border.width".to_string(),
+                "border_blur" => "style.border.blur".to_string(),
+                "border_font_size" => "style.border.font_size".to_string(),
+                "fullscreen_border_width" => "style.border.fullscreen_border_width".to_string(),
+                "cascade_border_width" => "style.border.cascade_border_width".to_string(),
+                "grid_border_width" => "style.border.grid_border_width".to_string(),
+                "floating_border_width" => "style.border.floating_border_width".to_string(),
+                "background_color" => "style.background.color".to_string(),
+                "button_font" => "style.button.font".to_string(),
+                "button_padding" => "style.button.padding".to_string(),
+                "button_strip_font" => "style.button_strip.font".to_string(),
+                "button_strip_spacing" => "style.button_strip.spacing".to_string(),
+                "dropdown_height" => "style.dropdown.height".to_string(),
+                "font_selector_height" => "style.font_selector.height".to_string(),
+                "label_font" => "style.label.font".to_string(),
+                "slider_height" => "style.slider.height".to_string(),
+                "slider_corner_radius" => "style.slider.corner_radius".to_string(),
+                "spinbox_height" => "style.spinbox.height".to_string(),
+                "textbox_height" => "style.textbox.height".to_string(),
+                "toggle_font" => "style.toggle.font".to_string(),
+                "toggle_height" => "style.toggle.height".to_string(),
+                "toggle_border_width" => "style.toggle.border_width".to_string(),
+                "toggle_disabled_color" => "style.toggle.disabled_color".to_string(),
+                "status_normal_color" => "style.status.normal_color".to_string(),
+                "status_box_opacity" => "style.status.box_opacity".to_string(),
+                "primary_highlight_color" => "style.highlight.primary".to_string(),
+                "window_opacity" => "style.window.opacity".to_string(),
+                "floating_backplate_opacity" => "style.window.floating_backplate_opacity".to_string(),
+                "window_blur" => "style.window.blur".to_string(),
+                "page_opacity" => "style.window.page_opacity".to_string(),
+                "page_margin" => "style.window.page_margin".to_string(),
+                "plate_padding" => "style.window.plate_padding".to_string(),
+                "transition_duration" => "style.window.transition_duration".to_string(),
+                "overlay_behavior" => "style.overlay.behavior".to_string(),
+                "overlay_width" => "style.overlay.width".to_string(),
+                "overlay_position" => "style.overlay.position".to_string(),
+                "overlay_border_gap" => "style.overlay.border_gap".to_string(),
+                "last_page" => "style.editor.last_page".to_string(),
+                
+                "gap" => "layout.gap".to_string(),
+                "gap_top" => "layout.gap_top".to_string(),
+                "gap_left" => "layout.gap_left".to_string(),
+                "gap_right" => "layout.gap_right".to_string(),
+                "gap_bottom" => "layout.gap_bottom".to_string(),
+                "cascade_offset" => "layout.cascade_offset".to_string(),
+                "bar_height" => "layout.bar_height".to_string(),
+                "grid_gap" => "layout.grid_gap".to_string(),
+                "section_padding" => "layout.section_padding".to_string(),
+                
+                _ => format!("layout.{}", key),
+            },
+            "layout"
+        );
+        if let Some(p) = prop {
+            format!("{}.{}.{}", sec, node, p)
+        } else {
+            format!("{}.{}", sec, node)
+        }
+    }
 
+    fn parse_u16_from(content: &str, key: &str, default: u16) -> u16 {
+        super::parse_u16_from(content, &map_test_key(key), default)
+    }
+    fn parse_i16_from(content: &str, key: &str, default: i16) -> i16 {
+        super::parse_i16_from(content, &map_test_key(key), default)
+    }
+    fn parse_f32_from(content: &str, key: &str, default: f32) -> f32 {
+        super::parse_f32_from(content, &map_test_key(key), default)
+    }
+    fn parse_string_from(content: &str, key: &str, default: &str) -> String {
+        super::parse_string_from(content, &map_test_key(key), default)
+    }
+    fn parse_color_from_key(content: &str, key: &str, default: [u8; 3]) -> [u8; 3] {
+        super::parse_color_from_key(content, &map_test_key(key), default)
+    }
+    fn parse_rgba_color_from_key(content: &str, key: &str, default: [u8; 4]) -> [u8; 4] {
+        super::parse_rgba_color_from_key(content, &map_test_key(key), default)
+    }
+    fn write_config_value_path(path: &str, key: &str, value: &str) -> bool {
+        super::write_config_value_path(path, &map_test_key(key), value)
+    }
 
     #[test]
     fn test_interface_spinbox_right_click_crash() {
@@ -4402,23 +4472,33 @@ mod tests {
         let content = r##"
         layout {
             low_color (color)"#112233"
-            high_color (color)"#445566"
             disabled_color (color)"#778899"
             status_separator_color (color)"#aabbcc"
             visual_guides_color (color)"#ddeeff"
             slider_track_color (color)"#123456"
             page_low_color (color)"#474751"
             color_borders_color (color)"#abcdef"
-            status_normal_color (color)"#ccccd8"
             paginator_sidebar_color (color)"#5a5a65"
-            primary_highlight_color (color)"#ffffff"
             menubar_tab_label_color (color)"#e6e6f2"
             toggle_enabled_color (color)"#68d8a5"
-            toggle_disabled_color (color)"#878794"
             scrollinglist_bg_color (color)"#515161"
             breadcrumb_bg_color (color)"#515161"
             page_color (color)"#0a1a0e"
             layer_color (color)"#123456"
+        }
+        style {
+            border {
+                color (color)"#445566"
+            }
+            status {
+                normal_color (color)"#ccccd8"
+            }
+            highlight {
+                primary (string)"#ffffff"
+            }
+            toggle {
+                disabled_color (string)"#878794"
+            }
         }
         "##;
         assert_eq!(parse_color_from_key(content, "low_color", [0, 0, 0]), [17, 34, 51]);
@@ -6008,6 +6088,9 @@ mod tests {
 
         let original = read_status_padding().unwrap_or(8);
         write_status_padding(12);
+        let content = fs::read_to_string(get_config_path()).unwrap();
+        println!("CONTENT: {:?}", content);
+        println!("PARSED JSON: {:?}", parse_json(&content));
         assert_eq!(read_status_padding(), Some(12));
         write_status_padding(original);
         assert_eq!(read_status_padding(), Some(original));

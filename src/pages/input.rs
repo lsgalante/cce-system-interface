@@ -116,9 +116,9 @@ impl Default for InputState {
             tap_to_click: false,
             repeat_rate: 50,
             repeat_delay: 300,
-            rate_spinbox: Spinbox::new(50, 1, 100, 1).with_label("Repeat Rate").with_unit("ms").with_config(CONFIG_PATH, "rate"),
-            delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms").with_config(CONFIG_PATH, "delay"),
-            tap_toggle: Toggle::new().with_label("Tap to Click").with_config(CONFIG_PATH, "tap_to_click"),
+            rate_spinbox: Spinbox::new(50, 1, 100, 1).with_label("Repeat Rate").with_unit("ms").with_config(CONFIG_PATH, "repeat.rate"),
+            delay_spinbox: Spinbox::new(300, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms").with_config(CONFIG_PATH, "repeat.delay"),
+            tap_toggle: Toggle::new().with_label("Tap to Click").with_config(CONFIG_PATH, "input.tap_to_click"),
             keybinds: Vec::new(),
             fingers: Vec::new(),
             trackpad: Trackpad::new(),
@@ -130,36 +130,36 @@ impl Default for InputState {
             inertial_trackpad: false,
             trackpad_friction: 95,
 
-            scroll_toggle: Toggle::new().with_label("Inertial Scroll").with_config(CONFIG_PATH, "inertial_scroll"),
-            scroll_friction_spinbox: Spinbox::new(90, 50, 99, 1).with_label("Scroll Friction").with_unit("%").with_config(CONFIG_PATH, "scroll_friction"),
-            pointer_toggle: Toggle::new().with_label("Inertial Pointer (Trackpoint)").with_config(CONFIG_PATH, "inertial_pointer"),
-            pointer_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Pointer Friction").with_unit("%").with_config(CONFIG_PATH, "pointer_friction"),
-            trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)").with_config(CONFIG_PATH, "inertial_trackpad"),
-            trackpad_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Trackpad Friction").with_unit("%").with_config(CONFIG_PATH, "trackpad_friction"),
+            scroll_toggle: Toggle::new().with_label("Inertial Scroll").with_config(CONFIG_PATH, "inertial.inertial_scroll"),
+            scroll_friction_spinbox: Spinbox::new(90, 50, 99, 1).with_label("Scroll Friction").with_unit("%").with_config(CONFIG_PATH, "inertial.scroll_friction"),
+            pointer_toggle: Toggle::new().with_label("Inertial Pointer (Trackpoint)").with_config(CONFIG_PATH, "inertial.inertial_pointer"),
+            pointer_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Pointer Friction").with_unit("%").with_config(CONFIG_PATH, "inertial.pointer_friction"),
+            trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)").with_config(CONFIG_PATH, "inertial.inertial_trackpad"),
+            trackpad_friction_spinbox: Spinbox::new(95, 50, 99, 1).with_label("Trackpad Friction").with_unit("%").with_config(CONFIG_PATH, "inertial.trackpad_friction"),
 
             natural_scroll: false,
             scroll_speed: 1.0,
-            natural_toggle: Toggle::new().with_label("Natural Scroll").with_config(CONFIG_PATH, "natural_scroll"),
-            scroll_speed_spinbox: Spinbox::new(10, 1, 100, 1).with_label("Scroll Speed").with_unit("x").with_decimals(1).with_config(CONFIG_PATH, "scroll_speed"),
+            natural_toggle: Toggle::new().with_label("Natural Scroll").with_config(CONFIG_PATH, "input.natural_scroll"),
+            scroll_speed_spinbox: Spinbox::new(10, 1, 100, 1).with_label("Scroll Speed").with_unit("x").with_decimals(1).with_config(CONFIG_PATH, "inertial.scroll_speed"),
 
             dwtp: true,
             trackpoint_accel_speed: 0.5,
             trackpoint_accel_profile: "flat".to_string(),
 
-            dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing").with_config(CONFIG_PATH, "dwtp"),
-            trackpoint_accel_speed_spinbox: Spinbox::new(5, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1).with_config(CONFIG_PATH, "trackpoint_accel_speed"),
-            trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], 0).with_label("Acceleration Profile").with_config(CONFIG_PATH, "trackpoint_accel_profile"),
+            dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing").with_config(CONFIG_PATH, "input.dwtp"),
+            trackpoint_accel_speed_spinbox: Spinbox::new(5, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1).with_config(CONFIG_PATH, "input.trackpoint_accel_speed"),
+            trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], 0).with_label("Acceleration Profile").with_config(CONFIG_PATH, "input.trackpoint_accel_profile"),
 
             // Cursor settings defaults
             cursor_theme: "default".to_string(),
             cursor_size: 24,
-            cursor_theme_menu: Dropdown::new(cursor_themes.clone(), 0).with_label("Cursor Theme").with_config(CONFIG_PATH, "cursor_theme"),
-            cursor_size_spinbox: Spinbox::new(24, 16, 64, 4).with_label("Cursor Size").with_unit("px").with_config(CONFIG_PATH, "cursor_size"),
+            cursor_theme_menu: Dropdown::new(cursor_themes.clone(), 0).with_label("Cursor Theme").with_config(CONFIG_PATH, "input.cursor_theme"),
+            cursor_size_spinbox: Spinbox::new(24, 16, 64, 4).with_label("Cursor Size").with_unit("px").with_config(CONFIG_PATH, "input.cursor_size"),
             cursor_themes,
 
             // Graph defaults
-            zoom_in_box: TextBox::new("=".to_string()).with_label("Zoom In").with_config(CONFIG_PATH, "zoom_in"),
-            zoom_out_box: TextBox::new("-".to_string()).with_label("Zoom Out").with_config(CONFIG_PATH, "zoom_out"),
+            zoom_in_box: TextBox::new("=".to_string()).with_label("Zoom In").with_config(CONFIG_PATH, "graph.zoom_in"),
+            zoom_out_box: TextBox::new("-".to_string()).with_label("Zoom Out").with_config(CONFIG_PATH, "graph.zoom_out"),
 
             // Keyboard bindings widget
             keybinds_control: KeybindsControl::new(),
@@ -203,43 +203,43 @@ pub enum InputMessage {
 
 pub fn read_input_config() -> InputState {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let rate = parse_u16_key(&content, "rate", 50);
-    let delay = parse_u16_key(&content, "delay", 300);
-    let tap = parse_bool_from(&content, "tap_to_click");
+    let rate = parse_u16_key(&content, "repeat.rate", 50);
+    let delay = parse_u16_key(&content, "repeat.delay", 300);
+    let tap = parse_bool_from(&content, "input.tap_to_click");
 
-    let inertial_scroll = parse_bool_from_default(&content, "inertial_scroll", true);
-    let scroll_friction = parse_u16_key(&content, "scroll_friction", 90);
-    let inertial_pointer = parse_bool_from_default(&content, "inertial_pointer", false);
-    let pointer_friction = parse_u16_key(&content, "pointer_friction", 95);
-    let inertial_trackpad = parse_bool_from_default(&content, "inertial_trackpad", false);
-    let trackpad_friction = parse_u16_key(&content, "trackpad_friction", 95);
-    let natural_scroll = parse_bool_from_default(&content, "natural_scroll", false);
-    let scroll_speed = parse_f32_key(&content, "scroll_speed", 1.0);
+    let inertial_scroll = parse_bool_from_default(&content, "inertial.inertial_scroll", true);
+    let scroll_friction = parse_u16_key(&content, "inertial.scroll_friction", 90);
+    let inertial_pointer = parse_bool_from_default(&content, "inertial.inertial_pointer", false);
+    let pointer_friction = parse_u16_key(&content, "inertial.pointer_friction", 95);
+    let inertial_trackpad = parse_bool_from_default(&content, "inertial.inertial_trackpad", false);
+    let trackpad_friction = parse_u16_key(&content, "inertial.trackpad_friction", 95);
+    let natural_scroll = parse_bool_from_default(&content, "input.natural_scroll", false);
+    let scroll_speed = parse_f32_key(&content, "inertial.scroll_speed", 1.0);
     let scroll_speed_val = (scroll_speed * 10.0).round() as i32;
 
-    let _dwt = parse_bool_from_default(&content, "dwt", true);
-    let dwtp = parse_bool_from_default(&content, "dwtp", true);
-    let trackpoint_accel_speed = parse_f32_key(&content, "trackpoint_accel_speed", 0.5);
-    let trackpoint_accel_profile = parse_string_key(&content, "trackpoint_accel_profile", "flat");
+    let _dwt = parse_bool_from_default(&content, "input.dwt", true);
+    let dwtp = parse_bool_from_default(&content, "input.dwtp", true);
+    let trackpoint_accel_speed = parse_f32_key(&content, "input.trackpoint_accel_speed", 0.5);
+    let trackpoint_accel_profile = parse_string_key(&content, "input.trackpoint_accel_profile", "flat");
 
     let speed_val = (trackpoint_accel_speed * 10.0).round() as i32;
     let profile_idx = if trackpoint_accel_profile == "adaptive" { 1 } else { 0 };
 
-    let cursor_theme = parse_string_key(&content, "cursor_theme", "default");
-    let cursor_size = parse_u16_key(&content, "cursor_size", 24);
+    let cursor_theme = parse_string_key(&content, "input.cursor_theme", "default");
+    let cursor_size = parse_u16_key(&content, "input.cursor_size", 24);
     let cursor_themes = scan_cursor_themes();
     let theme_idx = cursor_themes.iter().position(|t| t == &cursor_theme).unwrap_or(0);
 
-    let zoom_in = parse_string_key(&content, "zoom_in", "=");
-    let zoom_out = parse_string_key(&content, "zoom_out", "-");
+    let zoom_in = parse_string_key(&content, "graph.zoom_in", "=");
+    let zoom_out = parse_string_key(&content, "graph.zoom_out", "-");
 
     InputState {
         tap_to_click: tap,
         repeat_rate: rate,
         repeat_delay: delay,
-        rate_spinbox: Spinbox::new(rate as i32, 1, 100, 1).with_label("Repeat Rate").with_unit("ms").with_config(CONFIG_PATH, "rate"),
-        delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms").with_config(CONFIG_PATH, "delay"),
-        tap_toggle: Toggle::new().with_label("Tap to Click").with_config(CONFIG_PATH, "tap_to_click"),
+        rate_spinbox: Spinbox::new(rate as i32, 1, 100, 1).with_label("Repeat Rate").with_unit("ms").with_config(CONFIG_PATH, "repeat.rate"),
+        delay_spinbox: Spinbox::new(delay as i32, 100, 2000, 10).with_label("Repeat Delay").with_unit("ms").with_config(CONFIG_PATH, "repeat.delay"),
+        tap_toggle: Toggle::new().with_label("Tap to Click").with_config(CONFIG_PATH, "input.tap_to_click"),
         keybinds: parse_keybinds(&content),
         fingers: Vec::new(),
         trackpad: Trackpad::new(),
@@ -251,36 +251,36 @@ pub fn read_input_config() -> InputState {
         inertial_trackpad,
         trackpad_friction,
 
-        scroll_toggle: Toggle::new().with_label("Inertial Scroll").with_config(CONFIG_PATH, "inertial_scroll"),
-        scroll_friction_spinbox: Spinbox::new(scroll_friction as i32, 50, 99, 1).with_label("Scroll Friction").with_unit("%").with_config(CONFIG_PATH, "scroll_friction"),
-        pointer_toggle: Toggle::new().with_label("Inertial Pointer (Trackpoint)").with_config(CONFIG_PATH, "inertial_pointer"),
-        pointer_friction_spinbox: Spinbox::new(pointer_friction as i32, 50, 99, 1).with_label("Pointer Friction").with_unit("%").with_config(CONFIG_PATH, "pointer_friction"),
-        trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)").with_config(CONFIG_PATH, "inertial_trackpad"),
-        trackpad_friction_spinbox: Spinbox::new(trackpad_friction as i32, 50, 99, 1).with_label("Trackpad Friction").with_unit("%").with_config(CONFIG_PATH, "trackpad_friction"),
+        scroll_toggle: Toggle::new().with_label("Inertial Scroll").with_config(CONFIG_PATH, "inertial.inertial_scroll"),
+        scroll_friction_spinbox: Spinbox::new(scroll_friction as i32, 50, 99, 1).with_label("Scroll Friction").with_unit("%").with_config(CONFIG_PATH, "inertial.scroll_friction"),
+        pointer_toggle: Toggle::new().with_label("Inertial Pointer (Trackpoint)").with_config(CONFIG_PATH, "inertial.inertial_pointer"),
+        pointer_friction_spinbox: Spinbox::new(pointer_friction as i32, 50, 99, 1).with_label("Pointer Friction").with_unit("%").with_config(CONFIG_PATH, "inertial.pointer_friction"),
+        trackpad_toggle: Toggle::new().with_label("Inertial Pointer (Trackpad)").with_config(CONFIG_PATH, "inertial.inertial_trackpad"),
+        trackpad_friction_spinbox: Spinbox::new(trackpad_friction as i32, 50, 99, 1).with_label("Trackpad Friction").with_unit("%").with_config(CONFIG_PATH, "inertial.trackpad_friction"),
 
         natural_scroll,
         scroll_speed,
-        natural_toggle: Toggle::new().with_label("Natural Scroll").with_config(CONFIG_PATH, "natural_scroll"),
-        scroll_speed_spinbox: Spinbox::new(scroll_speed_val, 1, 100, 1).with_label("Scroll Speed").with_unit("x").with_decimals(1).with_config(CONFIG_PATH, "scroll_speed"),
+        natural_toggle: Toggle::new().with_label("Natural Scroll").with_config(CONFIG_PATH, "input.natural_scroll"),
+        scroll_speed_spinbox: Spinbox::new(scroll_speed_val, 1, 100, 1).with_label("Scroll Speed").with_unit("x").with_decimals(1).with_config(CONFIG_PATH, "inertial.scroll_speed"),
 
         dwtp,
         trackpoint_accel_speed,
         trackpoint_accel_profile,
 
-        dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing").with_config(CONFIG_PATH, "dwtp"),
-        trackpoint_accel_speed_spinbox: Spinbox::new(speed_val, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1).with_config(CONFIG_PATH, "trackpoint_accel_speed"),
-        trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], profile_idx).with_label("Acceleration Profile").with_config(CONFIG_PATH, "trackpoint_accel_profile"),
+        dwtp_toggle: Toggle::new().with_label("Disable While Trackpointing").with_config(CONFIG_PATH, "input.dwtp"),
+        trackpoint_accel_speed_spinbox: Spinbox::new(speed_val, -10, 10, 1).with_label("Acceleration Speed").with_decimals(1).with_config(CONFIG_PATH, "input.trackpoint_accel_speed"),
+        trackpoint_accel_profile_menu: Dropdown::new(vec!["flat".to_string(), "adaptive".to_string()], profile_idx).with_label("Acceleration Profile").with_config(CONFIG_PATH, "input.trackpoint_accel_profile"),
 
         // Cursor settings
         cursor_theme: cursor_theme.clone(),
         cursor_size: cursor_size as u32,
-        cursor_theme_menu: Dropdown::new(cursor_themes.clone(), theme_idx).with_label("Cursor Theme").with_config(CONFIG_PATH, "cursor_theme"),
-        cursor_size_spinbox: Spinbox::new(cursor_size as i32, 16, 64, 4).with_label("Cursor Size").with_unit("px").with_config(CONFIG_PATH, "cursor_size"),
+        cursor_theme_menu: Dropdown::new(cursor_themes.clone(), theme_idx).with_label("Cursor Theme").with_config(CONFIG_PATH, "input.cursor_theme"),
+        cursor_size_spinbox: Spinbox::new(cursor_size as i32, 16, 64, 4).with_label("Cursor Size").with_unit("px").with_config(CONFIG_PATH, "input.cursor_size"),
         cursor_themes,
 
         // Graph settings
-        zoom_in_box: TextBox::new(zoom_in).with_label("Zoom In").with_config(CONFIG_PATH, "zoom_in"),
-        zoom_out_box: TextBox::new(zoom_out).with_label("Zoom Out").with_config(CONFIG_PATH, "zoom_out"),
+        zoom_in_box: TextBox::new(zoom_in).with_label("Zoom In").with_config(CONFIG_PATH, "graph.zoom_in"),
+        zoom_out_box: TextBox::new(zoom_out).with_label("Zoom Out").with_config(CONFIG_PATH, "graph.zoom_out"),
 
         // Keyboard bindings widget
         keybinds_control: KeybindsControl::new(),
@@ -292,29 +292,21 @@ fn parse_json(content: &str) -> serde_json::Value {
 }
 
 fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
-    if let Some(obj) = val.as_object() {
-        let (sec, node, prop) = cce_ui::config::map_legacy_key(key, "layout");
-        if let Some(sec_val) = obj.get(&sec) {
-            if let Some(node_val) = sec_val.get(&node) {
-                if let Some(prop_name) = prop {
-                    if let Some(prop_val) = node_val.get(&prop_name) {
-                        return Some(prop_val);
-                    }
-                } else {
-                    return Some(node_val);
-                }
+    let mut current = val;
+    for part in key.split('.') {
+        if let Some(obj) = current.as_object() {
+            if let Some(next) = obj.get(part) {
+                current = next;
+            } else {
+                return None;
             }
-        }
-        for (_, sec_val) in obj.iter() {
-            if let Some(sec_obj) = sec_val.as_object() {
-                if let Some(v) = sec_obj.get(key) {
-                    return Some(v);
-                }
-            }
+        } else {
+            return None;
         }
     }
-    None
+    Some(current)
 }
+
 
 fn parse_bool_from(content: &str, key: &str) -> bool {
     let val = parse_json(content);
@@ -364,30 +356,16 @@ fn send_ipc_command(cmd: &str) {
 }
 
 fn write_config_value(key: &str, value: &str) {
-    let section = if key == "zoom_in" || key == "zoom_out" {
-        "graph"
-    } else if key == "tap_to_click" || key == "dwtp"
-            || key == "trackpoint_accel_speed" || key == "trackpoint_accel_profile"
-            || key == "cursor_theme" || key == "cursor_size" || key == "natural_scroll" {
-        "input"
-    } else if key == "inertial_scroll" || key == "scroll_friction"
-           || key == "inertial_pointer" || key == "pointer_friction"
-           || key == "inertial_trackpad" || key == "trackpad_friction" || key == "scroll_speed" {
-        "inertial"
-    } else {
-        "repeat"
-    };
-
-    cce_ui::config::write_config_value(CONFIG_PATH, key, value, section);
+    cce_ui::config::write_config_value(CONFIG_PATH, key, value, "input");
 }
 
 fn write_tap_to_click(enabled: bool) {
-    write_config_value("tap_to_click", &enabled.to_string());
+    write_config_value("input.tap_to_click", &enabled.to_string());
 }
 
 fn apply_repeat_config(rate: u16, delay: u16) {
-    write_config_value("rate", &rate.to_string());
-    write_config_value("delay", &delay.to_string());
+    write_config_value("repeat.rate", &rate.to_string());
+    write_config_value("repeat.delay", &delay.to_string());
     send_ipc_command(&format!("repeat rate {}", rate));
     send_ipc_command(&format!("repeat delay {}", delay));
 }
@@ -491,60 +469,60 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
         }
         InputMessage::ToggleInertialScroll => {
             state.inertial_scroll = !state.inertial_scroll;
-            write_config_value("inertial_scroll", &state.inertial_scroll.to_string());
+            write_config_value("inertial.inertial_scroll", &state.inertial_scroll.to_string());
             send_ipc_command("reload");
         }
         InputMessage::ApplyScrollFriction => {
             let friction = state.scroll_friction_spinbox.value.max(50).min(99) as u16;
             state.scroll_friction = friction;
-            write_config_value("scroll_friction", &friction.to_string());
+            write_config_value("inertial.scroll_friction", &friction.to_string());
             send_ipc_command("reload");
         }
         InputMessage::ToggleNaturalScroll => {
             state.natural_scroll = !state.natural_scroll;
-            write_config_value("natural_scroll", &state.natural_scroll.to_string());
+            write_config_value("input.natural_scroll", &state.natural_scroll.to_string());
             send_ipc_command(&format!("input natural-scroll {}", state.natural_scroll));
         }
         InputMessage::ApplyScrollSpeed => {
             let val = state.scroll_speed_spinbox.value as f32 / 10.0;
             state.scroll_speed = val;
-            write_config_value("scroll_speed", &val.to_string());
+            write_config_value("inertial.scroll_speed", &val.to_string());
             send_ipc_command("reload");
         }
         InputMessage::ToggleInertialPointer => {
             state.inertial_pointer = !state.inertial_pointer;
-            write_config_value("inertial_pointer", &state.inertial_pointer.to_string());
+            write_config_value("inertial.inertial_pointer", &state.inertial_pointer.to_string());
         }
         InputMessage::ApplyPointerFriction => {
             let friction = state.pointer_friction_spinbox.value.max(50).min(99) as u16;
             state.pointer_friction = friction;
-            write_config_value("pointer_friction", &friction.to_string());
+            write_config_value("inertial.pointer_friction", &friction.to_string());
         }
         InputMessage::ToggleInertialTrackpad => {
             state.inertial_trackpad = !state.inertial_trackpad;
-            write_config_value("inertial_trackpad", &state.inertial_trackpad.to_string());
+            write_config_value("inertial.inertial_trackpad", &state.inertial_trackpad.to_string());
         }
         InputMessage::ApplyTrackpadFriction => {
             let friction = state.trackpad_friction_spinbox.value.max(50).min(99) as u16;
             state.trackpad_friction = friction;
-            write_config_value("trackpad_friction", &friction.to_string());
+            write_config_value("inertial.trackpad_friction", &friction.to_string());
         }
         InputMessage::ToggleDwtp => {
             state.dwtp = !state.dwtp;
-            write_config_value("dwtp", &state.dwtp.to_string());
+            write_config_value("input.dwtp", &state.dwtp.to_string());
             send_ipc_command(&format!("input dwtp {}", state.dwtp));
         }
         InputMessage::ApplyTrackpointAccelSpeed => {
             let val = state.trackpoint_accel_speed_spinbox.value as f32 / 10.0;
             state.trackpoint_accel_speed = val;
-            write_config_value("trackpoint_accel_speed", &val.to_string());
+            write_config_value("input.trackpoint_accel_speed", &val.to_string());
             send_ipc_command(&format!("input trackpoint-accel-speed {}", val));
         }
         InputMessage::ApplyTrackpointAccelProfile(idx) => {
             let profile = if idx == 1 { "adaptive" } else { "flat" };
             state.trackpoint_accel_profile = profile.to_string();
             state.trackpoint_accel_profile_menu.selected = idx;
-            write_config_value("trackpoint_accel_profile", &format!("\"{}\"", profile));
+            write_config_value("input.trackpoint_accel_profile", &format!("\"{}\"", profile));
             send_ipc_command(&format!("input trackpoint-accel-profile {}", profile));
         }
         InputMessage::ApplyCursorTheme(idx) => {
@@ -552,23 +530,23 @@ pub fn update(state: &mut InputState, msg: InputMessage) {
                 let theme = state.cursor_themes[idx].clone();
                 state.cursor_theme = theme.clone();
                 state.cursor_theme_menu.selected = idx;
-                write_config_value("cursor_theme", &format!("\"{}\"", theme));
+                write_config_value("input.cursor_theme", &format!("\"{}\"", theme));
                 send_ipc_command(&format!("input cursor-theme {}", theme));
             }
         }
         InputMessage::ApplyCursorSize => {
             let size = state.cursor_size_spinbox.value.max(16).min(64) as u32;
             state.cursor_size = size;
-            write_config_value("cursor_size", &size.to_string());
+            write_config_value("input.cursor_size", &size.to_string());
             send_ipc_command(&format!("input cursor-size {}", size));
         }
         InputMessage::ApplyZoomIn => {
             let val = state.zoom_in_box.text.clone();
-            write_config_value("zoom_in", &format!("\"{}\"", val));
+            write_config_value("graph.zoom_in", &format!("\"{}\"", val));
         }
         InputMessage::ApplyZoomOut => {
             let val = state.zoom_out_box.text.clone();
-            write_config_value("zoom_out", &format!("\"{}\"", val));
+            write_config_value("graph.zoom_out", &format!("\"{}\"", val));
         }
         InputMessage::ReloadKeybinds => {
             send_ipc_command("reload");
@@ -787,12 +765,12 @@ mod tests {
     #[test]
     fn test_parse_scrolling_params() {
         let content = "input {\n    natural_scroll (bool)true\n}\ninertial {\n    scroll_speed (f64)2.5\n}\n";
-        assert_eq!(parse_bool_from_default(content, "natural_scroll", false), true);
-        assert_eq!(parse_f32_key(content, "scroll_speed", 1.0), 2.5);
+        assert_eq!(parse_bool_from_default(content, "input.natural_scroll", false), true);
+        assert_eq!(parse_f32_key(content, "inertial.scroll_speed", 1.0), 2.5);
 
         let empty_content = "";
-        assert_eq!(parse_bool_from_default(empty_content, "natural_scroll", false), false);
-        assert_eq!(parse_f32_key(empty_content, "scroll_speed", 1.0), 1.0);
+        assert_eq!(parse_bool_from_default(empty_content, "input.natural_scroll", false), false);
+        assert_eq!(parse_f32_key(empty_content, "inertial.scroll_speed", 1.0), 1.0);
     }
 
     #[test]
