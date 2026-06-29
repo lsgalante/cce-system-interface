@@ -9,7 +9,7 @@ pub struct Watchers {
     pub rx_display: Receiver<display::DisplayState>,
     pub rx_network: Receiver<network::NetworkState>,
     pub rx_layout: Receiver<interface::WindowsState>,
-    pub rx_input: Receiver<input::InputState>,
+    pub rx_input: Receiver<(input::InputState, std::time::SystemTime)>,
     pub rx_fingers: Receiver<Vec<Finger>>,
     pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemState>,
@@ -17,7 +17,7 @@ pub struct Watchers {
     pub rx_notifications: Receiver<system_info::NotificationsConfig>,
     pub rx_typeface: Receiver<interface::InterfaceState>,
     pub rx_services: Receiver<Vec<processes::ServiceInfo>>,
-    pub rx_interface: Receiver<interface::InterfaceState>,
+    pub rx_interface: Receiver<(interface::InterfaceState, std::time::SystemTime)>,
     pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
     pub rx_packages: Receiver<packages::PackagesState>,
 }
@@ -95,7 +95,7 @@ pub fn spawn_all(
 
 
     let rx_input = {
-        let (tx, rx) = channel::<input::InputState>();
+        let (tx, rx) = channel::<(input::InputState, std::time::SystemTime)>();
         let current_page_shared = current_page_shared.clone();
         tokio::spawn(async move {
             let mut last_fetch: Option<std::time::Instant> = None;
@@ -107,9 +107,12 @@ pub fn spawn_all(
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
+                        let mtime = std::fs::metadata("/home/lsgalante/.config/cce/config.json")
+                            .and_then(|m| m.modified())
+                            .unwrap_or_else(|_| std::time::SystemTime::now());
                         let val = tokio::task::spawn_blocking(|| input::read_input_config()).await;
                         if let Ok(val) = val {
-                            if tx.send(val).is_err() { break; }
+                            if tx.send((val, mtime)).is_err() { break; }
                         }
                         last_fetch = Some(std::time::Instant::now());
                     }
@@ -188,7 +191,7 @@ pub fn spawn_all(
     let rx_accounts = spawn_bg_active(current_page_shared.clone(), Page::Accounts.index() as u8, 3, || accounts::fetch_accounts());
 
     let rx_interface = {
-        let (tx, rx) = channel::<interface::InterfaceState>();
+        let (tx, rx) = channel::<(interface::InterfaceState, std::time::SystemTime)>();
         let current_page_shared = current_page_shared.clone();
         tokio::spawn(async move {
             let mut last_fetch: Option<std::time::Instant> = None;
@@ -200,9 +203,12 @@ pub fn spawn_all(
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
+                        let mtime = std::fs::metadata("/home/lsgalante/.config/cce/config.json")
+                            .and_then(|m| m.modified())
+                            .unwrap_or_else(|_| std::time::SystemTime::now());
                         let val = tokio::task::spawn_blocking(|| interface::read_interface_config()).await;
                         if let Ok(val) = val {
-                            if tx.send(val).is_err() { break; }
+                            if tx.send((val, mtime)).is_err() { break; }
                         }
                         last_fetch = Some(std::time::Instant::now());
                     }

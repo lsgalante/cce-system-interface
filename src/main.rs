@@ -172,15 +172,15 @@ struct SystemInterface {
     rx_display: std::sync::mpsc::Receiver<pages::display::DisplayState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     rx_layout: std::sync::mpsc::Receiver<pages::interface::WindowsState>,
-    rx_input: std::sync::mpsc::Receiver<pages::input::InputState>,
+    rx_input: std::sync::mpsc::Receiver<(pages::input::InputState, std::time::SystemTime)>,
     rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
-    rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
+    pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>, // wait, keep it as in original
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::system_info::NotificationsConfig>,
     rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
-    rx_interface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
+    rx_interface: std::sync::mpsc::Receiver<(pages::interface::InterfaceState, std::time::SystemTime)>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
@@ -214,6 +214,7 @@ struct SystemInterface {
     search_open: bool,
     search_query: String,
     search_box: cce_ui::widget::input::TextBox,
+    last_write_mtime: std::time::SystemTime,
 }
 
 impl cce_ui::engine::Application for SystemInterface {
@@ -288,6 +289,9 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_packages: watchers.rx_packages,
             tx_update,
             rx_update,
+            last_write_mtime: std::fs::metadata("/home/lsgalante/.config/cce/config.json")
+                .and_then(|m| m.modified())
+                .unwrap_or_else(|_| std::time::SystemTime::now()),
 
             scale_factor: 1.0,
             width: 820,
@@ -351,11 +355,16 @@ impl cce_ui::engine::Application for SystemInterface {
     }
 
     fn update(&mut self, msg: Self::Message, needs_rebuild: &mut bool, exit: &mut bool) {
-        if matches!(msg, AppAction::Exit) {
+        if let AppAction::Exit = msg {
             *exit = true;
             return;
         }
         self.handle_action(&msg);
+        if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.json") {
+            if let Ok(mtime) = metadata.modified() {
+                self.last_write_mtime = mtime;
+            }
+        }
         *needs_rebuild = true;
         self.needs_rebuild = true;
     }
@@ -370,8 +379,16 @@ impl cce_ui::engine::Application for SystemInterface {
         }
         let mut actions = Vec::new();
         self.propagate_widget_changes(&mut actions);
+        let has_actions = !actions.is_empty();
         for action in actions {
             self.handle_action(&action);
+        }
+        if has_actions {
+            if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.json") {
+                if let Ok(mtime) = metadata.modified() {
+                    self.last_write_mtime = mtime;
+                }
+            }
         }
         if self.needs_rebuild || self.ui_context.is_dirty() {
             *needs_rebuild = true;
@@ -658,10 +675,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
 
-        while let Ok(s) = self.rx_input.try_recv() {
-            input::update(&mut self.app.input, input::InputMessage::Refreshed(s));
-            if self.app.current_page == Page::Input {
-                self.needs_rebuild = true;
+        while let Ok((s, mtime)) = self.rx_input.try_recv() {
+            if mtime > self.last_write_mtime {
+                input::update(&mut self.app.input, input::InputMessage::Refreshed(s));
+                if self.app.current_page == Page::Input {
+                    self.needs_rebuild = true;
+                }
             }
         }
         let mut got_fingers = None;
@@ -713,10 +732,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_interface.try_recv() {
-            interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::Refreshed(s));
-            if self.app.current_page == Page::Interface {
-                self.needs_rebuild = true;
+        while let Ok((s, mtime)) = self.rx_interface.try_recv() {
+            if mtime > self.last_write_mtime {
+                interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::Refreshed(s));
+                if self.app.current_page == Page::Interface {
+                    self.needs_rebuild = true;
+                }
             }
         }
 
