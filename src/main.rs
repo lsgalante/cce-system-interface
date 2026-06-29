@@ -368,6 +368,11 @@ impl cce_ui::engine::Application for SystemInterface {
         if self.tick_internal(dt) {
             *needs_rebuild = true;
         }
+        let mut actions = Vec::new();
+        self.propagate_widget_changes(&mut actions);
+        for action in actions {
+            self.handle_action(&action);
+        }
         if self.needs_rebuild || self.ui_context.is_dirty() {
             *needs_rebuild = true;
             self.needs_rebuild = true;
