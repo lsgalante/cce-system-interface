@@ -1248,6 +1248,18 @@ fn parse_json(content: &str) -> serde_json::Value {
 
 fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
     if let Some(obj) = val.as_object() {
+        let (sec, node, prop) = cce_ui::config::map_legacy_key(key, "layout");
+        if let Some(sec_val) = obj.get(&sec) {
+            if let Some(node_val) = sec_val.get(&node) {
+                if let Some(prop_name) = prop {
+                    if let Some(prop_val) = node_val.get(&prop_name) {
+                        return Some(prop_val);
+                    }
+                } else {
+                    return Some(node_val);
+                }
+            }
+        }
         for (_, sec_val) in obj.iter() {
             if let Some(sec_obj) = sec_val.as_object() {
                 if let Some(v) = sec_obj.get(key) {
@@ -4345,6 +4357,8 @@ mod tests {
         assert_eq!(parse_hex("invalid"), [0x0a, 0x1a, 0x0e]);
     }
 
+
+
     #[test]
     fn test_interface_spinbox_right_click_crash() {
         use cce_ui::widget::Element;
@@ -4633,7 +4647,7 @@ mod tests {
         // 3. Write spinbox_height config
         assert!(write_config_value_path(path_str, "spinbox_height", "30"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("spinbox_height")); assert!(updated.contains("30"));
+        assert!(updated.contains("spinbox")); assert!(updated.contains("height")); assert!(updated.contains("30"));
 
         // 4. Parse spinbox_height when present (should return written value 30)
         let val2 = parse_u16_from(&updated, "spinbox_height", 26);
@@ -4661,7 +4675,7 @@ mod tests {
         // 3. Write toggle_height config
         assert!(write_config_value_path(path_str, "toggle_height", "52"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("toggle_height")); assert!(updated.contains("52"));
+        assert!(updated.contains("toggle")); assert!(updated.contains("height")); assert!(updated.contains("52"));
 
         // 4. Parse toggle_height when present (should return written value 52)
         let val2 = parse_u16_from(&updated, "toggle_height", 44);
@@ -4737,7 +4751,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "toggle_border_width", "3"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("toggle_border_width")); assert!(updated.contains("3"));
+        assert!(updated.contains("toggle")); assert!(updated.contains("border_width")); assert!(updated.contains("3"));
 
         let val2 = parse_u16_from(&updated, "toggle_border_width", 1);
         assert_eq!(val2, 3);
@@ -4760,7 +4774,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "toggle_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("toggle_font")); assert!(updated.contains("Inter"));
+        assert!(updated.contains("toggle")); assert!(updated.contains("font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "toggle_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4806,7 +4820,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "button_strip_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("button_strip_font")); assert!(updated.contains("Inter"));
+        assert!(updated.contains("button_strip")); assert!(updated.contains("font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "button_strip_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4829,7 +4843,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "button_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("button_font")); assert!(updated.contains("Inter"));
+        assert!(updated.contains("button")); assert!(updated.contains("font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "button_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4852,7 +4866,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "label_font", "\"Inter\""));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("label_font")); assert!(updated.contains("Inter"));
+        assert!(updated.contains("label")); assert!(updated.contains("font")); assert!(updated.contains("Inter"));
 
         let val2 = parse_string_from(&updated, "label_font", "Outfit");
         assert_eq!(val2, "Inter");
@@ -4970,7 +4984,7 @@ mod tests {
         // 3. Write slider_corner_radius config
         assert!(write_config_value_path(path_str, "slider_corner_radius", "6"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("slider_corner_radius")); assert!(updated.contains("6"));
+        assert!(updated.contains("slider")); assert!(updated.contains("corner_radius")); assert!(updated.contains("6"));
 
         // 4. Parse slider_corner_radius when present (should return written value 6)
         let val2 = parse_u16_from(&updated, "slider_corner_radius", 4);
@@ -5140,7 +5154,7 @@ mod tests {
         // 3. Write textbox_height config
         assert!(write_config_value_path(path_str, "textbox_height", "48"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("textbox_height")); assert!(updated.contains("48"));
+        assert!(updated.contains("textbox")); assert!(updated.contains("height")); assert!(updated.contains("48"));
 
         // 4. Parse textbox_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "textbox_height", 44);
@@ -5226,7 +5240,7 @@ mod tests {
         // 3. Write font_selector_height config
         assert!(write_config_value_path(path_str, "font_selector_height", "48"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("font_selector_height")); assert!(updated.contains("48"));
+        assert!(updated.contains("font_selector")); assert!(updated.contains("height")); assert!(updated.contains("48"));
 
         // 4. Parse font_selector_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "font_selector_height", 44);
@@ -5393,7 +5407,7 @@ mod tests {
 
         assert!(write_config_value_path(path_str, "button_padding", "20"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("button_padding")); assert!(updated.contains("20"));
+        assert!(updated.contains("button")); assert!(updated.contains("padding")); assert!(updated.contains("20"));
 
         let val2 = parse_u16_from(&updated, "button_padding", 14);
         assert_eq!(val2, 20);
@@ -5416,7 +5430,7 @@ mod tests {
  
         assert!(write_config_value_path(path_str, "button_strip_spacing", "12"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("button_strip_spacing")); assert!(updated.contains("12"));
+        assert!(updated.contains("button_strip")); assert!(updated.contains("spacing")); assert!(updated.contains("12"));
  
         let val2 = parse_u16_from(&updated, "button_strip_spacing", 8);
         assert_eq!(val2, 12);
@@ -5442,7 +5456,7 @@ mod tests {
         // 3. Write slider_height config
         assert!(write_config_value_path(path_str, "slider_height", "32"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("slider_height")); assert!(updated.contains("32"));
+        assert!(updated.contains("slider")); assert!(updated.contains("height")); assert!(updated.contains("32"));
 
         // 4. Parse slider_height when present (should return written value 32)
         let val2 = parse_u16_from(&updated, "slider_height", 28);
@@ -5526,7 +5540,7 @@ mod tests {
         // 3. Write dropdown_height config
         assert!(write_config_value_path(path_str, "dropdown_height", "48"));
         let updated = fs::read_to_string(path_str).unwrap();
-        assert!(updated.contains("dropdown_height")); assert!(updated.contains("48"));
+        assert!(updated.contains("dropdown")); assert!(updated.contains("height")); assert!(updated.contains("48"));
 
         // 4. Parse dropdown_height when present (should return written value 48)
         let val2 = parse_u16_from(&updated, "dropdown_height", 44);

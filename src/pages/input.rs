@@ -293,6 +293,18 @@ fn parse_json(content: &str) -> serde_json::Value {
 
 fn json_find_key<'a>(val: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
     if let Some(obj) = val.as_object() {
+        let (sec, node, prop) = cce_ui::config::map_legacy_key(key, "layout");
+        if let Some(sec_val) = obj.get(&sec) {
+            if let Some(node_val) = sec_val.get(&node) {
+                if let Some(prop_name) = prop {
+                    if let Some(prop_val) = node_val.get(&prop_name) {
+                        return Some(prop_val);
+                    }
+                } else {
+                    return Some(node_val);
+                }
+            }
+        }
         for (_, sec_val) in obj.iter() {
             if let Some(sec_obj) = sec_val.as_object() {
                 if let Some(v) = sec_obj.get(key) {
