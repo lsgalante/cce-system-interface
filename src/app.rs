@@ -1,13 +1,11 @@
 use cce_ui::layout::RenderTarget;
 
 use crate::pages::audio;
-use crate::pages::display;
-use crate::pages::input;
 use crate::pages::network;
 use crate::pages::processes;
 use crate::pages::system_info;
 use crate::pages::storage;
-use crate::pages::interface;
+use crate::pages::fonts;
 use crate::pages::accounts;
 use crate::pages::packages;
 use crate::pages::Page;
@@ -15,13 +13,11 @@ use crate::pages::Page;
 pub struct AppState {
     pub current_page: Page,
     pub audio: audio::AudioState,
-    pub display: display::DisplayState,
     pub network: network::NetworkState,
-    pub input: input::InputState,
     pub processes: processes::ProcessesState,
     pub system_info: system_info::SystemState,
     pub storage: storage::StorageState,
-    pub interface: interface::InterfaceState,
+    pub fonts: fonts::FontsState,
     pub accounts: accounts::AccountsState,
     pub packages: packages::PackagesState,
 }
@@ -31,13 +27,11 @@ impl Default for AppState {
         Self {
             current_page: Page::ALL[0],
             audio: audio::AudioState::default(),
-            display: display::DisplayState::default(),
             network: network::NetworkState::default(),
-            input: input::InputState::default(),
             processes: processes::ProcessesState::default(),
             system_info: system_info::SystemState::default(),
             storage: storage::StorageState::default(),
-            interface: interface::InterfaceState::default(),
+            fonts: fonts::FontsState::default(),
             accounts: accounts::AccountsState::default_mock(),
             packages: packages::PackagesState::default(),
         }
@@ -49,14 +43,12 @@ impl AppState {
         match page {
             Page::Accounts => &self.accounts,
             Page::Audio => &self.audio,
-            Page::Display => &self.display,
-            Page::Input => &self.input,
-            Page::Interface => &self.interface,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
             Page::Radios => &self.network,
             Page::Storage => &self.storage,
             Page::System => &self.system_info,
+            Page::Fonts => &self.fonts,
         }
     }
 
@@ -64,14 +56,12 @@ impl AppState {
         match page {
             Page::Accounts => &mut self.accounts,
             Page::Audio => &mut self.audio,
-            Page::Display => &mut self.display,
-            Page::Input => &mut self.input,
-            Page::Interface => &mut self.interface,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
             Page::Radios => &mut self.network,
             Page::Storage => &mut self.storage,
             Page::System => &mut self.system_info,
+            Page::Fonts => &mut self.fonts,
         }
     }
 
@@ -88,13 +78,11 @@ impl AppState {
 pub enum AppAction {
     Exit,
     Audio(audio::AudioMessage),
-    Display(display::DisplayMessage),
     Radios(network::NetworkMessage),
-    Input(input::InputMessage),
     Processes(processes::ProcessesMessage),
     SystemInfo(system_info::SystemMessage),
     Storage(storage::StorageMessage),
-    Interface(interface::InterfaceMessage),
+    Fonts(fonts::FontsMessage),
     Accounts(accounts::AccountsMessage),
     Packages(packages::PackagesMessage),
 }

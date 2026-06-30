@@ -1,4 +1,4 @@
-use cce_ui::widget::{Finger, hover_animation, Element, PageSelector};
+use cce_ui::widget::{hover_animation, Element, PageSelector};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use cce_settings::app::{AppAction, AppState};
@@ -169,18 +169,13 @@ struct SystemInterface {
     cursor_y: f32,
 
     rx_audio: std::sync::mpsc::Receiver<pages::audio::AudioState>,
-    rx_display: std::sync::mpsc::Receiver<pages::display::DisplayState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
-    rx_layout: std::sync::mpsc::Receiver<pages::interface::WindowsState>,
-    rx_input: std::sync::mpsc::Receiver<(pages::input::InputState, std::time::SystemTime)>,
-    rx_fingers: std::sync::mpsc::Receiver<Vec<Finger>>,
-    pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>, // wait, keep it as in original
+    pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::system_info::NotificationsConfig>,
-    rx_typeface: std::sync::mpsc::Receiver<pages::interface::InterfaceState>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
-    rx_interface: std::sync::mpsc::Receiver<(pages::interface::InterfaceState, std::time::SystemTime)>,
+    rx_fonts: std::sync::mpsc::Receiver<pages::fonts::FontsState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
@@ -214,7 +209,7 @@ struct SystemInterface {
     search_open: bool,
     search_query: String,
     search_box: cce_ui::widget::input::TextBox,
-    last_write_mtime: std::time::SystemTime,
+
 }
 
 impl cce_ui::engine::Application for SystemInterface {
@@ -223,8 +218,7 @@ impl cce_ui::engine::Application for SystemInterface {
     fn new(_qh: &wayland_client::QueueHandle<cce_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
         cce_ui::scale::set_scale_factor(1.0);
         let app = AppState {
-            input: pages::input::read_input_config(),
-            interface: pages::interface::read_interface_config(),
+            fonts: pages::fonts::read_typeface_config(),
             ..Default::default()
         };
 
@@ -235,7 +229,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let (watchers, tx_backup, rx_backup, tx_update, rx_update) =
             cce_settings::watchers::spawn_all(current_page_shared.clone());
 
-        let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::interface::read_preferred_fonts();
+        let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::fonts::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let menubar = cce_ui::widget::Paginator::new(pages_names);
@@ -252,9 +246,9 @@ impl cce_ui::engine::Application for SystemInterface {
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
 
-        let win_color = app_state.interface.backplate_color;
+        let win_color = [0x0a, 0x1a, 0x0e];
         let win_opacity = 1.0f32;
-        let win_radius = app_state.interface.backplate_corner_radius;
+        let win_radius = 12;
 
         let mut font_system = FontSystem::new();
         font_system.db_mut().load_fonts_dir("/home/lsgalante/Dropbox/Fonts");
@@ -271,27 +265,20 @@ impl cce_ui::engine::Application for SystemInterface {
             cursor_x: 0.0,
             cursor_y: 0.0,
             rx_audio: watchers.rx_audio,
-            rx_display: watchers.rx_display,
             rx_network: watchers.rx_network,
-            rx_layout: watchers.rx_layout,
-            rx_input: watchers.rx_input,
-            rx_fingers: watchers.rx_fingers,
             rx_processes: watchers.rx_processes,
             rx_system: watchers.rx_system,
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
-            rx_typeface: watchers.rx_typeface,
             rx_services: watchers.rx_services,
-            rx_interface: watchers.rx_interface,
+            rx_fonts: watchers.rx_fonts,
             rx_accounts: watchers.rx_accounts,
             tx_backup,
             rx_backup,
             rx_packages: watchers.rx_packages,
             tx_update,
             rx_update,
-            last_write_mtime: std::fs::metadata("/home/lsgalante/.config/cce/config.kdl")
-                .and_then(|m| m.modified())
-                .unwrap_or_else(|_| std::time::SystemTime::now()),
+
 
             scale_factor: 1.0,
             width: 820,
@@ -360,11 +347,6 @@ impl cce_ui::engine::Application for SystemInterface {
             return;
         }
         self.handle_action(&msg);
-        if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.kdl") {
-            if let Ok(mtime) = metadata.modified() {
-                self.last_write_mtime = mtime;
-            }
-        }
         *needs_rebuild = true;
         self.needs_rebuild = true;
     }
@@ -379,16 +361,8 @@ impl cce_ui::engine::Application for SystemInterface {
         }
         let mut actions = Vec::new();
         self.propagate_widget_changes(&mut actions);
-        let has_actions = !actions.is_empty();
         for action in actions {
             self.handle_action(&action);
-        }
-        if has_actions {
-            if let Ok(metadata) = std::fs::metadata("/home/lsgalante/.config/cce/config.kdl") {
-                if let Ok(mtime) = metadata.modified() {
-                    self.last_write_mtime = mtime;
-                }
-            }
         }
         if self.needs_rebuild || self.ui_context.is_dirty() {
             *needs_rebuild = true;
@@ -538,113 +512,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             self.needs_rebuild = true;
         }
 
-        // Asynchronously check color selector changes (e.g. Zenity process exit)
-        let mut color_changed = false;
-        let mut color_actions = Vec::new();
-        for (i, cp) in self.app.interface.color_selectors.iter_mut().enumerate() {
-            if cp.tick(dt, &mut self.ui_context) {
-                needs_redraw = true;
-                self.needs_rebuild = true;
-            }
-            let state_color = match i {
-                0 => self.app.interface.page_low_color,
-                1 => self.app.interface.high_color,
-                2 => self.app.interface.visual_guides_color,
-                3 => self.app.interface.disabled_color,
-                4 => self.app.interface.slider_track_color,
-                5 => self.app.interface.color_borders_color,
-                6 => self.app.interface.desktop_background_color,
-                7 => self.app.interface.normal_color,
-                8 => self.app.interface.paginator_sidebar_color,
-                9 => self.app.interface.primary_highlight_color,
-                10 => self.app.interface.menubar_tab_label_color,
-                11 => self.app.interface.toggle_enabled_color,
-                12 => self.app.interface.toggle_disabled_color,
-                13 => self.app.interface.scrollinglist_bg_color,
-                14 => self.app.interface.breadcrumb_bg_color,
-                15 => self.app.interface.popover_bg_color,
-                16 => self.app.interface.notification_bg_color,
-                17 => self.app.interface.backplate_color,
-                18 => self.app.interface.page_color,
-                19 => self.app.interface.layer_color,
-                22 => self.app.interface.status_box_background_color,
-                _ => self.app.interface.desktop_background_color,
-            };
-            if i == 20 || i == 21 || i == 23 {
-                let (state_rgb, state_alpha) = if i == 20 {
-                    (
-                        [
-                            self.app.interface.scrollinglist_entry_bg_color[0],
-                            self.app.interface.scrollinglist_entry_bg_color[1],
-                            self.app.interface.scrollinglist_entry_bg_color[2],
-                        ],
-                        self.app.interface.scrollinglist_entry_bg_color[3],
-                    )
-                } else if i == 21 {
-                    (
-                        [
-                            self.app.interface.scrollinglist_entry_highlight_color[0],
-                            self.app.interface.scrollinglist_entry_highlight_color[1],
-                            self.app.interface.scrollinglist_entry_highlight_color[2],
-                        ],
-                        self.app.interface.scrollinglist_entry_highlight_color[3],
-                    )
-                } else {
-                    (
-                        [
-                            self.app.interface.desktop_grid_color[0],
-                            self.app.interface.desktop_grid_color[1],
-                            self.app.interface.desktop_grid_color[2],
-                        ],
-                        self.app.interface.desktop_grid_color[3],
-                    )
-                };
-                if cp.color != state_rgb || cp.alpha != state_alpha {
-                    color_actions.push(AppAction::Interface(if i == 20 {
-                        pages::interface::InterfaceMessage::SetScrollingListEntryBgColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
-                    } else if i == 21 {
-                        pages::interface::InterfaceMessage::SetScrollingListEntryHighlightColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
-                    } else {
-                        pages::interface::InterfaceMessage::SetDesktopGridColor([cp.color[0], cp.color[1], cp.color[2], cp.alpha])
-                    }));
-                    color_changed = true;
-                }
-            } else if cp.color != state_color {
-                color_actions.push(AppAction::Interface(match i {
-                    0 => pages::interface::InterfaceMessage::SetPageLowColor(cp.color),
-                    1 => pages::interface::InterfaceMessage::SetHighColor(cp.color),
-                    2 => pages::interface::InterfaceMessage::SetVisualGuidesColor(cp.color),
-                    3 => pages::interface::InterfaceMessage::SetDisabledColor(cp.color),
-                    4 => pages::interface::InterfaceMessage::SetSliderTrackColor(cp.color),
-                    5 => pages::interface::InterfaceMessage::SetColorBordersColor(cp.color),
-                    6 => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
-                    7 => pages::interface::InterfaceMessage::SetNormalColor(cp.color),
-                    8 => pages::interface::InterfaceMessage::SetPaginatorSidebarColor(cp.color),
-                    9 => pages::interface::InterfaceMessage::SetPrimaryHighlightColor(cp.color),
-                    10 => pages::interface::InterfaceMessage::SetMenubarTabLabelColor(cp.color),
-                    11 => pages::interface::InterfaceMessage::SetToggleEnabledColor(cp.color),
-                    12 => pages::interface::InterfaceMessage::SetToggleDisabledColor(cp.color),
-                    13 => pages::interface::InterfaceMessage::SetScrollingListBgColor(cp.color),
-                    14 => pages::interface::InterfaceMessage::SetBreadcrumbBgColor(cp.color),
-                    15 => pages::interface::InterfaceMessage::SetPopoverBgColor(cp.color),
-                    16 => pages::interface::InterfaceMessage::SetNotificationBgColor(cp.color),
-                    17 => pages::interface::InterfaceMessage::SetBackplateColor(cp.color),
-                    18 => pages::interface::InterfaceMessage::SetPageColor(cp.color),
-                    19 => pages::interface::InterfaceMessage::SetLayerColor(cp.color),
-                    22 => pages::interface::InterfaceMessage::SetStatusBoxBackgroundColor(cp.color),
-                    _ => pages::interface::InterfaceMessage::SetDesktopBackground(cp.color),
-                }));
-                color_changed = true;
-            }
-        }
-        for action in color_actions {
-            self.handle_action(&action);
-        }
-        if color_changed {
-            needs_redraw = true;
-            self.needs_rebuild = true;
-        }
-
         needs_redraw
     }
 
@@ -656,40 +523,9 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_display.try_recv() {
-            display::update(&mut self.app.display, display::DisplayMessage::Refreshed(s));
-            if self.app.current_page == Page::Display {
-                self.needs_rebuild = true;
-            }
-        }
         while let Ok(s) = self.rx_network.try_recv() {
             network::update(&mut self.app.network, network::NetworkMessage::Refreshed(s));
             if self.app.current_page == Page::Radios {
-                self.needs_rebuild = true;
-            }
-        }
-        while let Ok(s) = self.rx_layout.try_recv() {
-            interface::update_windows(&mut self.app.interface.windows, interface::WindowsMessage::Refreshed(s));
-            if self.app.current_page == Page::Interface {
-                self.needs_rebuild = true;
-            }
-        }
-
-        while let Ok((s, mtime)) = self.rx_input.try_recv() {
-            if mtime > self.last_write_mtime {
-                input::update(&mut self.app.input, input::InputMessage::Refreshed(s));
-                if self.app.current_page == Page::Input {
-                    self.needs_rebuild = true;
-                }
-            }
-        }
-        let mut got_fingers = None;
-        while let Ok(s) = self.rx_fingers.try_recv() {
-            got_fingers = Some(s);
-        }
-        if let Some(fingers) = got_fingers {
-            input::update(&mut self.app.input, input::InputMessage::UpdateFingers(fingers));
-            if self.app.current_page == Page::Input {
                 self.needs_rebuild = true;
             }
         }
@@ -717,12 +553,12 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_typeface.try_recv() {
+        while let Ok(s) = self.rx_fonts.try_recv() {
             self.sans_serif_family = s.sans_serif.clone();
             self.serif_family = s.serif.clone();
             self.monospace_family = s.monospace.clone();
-            interface::update(&mut self.app.interface, interface::InterfaceMessage::TypefaceRefreshed(s));
-            if self.app.current_page == Page::Interface {
+            fonts::update(&mut self.app.fonts, fonts::FontsMessage::TypefaceRefreshed(s));
+            if self.app.current_page == Page::Fonts {
                 self.needs_rebuild = true;
             }
         }
@@ -730,14 +566,6 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             processes::update(&mut self.app.processes, processes::ProcessesMessage::ServicesRefreshed(s));
             if self.app.current_page == Page::Processes {
                 self.needs_rebuild = true;
-            }
-        }
-        while let Ok((s, mtime)) = self.rx_interface.try_recv() {
-            if mtime > self.last_write_mtime {
-                interface::update(&mut self.app.interface, pages::interface::InterfaceMessage::Refreshed(s));
-                if self.app.current_page == Page::Interface {
-                    self.needs_rebuild = true;
-                }
             }
         }
 
@@ -772,9 +600,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
         match action {
             AppAction::Exit => {}
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
-            AppAction::Display(m) => display::update(&mut self.app.display, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
-            AppAction::Input(m) => input::update(&mut self.app.input, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
             AppAction::Storage(m) => match m {
@@ -790,11 +616,11 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             },
 
 
-            AppAction::Interface(m) => {
-                interface::update(&mut self.app.interface, m.clone());
-                self.sans_serif_family = self.app.interface.sans_serif.clone();
-                self.serif_family = self.app.interface.serif.clone();
-                self.monospace_family = self.app.interface.monospace.clone();
+            AppAction::Fonts(m) => {
+                fonts::update(&mut self.app.fonts, m.clone());
+                self.sans_serif_family = self.app.fonts.sans_serif.clone();
+                self.serif_family = self.app.fonts.serif.clone();
+                self.monospace_family = self.app.fonts.monospace.clone();
             }
             AppAction::Accounts(m) => match m {
                 pages::accounts::AccountsMessage::GoogleLoginInit => {
@@ -878,20 +704,7 @@ fn main() {
 
     let mut initial_page = Page::ALL[0];
 
-    // Try to load last_page from config
-    let config_path = "/home/lsgalante/.config/cce/config.kdl";
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        let val = cce_ui::config::parse_kdl_to_json(&content);
-        if let Some(last_page_val) = val.pointer("/layout/last_page").and_then(|v| v.as_str()) {
-            let last_page_val = last_page_val.trim_matches('"').trim_matches('\'').trim().to_lowercase();
-            for page in Page::ALL {
-                if page.label().to_lowercase() == last_page_val {
-                    initial_page = page;
-                    break;
-                }
-            }
-        }
-    }
+
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {

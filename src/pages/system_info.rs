@@ -1,9 +1,10 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Label, Dropdown, InfoBox, Toggle, Spinbox, Element};
-use crate::config_manager::CONFIG_PATH;
 use std::io::Write;
 use std::fs;
+
+const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {

@@ -1,6 +1,6 @@
 use crate::SystemInterface;
 use cce_settings::app::AppAction;
-use cce_settings::pages::{self, Page};
+use cce_settings::pages::Page;
 use cce_ui::widget::Element;
 
 impl SystemInterface {
@@ -114,7 +114,6 @@ impl SystemInterface {
                             self.app.current_page = new_page;
                             self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
                             self.scroll_y = 0.0;
-                            pages::interface::write_config_value("last_page", &format!("\"{}\"", new_page.label().to_lowercase()));
                         }
                     }
                     self.needs_rebuild = true;
@@ -136,7 +135,6 @@ impl SystemInterface {
                         self.app.current_page = new_page;
                         self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
                         self.scroll_y = 0.0;
-                        pages::interface::write_config_value("last_page", &format!("\"{}\"", new_page.label().to_lowercase()));
                     }
                 }
                 self.needs_rebuild = true;
@@ -197,12 +195,7 @@ impl SystemInterface {
             let lx = px / s;
             let ly = py / s + self.scroll_y;
             
-            if self.app.current_page == Page::Input {
-                let input = &self.app.input;
-                if input.is_over_trackpad(lx, ly, &self.ui_context) {
-                    return true;
-                }
-            }
+
 
             let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly, local_x: lx, local_y: ly };
             let mut handled = false;

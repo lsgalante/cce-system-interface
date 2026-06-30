@@ -1,12 +1,10 @@
 pub mod audio;
 pub mod network;
-pub mod display;
 pub mod storage;
 pub mod system_info;
 pub mod keybindings;
-pub mod input;
 pub mod processes;
-pub mod interface;
+pub mod fonts;
 pub mod accounts;
 pub mod packages;
 
@@ -16,21 +14,17 @@ pub enum Page {
     Audio,
     Radios,
     Storage,
-    Display,
     System,
     Processes,
-    Input,
-    Interface,
+    Fonts,
     Packages,
 }
 
 impl Page {
-    pub const ALL: [Page; 10] = [
+    pub const ALL: [Page; 8] = [
         Page::Accounts,
         Page::Audio,
-        Page::Display,
-        Page::Input,
-        Page::Interface,
+        Page::Fonts,
         Page::Packages,
         Page::Processes,
         Page::Radios,
@@ -44,11 +38,9 @@ impl Page {
             Page::Audio => "Audio",
             Page::Radios => "Radios",
             Page::Storage => "Storage",
-            Page::Display => "Display",
             Page::System => "System",
             Page::Processes => "Processes",
-            Page::Input => "Input",
-            Page::Interface => "Interface",
+            Page::Fonts => "Fonts",
             Page::Packages => "Packages",
         }
     }
