@@ -147,8 +147,21 @@ pub async fn fetch_accounts() -> Vec<AccountInfo> {
 
 const GOOGLE_CLIENT_ID: &str = "REDACTED.apps.googleusercontent.com";
 const GOOGLE_CLIENT_SECRET: &str = "GOCSPX-REDACTED";
-const PKCE_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-const PKCE_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
+fn generate_pkce() -> (String, String) {
+    use ring::rand::SecureRandom;
+    use base64::Engine;
+    let rand = ring::rand::SystemRandom::new();
+    let mut bytes = [0u8; 32];
+    rand.fill(&mut bytes).unwrap();
+    let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    
+    let hash = ring::digest::digest(&ring::digest::SHA256, verifier.as_bytes());
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash.as_ref());
+    
+    (verifier, challenge)
+}
+
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GoogleClientConfig {
@@ -211,10 +224,12 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
     
     let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("Waiting for browser login...".to_string())));
     
+    let (verifier, challenge) = generate_pkce();
+    
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
         client_config.client_id,
-        PKCE_CHALLENGE
+        challenge
     );
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(&auth_url);
@@ -233,7 +248,7 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
                 let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("Exchanging code for token...".to_string())));
                 
                 // Perform token exchange
-                exchange_code_for_tokens(code, sender.clone()).await;
+                exchange_code_for_tokens(code, verifier, sender.clone()).await;
                 
                 let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
                                 <html><head><style>body { font-family: sans-serif; background-color: #08080c; color: #fff; text-align: center; padding-top: 50px; }</style></head><body><h2>Clear System Settings Authentication Successful!</h2><p>You can close this tab and return to the application.</p></body></html>";
@@ -250,7 +265,7 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
     }
 }
 
-pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Sender<AppAction>) {
+pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: calloop::channel::Sender<AppAction>) {
     let client_config = load_google_client_config();
     let client = reqwest::Client::new();
     let mut params = vec![
@@ -258,11 +273,12 @@ pub async fn exchange_code_for_tokens(code: String, sender: calloop::channel::Se
         ("client_id", client_config.client_id.as_str()),
         ("redirect_uri", "http://localhost:36137/auth/callback"),
         ("grant_type", "authorization_code"),
-        ("code_verifier", PKCE_VERIFIER),
+        ("code_verifier", verifier.as_str()),
     ];
     if !client_config.client_secret.is_empty() {
         params.push(("client_secret", client_config.client_secret.as_str()));
     }
+
     
     match client.post("https://oauth2.googleapis.com/token")
         .form(&params)
