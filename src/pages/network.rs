@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{ScrollingList, Toggle, Element};
+use cce_ui::widget::{List, Toggle, Element};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -32,7 +32,7 @@ pub struct NetworkState {
     pub bt_enabled: bool,
     pub bt_devices: Vec<BluetoothDevice>,
     pub bt_scanning: bool,
-    pub wifi_list_box: ScrollingList,
+    pub wifi_list_box: List,
     pub wifi_toggle: Toggle,
     pub bt_toggle: Toggle,
 }
@@ -52,7 +52,7 @@ impl Default for NetworkState {
             bt_enabled: false,
             bt_devices: Vec::new(),
             bt_scanning: false,
-            wifi_list_box: ScrollingList::new(26.0, 4.0),
+            wifi_list_box: List::new(26.0, 4.0),
             wifi_toggle: Toggle::new(),
             bt_toggle: Toggle::new(),
         }
@@ -126,7 +126,7 @@ pub async fn fetch_network_state() -> NetworkState {
         ip_address, device, available,
         bt_installed, bt_service_active,
         bt_enabled, bt_devices, bt_scanning: false,
-        wifi_list_box: ScrollingList::new(26.0, 4.0),
+        wifi_list_box: List::new(26.0, 4.0),
         wifi_toggle: Toggle::new(),
         bt_toggle: Toggle::new(),
     }

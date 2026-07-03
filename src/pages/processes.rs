@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{ScrollingList, TextBox, StatusDot, DotStatus, InteractiveListItem, Element};
+use cce_ui::widget::{List, TextBox, StatusDot, DotStatus, InteractiveListItem, Element};
 
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {
@@ -27,14 +27,14 @@ impl Default for ServiceTab {
 pub struct ProcessesState {
     pub loaded: bool,
     pub processes: Vec<(String, String, String)>, // (pid, cpu, comm)
-    pub cpu_list_box: ScrollingList,
+    pub cpu_list_box: List,
 
     // Services-related fields
     pub services_loaded: bool,
     pub services: Vec<ServiceInfo>,
     pub services_active_tab: ServiceTab,
     pub services_search_box: TextBox,
-    pub services_list_box: ScrollingList,
+    pub services_list_box: List,
     pub service_items: Vec<InteractiveListItem>,
 }
 
@@ -43,13 +43,13 @@ impl Default for ProcessesState {
         Self {
             loaded: false,
             processes: Vec::new(),
-            cpu_list_box: ScrollingList::new(24.0, 2.0),
+            cpu_list_box: List::new(24.0, 2.0),
 
             services_loaded: false,
             services: Vec::new(),
             services_active_tab: ServiceTab::System,
             services_search_box: TextBox::new(String::new()).with_label("Filter Services"),
-            services_list_box: ScrollingList::new(36.0, 6.0),
+            services_list_box: List::new(36.0, 6.0),
             service_items: Vec::new(),
         }
     }
@@ -92,12 +92,12 @@ pub async fn fetch_processes_state() -> ProcessesState {
     ProcessesState {
         loaded: true,
         processes,
-        cpu_list_box: ScrollingList::new(24.0, 2.0),
+        cpu_list_box: List::new(24.0, 2.0),
         services_loaded: false,
         services: Vec::new(),
         services_active_tab: ServiceTab::System,
         services_search_box: TextBox::new(String::new()).with_label("Filter Services"),
-        services_list_box: ScrollingList::new(36.0, 6.0),
+        services_list_box: List::new(36.0, 6.0),
         service_items: Vec::new(),
     }
 }
@@ -135,7 +135,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             sec.pc.text("CPU %", list_box_x + list_box_w - 60.0, list_box_y + 5.0, 11.0, [0.53, 0.53, 0.60, 1.0]);
 
             let row_h = 24.0;
-            // Update ScrollingList bounds for the scrollable viewport (which starts below the header)
+            // Update List bounds for the scrollable viewport (which starts below the header)
             state.cpu_list_box.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - 6.0);
 
             // Visible process rows rendering (virtualized/clipped)
@@ -251,7 +251,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
                 .collect();
 
-            // Update ScrollingList bounds
+            // Update List bounds
             state.services_list_box.update_bounds(filtered_services.len(), list_box_y, list_box_h);
 
             let item_h = state.services_list_box.item_height;

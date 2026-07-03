@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
-use cce_ui::widget::{Element, ScrollingList, TextBox, InteractiveListItem};
+use cce_ui::widget::{Element, List, TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
@@ -34,9 +34,9 @@ pub struct PackagesState {
     pub updates: Vec<UpdateInfo>,
     pub active_tab: PackageTab,
     pub search_box: TextBox,
-    pub installed_list_box: ScrollingList,
+    pub installed_list_box: List,
     pub installed_items: Vec<InteractiveListItem>,
-    pub updates_list_box: ScrollingList,
+    pub updates_list_box: List,
     pub updates_items: Vec<InteractiveListItem>,
     pub updating: bool,
     pub last_update_res: Option<Result<(), String>>,
@@ -54,9 +54,9 @@ impl Default for PackagesState {
             updates: Vec::new(),
             active_tab: PackageTab::Installed,
             search_box: TextBox::new(String::new()).with_placeholder("Filter Packages..."),
-            installed_list_box: ScrollingList::new(32.0, 4.0),
+            installed_list_box: List::new(32.0, 4.0),
             installed_items: Vec::new(),
-            updates_list_box: ScrollingList::new(32.0, 4.0),
+            updates_list_box: List::new(32.0, 4.0),
             updates_items: Vec::new(),
             updating: false,
             last_update_res: None,
