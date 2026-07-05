@@ -1,4 +1,4 @@
-use cce_ui::widget::{hover_animation, Element, PageSelector};
+use cce_ui::widget::{hover_animation, Element};
 use glyphon::{Attrs, Buffer, FontSystem, Metrics};
 
 use cce_settings::app::{AppAction, AppState};
@@ -193,7 +193,7 @@ struct SystemInterface {
     last_scroll_y: f32,
     page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
     root_window: cce_ui::widget::Backplate,
-    menubar: cce_ui::widget::Paginator,
+    page_dropdown: cce_ui::widget::input::Dropdown,
     switcher: cce_ui::widget::Switcher,
     pages: Vec<cce_ui::widget::Page>,
     statusbar: cce_ui::widget::StatusBar,
@@ -230,8 +230,9 @@ impl cce_ui::engine::Application for SystemInterface {
         let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::fonts::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
-        let menubar = cce_ui::widget::Paginator::new(pages_names);
-        let sidebar_width = menubar.sidebar_w();
+        let page_dropdown = cce_ui::widget::input::Dropdown::new(pages_names, initial_page_idx)
+            .with_open_upward(true);
+        let sidebar_width = 0.0f32;
 
         let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
         let mut pages = Vec::new();
@@ -299,7 +300,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 ])
                 .with_border([0.22, 0.22, 0.28, 1.0], 1.5)
                 .with_radius(win_radius as f32),
-            menubar,
+            page_dropdown,
             switcher,
             pages,
             statusbar: cce_ui::widget::StatusBar::new(),
@@ -321,7 +322,7 @@ impl cce_ui::engine::Application for SystemInterface {
             this.switcher.add_child(page.as_ptr(), &mut this.ui_context);
         }
 
-        this.root_window.add_child(this.menubar.as_ptr(), &mut this.ui_context);
+        this.root_window.add_child(this.page_dropdown.as_ptr(), &mut this.ui_context);
         this.root_window.add_child(this.switcher.as_ptr(), &mut this.ui_context);
         this.root_window.add_child(this.statusbar.as_ptr(), &mut this.ui_context);
 

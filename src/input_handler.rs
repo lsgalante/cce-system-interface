@@ -33,7 +33,7 @@ impl SystemInterface {
         let ly = self.cursor_y / s + self.scroll_y;
         cce_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
-        if self.menubar.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+        if self.page_dropdown.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
             changed = true;
         }
         if self.switcher.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
@@ -115,49 +115,23 @@ impl SystemInterface {
         }
 
         let mut handled = false;
-        if state == cce_ui::widget::ElementState::Pressed {
-            if lx_no_scroll < self.sidebar_width {
-                if self.menubar.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                    use cce_ui::widget::MenuController;
-                    if let Some((idx, _)) = self.menubar.menu_click() {
-                        if idx < Page::ALL.len() {
-                            cce_ui::widget::focus::clear_focus();
-                            let new_page = Page::ALL[idx];
-                            self.app.current_page = new_page;
-                            self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
-                            self.scroll_y = 0.0;
-                            self.update_status_text();
-                        }
-                    }
-                    self.needs_rebuild = true;
-                    handled = true;
-                }
-            } else {
-                if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                    self.needs_rebuild = true;
-                    handled = true;
+        if self.page_dropdown.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+            if self.page_dropdown.take_change() {
+                let idx = self.page_dropdown.selected;
+                if idx < Page::ALL.len() {
+                    cce_ui::widget::focus::clear_focus();
+                    let new_page = Page::ALL[idx];
+                    self.app.current_page = new_page;
+                    self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
+                    self.scroll_y = 0.0;
+                    self.update_status_text();
                 }
             }
-        } else {
-            if self.menubar.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                use cce_ui::widget::MenuController;
-                if let Some((idx, _)) = self.menubar.menu_click() {
-                    if idx < Page::ALL.len() {
-                        cce_ui::widget::focus::clear_focus();
-                        let new_page = Page::ALL[idx];
-                        self.app.current_page = new_page;
-                        self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
-                        self.scroll_y = 0.0;
-                        self.update_status_text();
-                    }
-                }
-                self.needs_rebuild = true;
-                handled = true;
-            }
-            if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-                self.needs_rebuild = true;
-                handled = true;
-            }
+            self.needs_rebuild = true;
+            handled = true;
+        } else if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+            self.needs_rebuild = true;
+            handled = true;
         }
         if handled {
             return true;
@@ -295,13 +269,6 @@ impl SystemInterface {
                     }
                 }
                 self.last_scroll_y = self.scroll_y;
-                return true;
-            }
-        } else {
-            let lx = px / s;
-            let ly = py / s;
-            if self.menubar.mouse_wheel(delta, lx, ly, &mut self.ui_context) {
-                self.needs_rebuild = true;
                 return true;
             }
         }

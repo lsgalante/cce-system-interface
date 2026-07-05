@@ -1,7 +1,7 @@
 use crate::{SystemInterface, AppWidget, make_text_buffer_with_font};
 use cce_settings::app::PageContent;
 use cce_settings::pages::Page;
-use cce_ui::widget::{Element, TextItem, PageSelector};
+use cce_ui::widget::{Element, TextItem};
 
 impl SystemInterface {
 
@@ -37,7 +37,7 @@ impl SystemInterface {
 
         active_page.link_children(page_root, &mut self.page_sec_containers, &mut self.ui_context);
 
-        self.sidebar_width = self.menubar.sidebar_w();
+        self.sidebar_width = 0.0;
         self.header_height = 0.0; // No CSD Titlebar
         let mut widgets = Vec::new();
         let mut text_items = Vec::new();
@@ -66,7 +66,7 @@ impl SystemInterface {
         }
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        self.menubar.set_selected_page(page_idx);
+        self.page_dropdown.selected = page_idx;
         self.switcher.set_active_index(Some(page_idx));
 
         // Update root window size, background color, opacity, corner radius, and children
@@ -78,7 +78,7 @@ impl SystemInterface {
         self.root_window.background_color = Some(cce_ui::color::to_linear([win_r, win_g, win_b, win_a]));
         self.root_window.radius = 12.0;
         self.root_window.clear_children(&mut self.ui_context);
-        self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
+        self.root_window.add_child(self.page_dropdown.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.statusbar.as_ptr(), &mut self.ui_context);
         if self.search_open {
@@ -88,7 +88,11 @@ impl SystemInterface {
 
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.menubar, 0.0, self.header_height, self.sidebar_width, logical_sh - self.header_height - self.status_height, &mut self.ui_context);
+        let dropdown_w = 180.0f32;
+        let dropdown_h = 18.0f32;
+        let dropdown_x = logical_sw - dropdown_w - 12.0;
+        let dropdown_y = logical_sh - self.status_height + (self.status_height - dropdown_h) / 2.0;
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
         let switcher_h = if self.search_open {
             logical_sh - self.header_height - 42.0 - self.status_height
         } else {
