@@ -476,13 +476,18 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
 pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
     match msg {
         NetworkMessage::Refreshed(new) => {
-            let old_scroll = state.wifi_list_box.scroll_y();
-            let was_wifi_hovered = state.wifi_toggle.hovered();
-            let was_bt_hovered = state.bt_toggle.hovered();
-            *state = new;
-            state.wifi_list_box.set_scroll_y(old_scroll);
-            state.wifi_toggle.set_hovered(was_wifi_hovered);
-            state.bt_toggle.set_hovered(was_bt_hovered);
+            state.loaded = new.loaded;
+            state.wifi_enabled = new.wifi_enabled;
+            state.connected_ssid = new.connected_ssid;
+            state.signal_strength = new.signal_strength;
+            state.ip_address = new.ip_address;
+            state.device = new.device;
+            state.available = new.available;
+            state.bt_installed = new.bt_installed;
+            state.bt_service_active = new.bt_service_active;
+            state.bt_enabled = new.bt_enabled;
+            state.bt_devices = new.bt_devices;
+            state.bt_scanning = new.bt_scanning;
         }
         NetworkMessage::ToggleWifi => {
             state.wifi_enabled = !state.wifi_enabled;

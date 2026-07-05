@@ -363,7 +363,9 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 pub fn update(state: &mut AudioState, msg: AudioMessage) {
     match msg {
         AudioMessage::Refreshed(new) => {
-            *state = new;
+            state.loaded = new.loaded;
+            state.sinks = new.sinks;
+            state.sources = new.sources;
             state.sink_spinboxes.resize_with(state.sinks.len(), || Box::new(Spinbox::new(50, 0, 100, 1)));
             state.source_spinboxes.resize_with(state.sources.len(), || Box::new(Spinbox::new(50, 0, 100, 1)));
             state.sink_sliders.resize_with(state.sinks.len(), || Box::new(Slider::new().with_range(0.0, 1.0).with_scroll(true)));

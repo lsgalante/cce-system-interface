@@ -374,9 +374,6 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
         ProcessesMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.processes = new.processes;
-            let old_scroll = state.cpu_list_box.scroll_y();
-            state.cpu_list_box = new.cpu_list_box;
-            state.cpu_list_box.set_scroll_y(old_scroll);
         }
         ProcessesMessage::ServicesRefreshed(new_services) => {
             state.services_loaded = true;

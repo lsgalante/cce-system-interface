@@ -619,31 +619,15 @@ pub fn view(
 pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
     match msg {
         PackagesMessage::Refreshed(new) => {
-            let active = state.active_tab;
-            let query = state.search_box.text.clone();
-            let is_editing = state.search_box.editing;
-            let edit_buf = state.search_box.edit_buffer.clone();
-            
-            let selected_package = state.selected_package.clone();
-            let selected_package_info = state.selected_package_info.clone();
-            let loading_info = state.loading_info;
-
-            let installed_scroll = state.installed_list_box.scroll_y();
-            let updates_scroll = state.updates_list_box.scroll_y();
-            
-            *state = new;
-            
-            state.active_tab = active;
-            state.search_box.text = query;
-            state.search_box.editing = is_editing;
-            state.search_box.edit_buffer = edit_buf;
-            
-            state.selected_package = selected_package;
-            state.selected_package_info = selected_package_info;
-            state.loading_info = loading_info;
-
-            state.installed_list_box.set_scroll_y(installed_scroll);
-            state.updates_list_box.set_scroll_y(updates_scroll);
+            state.loaded = new.loaded;
+            state.installed = new.installed;
+            state.updates = new.updates;
+            state.updating = new.updating;
+            state.last_update_res = new.last_update_res;
+            state.selected_package = new.selected_package;
+            state.selected_package_info = new.selected_package_info;
+            state.loading_info = new.loading_info;
+            state.uninstalling = new.uninstalling;
         }
         PackagesMessage::SetTab(tab) => {
             state.active_tab = tab;

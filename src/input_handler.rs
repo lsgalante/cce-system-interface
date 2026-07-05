@@ -312,11 +312,7 @@ impl SystemInterface {
 
     pub(crate) fn get_page_root_widget(&mut self) -> Option<*mut (dyn cce_ui::widget::Element + 'static)> {
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        let ptr = &mut self.pages[page_idx] as &mut dyn cce_ui::widget::Element as *mut dyn cce_ui::widget::Element;
-        let static_ptr = unsafe {
-            std::mem::transmute::<*mut dyn cce_ui::widget::Element, *mut (dyn cce_ui::widget::Element + 'static)>(ptr)
-        };
-        Some(static_ptr)
+        Some(self.pages[page_idx].as_ptr_mut())
     }
 
     pub(crate) fn handle_key_input_internal(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {

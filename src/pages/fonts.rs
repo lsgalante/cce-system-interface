@@ -569,7 +569,16 @@ pub fn read_typeface_config() -> FontsState {
 pub fn update(state: &mut FontsState, msg: FontsMessage) {
     match msg {
         FontsMessage::TypefaceRefreshed(refreshed) | FontsMessage::Refreshed(refreshed) => {
-            *state = refreshed;
+            state.typeface_loaded = refreshed.typeface_loaded;
+            state.sans_serif = refreshed.sans_serif;
+            state.serif = refreshed.serif;
+            state.monospace = refreshed.monospace;
+            state.window_borders = refreshed.window_borders;
+            state.status_interface = refreshed.status_interface;
+            state.fuzzel = refreshed.fuzzel;
+            state.terminal = refreshed.terminal;
+            state.all_fonts = refreshed.all_fonts;
+            state.mono_fonts = refreshed.mono_fonts;
         }
         FontsMessage::SetSans(font) => {
             state.sans_serif = font;
