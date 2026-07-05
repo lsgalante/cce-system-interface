@@ -398,7 +398,7 @@ impl cce_ui::engine::Application for SystemInterface {
         }
 
         // Draw global hover highlight if active
-        let s = scale as f32;
+        let s = 1.0f32;
         cce_ui::widget::hover_animation::post_render_check();
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             quads.push((

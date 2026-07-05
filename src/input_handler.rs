@@ -60,9 +60,8 @@ impl SystemInterface {
             }
         }
 
-        let scale = self.scale_factor as f32;
-        let phys_x = x * scale;
-        let phys_y = y * scale;
+        let phys_x = x;
+        let phys_y = y;
 
         // Check if cursor hover state changed on any widget
         for w in &self.widgets {
@@ -166,9 +165,8 @@ impl SystemInterface {
 
         if button != cce_ui::widget::MouseButton::Left && button != cce_ui::widget::MouseButton::Right { return false; }
 
-        let scale = self.scale_factor as f32;
-        let phys_x = self.cursor_x * scale;
-        let phys_y = self.cursor_y * scale;
+        let phys_x = self.cursor_x;
+        let phys_y = self.cursor_y;
 
         let mut button_handled = false;
         let mut clicked_action = None;

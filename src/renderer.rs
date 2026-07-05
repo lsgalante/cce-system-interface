@@ -48,9 +48,9 @@ impl SystemInterface {
         cce_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
         cce_ui::widget::hover_animation::set_cursor_pos(self.cursor_x, self.cursor_y);
 
-        let s = self.scale_factor as f32;
-        let cursor_phys_x = self.cursor_x * s;
-        let cursor_phys_y = self.cursor_y * s;
+        let s = 1.0f32;
+        let cursor_phys_x = self.cursor_x;
+        let cursor_phys_y = self.cursor_y;
         let check_hover = |wx: f32, wy: f32, ww: f32, wh: f32| -> bool {
             cursor_phys_x >= wx && cursor_phys_x <= wx + ww && cursor_phys_y >= wy && cursor_phys_y <= wy + wh
         };
