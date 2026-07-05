@@ -8,6 +8,7 @@ use crate::pages::storage;
 use crate::pages::fonts;
 use crate::pages::accounts;
 use crate::pages::packages;
+use crate::pages::notifications;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -20,6 +21,7 @@ pub struct AppState {
     pub fonts: fonts::FontsState,
     pub accounts: accounts::AccountsState,
     pub packages: packages::PackagesState,
+    pub notifications: notifications::NotificationsState,
 }
 
 impl Default for AppState {
@@ -34,6 +36,7 @@ impl Default for AppState {
             fonts: fonts::FontsState::default(),
             accounts: accounts::AccountsState::default_mock(),
             packages: packages::PackagesState::default(),
+            notifications: notifications::NotificationsState::default(),
         }
     }
 }
@@ -49,6 +52,7 @@ impl AppState {
             Page::Storage => &self.storage,
             Page::System => &self.system_info,
             Page::Fonts => &self.fonts,
+            Page::Notifications => &self.notifications,
         }
     }
 
@@ -62,6 +66,7 @@ impl AppState {
             Page::Storage => &mut self.storage,
             Page::System => &mut self.system_info,
             Page::Fonts => &mut self.fonts,
+            Page::Notifications => &mut self.notifications,
         }
     }
 
@@ -85,6 +90,7 @@ pub enum AppAction {
     Fonts(fonts::FontsMessage),
     Accounts(accounts::AccountsMessage),
     Packages(packages::PackagesMessage),
+    Notifications(notifications::NotificationsMessage),
 }
 
 

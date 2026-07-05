@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, audio, network, fonts, processes, system_info, storage, packages, accounts};
+use crate::pages::{Page, audio, network, fonts, processes, system_info, storage, packages, accounts, notifications};
 
 pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
@@ -9,7 +9,7 @@ pub struct Watchers {
     pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemState>,
     pub rx_storage: Receiver<storage::StorageState>,
-    pub rx_notifications: Receiver<system_info::NotificationsConfig>,
+    pub rx_notifications: Receiver<notifications::NotificationsConfig>,
     pub rx_services: Receiver<Vec<processes::ServiceInfo>>,
     pub rx_fonts: Receiver<fonts::FontsState>,
     pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
@@ -65,19 +65,19 @@ pub fn spawn_all(
     let rx_storage = spawn_bg_active(current_page_shared.clone(), Page::Storage.index() as u8, 10, || storage::fetch_storage_state());
 
     let rx_notifications = {
-        let (tx, rx) = channel::<system_info::NotificationsConfig>();
+        let (tx, rx) = channel::<notifications::NotificationsConfig>();
         let current_page_shared = current_page_shared.clone();
         tokio::spawn(async move {
             let mut last_fetch: Option<std::time::Instant> = None;
             loop {
                 let current_page = current_page_shared.load(Ordering::SeqCst);
-                if current_page == Page::System.index() as u8 {
+                if current_page == Page::Notifications.index() as u8 {
                     let should_fetch = match last_fetch {
                         None => true,
                         Some(t) => t.elapsed() >= std::time::Duration::from_secs(30),
                     };
                     if should_fetch {
-                        let val = tokio::task::spawn_blocking(|| system_info::read_notifications_config()).await;
+                        let val = tokio::task::spawn_blocking(|| notifications::read_notifications_config()).await;
                         if let Ok(val) = val {
                             if tx.send(val).is_err() { break; }
                         }

@@ -7,11 +7,13 @@ pub mod processes;
 pub mod fonts;
 pub mod accounts;
 pub mod packages;
+pub mod notifications;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Accounts,
     Audio,
+    Notifications,
     Radios,
     Storage,
     System,
@@ -21,10 +23,11 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 8] = [
+    pub const ALL: [Page; 9] = [
         Page::Accounts,
         Page::Audio,
         Page::Fonts,
+        Page::Notifications,
         Page::Packages,
         Page::Processes,
         Page::Radios,
@@ -36,6 +39,7 @@ impl Page {
         match self {
             Page::Accounts => "Accounts",
             Page::Audio => "Audio",
+            Page::Notifications => "Notifications",
             Page::Radios => "Radios",
             Page::Storage => "Storage",
             Page::System => "System",

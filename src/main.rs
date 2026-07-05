@@ -170,7 +170,7 @@ struct SystemInterface {
     pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
-    rx_notifications: std::sync::mpsc::Receiver<pages::system_info::NotificationsConfig>,
+    rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
     rx_fonts: std::sync::mpsc::Receiver<pages::fonts::FontsState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
@@ -552,8 +552,8 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_notifications.try_recv() {
-            system_info::update(&mut self.app.system_info, system_info::SystemMessage::NotificationsRefreshed(s));
-            if self.app.current_page == Page::System {
+            pages::notifications::update(&mut self.app.notifications, pages::notifications::NotificationsMessage::Refreshed(s));
+            if self.app.current_page == Page::Notifications {
                 self.needs_rebuild = true;
             }
         }
@@ -607,6 +607,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
+            AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {
                     pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup);
@@ -707,9 +708,10 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             Page::Fonts => "Fonts Settings: Adjust font family preferences, typography, and scaling.",
             Page::Packages => "Package Manager: Search, install, and update system packages.",
             Page::Processes => "System Monitor: Inspect running tasks, system resources, and services.",
+            Page::Notifications => "Notifications: Configure system notifications, sound, and duration.",
             Page::Radios => "Network Settings: Configure wireless networks, radios, and connections.",
             Page::Storage => "Storage Settings: Manage local disks, partition structures, and backup runs.",
-            Page::System => "System Settings: System properties, update checks, and notification parameters.",
+            Page::System => "System Settings: System properties, power management, and update checks.",
         };
         self.statusbar.set_text(msg);
     }

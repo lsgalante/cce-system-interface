@@ -1,10 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, Toggle, Spinbox, Element};
-use std::io::Write;
-use std::fs;
-
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
+use cce_ui::widget::{Label, Dropdown, InfoBox, Element};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -51,14 +47,6 @@ pub struct SystemState {
     pub cpu_gov_menu: Dropdown,
     pub gpu_gov_menu: Dropdown,
 
-    // Notifications
-    pub notifications_loaded: bool,
-    pub notifications_enable: bool,
-    pub notifications_enable_toggle: Toggle,
-    pub notifications_bell: String,
-    pub notifications_bell_menu: Dropdown,
-    pub notifications_duration: i32,
-    pub notifications_duration_spinbox: Spinbox,
 }
 
 impl Default for SystemState {
@@ -91,25 +79,6 @@ impl Default for SystemState {
                 0,
             ).with_label("GPU Power Limit"),
 
-            notifications_loaded: false,
-            notifications_enable: true,
-            notifications_enable_toggle: Toggle::new().with_label("Enable Notifications").with_config(&get_config_path(), "enable"),
-            notifications_bell: "none".to_string(),
-            notifications_bell_menu: Dropdown::new(
-                vec![
-                    "None".to_string(),
-                    "Bell".to_string(),
-                    "Dialog".to_string(),
-                    "Message".to_string(),
-                ],
-                0,
-            ).with_label("Notification Sound"),
-            notifications_duration: 5,
-            notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
-                .with_label("Notification Duration")
-                .with_unit("s")
-                .with_config(&get_config_path(), "duration"),
-
         }
     }
 }
@@ -127,12 +96,6 @@ pub enum SystemMessage {
     SetCpuPowersave,
     SetGpuDefault,
     SetGpuPowersave,
-    ToggleNotificationsEnable,
-    SetNotificationsBell(String),
-    SetNotificationsDuration(i32),
-    SendTestNotification,
-    NotificationsRefreshed(NotificationsConfig),
-
 }
 
 // ── zbus proxies ────────────────────────────────────────────────────
@@ -430,24 +393,6 @@ pub async fn fetch_system_state() -> SystemState {
             if gpu_powersave { 1 } else { 0 },
         ).with_label("GPU Power Limit"),
 
-        notifications_loaded: false,
-        notifications_enable: true,
-        notifications_enable_toggle: Toggle::new().with_label("Enable Notifications").with_config(&get_config_path(), "enable"),
-        notifications_bell: "none".to_string(),
-        notifications_bell_menu: Dropdown::new(
-            vec![
-                "None".to_string(),
-                "Bell".to_string(),
-                "Dialog".to_string(),
-                "Message".to_string(),
-            ],
-            0,
-        ).with_label("Notification Sound"),
-        notifications_duration: 5,
-        notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
-            .with_label("Notification Duration")
-            .with_unit("s")
-            .with_config(&get_config_path(), "duration"),
     }
 }
 
@@ -464,7 +409,7 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(9);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
 
     // ── 1. System Section ──
     builder.add_section(&mut final_pc, "System", false, |sec| {
@@ -638,47 +583,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         }
     });
 
-    // ── 8. System Notifications Section ──
-    builder.add_section(&mut final_pc, "System Notifications", sec_focused.get(7).copied().unwrap_or(false), |sec2| {
-        let sec_w = sec2.cw;
-        state.notifications_enable_toggle.set_toggled(state.notifications_enable);
-        sec2.widget_full(&mut state.notifications_enable_toggle, cce_ui::layout::toggle_height(), ctx);
-
-        let selected_idx = match state.notifications_bell.as_str() {
-            "none" => 0,
-            "bell" => 1,
-            "dialog" => 2,
-            "message" => 3,
-            _ => 0,
-        };
-        state.notifications_bell_menu.selected = selected_idx;
-        sec2.widget(&mut state.notifications_bell_menu, 14.0, sec_w - 28.0, 44.0, ctx);
-
-        state.notifications_duration_spinbox.value = state.notifications_duration;
-        state.notifications_duration_spinbox.set_label("Notification Duration");
-        sec2.widget(&mut state.notifications_duration_spinbox, 14.0, sec_w - 28.0, 44.0, ctx);
-
-        let btn_h = 32.0;
-        let btn_y = sec2.ay();
-        let white_color = [1.0, 1.0, 1.0, 1.0];
-        let btn_bg = [0.20, 0.40, 0.65, 1.0];
-        let btn_hover = [0.28, 0.50, 0.78, 1.0];
-        
-        let cols = sec2.row_layout(1, 0.0);
-        if let Some(&(x, w)) = cols.first() {
-            sec2.button(
-                "Send Test Notification",
-                x,
-                btn_y,
-                w,
-                btn_h,
-                btn_bg,
-                btn_hover,
-                white_color,
-                AppAction::SystemInfo(SystemMessage::SendTestNotification),
-            );
-        }
-    });
 
 
     final_pc
@@ -733,104 +637,12 @@ pub fn update(state: &mut SystemState, msg: SystemMessage) {
             state.gpu_gov_menu.selected = 1;
             spawn_gpu_power(true);
         }
-        SystemMessage::ToggleNotificationsEnable => {
-            state.notifications_enable = !state.notifications_enable;
-            write_enable_notifications(state.notifications_enable);
-        }
-        SystemMessage::SetNotificationsBell(sound) => {
-            state.notifications_bell = sound.clone();
-            write_config_value("bell", &sound);
-        }
-        SystemMessage::SetNotificationsDuration(d) => {
-            state.notifications_duration = d;
-            write_config_value("duration", &state.notifications_duration.to_string());
-        }
-        SystemMessage::SendTestNotification => {
-            tokio::spawn(async move {
-                if let Ok(connection) = zbus::Connection::session().await {
-                    let _ = connection.call_method(
-                        Some("org.freedesktop.Notifications"),
-                        "/org/freedesktop/Notifications",
-                        Some("org.freedesktop.Notifications"),
-                        "Notify",
-                        &(
-                            "cce-client",
-                            0u32,
-                            "",
-                            "System notifications are working correctly!",
-                            "",
-                            Vec::<&str>::new(),
-                            std::collections::HashMap::<&str, zbus::zvariant::Value>::new(),
-                            -1i32,
-                        )
-                    ).await;
-                }
-            });
-        }
-        SystemMessage::NotificationsRefreshed(new) => {
-            state.notifications_loaded = true;
-            state.notifications_enable = new.enable;
-            state.notifications_bell = new.bell;
-            state.notifications_duration = new.duration;
-        }
+
 
     }
 }
 
-// ── Notifications Configuration Reader & Writer ──
 
-fn get_socket_path() -> String {
-    match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/cce-{}.sock", display),
-        Err(_) => "/tmp/cce.sock".to_string(),
-    }
-}
-
-pub fn read_notifications_config() -> NotificationsConfig {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let enable = parse_notifications_enable(&content);
-    let bell = parse_notifications_bell(&content);
-    let duration = parse_notifications_duration(&content);
-    NotificationsConfig {
-        enable,
-        bell,
-        duration,
-    }
-}
-
-fn parse_json(content: &str) -> serde_json::Value {
-    cce_ui::config::parse_kdl_to_json(content)
-}
-
-fn parse_notifications_enable(content: &str) -> bool {
-    let val = parse_json(content);
-    val["notifications"]["enable"].as_bool().unwrap_or(true)
-}
-
-fn parse_notifications_bell(content: &str) -> String {
-    let val = parse_json(content);
-    val["notifications"]["bell"].as_str().unwrap_or("none").to_string()
-}
-
-fn parse_notifications_duration(content: &str) -> i32 {
-    let val = parse_json(content);
-    val["notifications"]["duration"].as_i64().map(|v| v as i32).unwrap_or(5)
-}
-
-fn send_ipc_command(cmd: &str) {
-    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(get_socket_path()) {
-        let _ = stream.write_all(format!("{}\n", cmd).as_bytes());
-    }
-}
-
-fn write_config_value(key: &str, value: &str) {
-    cce_ui::config::write_config_value(&get_config_path(), key, value, "notifications");
-}
-
-fn write_enable_notifications(enabled: bool) {
-    write_config_value("enable", &enabled.to_string());
-    send_ipc_command("reload");
-}
 
 impl crate::pages::AppPage for SystemState {
     fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
@@ -838,12 +650,6 @@ impl crate::pages::AppPage for SystemState {
         self.cpu_gov_menu.set_parent(None, ctx);
         self.gpu_gov_menu.clear_children(ctx);
         self.gpu_gov_menu.set_parent(None, ctx);
-        self.notifications_enable_toggle.clear_children(ctx);
-        self.notifications_enable_toggle.set_parent(None, ctx);
-        self.notifications_bell_menu.clear_children(ctx);
-        self.notifications_bell_menu.set_parent(None, ctx);
-        self.notifications_duration_spinbox.clear_children(ctx);
-        self.notifications_duration_spinbox.set_parent(None, ctx);
     }
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
@@ -855,7 +661,6 @@ impl crate::pages::AppPage for SystemState {
             cce_ui::widget::SectionContainer::new("CPU Governor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
             cce_ui::widget::SectionContainer::new("GPU Power").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
             cce_ui::widget::SectionContainer::new("Battery").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("System Notifications").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
         ]
     }
 
@@ -870,9 +675,6 @@ impl crate::pages::AppPage for SystemState {
         }
         cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.cpu_gov_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.gpu_gov_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_enable_toggle, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_bell_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_duration_spinbox, ctx);
     }
 
     fn view(
@@ -904,44 +706,10 @@ impl crate::pages::AppPage for SystemState {
                 actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetGpuPowersave));
             }
         }
-        if self.notifications_enable_toggle.take_change() {
-            actions.push(crate::app::AppAction::SystemInfo(SystemMessage::ToggleNotificationsEnable));
-        }
-        if self.notifications_bell_menu.take_change() {
-            let sound = match self.notifications_bell_menu.selected {
-                0 => "none",
-                1 => "bell",
-                2 => "dialog",
-                3 => "message",
-                _ => "none",
-            }.to_string();
-            actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetNotificationsBell(sound)));
-        }
-        if self.notifications_duration_spinbox.take_change() {
-            actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetNotificationsDuration(self.notifications_duration_spinbox.value)));
-        }
     }
 }
 
-thread_local! {
-    static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
-}
 
-fn get_config_path() -> String {
-    #[cfg(test)]
-    {
-        TEST_CONFIG_PATH.with(|p| {
-            if let Some(path) = p.borrow().as_ref() {
-                return path.clone();
-            }
-            "/home/lsgalante/.config/cce/config.kdl".to_string()
-        })
-    }
-    #[cfg(not(test))]
-    {
-        "/home/lsgalante/.config/cce/config.kdl".to_string()
-    }
-}
 
 
 
@@ -953,47 +721,9 @@ mod tests {
     fn test_view_layout_grid() {
         let mut state = SystemState::default();
         let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
-        let sec_focused = vec![false, false, false, false, false, false, false, false];
+        let sec_focused = vec![false, false, false, false, false, false, false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
-
-    #[test]
-    fn test_parse_notifications_enable_default() {
-        assert!(parse_notifications_enable(""));
-        assert!(parse_notifications_enable("[layout]\ngap = 18\n"));
-    }
-
-    #[test]
-    fn test_parse_notifications_enable_explicit() {
-        let content = "notifications {\n    enable (bool)false\n}\n";
-        assert!(!parse_notifications_enable(content));
-
-        let content = "notifications {\n    enable (bool)true\n}\n";
-        assert!(parse_notifications_enable(content));
-    }
-
-    #[test]
-    fn test_parse_notifications_enable_other_sections() {
-        let content = "layout {\n    enable (bool)false\n}\nnotifications {\n    enable (bool)true\n}\ninput {\n    enable (bool)false\n}\n";
-        assert!(parse_notifications_enable(content));
-
-        let content = "layout {\n    enable (bool)true\n}\nnotifications {\n    enable (bool)false\n}\ninput {\n    enable (bool)true\n}\n";
-        assert!(!parse_notifications_enable(content));
-    }
-
-    #[test]
-    fn test_parse_notifications_duration_default() {
-        assert_eq!(parse_notifications_duration(""), 5);
-        assert_eq!(parse_notifications_duration("notifications {}"), 5);
-    }
-
-    #[test]
-    fn test_parse_notifications_duration_explicit() {
-        let content = "notifications {\n    duration (i64)10\n}\n";
-        assert_eq!(parse_notifications_duration(content), 10);
-    }
-
-
 }
