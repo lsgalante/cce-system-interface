@@ -322,9 +322,9 @@ impl cce_ui::engine::Application for SystemInterface {
             this.switcher.add_child(page.as_ptr(), &mut this.ui_context);
         }
 
-        this.root_window.add_child(this.page_dropdown.as_ptr(), &mut this.ui_context);
         this.root_window.add_child(this.switcher.as_ptr(), &mut this.ui_context);
         this.root_window.add_child(this.statusbar.as_ptr(), &mut this.ui_context);
+        this.root_window.add_child(this.page_dropdown.as_ptr(), &mut this.ui_context);
 
         this.update_status_text();
 

@@ -78,9 +78,9 @@ impl SystemInterface {
         self.root_window.background_color = Some(cce_ui::color::to_linear([win_r, win_g, win_b, win_a]));
         self.root_window.radius = 12.0;
         self.root_window.clear_children(&mut self.ui_context);
-        self.root_window.add_child(self.page_dropdown.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.statusbar.as_ptr(), &mut self.ui_context);
+        self.root_window.add_child(self.page_dropdown.as_ptr(), &mut self.ui_context);
         if self.search_open {
             use cce_ui::widget::focus::link_parent_child;
             link_parent_child(&mut self.root_window, &mut self.search_box, &mut self.ui_context);
