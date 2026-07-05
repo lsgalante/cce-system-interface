@@ -22,7 +22,7 @@ pub struct BatteryInfo {
 #[derive(Debug, Clone)]
 pub struct NotificationsConfig {
     pub enable: bool,
-    pub bell: bool,
+    pub bell: String,
     pub duration: i32,
 }
 
@@ -55,11 +55,10 @@ pub struct SystemState {
     pub notifications_loaded: bool,
     pub notifications_enable: bool,
     pub notifications_enable_toggle: Toggle,
-    pub notifications_bell: bool,
-    pub notifications_bell_toggle: Toggle,
+    pub notifications_bell: String,
+    pub notifications_bell_menu: Dropdown,
     pub notifications_duration: i32,
     pub notifications_duration_spinbox: Spinbox,
-
 }
 
 impl Default for SystemState {
@@ -95,8 +94,16 @@ impl Default for SystemState {
             notifications_loaded: false,
             notifications_enable: true,
             notifications_enable_toggle: Toggle::new().with_label("Enable Notifications").with_config(&get_config_path(), "enable"),
-            notifications_bell: false,
-            notifications_bell_toggle: Toggle::new().with_label("Play Bell Sound").with_config(&get_config_path(), "bell"),
+            notifications_bell: "none".to_string(),
+            notifications_bell_menu: Dropdown::new(
+                vec![
+                    "None".to_string(),
+                    "Bell".to_string(),
+                    "Dialog".to_string(),
+                    "Message".to_string(),
+                ],
+                0,
+            ).with_label("Notification Sound"),
             notifications_duration: 5,
             notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
                 .with_label("Notification Duration")
@@ -121,7 +128,7 @@ pub enum SystemMessage {
     SetGpuDefault,
     SetGpuPowersave,
     ToggleNotificationsEnable,
-    ToggleNotificationsBell,
+    SetNotificationsBell(String),
     SetNotificationsDuration(i32),
     SendTestNotification,
     NotificationsRefreshed(NotificationsConfig),
@@ -426,8 +433,16 @@ pub async fn fetch_system_state() -> SystemState {
         notifications_loaded: false,
         notifications_enable: true,
         notifications_enable_toggle: Toggle::new().with_label("Enable Notifications").with_config(&get_config_path(), "enable"),
-        notifications_bell: false,
-        notifications_bell_toggle: Toggle::new().with_label("Play Bell Sound").with_config(&get_config_path(), "bell"),
+        notifications_bell: "none".to_string(),
+        notifications_bell_menu: Dropdown::new(
+            vec![
+                "None".to_string(),
+                "Bell".to_string(),
+                "Dialog".to_string(),
+                "Message".to_string(),
+            ],
+            0,
+        ).with_label("Notification Sound"),
         notifications_duration: 5,
         notifications_duration_spinbox: Spinbox::new(5, 1, 60, 1)
             .with_label("Notification Duration")
@@ -629,8 +644,15 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         state.notifications_enable_toggle.set_toggled(state.notifications_enable);
         sec2.widget_full(&mut state.notifications_enable_toggle, cce_ui::layout::toggle_height(), ctx);
 
-        state.notifications_bell_toggle.set_toggled(state.notifications_bell);
-        sec2.widget_full(&mut state.notifications_bell_toggle, cce_ui::layout::toggle_height(), ctx);
+        let selected_idx = match state.notifications_bell.as_str() {
+            "none" => 0,
+            "bell" => 1,
+            "dialog" => 2,
+            "message" => 3,
+            _ => 0,
+        };
+        state.notifications_bell_menu.selected = selected_idx;
+        sec2.widget(&mut state.notifications_bell_menu, 14.0, sec_w - 28.0, 44.0, ctx);
 
         state.notifications_duration_spinbox.value = state.notifications_duration;
         state.notifications_duration_spinbox.set_label("Notification Duration");
@@ -715,9 +737,9 @@ pub fn update(state: &mut SystemState, msg: SystemMessage) {
             state.notifications_enable = !state.notifications_enable;
             write_enable_notifications(state.notifications_enable);
         }
-        SystemMessage::ToggleNotificationsBell => {
-            state.notifications_bell = !state.notifications_bell;
-            write_config_value("bell", &state.notifications_bell.to_string());
+        SystemMessage::SetNotificationsBell(sound) => {
+            state.notifications_bell = sound.clone();
+            write_config_value("bell", &sound);
         }
         SystemMessage::SetNotificationsDuration(d) => {
             state.notifications_duration = d;
@@ -785,9 +807,9 @@ fn parse_notifications_enable(content: &str) -> bool {
     val["notifications"]["enable"].as_bool().unwrap_or(true)
 }
 
-fn parse_notifications_bell(content: &str) -> bool {
+fn parse_notifications_bell(content: &str) -> String {
     let val = parse_json(content);
-    val["notifications"]["bell"].as_bool().unwrap_or(false)
+    val["notifications"]["bell"].as_str().unwrap_or("none").to_string()
 }
 
 fn parse_notifications_duration(content: &str) -> i32 {
@@ -818,22 +840,22 @@ impl crate::pages::AppPage for SystemState {
         self.gpu_gov_menu.set_parent(None, ctx);
         self.notifications_enable_toggle.clear_children(ctx);
         self.notifications_enable_toggle.set_parent(None, ctx);
-        self.notifications_bell_toggle.clear_children(ctx);
-        self.notifications_bell_toggle.set_parent(None, ctx);
+        self.notifications_bell_menu.clear_children(ctx);
+        self.notifications_bell_menu.set_parent(None, ctx);
         self.notifications_duration_spinbox.clear_children(ctx);
         self.notifications_duration_spinbox.set_parent(None, ctx);
     }
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
-            cce_ui::widget::SectionContainer::new("System").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("System Actions").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("CPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("GPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("CPU Governor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("GPU Power").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("Battery").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
-            cce_ui::widget::SectionContainer::new("System Notifications").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0 }),
+            cce_ui::widget::SectionContainer::new("System").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("System Actions").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("CPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("GPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("CPU Governor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("GPU Power").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("Battery").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            cce_ui::widget::SectionContainer::new("System Notifications").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
         ]
     }
 
@@ -849,7 +871,7 @@ impl crate::pages::AppPage for SystemState {
         cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.cpu_gov_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.gpu_gov_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_enable_toggle, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_bell_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_bell_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[7], &mut self.notifications_duration_spinbox, ctx);
     }
 
@@ -885,8 +907,15 @@ impl crate::pages::AppPage for SystemState {
         if self.notifications_enable_toggle.take_change() {
             actions.push(crate::app::AppAction::SystemInfo(SystemMessage::ToggleNotificationsEnable));
         }
-        if self.notifications_bell_toggle.take_change() {
-            actions.push(crate::app::AppAction::SystemInfo(SystemMessage::ToggleNotificationsBell));
+        if self.notifications_bell_menu.take_change() {
+            let sound = match self.notifications_bell_menu.selected {
+                0 => "none",
+                1 => "bell",
+                2 => "dialog",
+                3 => "message",
+                _ => "none",
+            }.to_string();
+            actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetNotificationsBell(sound)));
         }
         if self.notifications_duration_spinbox.take_change() {
             actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetNotificationsDuration(self.notifications_duration_spinbox.value)));

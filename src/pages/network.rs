@@ -526,12 +526,14 @@ impl crate::pages::AppPage for NetworkState {
                 gap: 8.0,
                 padding_x: 0.0,
                 padding_y: 0.0,
+                grid: None,
             }),
             cce_ui::widget::SectionContainer::new("Bluetooth").with_layout(cce_ui::widget::AdaptiveGridLayout {
                 min_col_width: 140.0,
                 gap: 8.0,
                 padding_x: 0.0,
                 padding_y: 0.0,
+                grid: None,
             }),
         ]
     }
