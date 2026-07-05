@@ -60,6 +60,19 @@ impl SystemInterface {
             }
         }
 
+        let scale = self.scale_factor as f32;
+        let phys_x = x * scale;
+        let phys_y = y * scale;
+
+        // Check if cursor hover state changed on any widget
+        for w in &self.widgets {
+            let is_hovered = phys_x >= w.x && phys_x <= w.x + w.w && phys_y >= w.y && phys_y <= w.y + w.h;
+            if w.hovering != is_hovered {
+                changed = true;
+                break;
+            }
+        }
+
         if changed {
             self.needs_rebuild = true;
         }
@@ -114,6 +127,7 @@ impl SystemInterface {
                             self.app.current_page = new_page;
                             self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
                             self.scroll_y = 0.0;
+                            self.update_status_text();
                         }
                     }
                     self.needs_rebuild = true;
@@ -135,6 +149,7 @@ impl SystemInterface {
                         self.app.current_page = new_page;
                         self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
                         self.scroll_y = 0.0;
+                        self.update_status_text();
                     }
                 }
                 self.needs_rebuild = true;
@@ -150,6 +165,29 @@ impl SystemInterface {
         }
 
         if button != cce_ui::widget::MouseButton::Left && button != cce_ui::widget::MouseButton::Right { return false; }
+
+        let scale = self.scale_factor as f32;
+        let phys_x = self.cursor_x * scale;
+        let phys_y = self.cursor_y * scale;
+
+        let mut button_handled = false;
+        let mut clicked_action = None;
+        for (btn, action) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
+            if btn.mouse_input(button, state, phys_x, phys_y, &mut self.ui_context) {
+                button_handled = true;
+            }
+            if btn.take_click() {
+                clicked_action = Some(action.clone());
+                button_handled = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if let Some(action) = clicked_action {
+            self.handle_action(&action);
+        }
+        if button_handled {
+            return true;
+        }
         let mut actions = Vec::new();
         if button == cce_ui::widget::MouseButton::Left && state == cce_ui::widget::ElementState::Released {
             if self.app.get_current_page_mut().handle_pointer_up(&mut self.ui_context) {

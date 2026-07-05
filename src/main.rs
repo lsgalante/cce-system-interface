@@ -20,9 +20,6 @@ std::thread_local! {
     static BUFFER_CACHE: std::cell::RefCell<std::collections::HashMap<BufferCacheKey, Buffer>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-fn make_text_buffer(fs: &mut FontSystem, text: &str, size: f32) -> Buffer {
-    make_text_buffer_with_font(fs, text, size, None, "", "", "")
-}
 
 fn find_cased_family(fs: &FontSystem, name: &str) -> Option<String> {
     let lower_name = name.to_lowercase();
@@ -47,7 +44,7 @@ fn make_text_buffer_with_font(
 ) -> Buffer {
     let scale = cce_ui::scale::scale_factor();
     let mut font_size = size;
-    let mut family_name = None;
+    let mut family_name = Some("sans-serif".to_string());
 
     if let Some(font_str) = font {
         let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
@@ -199,6 +196,7 @@ struct SystemInterface {
     menubar: cce_ui::widget::Paginator,
     switcher: cce_ui::widget::Switcher,
     pages: Vec<cce_ui::widget::Page>,
+    statusbar: cce_ui::widget::StatusBar,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -261,7 +259,7 @@ impl cce_ui::engine::Application for SystemInterface {
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
-            status_height: 0.0,
+            status_height: 24.0,
             cursor_x: 0.0,
             cursor_y: 0.0,
             rx_audio: watchers.rx_audio,
@@ -304,6 +302,7 @@ impl cce_ui::engine::Application for SystemInterface {
             menubar,
             switcher,
             pages,
+            statusbar: cce_ui::widget::StatusBar::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -324,6 +323,9 @@ impl cce_ui::engine::Application for SystemInterface {
 
         this.root_window.add_child(this.menubar.as_ptr(), &mut this.ui_context);
         this.root_window.add_child(this.switcher.as_ptr(), &mut this.ui_context);
+        this.root_window.add_child(this.statusbar.as_ptr(), &mut this.ui_context);
+
+        this.update_status_text();
 
         this.rebuild_layout(820.0, 680.0);
         this.needs_rebuild = true;
@@ -391,7 +393,8 @@ impl cce_ui::engine::Application for SystemInterface {
             self.rebuild_layout(width, height);
         }
         for w in &self.widgets {
-            quads.push((w.x, w.y, w.w, w.h, w.radius, w.color, w.corners));
+            let color = if w.hovering { w.hover_color } else { w.color };
+            quads.push((w.x, w.y, w.w, w.h, w.radius, color, w.corners));
         }
 
         // Draw global hover highlight if active
@@ -694,6 +697,20 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
                 _ => pages::packages::update(&mut self.app.packages, m.clone()),
             },
         }
+    }
+
+    fn update_status_text(&mut self) {
+        let msg = match self.app.current_page {
+            Page::Accounts => "Accounts: Manage your online identities, keys, and credentials.",
+            Page::Audio => "Audio Settings: Configure volume levels, inputs, and sound options.",
+            Page::Fonts => "Fonts Settings: Adjust font family preferences, typography, and scaling.",
+            Page::Packages => "Package Manager: Search, install, and update system packages.",
+            Page::Processes => "System Monitor: Inspect running tasks, system resources, and services.",
+            Page::Radios => "Network Settings: Configure wireless networks, radios, and connections.",
+            Page::Storage => "Storage Settings: Manage local disks, partition structures, and backup runs.",
+            Page::System => "System Settings: System properties, update checks, and notification parameters.",
+        };
+        self.statusbar.set_text(msg);
     }
 
 }

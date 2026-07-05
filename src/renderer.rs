@@ -1,4 +1,4 @@
-use crate::{SystemInterface, AppWidget, make_text_buffer, make_text_buffer_with_font};
+use crate::{SystemInterface, AppWidget, make_text_buffer_with_font};
 use cce_settings::app::PageContent;
 use cce_settings::pages::Page;
 use cce_ui::widget::{Element, TextItem, PageSelector};
@@ -39,7 +39,6 @@ impl SystemInterface {
 
         self.sidebar_width = self.menubar.sidebar_w();
         self.header_height = 0.0; // No CSD Titlebar
-        let s = 1.0f32;
         let mut widgets = Vec::new();
         let mut text_items = Vec::new();
         let mut page_buttons = Vec::new();
@@ -47,12 +46,21 @@ impl SystemInterface {
         cce_ui::widget::hover_animation::reset_frame_registration();
         cce_ui::widget::popovers::clear();
         cce_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
-        cce_ui::widget::hover_animation::set_cursor_pos(self.cursor_x / s, self.cursor_y / s);
+        cce_ui::widget::hover_animation::set_cursor_pos(self.cursor_x, self.cursor_y);
+
+        let s = self.scale_factor as f32;
+        let cursor_phys_x = self.cursor_x * s;
+        let cursor_phys_y = self.cursor_y * s;
+        let check_hover = |wx: f32, wy: f32, ww: f32, wh: f32| -> bool {
+            cursor_phys_x >= wx && cursor_phys_x <= wx + ww && cursor_phys_y >= wy && cursor_phys_y <= wy + wh
+        };
+        let logical_sw = sw;
+        let logical_sh = sh;
 
         let lcx = self.sidebar_width;
         let lcy = self.header_height;
-        let lcw = sw / s - self.sidebar_width;
-        let mut lch = sh / s - self.header_height - self.status_height;
+        let lcw = logical_sw - self.sidebar_width;
+        let mut lch = logical_sh - self.header_height - self.status_height;
         if self.search_open {
             lch -= 42.0;
         }
@@ -62,7 +70,7 @@ impl SystemInterface {
         self.switcher.set_active_index(Some(page_idx));
 
         // Update root window size, background color, opacity, corner radius, and children
-        self.root_window.set_rect(0.0, 0.0, sw / s, sh / s);
+        self.root_window.set_rect(0.0, 0.0, logical_sw, logical_sh);
         let win_r = 0x0a as f32 / 255.0;
         let win_g = 0x1a as f32 / 255.0;
         let win_b = 0x0e as f32 / 255.0;
@@ -72,6 +80,7 @@ impl SystemInterface {
         self.root_window.clear_children(&mut self.ui_context);
         self.root_window.add_child(self.menubar.as_ptr(), &mut self.ui_context);
         self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
+        self.root_window.add_child(self.statusbar.as_ptr(), &mut self.ui_context);
         if self.search_open {
             use cce_ui::widget::focus::link_parent_child;
             link_parent_child(&mut self.root_window, &mut self.search_box, &mut self.ui_context);
@@ -79,25 +88,25 @@ impl SystemInterface {
 
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.menubar, 0.0, self.header_height, self.sidebar_width, sh / s - self.header_height, &mut self.ui_context);
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.menubar, 0.0, self.header_height, self.sidebar_width, logical_sh - self.header_height - self.status_height, &mut self.ui_context);
         let switcher_h = if self.search_open {
-            sh / s - self.header_height - 42.0
+            logical_sh - self.header_height - 42.0 - self.status_height
         } else {
-            sh / s - self.header_height
+            logical_sh - self.header_height - self.status_height
         };
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, sw / s - self.sidebar_width, switcher_h, &mut self.ui_context);
-
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, logical_sw - self.sidebar_width, switcher_h, &mut self.ui_context);
+        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.statusbar, 0.0, logical_sh - self.status_height, logical_sw, self.status_height, &mut self.ui_context);
         // Render root window recursively
         let mut window_pc = PageContent::new();
-        cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, sw / s, sh / s, &mut self.ui_context);
+        cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, logical_sw, logical_sh, &mut self.ui_context);
 
         let mut search_pc = PageContent::new();
         if self.search_open {
             search_pc.rects.push((
                 [0.08, 0.08, 0.12, 1.0],
                 self.sidebar_width,
-                sh / s - 42.0,
-                sw / s - self.sidebar_width,
+                sh - 42.0,
+                sw - self.sidebar_width,
                 42.0,
                 0.0,
                 (false, false, false, false),
@@ -105,8 +114,8 @@ impl SystemInterface {
             search_pc.rects.push((
                 [0.18, 0.18, 0.24, 1.0],
                 self.sidebar_width,
-                sh / s - 42.0,
-                sw / s - self.sidebar_width,
+                sh - 42.0,
+                sw - self.sidebar_width,
                 1.0,
                 0.0,
                 (false, false, false, false),
@@ -115,8 +124,8 @@ impl SystemInterface {
                 &mut search_pc,
                 &mut self.search_box,
                 self.sidebar_width + 12.0,
-                sh / s - 36.0,
-                sw / s - self.sidebar_width - 24.0,
+                sh - 36.0,
+                sw - self.sidebar_width - 24.0,
                 30.0,
                 &mut self.ui_context,
             );
@@ -124,28 +133,35 @@ impl SystemInterface {
 
         // CSD Titlebar removed
 
+        eprintln!("WINDOW_PC_RECTS_LEN: {}", window_pc.rects.len());
         for pc_part in &[window_pc] {
-            for (c, x, y, w, h, r, corners) in &pc_part.rects {
+            for (idx, (c, x, y, w, h, r, corners)) in pc_part.rects.iter().enumerate() {
+                eprintln!("WINDOW_PC_RECT idx={}: color={:?}, x={}, y={}, w={}, h={}", idx, c, x, y, w, h);
+                let wx = *x * s;
+                let wy = *y * s;
+                let ww = *w * s;
+                let wh = *h * s;
                 widgets.push(AppWidget {
-                    x: *x * s, y: *y * s, w: *w * s, h: *h * s,
+                    x: wx, y: wy, w: ww, h: wh,
                     color: *c, hover_color: *c,
-                    hovering: false,
+                    hovering: check_hover(wx, wy, ww, wh),
                     radius: *r * s,
                     corners: *corners,
                 });
             }
-            for (t, size, x, y, tc, font_opt, bounds) in &pc_part.texts {
+            for (idx, (t, size, x, y, tc, font_opt, bounds)) in pc_part.texts.iter().enumerate() {
+                eprintln!("WINDOW_PC_TEXT idx={}: text='{}', size={}, x={}, y={}, bounds={:?}", idx, t, size, x, y, bounds);
                 text_items.push(TextItem {
                     buffer: make_text_buffer_with_font(
                         &mut self.font_system,
                         t,
-                        *size * s,
+                        *size,
                         font_opt.as_deref(),
                         &self.sans_serif_family,
                         &self.serif_family,
                         &self.monospace_family,
                     ),
-                    x: *x * s, y: *y * s,
+                    x: *x, y: *y,
                     color: glyphon::Color::rgb(
                         (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
                     ),
@@ -223,16 +239,22 @@ impl SystemInterface {
 
         let scroll_offset_y = self.scroll_y;
 
-        for (c, x, y, w, h, r, corners) in &pc.rects {
+        for (idx, (c, x, y, w, h, r, corners)) in pc.rects.iter().enumerate() {
+            eprintln!("PAGE_PC_RECT idx={}: color={:?}, x={}, y={}, w={}, h={}", idx, c, x, y, w, h);
+            let wx = *x * s;
+            let wy = (*y - scroll_offset_y) * s;
+            let ww = *w * s;
+            let wh = *h * s;
             widgets.push(AppWidget {
-                x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
+                x: wx, y: wy, w: ww, h: wh,
                 color: *c, hover_color: *c,
-                hovering: false,
+                hovering: check_hover(wx, wy, ww, wh),
                 radius: *r * s,
                 corners: *corners,
             });
         }
-        for (t, size, x, y, tc, font_opt, bounds) in &pc.texts {
+        for (idx, (t, size, x, y, tc, font_opt, bounds)) in pc.texts.iter().enumerate() {
+            eprintln!("PAGE_PC_TEXT idx={}: text='{}', size={}, x={}, y={}, bounds={:?}", idx, t, size, x, y, bounds);
             let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
                 [bl, bt - scroll_offset_y, br, bb - scroll_offset_y]
             });
@@ -243,7 +265,7 @@ impl SystemInterface {
                 let text_buf = make_text_buffer_with_font(
                     &mut self.font_system,
                     t,
-                    *size * s,
+                    *size,
                     font_opt.as_deref(),
                     &self.sans_serif_family,
                     &self.serif_family,
@@ -259,14 +281,18 @@ impl SystemInterface {
                 let rect_w = text_w + 2.0 * pad_x;
                 let rect_h = *size + 2.0 * pad_y;
 
+                let wx = rect_x * s;
+                let wy = (rect_y - scroll_offset_y) * s;
+                let ww = rect_w * s;
+                let wh = rect_h * s;
                 widgets.push(AppWidget {
-                    x: rect_x * s,
-                    y: (rect_y - scroll_offset_y) * s,
-                    w: rect_w * s,
-                    h: rect_h * s,
+                    x: wx,
+                    y: wy,
+                    w: ww,
+                    h: wh,
                     color: [0.65, 0.45, 0.05, 0.4],
                     hover_color: [0.65, 0.45, 0.05, 0.4],
-                    hovering: false,
+                    hovering: check_hover(wx, wy, ww, wh),
                     radius: 3.0 * s,
                     corners: (true, true, true, true),
                 });
@@ -286,13 +312,13 @@ impl SystemInterface {
                 buffer: make_text_buffer_with_font(
                     &mut self.font_system,
                     t,
-                    *size * s,
+                    *size,
                     font_opt.as_deref(),
                     &self.sans_serif_family,
                     &self.serif_family,
                     &self.monospace_family,
                 ),
-                x: *x * s, y: (*y - scroll_offset_y) * s,
+                x: *x, y: *y - scroll_offset_y,
                 color: glyphon::Color::rgb(
                     (text_color[0] * 255.0) as u8, (text_color[1] * 255.0) as u8, (text_color[2] * 255.0) as u8,
                 ),
@@ -303,19 +329,30 @@ impl SystemInterface {
             let base = btn.base().unwrap();
             let bg = btn.bg.unwrap_or([0.16, 0.16, 0.24, 1.0]);
             let hover_bg = btn.hover_bg.unwrap_or([0.25, 0.30, 0.26, 1.0]);
+            let wx = base.x * s;
+            let wy = (base.y - scroll_offset_y) * s;
+            let ww = base.w * s;
+            let wh = base.h * s;
             widgets.push(AppWidget {
-                x: base.x * s, y: (base.y - scroll_offset_y) * s, w: base.w * s, h: base.h * s,
+                x: wx, y: wy, w: ww, h: wh,
                 color: bg, hover_color: hover_bg,
-                hovering: false,
+                hovering: check_hover(wx, wy, ww, wh),
                 radius: cce_ui::layout::button_corner_radius() * s,
                 corners: (true, true, true, true),
             });
             let label = base.label.as_deref().unwrap_or("");
             let label_size = 12.0;
-            let buf = make_text_buffer(&mut self.font_system, label, label_size * s);
-            let scale = cce_ui::scale::scale_factor();
-            let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0) / scale;
-            let lh = label_size * s * 1.4;
+            let buf = make_text_buffer_with_font(
+                &mut self.font_system,
+                label,
+                label_size,
+                None,
+                &self.sans_serif_family,
+                &self.serif_family,
+                &self.monospace_family,
+            );
+            let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0);
+            let lh = buf.metrics().line_height;
             let mut left_align = btn.justify == cce_ui::widget::Justification::Left;
 
             // Auto-detect if inside a ScrollBox to apply left alignment by default
@@ -336,16 +373,18 @@ impl SystemInterface {
                 }
             }
 
+            let logical_tw = tw / s;
+            let logical_lh = lh / s;
             let text_x = if left_align {
-                base.x * s + 8.0 * s
+                base.x + 8.0
             } else {
-                base.x * s + (base.w * s - tw) / 2.0
+                base.x + (base.w - logical_tw) / 2.0
             };
 
             let label_color = btn.label_color.unwrap_or([0.83, 0.83, 0.83, 1.0]);
             text_items.push(TextItem {
                 buffer: buf,
-                x: text_x, y: (base.y - scroll_offset_y) * s + (base.h * s - lh) / 2.0,
+                x: text_x, y: (base.y - scroll_offset_y) + (base.h - logical_lh) / 2.0,
                 color: glyphon::Color::rgb(
                     (label_color[0] * 255.0) as u8,
                     (label_color[1] * 255.0) as u8,
@@ -368,10 +407,14 @@ impl SystemInterface {
         cce_ui::layout::render_popovers(&mut popover_pc, &mut self.ui_context);
 
         for (c, x, y, w, h, r, corners) in &popover_pc.rects {
+            let wx = *x * s;
+            let wy = (*y - scroll_offset_y) * s;
+            let ww = *w * s;
+            let wh = *h * s;
             widgets.push(AppWidget {
-                x: *x * s, y: (*y - scroll_offset_y) * s, w: *w * s, h: *h * s,
+                x: wx, y: wy, w: ww, h: wh,
                 color: *c, hover_color: *c,
-                hovering: false,
+                hovering: check_hover(wx, wy, ww, wh),
                 radius: *r * s,
                 corners: *corners,
             });
@@ -384,13 +427,13 @@ impl SystemInterface {
                 buffer: make_text_buffer_with_font(
                     &mut self.font_system,
                     t,
-                    *size * s,
+                    *size,
                     font_opt.as_deref(),
                     &self.sans_serif_family,
                     &self.serif_family,
                     &self.monospace_family,
                 ),
-                x: *x * s, y: (*y - scroll_offset_y) * s,
+                x: *x, y: *y - scroll_offset_y,
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
                 ),
@@ -405,10 +448,14 @@ impl SystemInterface {
 
 
         for (c, x, y, w, h, r, corners) in &search_pc.rects {
+            let wx = *x * s;
+            let wy = *y * s;
+            let ww = *w * s;
+            let wh = *h * s;
             widgets.push(AppWidget {
-                x: *x * s, y: *y * s, w: *w * s, h: *h * s,
+                x: wx, y: wy, w: ww, h: wh,
                 color: *c, hover_color: *c,
-                hovering: false,
+                hovering: check_hover(wx, wy, ww, wh),
                 radius: *r * s,
                 corners: *corners,
             });
@@ -418,13 +465,13 @@ impl SystemInterface {
                 buffer: make_text_buffer_with_font(
                     &mut self.font_system,
                     t,
-                    *size * s,
+                    *size,
                     font_opt.as_deref(),
                     &self.sans_serif_family,
                     &self.serif_family,
                     &self.monospace_family,
                 ),
-                x: *x * s, y: *y * s,
+                x: *x, y: *y,
                 color: glyphon::Color::rgb(
                     (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
                 ),
