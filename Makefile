@@ -5,7 +5,7 @@ build:
 
 install: build
 	mkdir -p ~/.local/bin
-	install -m 755 ../target/release/cce-settings ~/.local/bin/cce-settings
+	install -m 755 ../target/release/cce-system-settings ~/.local/bin/cce-system-settings
 
 run:
 	cargo run

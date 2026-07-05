@@ -90,6 +90,7 @@ pub enum SystemMessage {
     Hibernate,
     Reboot,
     PowerOff,
+    ForceShutdown,
 
     // Moved variants
     SetCpuPerformance,
@@ -264,6 +265,14 @@ async fn read_nvidia_gpu_temp() -> Option<f32> {
 fn spawn_systemctl(action: &str) {
     let mut cmd = std::process::Command::new("systemctl");
     cmd.arg(action);
+    let _ = cce_ui::process::spawn_detached(cmd);
+}
+
+fn spawn_systemctl_force(action: &str) {
+    let mut cmd = std::process::Command::new("systemctl");
+    cmd.arg(action);
+    cmd.arg("-f");
+    cmd.arg("-f");
     let _ = cce_ui::process::spawn_detached(cmd);
 }
 
@@ -448,6 +457,13 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 _ => {}
             }
         }
+
+        let yt2 = yt + act_btn_h + 8.0;
+        let cols2 = sec.row_layout(1, 0.0);
+        if let Some(&(x, w)) = cols2.first() {
+            sec.button("Force Shutdown", x, yt2, w, act_btn_h,
+                DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::ForceShutdown));
+        }
     });
 
     // ── 3. CPU Section ──
@@ -616,6 +632,7 @@ pub fn update(state: &mut SystemState, msg: SystemMessage) {
         SystemMessage::Hibernate => spawn_systemctl("hibernate"),
         SystemMessage::Reboot => spawn_systemctl("reboot"),
         SystemMessage::PowerOff => spawn_systemctl("poweroff"),
+        SystemMessage::ForceShutdown => spawn_systemctl_force("poweroff"),
 
         SystemMessage::SetCpuPerformance => {
             state.cpu_powersave = false;
