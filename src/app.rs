@@ -275,11 +275,17 @@ impl<'a> SectionContextExt for cce_ui::layout::SectionContext<'a, PageContent> {
     fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
         self.pc.button(label, x, y, w, h, bg, hover_bg, label_color, action);
         self.content_y = self.content_y.max(y + h);
+        for height in &mut self.grid.col_heights {
+            *height = height.max(self.content_y);
+        }
     }
     
     fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
         self.pc.button_left(label, x, y, w, h, bg, hover_bg, label_color, action);
         self.content_y = self.content_y.max(y + h);
+        for height in &mut self.grid.col_heights {
+            *height = height.max(self.content_y);
+        }
     }
 }
 

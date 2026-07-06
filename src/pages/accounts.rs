@@ -374,10 +374,12 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
         if !state.loaded {
             sec_accounts.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
-            let item_w = sec_accounts.cw - 2.0 * (sec_accounts.padding() + 12.0);
+
+
+            let mut stack = sec_accounts.vstack(8.0);
 
             if state.accounts.is_empty() {
-                sec_accounts.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
+                stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
             } else {
                 for (idx, acc) in state.accounts.iter().enumerate() {
                     let label = if acc.is_default {
@@ -387,87 +389,101 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
                     };
                     let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
                     let bg_col = if is_selected { [0.20, 0.40, 0.65, 0.4] } else { [0.10, 0.10, 0.16, 0.3] };
-                    sec_accounts.button(
-                        &label,
-                        sec_accounts.ax(12.0),
-                        sec_accounts.ay(),
-                        item_w,
-                        row_h,
-                        bg_col,
-                        [0.20, 0.20, 0.25, 0.15],
-                        [0.90, 0.90, 0.95, 1.0],
-                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
-                    );
+
+                    stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
+                        ctx.button(
+                            &label,
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            bg_col,
+                            [0.20, 0.20, 0.25, 0.15],
+                            [0.90, 0.90, 0.95, 1.0],
+                            AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
+                        );
+                    });
                 }
             }
 
+            stack.context.spacing(4.0);
 
-            let half_btn_w = (item_w - btn_gap) / 2.0;
             let add_bg = if state.adding_new { [0.20, 0.40, 0.65, 0.4] } else { [0.13, 0.18, 0.14, 1.0] };
-            let btn_y = sec_accounts.ay();
-            sec_accounts.button(
-                "Add Account",
-                sec_accounts.ax(12.0),
-                btn_y,
-                half_btn_w,
-                row_h,
-                add_bg,
-                [0.25, 0.30, 0.26, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::AddAccountStart),
-            );
-            sec_accounts.button(
-                "Sign in with Google",
-                sec_accounts.ax(12.0) + half_btn_w + btn_gap,
-                btn_y,
-                half_btn_w,
-                row_h,
-                [0.15, 0.15, 0.25, 1.0],
-                [0.25, 0.25, 0.35, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::GoogleLoginInit),
-            );
+
+            stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
+                if i == 0 {
+                    ctx.button(
+                        "Add Account",
+                        x,
+                        ctx.ay(),
+                        w,
+                        row_h,
+                        add_bg,
+                        [0.25, 0.30, 0.26, 1.0],
+                        [1.0, 1.0, 1.0, 1.0],
+                        AppAction::Accounts(AccountsMessage::AddAccountStart),
+                    );
+                } else {
+                    ctx.button(
+                        "Sign in with Google",
+                        x,
+                        ctx.ay(),
+                        w,
+                        row_h,
+                        [0.15, 0.15, 0.25, 1.0],
+                        [0.25, 0.25, 0.35, 1.0],
+                        [1.0, 1.0, 1.0, 1.0],
+                        AppAction::Accounts(AccountsMessage::GoogleLoginInit),
+                    );
+                }
+            });
 
             let oauth_bg = if state.editing_oauth_creds { [0.20, 0.40, 0.65, 0.4] } else { [0.15, 0.15, 0.20, 1.0] };
-            sec_accounts.button(
-                "Google API Settings",
-                sec_accounts.ax(12.0),
-                sec_accounts.ay(),
-                item_w,
-                row_h,
-                oauth_bg,
-                [0.25, 0.25, 0.30, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-                AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
-            );
+            stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
+                ctx.button(
+                    "Google API Settings",
+                    x,
+                    ctx.ay(),
+                    w,
+                    row_h,
+                    oauth_bg,
+                    [0.25, 0.25, 0.30, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
+                );
+            });
 
             if let Some(selected_idx) = state.selected_idx {
                 if selected_idx < state.accounts.len() && !state.adding_new && !state.editing_oauth_creds {
                     let acc = &state.accounts[selected_idx];
                     if !acc.is_default {
-                        sec_accounts.button(
-                            "Make Default",
-                            sec_accounts.ax(12.0),
-                            sec_accounts.ay(),
-                            item_w,
-                            row_h,
-                            [0.15, 0.15, 0.25, 1.0],
-                            [0.25, 0.25, 0.35, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::MakeDefault(selected_idx)),
-                        );
+                        stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
+                            ctx.button(
+                                "Make Default",
+                                x,
+                                ctx.ay(),
+                                w,
+                                row_h,
+                                [0.15, 0.15, 0.25, 1.0],
+                                [0.25, 0.25, 0.35, 1.0],
+                                [1.0, 1.0, 1.0, 1.0],
+                                AppAction::Accounts(AccountsMessage::MakeDefault(selected_idx)),
+                            );
+                        });
                     }
-                    sec_accounts.button(
-                        "Delete Account",
-                        sec_accounts.ax(12.0),
-                        sec_accounts.ay(),
-                        item_w,
-                        row_h,
-                        [0.33, 0.20, 0.20, 1.0],
-                        [0.45, 0.25, 0.25, 1.0],
-                        [1.0, 0.33, 0.33, 1.0],
-                        AppAction::Accounts(AccountsMessage::DeleteAccount(selected_idx)),
-                    );
+                    stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
+                        ctx.button(
+                            "Delete Account",
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            [0.33, 0.20, 0.20, 1.0],
+                            [0.45, 0.25, 0.25, 1.0],
+                            [1.0, 0.33, 0.33, 1.0],
+                            AppAction::Accounts(AccountsMessage::DeleteAccount(selected_idx)),
+                        );
+                    });
                 }
             }
         }
@@ -479,144 +495,164 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
         let rx = sec_modify.left;
 
         if state.loaded {
-            if state.adding_new {
-                sec_modify.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+            let mut stack = sec_modify.vstack(8.0);
 
-                sec_modify.text("Note: Gmail uses Google Login. iCloud requires App PW.", 12.0, 0.0, 11.0, TEXT_DIM);
+            if state.adding_new {
+                stack.context.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+
+                stack.context.text("Note: Gmail uses Google Login. iCloud requires App PW.", 12.0, 0.0, 11.0, TEXT_DIM);
 
                 // Email Address textbox
                 state.email_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.email_box, 12.0, item_w, widget_h, ctx);
+                stack.add_widget(&mut state.email_box, item_w, widget_h, ctx);
 
                 // Password textbox
                 state.password_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.password_box, 12.0, item_w, widget_h, ctx);
+                stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
 
                 // IMAP Server textbox
                 state.imap_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.imap_box, 12.0, item_w, widget_h, ctx);
+                stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
 
                 // SMTP Server textbox
                 state.smtp_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.smtp_box, 12.0, item_w, widget_h, ctx);
+                stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
 
-                let helper_w = (item_w - btn_gap) / 2.0;
-                let btn_y = sec_modify.ay();
-                sec_modify.button(
-                    "Login (Google)",
-                    sec_modify.ax(12.0),
-                    btn_y,
-                    helper_w,
-                    row_h,
-                    [0.15, 0.15, 0.25, 1.0],
-                    [0.25, 0.25, 0.35, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::GoogleLoginInit),
-                );
-                sec_modify.button(
-                    "Login (iCloud)",
-                    sec_modify.ax(12.0) + helper_w + btn_gap,
-                    btn_y,
-                    helper_w,
-                    row_h,
-                    [0.15, 0.15, 0.25, 1.0],
-                    [0.25, 0.25, 0.35, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::ICloudLoginHelp),
-                );
+                stack.context.spacing(4.0);
 
-                let btn_y2 = sec_modify.ay();
-                sec_modify.button(
-                    "Save Account",
-                    sec_modify.ax(12.0),
-                    btn_y2,
-                    helper_w,
-                    row_h,
-                    [0.13, 0.18, 0.14, 1.0],
-                    [0.25, 0.30, 0.26, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::AddAccountSave),
-                );
-                sec_modify.button(
-                    "Cancel",
-                    sec_modify.ax(12.0) + helper_w + btn_gap,
-                    btn_y2,
-                    helper_w,
-                    row_h,
-                    [0.33, 0.20, 0.20, 1.0],
-                    [0.45, 0.25, 0.25, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::AddAccountCancel),
-                );
-            } else if state.editing_oauth_creds {
-                sec_modify.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
 
-                sec_modify.text("Configures client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
-                sec_modify.text("Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", 12.0, 0.0, 11.0, TEXT_DIM);
-
-                // Client ID textbox
-                state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.oauth_client_id_box, 12.0, item_w, widget_h, ctx);
-
-                // Client Secret textbox
-                state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
-                sec_modify.widget(&mut state.oauth_client_secret_box, 12.0, item_w, widget_h, ctx);
-
-                let helper_w = (item_w - btn_gap) / 2.0;
-                let btn_y3 = sec_modify.ay();
-                sec_modify.button(
-                    "Save Credentials",
-                    sec_modify.ax(12.0),
-                    btn_y3,
-                    helper_w,
-                    row_h,
-                    [0.13, 0.18, 0.14, 1.0],
-                    [0.25, 0.30, 0.26, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::EditOAuthCredsSave),
-                );
-                sec_modify.button(
-                    "Cancel",
-                    sec_modify.ax(12.0) + helper_w + btn_gap,
-                    btn_y3,
-                    helper_w,
-                    row_h,
-                    [0.33, 0.20, 0.20, 1.0],
-                    [0.45, 0.25, 0.25, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
-                );
-            } else if let Some(selected_idx) = state.selected_idx {
-                if selected_idx < state.accounts.len() {
-                    let acc = &state.accounts[selected_idx];
-
-                    sec_modify.text("Account Details", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-
-                    sec_modify.text(&format!("Email Address:   {}", acc.email), 12.0, 0.0, 12.0, [0.90, 0.90, 0.95, 1.0]);
-
-                    let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password-based" };
-                    sec_modify.text(&format!("Authentication:  {}", auth_type), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-
-                    sec_modify.text(&format!("IMAP Server:     {}", acc.imap), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-
-                    sec_modify.text(&format!("SMTP Server:     {}", acc.smtp), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-
-                    if acc.is_oauth {
-                        sec_modify.button(
-                            "Click to Login (Browser)",
-                            sec_modify.ax(12.0),
-                            sec_modify.ay(),
-                            item_w,
+                stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
+                    if i == 0 {
+                        ctx.button(
+                            "Login (Google)",
+                            x,
+                            ctx.ay(),
+                            w,
                             row_h,
                             [0.15, 0.15, 0.25, 1.0],
                             [0.25, 0.25, 0.35, 1.0],
                             [1.0, 1.0, 1.0, 1.0],
                             AppAction::Accounts(AccountsMessage::GoogleLoginInit),
                         );
+                    } else {
+                        ctx.button(
+                            "Login (iCloud)",
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            [0.15, 0.15, 0.25, 1.0],
+                            [0.25, 0.25, 0.35, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::ICloudLoginHelp),
+                        );
+                    }
+                });
+
+                stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
+                    if i == 0 {
+                        ctx.button(
+                            "Save Account",
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            [0.13, 0.18, 0.14, 1.0],
+                            [0.25, 0.30, 0.26, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::AddAccountSave),
+                        );
+                    } else {
+                        ctx.button(
+                            "Cancel",
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            [0.33, 0.20, 0.20, 1.0],
+                            [0.45, 0.25, 0.25, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::AddAccountCancel),
+                        );
+                    }
+                });
+            } else if state.editing_oauth_creds {
+                stack.context.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+
+                stack.context.text("Configures client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
+                stack.context.text("Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", 12.0, 0.0, 11.0, TEXT_DIM);
+
+                // Client ID textbox
+                state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
+                stack.add_widget(&mut state.oauth_client_id_box, item_w, widget_h, ctx);
+
+                // Client Secret textbox
+                state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
+                stack.add_widget(&mut state.oauth_client_secret_box, item_w, widget_h, ctx);
+
+                stack.context.spacing(4.0);
+
+
+                stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
+                    if i == 0 {
+                        ctx.button(
+                            "Save Credentials",
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            [0.13, 0.18, 0.14, 1.0],
+                            [0.25, 0.30, 0.26, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::EditOAuthCredsSave),
+                        );
+                    } else {
+                        ctx.button(
+                            "Cancel",
+                            x,
+                            ctx.ay(),
+                            w,
+                            row_h,
+                            [0.33, 0.20, 0.20, 1.0],
+                            [0.45, 0.25, 0.25, 1.0],
+                            [1.0, 1.0, 1.0, 1.0],
+                            AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
+                        );
+                    }
+                });
+            } else if let Some(selected_idx) = state.selected_idx {
+                if selected_idx < state.accounts.len() {
+                    let acc = &state.accounts[selected_idx];
+
+                    stack.context.text("Account Details", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+
+                    stack.context.text(&format!("Email Address:   {}", acc.email), 12.0, 0.0, 12.0, [0.90, 0.90, 0.95, 1.0]);
+
+                    let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password-based" };
+                    stack.context.text(&format!("Authentication:  {}", auth_type), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
+
+                    stack.context.text(&format!("IMAP Server:     {}", acc.imap), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
+
+                    stack.context.text(&format!("SMTP Server:     {}", acc.smtp), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
+
+                    if acc.is_oauth {
+                        stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
+                            ctx.button(
+                                "Click to Login (Browser)",
+                                x,
+                                ctx.ay(),
+                                w,
+                                row_h,
+                                [0.15, 0.15, 0.25, 1.0],
+                                [0.25, 0.25, 0.35, 1.0],
+                                [1.0, 1.0, 1.0, 1.0],
+                                AppAction::Accounts(AccountsMessage::GoogleLoginInit),
+                            );
+                        });
                     }
                 }
             } else {
-                sec_modify.text("Select an account to view details, or click Add Account.", 12.0, 0.0, 12.0, TEXT_DIM);
+                stack.context.text("Select an account to view details, or click Add Account.", 12.0, 0.0, 12.0, TEXT_DIM);
             }
 
             if let Some(ref msg) = state.status_msg {
