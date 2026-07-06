@@ -74,7 +74,7 @@ fn make_text_buffer_with_font(
         return buf;
     }
 
-    let metrics = Metrics::new(physical_size, physical_size * 1.4);
+    let metrics = Metrics::new(physical_size, physical_size * 1.0);
     let mut buf = Buffer::new(fs, metrics);
     let mut attrs = Attrs::new();
 
