@@ -232,9 +232,10 @@ impl AppPage for NotificationsState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Notifications Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            let sec_w = sec.cw;
+            let mut stack = sec.vstack(8.0);
+            let sec_w = stack.context.cw;
             self.enable_toggle.set_toggled(self.enable);
-            sec.widget_full(&mut self.enable_toggle, cce_ui::layout::toggle_height(), ctx);
+            stack.add_widget(&mut self.enable_toggle, sec_w - 28.0, cce_ui::layout::toggle_height(), ctx);
 
             let selected_idx = match self.bell.as_str() {
                 "none" => 0,
@@ -244,24 +245,24 @@ impl AppPage for NotificationsState {
                 _ => 0,
             };
             self.bell_menu.selected = selected_idx;
-            sec.widget(&mut self.bell_menu, 14.0, sec_w - 28.0, 44.0, ctx);
+            self.bell_menu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut self.bell_menu, sec_w - 28.0, 44.0, ctx);
 
             self.duration_spinbox.value = self.duration;
             self.duration_spinbox.set_label("Notification Duration");
-            sec.widget(&mut self.duration_spinbox, 14.0, sec_w - 28.0, 44.0, ctx);
+            self.duration_spinbox.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut self.duration_spinbox, sec_w - 28.0, 44.0, ctx);
 
             let btn_h = 32.0;
-            let btn_y = sec.ay();
             let white_color = [1.0, 1.0, 1.0, 1.0];
             let btn_bg = [0.20, 0.40, 0.65, 1.0];
             let btn_hover = [0.28, 0.50, 0.78, 1.0];
 
-            let cols = sec.row_layout(1, 0.0);
-            if let Some(&(x, w)) = cols.first() {
-                sec.button(
+            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
+                ctx.button(
                     "Send Test Notification",
                     x,
-                    btn_y,
+                    ctx.ay(),
                     w,
                     btn_h,
                     btn_bg,
@@ -269,7 +270,7 @@ impl AppPage for NotificationsState {
                     white_color,
                     AppAction::Notifications(NotificationsMessage::SendTestNotification),
                 );
-            }
+            });
         });
 
         final_pc

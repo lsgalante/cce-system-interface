@@ -564,38 +564,35 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
     // ── 2. System Actions Section ──
     builder.add_section(&mut final_pc, "System Actions", false, |sec| {
-        let yt = sec.ay();
+        let mut stack = sec.vstack(8.0);
         let act_btn_h = 32.0;
 
-        let cols = sec.row_layout(4, 8.0);
-        for (i, &(x, w)) in cols.iter().enumerate() {
+        stack.add_row(4, 8.0, act_btn_h, |ctx, i, x, w| {
             match i {
                 0 => {
-                    sec.button("Suspend", x, yt, w, act_btn_h,
+                    ctx.button("Suspend", x, ctx.ay(), w, act_btn_h,
                         SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Suspend));
                 }
                 1 => {
-                    sec.button("Hibernate", x, yt, w, act_btn_h,
+                    ctx.button("Hibernate", x, ctx.ay(), w, act_btn_h,
                         SAFE_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Hibernate));
                 }
                 2 => {
-                    sec.button("Reboot", x, yt, w, act_btn_h,
+                    ctx.button("Reboot", x, ctx.ay(), w, act_btn_h,
                         DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::Reboot));
                 }
                 3 => {
-                    sec.button("Power Off", x, yt, w, act_btn_h,
+                    ctx.button("Power Off", x, ctx.ay(), w, act_btn_h,
                         DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::PowerOff));
                 }
                 _ => {}
             }
-        }
+        });
 
-        let yt2 = yt + act_btn_h + 8.0;
-        let cols2 = sec.row_layout(1, 0.0);
-        if let Some(&(x, w)) = cols2.first() {
-            sec.button("Force Shutdown", x, yt2, w, act_btn_h,
+        stack.add_row(1, 0.0, act_btn_h, |ctx, _, x, w| {
+            ctx.button("Force Shutdown", x, ctx.ay(), w, act_btn_h,
                 DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::ForceShutdown));
-        }
+        });
     });
 
     // ── 3. CPU Section ──

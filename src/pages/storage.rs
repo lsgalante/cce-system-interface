@@ -259,8 +259,8 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
             }
 
             // Action Button
+            let mut stack = sec.vstack(8.0);
             let btn_h = 32.0;
-            let yt = sec.ay();
             
             let (btn_label, bg, hover, action) = if state.backup_in_progress {
                 ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Storage(StorageMessage::StartBackup))
@@ -268,10 +268,9 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
                 ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Storage(StorageMessage::StartBackup))
             };
             
-            let cols = sec.row_layout(1, 0.0);
-            if let Some(&(x, w)) = cols.first() {
-                sec.button(btn_label, x, yt, w, btn_h, bg, hover, WHITE, action.clone());
-            }
+            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
+                ctx.button(btn_label, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
+            });
         }
     });
 

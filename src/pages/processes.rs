@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent};
+use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{List, TextBox, StatusDot, DotStatus, InteractiveListItem, Element};
 
@@ -177,60 +177,52 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
             // Tab header buttons: System Services, User Services
-            let tab_w = (sec_w - 24.0 - 8.0) / 2.0;
+            let mut stack = sec.vstack(8.0);
             let tab_h = 28.0;
-            let tab_y = sec.ay();
             let active_bg = [0.20, 0.40, 0.65, 0.4];
             let inactive_bg = [0.10, 0.10, 0.16, 0.3];
             let hover_bg = [0.20, 0.20, 0.25, 0.15];
 
-            let label1 = if tab_w < 110.0 { "System" } else { "System Services" };
-            let label2 = if tab_w < 110.0 { "User" } else { "User Services" };
+            let label1 = if stack.context.cw < 250.0 { "System" } else { "System Services" };
+            let label2 = if stack.context.cw < 250.0 { "User" } else { "User Services" };
 
-            let tab_x1 = sec.left + 12.0;
-            let tab_x2 = sec.left + 12.0 + tab_w + 8.0;
+            stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
+                if i == 0 {
+                    ctx.button(
+                        label1,
+                        x,
+                        ctx.ay(),
+                        w,
+                        tab_h,
+                        if state.services_active_tab == ServiceTab::System { active_bg } else { inactive_bg },
+                        hover_bg,
+                        [0.90, 0.90, 0.95, 1.0],
+                        crate::app::AppAction::Processes(ProcessesMessage::ServicesSetTab(ServiceTab::System)),
+                    );
+                } else {
+                    ctx.button(
+                        label2,
+                        x,
+                        ctx.ay(),
+                        w,
+                        tab_h,
+                        if state.services_active_tab == ServiceTab::User { active_bg } else { inactive_bg },
+                        hover_bg,
+                        [0.90, 0.90, 0.95, 1.0],
+                        crate::app::AppAction::Processes(ProcessesMessage::ServicesSetTab(ServiceTab::User)),
+                    );
+                }
+            });
 
-            sec.pc.button(
-                label1,
-                tab_x1,
-                tab_y,
-                tab_w,
-                tab_h,
-                if state.services_active_tab == ServiceTab::System { active_bg } else { inactive_bg },
-                hover_bg,
-                [0.90, 0.90, 0.95, 1.0],
-                crate::app::AppAction::Processes(ProcessesMessage::ServicesSetTab(ServiceTab::System)),
-            );
-
-            sec.pc.button(
-                label2,
-                tab_x2,
-                tab_y,
-                tab_w,
-                tab_h,
-                if state.services_active_tab == ServiceTab::User { active_bg } else { inactive_bg },
-                hover_bg,
-                [0.90, 0.90, 0.95, 1.0],
-                crate::app::AppAction::Processes(ProcessesMessage::ServicesSetTab(ServiceTab::User)),
-            );
-            sec.content_y += tab_h + 12.0;
+            stack.context.spacing(4.0);
 
             // Search textbox
-            let search_y = sec.ay();
             let search_w = sec_w - 24.0;
             let search_h = 46.0;
             
-            state.services_search_box.set_row_rect(sec.left + 12.0, search_w);
-            render_widget(
-                sec.pc,
-                &mut state.services_search_box,
-                sec.left + 12.0,
-                search_y,
-                search_w,
-                search_h,
-                ctx,
-            );
-            sec.content_y += search_h + 16.0;
+            state.services_search_box.set_row_rect(stack.context.left + 12.0, search_w);
+            stack.add_widget(&mut state.services_search_box, search_w, search_h, ctx);
+            stack.context.spacing(8.0);
 
             // Scroll box list
             let list_box_x = sec.left + 12.0;

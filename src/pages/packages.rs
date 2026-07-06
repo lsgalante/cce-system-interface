@@ -337,9 +337,8 @@ pub fn view(
             sec.text("Loading package lists...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
             // Tab header: Installed, Updates
-            let tab_w = (sec_w - 24.0 - 8.0) / 2.0;
+            let mut stack = sec.vstack(8.0);
             let tab_h = 28.0;
-            let tab_y = sec.ay();
             let active_bg = [0.20, 0.40, 0.65, 0.4];
             let inactive_bg = [0.10, 0.10, 0.16, 0.3];
             let hover_bg = [0.20, 0.20, 0.25, 0.15];
@@ -347,42 +346,43 @@ pub fn view(
             let label1 = "Installed";
             let label2 = "Updates";
 
-            let tab_x1 = sec.left + 12.0;
-            let tab_x2 = sec.left + 12.0 + tab_w + 8.0;
+            stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
+                if i == 0 {
+                    ctx.button(
+                        label1,
+                        x,
+                        ctx.ay(),
+                        w,
+                        tab_h,
+                        if state.active_tab == PackageTab::Installed { active_bg } else { inactive_bg },
+                        hover_bg,
+                        [0.90, 0.90, 0.95, 1.0],
+                        AppAction::Packages(PackagesMessage::SetTab(PackageTab::Installed)),
+                    );
+                } else {
+                    ctx.button(
+                        label2,
+                        x,
+                        ctx.ay(),
+                        w,
+                        tab_h,
+                        if state.active_tab == PackageTab::Updates { active_bg } else { inactive_bg },
+                        hover_bg,
+                        [0.90, 0.90, 0.95, 1.0],
+                        AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)),
+                    );
+                }
+            });
 
-            sec.pc.button(
-                label1,
-                tab_x1,
-                tab_y,
-                tab_w,
-                tab_h,
-                if state.active_tab == PackageTab::Installed { active_bg } else { inactive_bg },
-                hover_bg,
-                [0.90, 0.90, 0.95, 1.0],
-                AppAction::Packages(PackagesMessage::SetTab(PackageTab::Installed)),
-            );
-
-            sec.pc.button(
-                label2,
-                tab_x2,
-                tab_y,
-                tab_w,
-                tab_h,
-                if state.active_tab == PackageTab::Updates { active_bg } else { inactive_bg },
-                hover_bg,
-                [0.90, 0.90, 0.95, 1.0],
-                AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)),
-            );
-            sec.content_y += tab_h + 12.0;
+            stack.context.spacing(4.0);
 
             // Search box
-            let search_y = sec.ay();
             let search_w = sec_w - 24.0;
             let search_h = 46.0;
 
-            state.search_box.set_row_rect(sec.left + 12.0, search_w);
-            render_widget(sec.pc, &mut state.search_box, sec.left + 12.0, search_y, search_w, search_h, ctx);
-            sec.content_y += search_h + 16.0;
+            state.search_box.set_row_rect(stack.context.left + 12.0, search_w);
+            stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
+            stack.context.spacing(8.0);
 
             // List area
             let list_box_x = sec.left + 12.0;
@@ -540,17 +540,16 @@ pub fn view(
                         }
 
                         if state.active_tab == PackageTab::Installed {
+                            let mut stack = subsec.vstack(8.0);
                             let btn_h = 32.0;
-                            let btn_y = subsec.ay();
                             let (btn_lbl, bg, hover, action) = if state.uninstalling {
                                 ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
                             } else {
                                 ("Uninstall Package", RED, BTN_HOVER, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
                             };
-                            let cols = subsec.row_layout(1, 0.0);
-                            if let Some(&(x, w)) = cols.first() {
-                                subsec.button(btn_lbl, x, btn_y, w, btn_h, bg, hover, WHITE, action);
-                            }
+                            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
+                                ctx.button(btn_lbl, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
+                            });
                         }
                     } else {
                         subsec.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -597,8 +596,8 @@ pub fn view(
                 }
             }
 
+            let mut stack = sec2.vstack(8.0);
             let btn_h = 32.0;
-            let btn_y = sec2.ay();
 
             let (btn_lbl, bg, hover, action) = if state.updating {
                 ("Updating...", TOGGLE_OFF, TOGGLE_OFF, AppAction::Packages(PackagesMessage::StartUpdate))
@@ -606,10 +605,9 @@ pub fn view(
                 ("Update System", TOGGLE_ON, BTN_HOVER, AppAction::Packages(PackagesMessage::StartUpdate))
             };
 
-            let cols = sec2.row_layout(1, 0.0);
-            if let Some(&(x, w)) = cols.first() {
-                sec2.button(btn_lbl, x, btn_y, w, btn_h, bg, hover, WHITE, action);
-            }
+            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
+                ctx.button(btn_lbl, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
+            });
         }
     });
 
