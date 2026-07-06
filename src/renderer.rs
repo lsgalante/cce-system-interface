@@ -45,6 +45,7 @@ impl SystemInterface {
 
         cce_ui::widget::hover_animation::reset_frame_registration();
         cce_ui::widget::popovers::clear();
+        self.ui_context.clear_popovers();
         cce_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
         cce_ui::widget::hover_animation::set_cursor_pos(self.cursor_x, self.cursor_y);
 
