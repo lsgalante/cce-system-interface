@@ -407,44 +407,6 @@ impl SystemInterface {
             page_buttons.push((btn_clone, action.clone()));
         }
 
-        // Render popovers on top of everything (both backgrounds and texts)
-        let mut popover_pc = PageContent::new();
-        cce_ui::layout::render_popovers(&mut popover_pc, &mut self.ui_context);
-
-        for (c, x, y, w, h, r, corners) in &popover_pc.rects {
-            let wx = *x * s;
-            let wy = (*y - scroll_offset_y) * s;
-            let ww = *w * s;
-            let wh = *h * s;
-            widgets.push(AppWidget {
-                x: wx, y: wy, w: ww, h: wh,
-                color: *c, hover_color: *c,
-                hovering: check_hover(wx, wy, ww, wh),
-                radius: *r * s,
-                corners: *corners,
-            });
-        }
-        for (t, size, x, y, tc, font_opt, bounds) in &popover_pc.texts {
-            let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
-                [bl, bt - scroll_offset_y, br, bb - scroll_offset_y]
-            });
-            text_items.push(TextItem {
-                buffer: make_text_buffer_with_font(
-                    &mut self.font_system,
-                    t,
-                    *size,
-                    font_opt.as_deref(),
-                    &self.sans_serif_family,
-                    &self.serif_family,
-                    &self.monospace_family,
-                ),
-                x: *x, y: *y - scroll_offset_y,
-                color: glyphon::Color::rgb(
-                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
-                ),
-                bounds: shifted_bounds,
-            });
-        }
 
 
 
