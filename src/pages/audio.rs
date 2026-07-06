@@ -256,37 +256,41 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                             format!("Volume: {:.0}%", sink.volume * 100.0)
                         };
                         state.sink_sliders[idx].set_label(&label);
-
-                        let bar_w = subsec.cw - 2.0 * (subsec.padding() + 14.0);
-                        let bar_x = 14.0;
-                        let yt = subsec.ay();
                         state.sink_sliders[idx].set_value(sink.volume);
-                        let slider_x = subsec.ax(bar_x);
-                        
+
+                        let mut stack = subsec.vstack(8.0);
+
                         let label_h = cce_ui::widget::label_offset(&*state.sink_sliders[idx]);
                         let slider_h = cce_ui::layout::slider_height() + label_h;
-                        render_widget(subsec.pc, &mut *state.sink_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
+                        stack.add_widget(&mut *state.sink_sliders[idx], stack.context.cw - 28.0, slider_h, ctx);
 
-                        let row_y = subsec.ay() + slider_h + 8.0;
-                        let sb_w = 100.0;
                         let sb_h = cce_ui::layout::spinbox_height();
-                        let mute_w = 60.0;
                         let gap = 8.0;
 
-                        let row_rect_x = subsec.ax(8.0);
                         state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
-                        state.sink_spinboxes[idx].set_row_rect(row_rect_x, subsec.cw - 16.0);
-                        let sb_x = subsec.ax(bar_x);
-                        render_widget(subsec.pc, &mut *state.sink_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
 
                         let mute_label = if sink.muted { "Unmute" } else { "Mute" };
                         let mute_col = if sink.muted { MUTED_BG } else { BTN_INACTIVE };
-                        let mute_btn_x = sb_x + sb_w + gap;
-                        subsec.button(mute_label, mute_btn_x, row_y, mute_w, sb_h,
-                            mute_col, BTN_HOVER, WHITE,
-                            AppAction::Audio(AudioMessage::SinkMute(sink.id)));
 
-                        subsec.content_y = row_y + sb_h - 4.0;
+                        stack.add_row(2, gap, sb_h, |sec_ctx, i, x, w| {
+                            if i == 0 {
+                                state.sink_spinboxes[idx].set_row_rect(x, w);
+                                let y = sec_ctx.ay();
+                                render_widget(sec_ctx.pc, &mut *state.sink_spinboxes[idx], x, y, w, sb_h, ctx);
+                            } else {
+                                sec_ctx.button(
+                                    mute_label,
+                                    x,
+                                    sec_ctx.ay(),
+                                    w,
+                                    sb_h,
+                                    mute_col,
+                                    BTN_HOVER,
+                                    WHITE,
+                                    AppAction::Audio(AudioMessage::SinkMute(sink.id)),
+                                );
+                            }
+                        });
                     }
                 });
             }
@@ -319,37 +323,41 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
                             format!("Volume: {:.0}%", src.volume * 100.0)
                         };
                         state.source_sliders[idx].set_label(&label);
-
-                        let bar_w = subsec.cw - 2.0 * (subsec.padding() + 14.0);
-                        let bar_x = 14.0;
-                        let yt = subsec.ay();
                         state.source_sliders[idx].set_value(src.volume);
-                        let slider_x = subsec.ax(bar_x);
-                        
+
+                        let mut stack = subsec.vstack(8.0);
+
                         let label_h = cce_ui::widget::label_offset(&*state.source_sliders[idx]);
                         let slider_h = cce_ui::layout::slider_height() + label_h;
-                        render_widget(subsec.pc, &mut *state.source_sliders[idx], slider_x, yt, bar_w, slider_h, ctx);
+                        stack.add_widget(&mut *state.source_sliders[idx], stack.context.cw - 28.0, slider_h, ctx);
 
-                        let row_y = subsec.ay() + slider_h + 8.0;
-                        let sb_w = 100.0;
                         let sb_h = cce_ui::layout::spinbox_height();
-                        let mute_w = 60.0;
                         let gap = 8.0;
 
-                        let row_rect_x = subsec.ax(8.0);
                         state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
-                        state.source_spinboxes[idx].set_row_rect(row_rect_x, subsec.cw - 16.0);
-                        let sb_x = subsec.ax(bar_x);
-                        render_widget(subsec.pc, &mut *state.source_spinboxes[idx], sb_x, row_y, sb_w, sb_h, ctx);
 
                         let mute_label = if src.muted { "Unmute" } else { "Mute" };
                         let mute_col = if src.muted { MUTED_BG } else { BTN_INACTIVE };
-                        let mute_btn_x = sb_x + sb_w + gap;
-                        subsec.button(mute_label, mute_btn_x, row_y, mute_w, sb_h,
-                            mute_col, BTN_HOVER, WHITE,
-                            AppAction::Audio(AudioMessage::SourceMute(src.id)));
 
-                        subsec.content_y = row_y + sb_h - 4.0;
+                        stack.add_row(2, gap, sb_h, |sec_ctx, i, x, w| {
+                            if i == 0 {
+                                state.source_spinboxes[idx].set_row_rect(x, w);
+                                let y = sec_ctx.ay();
+                                render_widget(sec_ctx.pc, &mut *state.source_spinboxes[idx], x, y, w, sb_h, ctx);
+                            } else {
+                                sec_ctx.button(
+                                    mute_label,
+                                    x,
+                                    sec_ctx.ay(),
+                                    w,
+                                    sb_h,
+                                    mute_col,
+                                    BTN_HOVER,
+                                    WHITE,
+                                    AppAction::Audio(AudioMessage::SourceMute(src.id)),
+                                );
+                            }
+                        });
                     }
                 });
             }
