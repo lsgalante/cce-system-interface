@@ -194,6 +194,8 @@ impl SystemInterface {
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
 
+
+
         if self.search_open && !self.search_query.is_empty() && !self.pages[page_idx].scroll_bar.dragging {
             let query_lower = self.search_query.to_lowercase();
             let mut first_match_y = None;
@@ -259,9 +261,23 @@ impl SystemInterface {
         for (idx, (c, x, y, w, h, r, corners)) in pc.rects.iter().enumerate() {
             eprintln!("PAGE_PC_RECT idx={}: color={:?}, x={}, y={}, w={}, h={}", idx, c, x, y, w, h);
             let wx = *x * s;
-            let wy = (*y - scroll_offset_y) * s;
+            let mut wy = (*y - scroll_offset_y) * s;
             let ww = *w * s;
-            let wh = *h * s;
+            let mut wh = *h * s;
+
+            let viewport_bottom = logical_sh - self.status_height;
+            if wy >= viewport_bottom || wy + wh <= 0.0 {
+                continue;
+            }
+            if wy < 0.0 {
+                let diff = 0.0 - wy;
+                wy = 0.0;
+                wh = (wh - diff).max(0.0);
+            }
+            if wy + wh > viewport_bottom {
+                wh = (viewport_bottom - wy).max(0.0);
+            }
+
             widgets.push(AppWidget {
                 x: wx, y: wy, w: ww, h: wh,
                 color: *c, hover_color: *c,
@@ -275,6 +291,22 @@ impl SystemInterface {
             let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
                 [bl, bt - scroll_offset_y, br, bb - scroll_offset_y]
             });
+
+            let viewport_bottom = logical_sh - self.status_height;
+            let final_bounds = match shifted_bounds {
+                Some(b) => Some([
+                    b[0],
+                    b[1].max(0.0),
+                    b[2],
+                    b[3].min(viewport_bottom),
+                ]),
+                None => Some([
+                    0.0,
+                    0.0,
+                    logical_sw,
+                    viewport_bottom,
+                ]),
+            };
 
             let matched = self.search_open && !self.search_query.is_empty() && t.to_lowercase().contains(&self.search_query.to_lowercase());
 
@@ -299,20 +331,31 @@ impl SystemInterface {
                 let rect_h = *size + 2.0 * pad_y;
 
                 let wx = rect_x * s;
-                let wy = (rect_y - scroll_offset_y) * s;
+                let mut wy = (rect_y - scroll_offset_y) * s;
                 let ww = rect_w * s;
-                let wh = rect_h * s;
-                widgets.push(AppWidget {
-                    x: wx,
-                    y: wy,
-                    w: ww,
-                    h: wh,
-                    color: [0.65, 0.45, 0.05, 0.4],
-                    hover_color: [0.65, 0.45, 0.05, 0.4],
-                    hovering: check_hover(wx, wy, ww, wh),
-                    radius: 3.0 * s,
-                    corners: (true, true, true, true),
-                });
+                let mut wh = rect_h * s;
+
+                if wy < viewport_bottom && wy + wh > 0.0 {
+                    if wy < 0.0 {
+                        let diff = 0.0 - wy;
+                        wy = 0.0;
+                        wh = (wh - diff).max(0.0);
+                    }
+                    if wy + wh > viewport_bottom {
+                        wh = (viewport_bottom - wy).max(0.0);
+                    }
+                    widgets.push(AppWidget {
+                        x: wx,
+                        y: wy,
+                        w: ww,
+                        h: wh,
+                        color: [0.65, 0.45, 0.05, 0.4],
+                        hover_color: [0.65, 0.45, 0.05, 0.4],
+                        hovering: check_hover(wx, wy, ww, wh),
+                        radius: 3.0 * s,
+                        corners: (true, true, true, true),
+                    });
+                }
             }
 
             let text_color = if self.search_open && !self.search_query.is_empty() {
@@ -339,7 +382,7 @@ impl SystemInterface {
                 color: glyphon::Color::rgb(
                     (text_color[0] * 255.0) as u8, (text_color[1] * 255.0) as u8, (text_color[2] * 255.0) as u8,
                 ),
-                bounds: shifted_bounds,
+                bounds: final_bounds,
             });
         }
         for (btn, action) in &pc.buttons {
@@ -347,9 +390,23 @@ impl SystemInterface {
             let bg = btn.bg.unwrap_or([0.16, 0.16, 0.24, 1.0]);
             let hover_bg = btn.hover_bg.unwrap_or([0.25, 0.30, 0.26, 1.0]);
             let wx = base.x * s;
-            let wy = (base.y - scroll_offset_y) * s;
+            let mut wy = (base.y - scroll_offset_y) * s;
             let ww = base.w * s;
-            let wh = base.h * s;
+            let mut wh = base.h * s;
+
+            let viewport_bottom = logical_sh - self.status_height;
+            if wy >= viewport_bottom || wy + wh <= 0.0 {
+                continue;
+            }
+            if wy < 0.0 {
+                let diff = 0.0 - wy;
+                wy = 0.0;
+                wh = (wh - diff).max(0.0);
+            }
+            if wy + wh > viewport_bottom {
+                wh = (viewport_bottom - wy).max(0.0);
+            }
+
             widgets.push(AppWidget {
                 x: wx, y: wy, w: ww, h: wh,
                 color: bg, hover_color: hover_bg,
@@ -400,6 +457,12 @@ impl SystemInterface {
             };
 
             let label_color = btn.label_color.unwrap_or([0.83, 0.83, 0.83, 1.0]);
+            let button_bounds = Some([
+                0.0,
+                0.0,
+                logical_sw,
+                viewport_bottom,
+            ]);
             text_items.push(TextItem {
                 buffer: buf,
                 x: text_x, y: (base.y - scroll_offset_y) + (base.h - logical_lh) / 2.0,
@@ -408,7 +471,7 @@ impl SystemInterface {
                     (label_color[1] * 255.0) as u8,
                     (label_color[2] * 255.0) as u8,
                 ),
-                bounds: None,
+                bounds: button_bounds,
             });
             let mut btn_clone = btn.clone();
             if let Some(base_mut) = btn_clone.base_mut() {

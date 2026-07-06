@@ -526,20 +526,24 @@ impl crate::pages::AppPage for NetworkState {
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
-            cce_ui::widget::SectionContainer::new("WiFi").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
-            cce_ui::widget::SectionContainer::new("Bluetooth").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
+            cce_ui::widget::SectionContainer::new("WiFi")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
+            cce_ui::widget::SectionContainer::new("Bluetooth")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
         ]
     }
 
@@ -553,9 +557,7 @@ impl crate::pages::AppPage for NetworkState {
         cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_toggle, ctx);
-        if self.wifi_enabled && !self.available.is_empty() {
-            cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_list_box.scroll_box, ctx);
-        }
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_list_box.scroll_box, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.bt_toggle, ctx);
     }
 

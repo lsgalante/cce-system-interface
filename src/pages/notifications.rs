@@ -195,6 +195,7 @@ impl AppPage for NotificationsState {
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
             cce_ui::widget::SectionContainer::new("Notifications Settings")
+                .with_draw_children(false)
                 .with_layout(cce_ui::widget::AdaptiveGridLayout {
                     min_col_width: 140.0,
                     gap: 8.0,
@@ -214,6 +215,9 @@ impl AppPage for NotificationsState {
         for sec in sec_containers.iter_mut() {
             cce_ui::widget::link_parent_child(page_root, sec, ctx);
         }
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.enable_toggle, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.bell_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.duration_spinbox, ctx);
     }
 
     fn view(

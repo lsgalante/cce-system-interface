@@ -120,11 +120,11 @@ impl AppPage for FontsState {
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
-            cce_ui::widget::SectionContainer::new("Preferred Fonts"),
-            cce_ui::widget::SectionContainer::new("Borders"),
-            cce_ui::widget::SectionContainer::new("Status Interface"),
-            cce_ui::widget::SectionContainer::new("Fuzzel"),
-            cce_ui::widget::SectionContainer::new("Terminal"),
+            cce_ui::widget::SectionContainer::new("Preferred Fonts").with_draw_children(false),
+            cce_ui::widget::SectionContainer::new("Borders").with_draw_children(false),
+            cce_ui::widget::SectionContainer::new("Status Interface").with_draw_children(false),
+            cce_ui::widget::SectionContainer::new("Fuzzel").with_draw_children(false),
+            cce_ui::widget::SectionContainer::new("Terminal").with_draw_children(false),
         ]
     }
 
@@ -173,39 +173,49 @@ impl AppPage for FontsState {
         let mut builder = cce_ui::layout::PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
 
         builder.add_section(&mut final_pc, "Preferred Fonts", sec_focused.get(0).copied().unwrap_or(false), |sec| {
-            sec.widget_full(&mut self.sans_box, 44.0, ctx);
-            sec.widget_full(&mut self.serif_box, 44.0, ctx);
-            sec.widget_full(&mut self.mono_box, 44.0, ctx);
+            let mut stack = sec.vstack(8.0);
+            let sec_w = stack.context.cw;
+            stack.add_widget(&mut self.sans_box, sec_w - 28.0, 44.0, ctx);
+            stack.add_widget(&mut self.serif_box, sec_w - 28.0, 44.0, ctx);
+            stack.add_widget(&mut self.mono_box, sec_w - 28.0, 44.0, ctx);
         });
 
         builder.add_section(&mut final_pc, "Borders", sec_focused.get(1).copied().unwrap_or(false), |sec| {
-            sec.widget_full(&mut self.borders_menu, 44.0, ctx);
+            let mut stack = sec.vstack(8.0);
+            let sec_w = stack.context.cw;
+            stack.add_widget(&mut self.borders_menu, sec_w - 28.0, 44.0, ctx);
             if self.borders_menu.selected == 3 {
-                sec.widget_full(&mut self.borders_box, 44.0, ctx);
+                stack.add_widget(&mut self.borders_box, sec_w - 28.0, 44.0, ctx);
             }
         });
 
         builder.add_section(&mut final_pc, "Status Interface", sec_focused.get(2).copied().unwrap_or(false), |sec| {
-            sec.widget_full(&mut self.status_menu, 44.0, ctx);
+            let mut stack = sec.vstack(8.0);
+            let sec_w = stack.context.cw;
+            stack.add_widget(&mut self.status_menu, sec_w - 28.0, 44.0, ctx);
             if self.status_menu.selected == 3 {
-                sec.widget_full(&mut self.status_box, 44.0, ctx);
+                stack.add_widget(&mut self.status_box, sec_w - 28.0, 44.0, ctx);
             }
         });
 
         builder.add_section(&mut final_pc, "Fuzzel", sec_focused.get(3).copied().unwrap_or(false), |sec| {
-            sec.widget_full(&mut self.fuzzel_menu, 44.0, ctx);
+            let mut stack = sec.vstack(8.0);
+            let sec_w = stack.context.cw;
+            stack.add_widget(&mut self.fuzzel_menu, sec_w - 28.0, 44.0, ctx);
             if self.fuzzel_menu.selected == 3 {
-                sec.widget_full(&mut self.fuzzel_box, 44.0, ctx);
+                stack.add_widget(&mut self.fuzzel_box, sec_w - 28.0, 44.0, ctx);
             }
-            sec.widget_full(&mut self.fuzzel_size_box, 44.0, ctx);
+            stack.add_widget(&mut self.fuzzel_size_box, sec_w - 28.0, 44.0, ctx);
         });
 
         builder.add_section(&mut final_pc, "Terminal", sec_focused.get(4).copied().unwrap_or(false), |sec| {
-            sec.widget_full(&mut self.terminal_menu, 44.0, ctx);
+            let mut stack = sec.vstack(8.0);
+            let sec_w = stack.context.cw;
+            stack.add_widget(&mut self.terminal_menu, sec_w - 28.0, 44.0, ctx);
             if self.terminal_menu.selected == 3 {
-                sec.widget_full(&mut self.terminal_box, 44.0, ctx);
+                stack.add_widget(&mut self.terminal_box, sec_w - 28.0, 44.0, ctx);
             }
-            sec.widget_full(&mut self.terminal_size_box, 44.0, ctx);
+            stack.add_widget(&mut self.terminal_size_box, sec_w - 28.0, 44.0, ctx);
         });
 
         final_pc

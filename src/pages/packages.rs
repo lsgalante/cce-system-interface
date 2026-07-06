@@ -327,8 +327,8 @@ pub fn view(
     ctx: &mut cce_ui::context::UiContext,
 ) -> PageContent {
     let mut final_pc = PageContent::new();
-    let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
+    let sec_w = 260.0f32;
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
     // Section 1: Packages List
     builder.add_section(&mut final_pc, "Packages", sec_focused.first().copied().unwrap_or(false), |sec| {
@@ -398,6 +398,7 @@ pub fn view(
 
             match state.active_tab {
                 PackageTab::Installed => {
+                    state.installed_list_box.clear_children(ctx);
                     render_widget(sec.pc, &mut state.installed_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
                     let filtered: Vec<&PackageInfo> = state.installed.iter()
@@ -421,6 +422,7 @@ pub fn view(
                             item.title = pkg.name.clone();
                             item.subtitle = Some(format!("Version: {}", pkg.version));
                             item.selected = Some(&pkg.name) == state.selected_package.as_ref();
+                            cce_ui::widget::link_parent_child(&mut state.installed_list_box.scroll_box, item, ctx);
                             render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                         }
                     }
@@ -431,6 +433,7 @@ pub fn view(
                     }
                 }
                 PackageTab::Updates => {
+                    state.updates_list_box.clear_children(ctx);
                     render_widget(sec.pc, &mut state.updates_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
                     let filtered: Vec<&UpdateInfo> = state.updates.iter()
@@ -454,6 +457,7 @@ pub fn view(
                             item.title = pkg.name.clone();
                             item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
                             item.selected = Some(&pkg.name) == state.selected_package.as_ref();
+                            cce_ui::widget::link_parent_child(&mut state.updates_list_box.scroll_box, item, ctx);
                             render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                         }
                     }
@@ -466,103 +470,102 @@ pub fn view(
             }
 
             sec.content_y += list_box_h;
-
-            sec.add_section("Package Info", false, |subsec| {
-                if state.loading_info {
-                    subsec.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
-                } else if let Some(ref pkg_name) = state.selected_package {
-                    if let Some(ref info_raw) = state.selected_package_info {
-                        let mut parsed = parse_package_info(info_raw);
-                        if parsed.name.is_empty() {
-                            parsed.name = pkg_name.clone();
-                        }
-
-                        subsec.text(&parsed.name, 12.0, 0.0, 13.0, WHITE);
-
-                        let render_detail = |sub: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
-                            sub.text(key, 12.0, 0.0, 11.0, TEXT_DIM);
-                            let val_start_x = 90.0f32;
-                            let usable_w = sub.cw - val_start_x - 12.0;
-                            let char_w = 6.0f32;
-                            let max_chars = (usable_w / char_w).max(15.0) as usize;
-
-                            let lines = wrap_text(val, max_chars);
-                            for line in &lines {
-                                sub.text(line, val_start_x, 0.0, 11.0, TEXT_FG);
-                            }
-                            if lines.is_empty() {
-                            }
-                        };
-
-                        render_detail(subsec, "Version:", &parsed.version);
-                        if !parsed.size.is_empty() {
-                            render_detail(subsec, "Size:", &parsed.size);
-                        }
-                        if !parsed.licenses.is_empty() {
-                            render_detail(subsec, "Licenses:", &parsed.licenses);
-                        }
-                        if !parsed.website.is_empty() {
-                            render_detail(subsec, "Website:", &parsed.website);
-                        }
-                        if !parsed.packager.is_empty() {
-                            render_detail(subsec, "Packager:", &parsed.packager);
-                        }
-                        if !parsed.build_date.is_empty() {
-                            render_detail(subsec, "Build Date:", &parsed.build_date);
-                        }
-                        if !parsed.description.is_empty() {
-                            subsec.separator();
-                            render_detail(subsec, "Description:", &parsed.description);
-                        }
-                        if !parsed.required_by.is_empty() && parsed.required_by != "None" {
-                            subsec.separator();
-                            subsec.text("Required By:", 12.0, 0.0, 11.0, TEXT_DIM);
-
-                            let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
-                            let cols_count = 3;
-                            let gap = 6.0;
-                            let btn_h = 24.0;
-
-                            for chunk in reqs.chunks(cols_count) {
-                                let btn_y = subsec.ay();
-                                let cols = subsec.row_layout(cols_count, gap);
-                                for (i, &pkg) in chunk.iter().enumerate() {
-                                    if let Some(&(x, w)) = cols.get(i) {
-                                        let action = AppAction::Packages(PackagesMessage::SelectAndScrollPackage(pkg.to_string()));
-                                        subsec.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
-                                    }
-                                }
-                            }
-                        }
-                        if !parsed.commands.is_empty() {
-                            subsec.separator();
-                            render_detail(subsec, "Commands:", &parsed.commands);
-                        }
-
-                        if state.active_tab == PackageTab::Installed {
-                            let mut stack = subsec.vstack(8.0);
-                            let btn_h = 32.0;
-                            let (btn_lbl, bg, hover, action) = if state.uninstalling {
-                                ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
-                            } else {
-                                ("Uninstall Package", RED, BTN_HOVER, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
-                            };
-                            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-                                ctx.button(btn_lbl, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
-                            });
-                        }
-                    } else {
-                        subsec.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
-                    }
-                } else {
-                    subsec.text("Select a package to view details.", 12.0, 0.0, 12.0, TEXT_DIM);
-                }
-            });
         }
     });
 
-    // Section 2: Update Actions / Status
-    builder.add_section(&mut final_pc, "System Update", sec_focused.get(1).copied().unwrap_or(false), |sec2| {
+    // Section 2: Package Details Info
+    builder.add_section(&mut final_pc, "Package Info", sec_focused.get(1).copied().unwrap_or(false), |sec1| {
+        if state.loading_info {
+            sec1.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
+        } else if let Some(ref pkg_name) = state.selected_package {
+            if let Some(ref info_raw) = state.selected_package_info {
+                let mut parsed = parse_package_info(info_raw);
+                if parsed.name.is_empty() {
+                    parsed.name = pkg_name.clone();
+                }
+
+                sec1.text(&parsed.name, 12.0, 0.0, 13.0, WHITE);
+
+                let render_detail = |sub: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
+                    sub.text(key, 12.0, 0.0, 11.0, TEXT_DIM);
+                    let val_start_x = 90.0f32;
+                    let usable_w = sub.cw - val_start_x - 12.0;
+                    let char_w = 6.0f32;
+                    let max_chars = (usable_w / char_w).max(15.0) as usize;
+
+                    let lines = wrap_text(val, max_chars);
+                    for line in &lines {
+                        sub.text(line, val_start_x, 0.0, 11.0, TEXT_FG);
+                    }
+                };
+
+                render_detail(sec1, "Version:", &parsed.version);
+                if !parsed.size.is_empty() {
+                    render_detail(sec1, "Size:", &parsed.size);
+                }
+                if !parsed.licenses.is_empty() {
+                    render_detail(sec1, "Licenses:", &parsed.licenses);
+                }
+                if !parsed.website.is_empty() {
+                    render_detail(sec1, "Website:", &parsed.website);
+                }
+                if !parsed.packager.is_empty() {
+                    render_detail(sec1, "Packager:", &parsed.packager);
+                }
+                if !parsed.build_date.is_empty() {
+                    render_detail(sec1, "Build Date:", &parsed.build_date);
+                }
+                if !parsed.description.is_empty() {
+                    sec1.separator();
+                    render_detail(sec1, "Description:", &parsed.description);
+                }
+                if !parsed.required_by.is_empty() && parsed.required_by != "None" {
+                    sec1.separator();
+                    sec1.text("Required By:", 12.0, 0.0, 11.0, TEXT_DIM);
+
+                    let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
+                    let cols_count = 3;
+                    let gap = 6.0;
+                    let btn_h = 24.0;
+
+                    for chunk in reqs.chunks(cols_count) {
+                        let btn_y = sec1.ay();
+                        let cols = sec1.row_layout(cols_count, gap);
+                        for (i, &pkg) in chunk.iter().enumerate() {
+                            if let Some(&(x, w)) = cols.get(i) {
+                                let action = AppAction::Packages(PackagesMessage::SelectAndScrollPackage(pkg.to_string()));
+                                sec1.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
+                            }
+                        }
+                    }
+                }
+                if !parsed.commands.is_empty() {
+                    sec1.separator();
+                    render_detail(sec1, "Commands:", &parsed.commands);
+                }
+
+                if state.active_tab == PackageTab::Installed {
+                    let mut stack = sec1.vstack(8.0);
+                    let btn_h = 32.0;
+                    let (btn_lbl, bg, hover, action) = if state.uninstalling {
+                        ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
+                    } else {
+                        ("Uninstall Package", RED, BTN_HOVER, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
+                    };
+                    stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
+                        ctx.button(btn_lbl, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
+                    });
+                }
+            } else {
+                sec1.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
+            }
+        } else {
+            sec1.text("Select a package to view details.", 12.0, 0.0, 12.0, TEXT_DIM);
+        }
+    });
+
+    // Section 3: Update Actions / Status
+    builder.add_section(&mut final_pc, "System Update", sec_focused.get(2).copied().unwrap_or(false), |sec2| {
         if !state.loaded {
             sec2.text("Loading update status...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
@@ -715,20 +718,33 @@ impl crate::pages::AppPage for PackagesState {
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
-            cce_ui::widget::SectionContainer::new("Packages").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
-            cce_ui::widget::SectionContainer::new("System Update").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
+            cce_ui::widget::SectionContainer::new("Packages")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
+            cce_ui::widget::SectionContainer::new("Package Info")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
+            cce_ui::widget::SectionContainer::new("System Update")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
         ]
     }
 
@@ -740,16 +756,11 @@ impl crate::pages::AppPage for PackagesState {
     ) {
         cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
         cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[2], ctx);
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.search_box, ctx);
-        match self.active_tab {
-            PackageTab::Installed => {
-                cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.installed_list_box.scroll_box, ctx);
-            }
-            PackageTab::Updates => {
-                cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.updates_list_box.scroll_box, ctx);
-            }
-        }
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.installed_list_box.scroll_box, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.updates_list_box.scroll_box, ctx);
     }
 
     fn view(
@@ -766,7 +777,44 @@ impl crate::pages::AppPage for PackagesState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        let query = if self.search_box.editing {
+            self.search_box.edit_buffer.to_lowercase()
+        } else {
+            self.search_box.text.to_lowercase()
+        };
+
+        match self.active_tab {
+            PackageTab::Installed => {
+                let filtered: Vec<&PackageInfo> = self.installed.iter()
+                    .filter(|p| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
+                    .collect();
+                for (idx, item) in self.installed_items.iter_mut().enumerate() {
+                    if item.just_clicked {
+                        item.just_clicked = false;
+                        if idx < filtered.len() {
+                            let pkg = filtered[idx];
+                            actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(pkg.name.clone()))));
+                        }
+                    }
+                }
+            }
+            PackageTab::Updates => {
+                let filtered: Vec<&UpdateInfo> = self.updates.iter()
+                    .filter(|p| p.name.to_lowercase().contains(&query))
+                    .collect();
+                for (idx, item) in self.updates_items.iter_mut().enumerate() {
+                    if item.just_clicked {
+                        item.just_clicked = false;
+                        if idx < filtered.len() {
+                            let pkg = filtered[idx];
+                            actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(pkg.name.clone()))));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

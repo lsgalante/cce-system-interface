@@ -230,6 +230,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let list_box_w = sec_w - 24.0;
             let list_box_h = 360.0;
             
+            state.services_list_box.clear_children(ctx);
             render_widget(sec.pc, &mut state.services_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
 
             // Filter services
@@ -288,6 +289,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     let item_btn = &mut state.service_items[idx];
                     item_btn.title = service.name.clone();
                     item_btn.subtitle = Some(desc_truncated);
+                    cce_ui::widget::link_parent_child(&mut state.services_list_box.scroll_box, item_btn, ctx);
                     render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
 
                     // Render StatusDot
@@ -489,20 +491,24 @@ impl crate::pages::AppPage for ProcessesState {
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
-            cce_ui::widget::SectionContainer::new("Processes").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
-            cce_ui::widget::SectionContainer::new("Services").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
+            cce_ui::widget::SectionContainer::new("Processes")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
+            cce_ui::widget::SectionContainer::new("Services")
+                .with_draw_children(false)
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                }),
         ]
     }
 

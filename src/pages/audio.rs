@@ -428,20 +428,24 @@ impl crate::pages::AppPage for AudioState {
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
         vec![
-            cce_ui::widget::SectionContainer::new("Output").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
-            cce_ui::widget::SectionContainer::new("Input").with_layout(cce_ui::widget::AdaptiveGridLayout {
-                min_col_width: 140.0,
-                gap: 8.0,
-                padding_x: 0.0,
-                padding_y: 0.0,
-                grid: None,
-            }),
+            cce_ui::widget::SectionContainer::new("Output")
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                })
+                .with_draw_children(false),
+            cce_ui::widget::SectionContainer::new("Input")
+                .with_layout(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 140.0,
+                    gap: 8.0,
+                    padding_x: 0.0,
+                    padding_y: 0.0,
+                    grid: None,
+                })
+                .with_draw_children(false),
         ]
     }
 
@@ -454,17 +458,26 @@ impl crate::pages::AppPage for AudioState {
         cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
         cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
 
-        for sb in &mut self.sink_spinboxes {
-            cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut **sb, ctx);
+        for (i, sink) in self.sinks.iter().enumerate() {
+            if sink.active {
+                if i < self.sink_spinboxes.len() {
+                    cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut *self.sink_spinboxes[i], ctx);
+                }
+                if i < self.sink_sliders.len() {
+                    cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut *self.sink_sliders[i], ctx);
+                }
+            }
         }
-        for sb in &mut self.source_spinboxes {
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut **sb, ctx);
-        }
-        for slider in &mut self.sink_sliders {
-            cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut **slider, ctx);
-        }
-        for slider in &mut self.source_sliders {
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut **slider, ctx);
+
+        for (i, src) in self.sources.iter().enumerate() {
+            if src.active {
+                if i < self.source_spinboxes.len() {
+                    cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut *self.source_spinboxes[i], ctx);
+                }
+                if i < self.source_sliders.len() {
+                    cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut *self.source_sliders[i], ctx);
+                }
+            }
         }
     }
 
@@ -583,9 +596,41 @@ mod tests {
 
     #[test]
     fn test_view_layout_grid() {
-        let mut state = AudioState::default();
+        use cce_ui::widget::{Spinbox, Slider};
+        let mut state = AudioState {
+            loaded: true,
+            sinks: vec![
+                AudioSink { id: 71, name: "Speaker".to_string(), volume: 0.57, muted: false, active: true },
+                AudioSink { id: 70, name: "HDMI1".to_string(), volume: 0.5, muted: false, active: false },
+                AudioSink { id: 69, name: "HDMI2".to_string(), volume: 0.5, muted: false, active: false },
+                AudioSink { id: 68, name: "HDMI3".to_string(), volume: 0.5, muted: false, active: false },
+            ],
+            sources: vec![],
+            sink_spinboxes: vec![
+                Box::new(Spinbox::new(57, 0, 100, 1)),
+                Box::new(Spinbox::new(50, 0, 100, 1)),
+                Box::new(Spinbox::new(50, 0, 100, 1)),
+                Box::new(Spinbox::new(50, 0, 100, 1)),
+            ],
+            source_spinboxes: vec![],
+            sink_sliders: vec![
+                Box::new(Slider::new()),
+                Box::new(Slider::new()),
+                Box::new(Slider::new()),
+                Box::new(Slider::new()),
+            ],
+            source_sliders: vec![],
+            sink_dragging: None,
+            source_dragging: None,
+        };
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
+        for (i, (c, x, y, w, h, r, _)) in pc.rects.iter().enumerate() {
+            println!("TEST_PC_RECT {}: color={:?}, x={}, y={}, w={}, h={}, r={}", i, c, x, y, w, h, r);
+        }
+        for (i, (t, sz, x, y, c, _, _)) in pc.texts.iter().enumerate() {
+            println!("TEST_PC_TEXT {}: text='{}', size={}, x={}, y={}, color={:?}", i, t, sz, x, y, c);
+        }
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 

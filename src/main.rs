@@ -138,8 +138,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let win_opacity = 1.0f32;
         let win_radius = 12;
 
-        let mut font_system = FontSystem::new();
-        font_system.db_mut().load_fonts_dir("/home/lsgalante/Dropbox/Fonts");
+        let font_system = cce_ui::create_font_system();
 
         let mut this = Self {
             app: app_state,
@@ -348,7 +347,7 @@ impl cce_ui::engine::Application for SystemInterface {
     }
 
     fn clear_color(&self) -> [f32; 4] {
-        [0.0, 0.0, 0.0, 0.0]
+        [0.039, 0.102, 0.055, 1.0]
     }
 
     fn handle_pointer_move(&mut self, pos: cce_ui::engine::LogicalPosition, needs_rebuild: &mut bool) {
