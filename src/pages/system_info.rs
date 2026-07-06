@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, Element};
+use cce_ui::widget::{Label, Dropdown, InfoBox, Element, Button, SectionContainer, Container};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -22,7 +22,7 @@ pub struct NotificationsConfig {
     pub duration: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SystemState {
     pub hostname: String,
     pub kernel: String,
@@ -47,6 +47,47 @@ pub struct SystemState {
     pub cpu_gov_menu: Dropdown,
     pub gpu_gov_menu: Dropdown,
 
+    // Native layout tracking and widgets
+    pub initialized: bool,
+    pub sender: Option<calloop::channel::Sender<AppAction>>,
+    pub hostname_label: Label,
+    pub uptime_label: Label,
+
+    pub battery_label_pct: Label,
+    pub battery_label_state: Label,
+    pub battery_label_time: Label,
+    pub battery_label_details: Label,
+    pub battery_label_ac: Label,
+
+    pub cpu_info_box: InfoBox,
+    pub gpu_info_box: InfoBox,
+
+    pub suspend_btn: Button,
+    pub hibernate_btn: Button,
+    pub reboot_btn: Button,
+    pub poweroff_btn: Button,
+    pub force_shutdown_btn: Button,
+
+    pub sec_system: SectionContainer,
+    pub sec_actions: SectionContainer,
+    pub sec_cpu: SectionContainer,
+    pub sec_gpu: SectionContainer,
+    pub sec_cpu_gov: SectionContainer,
+    pub sec_gpu_gov: SectionContainer,
+    pub sec_battery: SectionContainer,
+
+    pub actions_row: Container,
+}
+
+impl std::fmt::Debug for SystemState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SystemState")
+            .field("hostname", &self.hostname)
+            .field("kernel", &self.kernel)
+            .field("uptime", &self.uptime)
+            .field("loaded", &self.loaded)
+            .finish()
+    }
 }
 
 impl Default for SystemState {
@@ -79,13 +120,108 @@ impl Default for SystemState {
                 0,
             ).with_label("GPU Power Limit"),
 
+            initialized: false,
+            sender: None,
+            hostname_label: Label::new(""),
+            uptime_label: Label::new(""),
+
+            battery_label_pct: Label::new("").with_font_size(24.0).with_color([92, 143, 97]),
+            battery_label_state: Label::new("").with_font_size(12.0).with_color([135, 135, 153]),
+            battery_label_time: Label::new("").with_font_size(12.0).with_color([135, 135, 153]),
+            battery_label_details: Label::new("").with_font_size(11.0).with_color([135, 135, 153]),
+            battery_label_ac: Label::new("").with_font_size(14.0).with_color([212, 212, 212]),
+
+            cpu_info_box: InfoBox::new("CPU Governor", vec![]),
+            gpu_info_box: InfoBox::new("GPU Power Limit", vec![]),
+
+            suspend_btn: Button::new(0.0, 0.0, 0.0, 32.0)
+                .with_label("Suspend")
+                .with_bg([0.20, 0.33, 0.22, 1.0])
+                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
+                .with_label_color([1.0, 1.0, 1.0, 1.0]),
+            hibernate_btn: Button::new(0.0, 0.0, 0.0, 32.0)
+                .with_label("Hibernate")
+                .with_bg([0.20, 0.33, 0.22, 1.0])
+                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
+                .with_label_color([1.0, 1.0, 1.0, 1.0]),
+            reboot_btn: Button::new(0.0, 0.0, 0.0, 32.0)
+                .with_label("Reboot")
+                .with_bg([0.67, 0.20, 0.20, 1.0])
+                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
+                .with_label_color([1.0, 1.0, 1.0, 1.0]),
+            poweroff_btn: Button::new(0.0, 0.0, 0.0, 32.0)
+                .with_label("Power Off")
+                .with_bg([0.67, 0.20, 0.20, 1.0])
+                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
+                .with_label_color([1.0, 1.0, 1.0, 1.0]),
+            force_shutdown_btn: Button::new(0.0, 0.0, 0.0, 32.0)
+                .with_label("Force Shutdown")
+                .with_bg([0.67, 0.20, 0.20, 1.0])
+                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
+                .with_label_color([1.0, 1.0, 1.0, 1.0]),
+
+            sec_system: SectionContainer::new("System").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+            sec_actions: SectionContainer::new("System Actions").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+            sec_cpu: SectionContainer::new("CPU").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+            sec_gpu: SectionContainer::new("GPU").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+            sec_cpu_gov: SectionContainer::new("CPU Governor").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+            sec_gpu_gov: SectionContainer::new("GPU Power").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+            sec_battery: SectionContainer::new("Battery").with_layout({
+                let mut l = cce_ui::widget::VerticalLayout::default();
+                l.padding_x = 12.0;
+                l.padding_y = 8.0;
+                l.spacing = 8.0;
+                l
+            }),
+
+            actions_row: Container::new().with_layout(cce_ui::widget::ColumnsLayout {
+                padding_x: 0.0,
+                padding_y: 0.0,
+                spacing: 8.0,
+            }),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum SystemMessage {
-    Refreshed(SystemState),
+    Refreshed(SystemInfo),
     Suspend,
     Hibernate,
     Reboot,
@@ -276,7 +412,23 @@ fn spawn_systemctl_force(action: &str) {
     let _ = cce_ui::process::spawn_detached(cmd);
 }
 
-pub async fn fetch_system_state() -> SystemState {
+#[derive(Debug, Clone, Default)]
+pub struct SystemInfo {
+    pub hostname: String,
+    pub kernel: String,
+    pub uptime: String,
+    pub cpu_model: String,
+    pub cpu_cores: u32,
+    pub cpu_usage: f32,
+    pub gpus: Vec<String>,
+    pub gpu_strings: Vec<String>,
+    pub battery: BatteryInfo,
+    pub on_ac: bool,
+    pub cpu_powersave: bool,
+    pub gpu_powersave: bool,
+}
+
+pub async fn fetch_system_state() -> SystemInfo {
     let hostname = tokio::process::Command::new("hostname")
         .output().await.ok()
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().split('.').next().map(|s| s.to_string()))
@@ -351,57 +503,37 @@ pub async fn fetch_system_state() -> SystemState {
         list
     }).clone();
 
-    let cpu_temp = read_cpu_temp();
+
     let tp_gpu_temp = read_thinkpad_gpu_temp();
     let nv_gpu_temp = read_nvidia_gpu_temp().await;
 
-    let cpu_label_text = format!("CPU  {}  ({} cores)", cpu_model, cpu_cores);
-    let cpu_usage_text = format!("Usage  {:.0}%", cpu_usage);
-    let cpu_temp_text = cpu_temp.map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
-
-    let gpu_labels = gpus.iter().map(|gpu_name| {
+    let gpu_strings = gpus.iter().map(|gpu_name| {
         let temp = if gpu_name.to_lowercase().contains("nvidia") {
             nv_gpu_temp.or(tp_gpu_temp)
         } else {
             tp_gpu_temp
         };
         let temp_str = temp.map(|t| format!("  —  {:.0}°C", t)).unwrap_or_default();
-        let text = format!("GPU  {}{}", gpu_name, temp_str);
-        Label::new(&text).with_font_size(12.0).with_color([212, 212, 212])
+        format!("GPU  {}{}", gpu_name, temp_str)
     }).collect();
 
     let (battery, on_ac) = fetch_upower().await;
     let cpu_powersave = current_cpu_governor() == "powersave";
     let gpu_powersave = current_gpu_power_cap().await;
 
-    SystemState {
+    SystemInfo {
         hostname,
         kernel,
         uptime,
-        loaded: true,
-
         cpu_model,
         cpu_usage,
         cpu_cores,
         gpus,
-        cpu_label: Label::new(&cpu_label_text).with_font_size(12.0).with_color([212, 212, 212]),
-        cpu_usage_label: Label::new(&cpu_usage_text).with_font_size(12.0).with_color([212, 212, 212]),
-        cpu_temp_label: Label::new(&cpu_temp_text).with_font_size(12.0).with_color([212, 212, 212]),
-        gpu_labels,
-
+        gpu_strings,
         battery,
         on_ac,
         cpu_powersave,
         gpu_powersave,
-        cpu_gov_menu: Dropdown::new(
-            vec!["Performance".to_string(), "Powersave".to_string()],
-            if cpu_powersave { 1 } else { 0 },
-        ).with_label("CPU Governor"),
-        gpu_gov_menu: Dropdown::new(
-            vec!["Default (80W)".to_string(), "Eco Cap (5W)".to_string()],
-            if gpu_powersave { 1 } else { 0 },
-        ).with_label("GPU Power Limit"),
-
     }
 }
 
@@ -604,29 +736,123 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     final_pc
 }
 
-pub fn update(state: &mut SystemState, msg: SystemMessage) {
+pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::context::UiContext) {
     match msg {
         SystemMessage::Refreshed(new) => {
             state.hostname = new.hostname;
             state.kernel = new.kernel;
             state.uptime = new.uptime;
-            state.loaded = new.loaded;
+            state.loaded = true;
 
             state.cpu_model = new.cpu_model;
             state.cpu_usage = new.cpu_usage;
             state.cpu_cores = new.cpu_cores;
             state.gpus = new.gpus;
-            state.cpu_label = new.cpu_label;
-            state.cpu_usage_label = new.cpu_usage_label;
-            state.cpu_temp_label = new.cpu_temp_label;
-            state.gpu_labels = new.gpu_labels;
 
             state.battery = new.battery;
             state.on_ac = new.on_ac;
             state.cpu_powersave = new.cpu_powersave;
             state.gpu_powersave = new.gpu_powersave;
-            state.cpu_gov_menu.selected = new.cpu_gov_menu.selected;
-            state.gpu_gov_menu.selected = new.gpu_gov_menu.selected;
+            state.cpu_gov_menu.selected = if new.cpu_powersave { 1 } else { 0 };
+            state.gpu_gov_menu.selected = if new.gpu_powersave { 1 } else { 0 };
+
+            if state.loaded {
+                state.hostname_label.set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
+                state.uptime_label.set_text(&format!("Uptime: {}", state.uptime));
+
+                let cpu_label_text = format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores);
+                let cpu_usage_text = format!("Usage  {:.0}%", state.cpu_usage);
+                let cpu_temp_text = read_cpu_temp().map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
+
+                state.cpu_label.set_text(&cpu_label_text);
+                state.cpu_usage_label.set_text(&cpu_usage_text);
+                state.cpu_temp_label.set_text(&cpu_temp_text);
+
+                // Re-populate GPU labels
+                state.sec_gpu.clear_children(ctx);
+                state.gpu_labels.clear();
+                for text in &new.gpu_strings {
+                    let mut lbl = Label::new(text).with_font_size(12.0).with_color([212, 212, 212]);
+                    state.sec_gpu.add_child(lbl.as_ptr_mut(), ctx);
+                    state.gpu_labels.push(lbl);
+                }
+
+                // Update info boxes
+                let (cpu_title, cpu_lines) = if state.cpu_powersave {
+                    (
+                        "CPU Governor: Powersave",
+                        vec![
+                            "• Active: powersave".to_string(),
+                            "• Governor set to powersave — lower power, slower burst".to_string(),
+                        ],
+                    )
+                } else {
+                    (
+                        "CPU Governor: Performance",
+                        vec![
+                            "• Active: performance".to_string(),
+                            "• Governor set to performance".to_string(),
+                        ],
+                    )
+                };
+                state.cpu_info_box.title = cpu_title.to_string();
+                state.cpu_info_box.lines = cpu_lines;
+
+                let (gpu_title, gpu_lines) = if state.gpu_powersave {
+                    (
+                        "GPU Power Limit: Eco Cap",
+                        vec![
+                            "• Mode: 5W Cap".to_string(),
+                            "• NVIDIA power limit capped at 5W — minimal draw".to_string(),
+                        ],
+                    )
+                } else {
+                    (
+                        "GPU Power Limit: Default",
+                        vec![
+                            "• Mode: 80W Default".to_string(),
+                            "• NVIDIA running at default power limit".to_string(),
+                        ],
+                    )
+                };
+                state.gpu_info_box.title = gpu_title.to_string();
+                state.gpu_info_box.lines = gpu_lines;
+
+                // Update battery labels
+                let bat = &state.battery;
+                let bat_icon = match bat.state.as_str() {
+                    "charging" => "+",
+                    "fully-charged" => "=",
+                    _ => "",
+                };
+
+                let pct_color = if bat.percentage < 20.0 { [255, 84, 84] }
+                    else if bat.percentage < 50.0 { [255, 186, 51] }
+                    else { [92, 143, 97] };
+
+                let pct_str = format!("{} {:.0}%", bat_icon, bat.percentage);
+                state.battery_label_pct.set_text(&pct_str);
+                state.battery_label_pct.set_color(pct_color);
+
+                let state_str = format!("{}  •  {:.1}W  •  {:.1}/{:.1} Wh",
+                    bat.state, bat.energy_rate, bat.energy, bat.energy_full);
+                state.battery_label_state.set_text(&state_str);
+
+                let time_str = if bat.time_to_empty > 0 {
+                    format!("Time remaining: {}", format_duration(bat.time_to_empty))
+                } else if bat.time_to_full > 0 {
+                    format!("Time to full: {}", format_duration(bat.time_to_full))
+                } else { String::new() };
+                state.battery_label_time.set_text(&time_str);
+
+                let detail_str = format!("{}  {}", bat.vendor, bat.model);
+                state.battery_label_details.set_text(&detail_str);
+
+                let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
+                state.battery_label_ac.set_text(ac_str);
+
+                state.hostname_label.mark_dirty(ctx);
+            }
         }
         SystemMessage::Suspend => spawn_systemctl("suspend"),
         SystemMessage::Hibernate => spawn_systemctl("hibernate"),
@@ -654,8 +880,6 @@ pub fn update(state: &mut SystemState, msg: SystemMessage) {
             state.gpu_gov_menu.selected = 1;
             spawn_gpu_power(true);
         }
-
-
     }
 }
 
@@ -684,28 +908,123 @@ impl crate::pages::AppPage for SystemState {
     fn link_children(
         &mut self,
         page_root: &mut dyn cce_ui::widget::Element,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
+        _sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     ) {
-        for sec in sec_containers.iter_mut() {
-            cce_ui::widget::link_parent_child(page_root, sec, ctx);
+        if !self.initialized {
+            self.initialized = true;
+
+            // Clear page root children to prevent duplicates
+            page_root.clear_children(ctx);
+
+            // Bind click callbacks to actions
+            if let Some(ref tx) = self.sender {
+                let tx1 = tx.clone();
+                self.suspend_btn = self.suspend_btn.clone().on_click(move || {
+                    let _ = tx1.send(AppAction::SystemInfo(SystemMessage::Suspend));
+                });
+
+                let tx2 = tx.clone();
+                self.hibernate_btn = self.hibernate_btn.clone().on_click(move || {
+                    let _ = tx2.send(AppAction::SystemInfo(SystemMessage::Hibernate));
+                });
+
+                let tx3 = tx.clone();
+                self.reboot_btn = self.reboot_btn.clone().on_click(move || {
+                    let _ = tx3.send(AppAction::SystemInfo(SystemMessage::Reboot));
+                });
+
+                let tx4 = tx.clone();
+                self.poweroff_btn = self.poweroff_btn.clone().on_click(move || {
+                    let _ = tx4.send(AppAction::SystemInfo(SystemMessage::PowerOff));
+                });
+
+                let tx5 = tx.clone();
+                self.force_shutdown_btn = self.force_shutdown_btn.clone().on_click(move || {
+                    let _ = tx5.send(AppAction::SystemInfo(SystemMessage::ForceShutdown));
+                });
+            }
+
+            // Set up initial rect sizes for info boxes
+            self.cpu_info_box.set_rect(0.0, 0.0, 0.0, 80.0);
+            self.gpu_info_box.set_rect(0.0, 0.0, 0.0, 80.0);
+
+            // Build layout tree:
+            // ── 1. System Section ──
+            self.sec_system.add_child(self.hostname_label.as_ptr_mut(), ctx);
+            self.sec_system.add_child(self.uptime_label.as_ptr_mut(), ctx);
+
+            // ── 2. Actions Section ──
+            self.actions_row.add_child(self.suspend_btn.as_ptr_mut(), ctx);
+            self.actions_row.add_child(self.hibernate_btn.as_ptr_mut(), ctx);
+            self.actions_row.add_child(self.reboot_btn.as_ptr_mut(), ctx);
+            self.actions_row.add_child(self.poweroff_btn.as_ptr_mut(), ctx);
+
+            self.sec_actions.add_child(self.actions_row.as_ptr_mut(), ctx);
+            self.sec_actions.add_child(self.force_shutdown_btn.as_ptr_mut(), ctx);
+
+            // ── 3. CPU Section ──
+            self.sec_cpu.add_child(self.cpu_label.as_ptr_mut(), ctx);
+            self.sec_cpu.add_child(self.cpu_usage_label.as_ptr_mut(), ctx);
+            self.sec_cpu.add_child(self.cpu_temp_label.as_ptr_mut(), ctx);
+
+            // ── 4. GPU Section ──
+            for gpu_lbl in &mut self.gpu_labels {
+                self.sec_gpu.add_child(gpu_lbl.as_ptr_mut(), ctx);
+            }
+
+            // ── 5. CPU Governor Section ──
+            self.sec_cpu_gov.add_child(self.cpu_gov_menu.as_ptr_mut(), ctx);
+            self.sec_cpu_gov.add_child(self.cpu_info_box.as_ptr_mut(), ctx);
+
+            // ── 6. GPU Power Section ──
+            self.sec_gpu_gov.add_child(self.gpu_gov_menu.as_ptr_mut(), ctx);
+            self.sec_gpu_gov.add_child(self.gpu_info_box.as_ptr_mut(), ctx);
+
+            // ── 7. Battery Section ──
+            self.sec_battery.add_child(self.battery_label_pct.as_ptr_mut(), ctx);
+            self.sec_battery.add_child(self.battery_label_state.as_ptr_mut(), ctx);
+            self.sec_battery.add_child(self.battery_label_time.as_ptr_mut(), ctx);
+            self.sec_battery.add_child(self.battery_label_details.as_ptr_mut(), ctx);
+            self.sec_battery.add_child(self.battery_label_ac.as_ptr_mut(), ctx);
+
+            // Mount SectionContainers onto the Page
+            page_root.add_child(self.sec_system.as_ptr_mut(), ctx);
+            page_root.add_child(self.sec_actions.as_ptr_mut(), ctx);
+            page_root.add_child(self.sec_cpu.as_ptr_mut(), ctx);
+            page_root.add_child(self.sec_gpu.as_ptr_mut(), ctx);
+            page_root.add_child(self.sec_cpu_gov.as_ptr_mut(), ctx);
+            page_root.add_child(self.sec_gpu_gov.as_ptr_mut(), ctx);
+            page_root.add_child(self.sec_battery.as_ptr_mut(), ctx);
         }
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.cpu_gov_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.gpu_gov_menu, ctx);
+
+        // Link parent-child for focus context
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_system, ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_actions, ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_cpu, ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_gpu, ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_cpu_gov, ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_gpu_gov, ctx);
+        cce_ui::widget::link_parent_child(page_root, &mut self.sec_battery, ctx);
+
+        cce_ui::widget::link_parent_child(&mut self.sec_cpu_gov, &mut self.cpu_gov_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut self.sec_cpu_gov, &mut self.cpu_info_box, ctx);
+        cce_ui::widget::link_parent_child(&mut self.sec_gpu_gov, &mut self.gpu_gov_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut self.sec_gpu_gov, &mut self.gpu_info_box, ctx);
     }
 
     fn view(
         &mut self,
-        cx: f32,
-        cy: f32,
-        cw: f32,
-        ch: f32,
-        root_focused: bool,
-        sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
-        ctx: &mut cce_ui::context::UiContext,
+        _cx: f32,
+        _cy: f32,
+        _cw: f32,
+        _ch: f32,
+        _root_focused: bool,
+        _sec_focused: &[bool],
+        _layout: &mut dyn LayoutStrategy,
+        _ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
-        view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
+        crate::app::PageContent::new()
     }
 
     fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {

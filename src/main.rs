@@ -168,7 +168,7 @@ struct SystemInterface {
     rx_audio: std::sync::mpsc::Receiver<pages::audio::AudioState>,
     rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
     pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
-    rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemState>,
+    rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemInfo>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
@@ -237,8 +237,17 @@ impl cce_ui::engine::Application for SystemInterface {
         let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
         let mut pages = Vec::new();
         for page in Page::ALL.iter() {
-            let page_widget = cce_ui::widget::Page::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
+            let mut page_widget = cce_ui::widget::Page::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
                 .with_label(page.label());
+            if *page == Page::System {
+                page_widget.layout = Box::new(cce_ui::widget::AdaptiveGridLayout {
+                    min_col_width: 320.0,
+                    gap: 20.0,
+                    padding_x: 10.0,
+                    padding_y: 10.0,
+                    grid: None,
+                });
+            }
             pages.push(page_widget);
         }
 
@@ -317,6 +326,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 .with_placeholder("Search sections & parameters...")
                 .with_draw_bg_border(false),
         };
+        this.app.system_info.sender = Some(this.sender.clone());
 
         for page in &mut this.pages {
             this.switcher.add_child(page.as_ptr(), &mut this.ui_context);
@@ -534,7 +544,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             }
         }
         while let Ok(s) = self.rx_system.try_recv() {
-            system_info::update(&mut self.app.system_info, system_info::SystemMessage::Refreshed(s));
+            system_info::update(&mut self.app.system_info, system_info::SystemMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::System {
                 self.needs_rebuild = true;
             }
@@ -605,7 +615,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             AppAction::Exit => {}
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
-            AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone()),
+            AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone(), &mut self.ui_context),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
             AppAction::Storage(m) => match m {

@@ -7,7 +7,7 @@ pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
     pub rx_network: Receiver<network::NetworkState>,
     pub rx_processes: Receiver<processes::ProcessesState>,
-    pub rx_system: Receiver<system_info::SystemState>,
+    pub rx_system: Receiver<system_info::SystemInfo>,
     pub rx_storage: Receiver<storage::StorageState>,
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
     pub rx_services: Receiver<Vec<processes::ServiceInfo>>,

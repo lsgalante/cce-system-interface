@@ -91,8 +91,9 @@ impl SystemInterface {
         let mut dummy_pc = PageContent::new();
         let dropdown_w = 180.0f32;
         let dropdown_h = 18.0f32;
-        let dropdown_x = logical_sw - dropdown_w - 12.0;
-        let dropdown_y = logical_sh - self.status_height + (self.status_height - dropdown_h) / 2.0;
+        let dropdown_gap = (self.status_height - dropdown_h) / 2.0;
+        let dropdown_x = logical_sw - dropdown_w - dropdown_gap;
+        let dropdown_y = logical_sh - self.status_height + dropdown_gap;
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
         let switcher_h = if self.search_open {
             logical_sh - self.header_height - 42.0 - self.status_height
@@ -104,6 +105,13 @@ impl SystemInterface {
         // Render root window recursively
         let mut window_pc = PageContent::new();
         cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, logical_sw, logical_sh, &mut self.ui_context);
+
+        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+        let active_page_widget = &self.pages[page_idx];
+        if self.app.current_page == Page::System {
+            self.scroll_y = active_page_widget.scroll_y;
+            self.max_scroll_y = (active_page_widget.content_h - active_page_widget.base.base.h).max(0.0);
+        }
 
         let mut search_pc = PageContent::new();
         if self.search_open {
@@ -378,8 +386,9 @@ impl SystemInterface {
                 }
             }
 
-            let logical_tw = tw / s;
-            let logical_lh = lh / s;
+            let scale_factor = cce_ui::scale::scale_factor();
+            let logical_tw = tw / scale_factor;
+            let logical_lh = lh / scale_factor;
             let text_x = if left_align {
                 base.x + 8.0
             } else {
