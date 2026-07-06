@@ -1,142 +1,21 @@
 use cce_ui::widget::{hover_animation, Element};
-use glyphon::{Attrs, Buffer, FontSystem, Metrics};
+use glyphon::{Buffer, FontSystem};
 
 use cce_settings::app::{AppAction, AppState};
 use cce_settings::pages::{self, Page};
 mod input_handler;
 mod renderer;
 
-#[derive(Hash, PartialEq, Eq, Clone)]
-struct BufferCacheKey {
-    text: String,
-    size_milli: u32,
-    font: Option<String>,
-    sans_fallback: String,
-    serif_fallback: String,
-    mono_fallback: String,
-}
-
-std::thread_local! {
-    static BUFFER_CACHE: std::cell::RefCell<std::collections::HashMap<BufferCacheKey, Buffer>> = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-
-fn find_cased_family(fs: &FontSystem, name: &str) -> Option<String> {
-    let lower_name = name.to_lowercase();
-    for face in fs.db().faces() {
-        for (family, _) in &face.families {
-            if family.to_lowercase() == lower_name {
-                return Some(family.clone());
-            }
-        }
-    }
-    None
-}
-
 fn make_text_buffer_with_font(
     fs: &mut FontSystem,
     text: &str,
     size: f32,
     font: Option<&str>,
-    sans_fallback: &str,
-    serif_fallback: &str,
-    mono_fallback: &str,
+    _sans_fallback: &str,
+    _serif_fallback: &str,
+    _mono_fallback: &str,
 ) -> Buffer {
-    let scale = cce_ui::scale::scale_factor();
-    let mut font_size = size;
-    let mut family_name = Some("sans-serif".to_string());
-
-    if let Some(font_str) = font {
-        let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
-        if let Some(ps) = parsed_size {
-            font_size = ps;
-        }
-        family_name = Some(parsed_family);
-    }
-
-    let physical_size = font_size * scale;
-    let size_key = (physical_size * 1000.0).round() as u32;
-
-    let key = BufferCacheKey {
-        text: text.to_string(),
-        size_milli: size_key,
-        font: family_name.clone(),
-        sans_fallback: sans_fallback.to_string(),
-        serif_fallback: serif_fallback.to_string(),
-        mono_fallback: mono_fallback.to_string(),
-    };
-
-    let cached = BUFFER_CACHE.with(|cache| {
-        cache.borrow().get(&key).cloned()
-    });
-
-    if let Some(buf) = cached {
-        return buf;
-    }
-
-    let metrics = Metrics::new(physical_size, physical_size * 1.0);
-    let mut buf = Buffer::new(fs, metrics);
-    let mut attrs = Attrs::new();
-
-    let resolved_storage = family_name.as_deref().and_then(|font_name| match font_name {
-        "monospace" if !mono_fallback.is_empty() => find_cased_family(fs, mono_fallback),
-        "sans-serif" if !sans_fallback.is_empty() => find_cased_family(fs, sans_fallback),
-        "serif" if !serif_fallback.is_empty() => find_cased_family(fs, serif_fallback),
-        _ => None,
-    });
-
-    if let Some(font_name) = family_name.as_deref() {
-        let family = match font_name {
-            "monospace" => {
-                if !mono_fallback.is_empty() {
-                    if let Some(ref cased) = resolved_storage {
-                        glyphon::Family::Name(cased)
-                    } else {
-                        glyphon::Family::Name(mono_fallback)
-                    }
-                } else {
-                    glyphon::Family::Name(cce_ui::layout::get_system_monospace_font())
-                }
-            }
-            "sans-serif" => {
-                if !sans_fallback.is_empty() {
-                    if let Some(ref cased) = resolved_storage {
-                        glyphon::Family::Name(cased)
-                    } else {
-                        glyphon::Family::Name(sans_fallback)
-                    }
-                } else {
-                    glyphon::Family::SansSerif
-                }
-            }
-            "serif" => {
-                if !serif_fallback.is_empty() {
-                    if let Some(ref cased) = resolved_storage {
-                        glyphon::Family::Name(cased)
-                    } else {
-                        glyphon::Family::Name(serif_fallback)
-                    }
-                } else {
-                    glyphon::Family::Serif
-                }
-            }
-            _ => glyphon::Family::Name(font_name),
-        };
-        attrs = attrs.family(family);
-    }
-
-    buf.set_text(fs, text, attrs, glyphon::Shaping::Advanced);
-    buf.shape_until_scroll(fs, true);
-
-    BUFFER_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if cache.len() > 3000 {
-            cache.clear();
-        }
-        cache.insert(key, buf.clone());
-    });
-
-    buf
+    cce_ui::backend::get_text_buffer(fs, text, size, font)
 }
 
 #[allow(dead_code)]
@@ -231,7 +110,8 @@ impl cce_ui::engine::Application for SystemInterface {
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let page_dropdown = cce_ui::widget::input::Dropdown::new(pages_names, initial_page_idx)
-            .with_open_upward(true);
+            .with_open_upward(true)
+            .with_auto_width(true);
         let sidebar_width = 0.0f32;
 
         let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);

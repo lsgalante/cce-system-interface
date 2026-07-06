@@ -89,8 +89,12 @@ impl SystemInterface {
 
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
-        let dropdown_w = 180.0f32;
         let dropdown_h = 18.0f32;
+        let size = self.page_dropdown.measure(
+            cce_ui::widget::LayoutConstraints::new(0.0, 500.0, dropdown_h, dropdown_h),
+            &self.ui_context,
+        );
+        let dropdown_w = size.width;
         let dropdown_gap = (self.status_height - dropdown_h) / 2.0;
         let dropdown_x = logical_sw - dropdown_w - dropdown_gap;
         let dropdown_y = logical_sh - self.status_height + dropdown_gap;
@@ -355,15 +359,15 @@ impl SystemInterface {
             });
             let label = base.label.as_deref().unwrap_or("");
             let label_size = 12.0;
-            let buf = make_text_buffer_with_font(
-                &mut self.font_system,
-                label,
-                label_size,
-                None,
-                &self.sans_serif_family,
-                &self.serif_family,
-                &self.monospace_family,
-            );
+             let buf = make_text_buffer_with_font(
+                 &mut self.font_system,
+                 label,
+                 label_size,
+                 btn.widget_font().as_deref(),
+                 &self.sans_serif_family,
+                 &self.serif_family,
+                 &self.monospace_family,
+             );
             let tw = buf.layout_runs().next().map(|r| r.line_w).unwrap_or(0.0);
             let lh = buf.metrics().line_height;
             let mut left_align = btn.justify == cce_ui::widget::Justification::Left;
