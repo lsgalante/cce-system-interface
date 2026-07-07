@@ -111,7 +111,7 @@ pub async fn fetch_storage_state() -> StorageState {
 pub async fn run_backup() -> Result<(String, String), String> {
     // Run the backup system helper script via pkexec (graphical auth prompt)
     let output = tokio::process::Command::new("pkexec")
-        .arg("/home/lsgalante/.local/share/cce-settings/helpers/backup-system.sh")
+        .arg(cce_ui::config::data_home().join("cce-settings").join("helpers").join("backup-system.sh"))
         .output()
         .await
         .map_err(|e| format!("Failed to run backup script: {}", e))?;

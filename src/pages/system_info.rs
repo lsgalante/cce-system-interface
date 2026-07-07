@@ -284,14 +284,14 @@ fn format_duration(secs: i64) -> String {
 fn spawn_cpu_power(powersave: bool) {
     let script = if powersave { "cpu-powersave-on" } else { "cpu-powersave-off" };
     let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(format!("/home/lsgalante/.local/share/cce-settings/helpers/{}", script));
+    cmd.arg(cce_ui::config::data_home().join("cce-settings").join("helpers").join(script));
     let _ = cce_ui::process::spawn_detached(cmd);
 }
 
 fn spawn_gpu_power(powersave: bool) {
     let script = if powersave { "gpu-powersave-on" } else { "gpu-powersave-off" };
     let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(format!("/home/lsgalante/.local/share/cce-settings/helpers/{}", script));
+    cmd.arg(cce_ui::config::data_home().join("cce-settings").join("helpers").join(script));
     let _ = cce_ui::process::spawn_detached(cmd);
 }
 

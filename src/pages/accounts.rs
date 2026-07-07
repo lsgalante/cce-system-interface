@@ -83,7 +83,7 @@ pub enum AccountsMessage {
 }
 
 pub fn get_accounts_path() -> std::path::PathBuf {
-    let p = std::path::PathBuf::from("/home/lsgalante/.config/cce");
+    let p = cce_ui::config::cce_config_dir();
     if !p.exists() {
         let _ = std::fs::create_dir_all(&p);
         #[cfg(unix)]
@@ -189,7 +189,7 @@ fn write_google_client_config(p: &std::path::Path, config: &GoogleClientConfig) 
 }
 
 pub fn load_google_client_config() -> GoogleClientConfig {
-    let p = std::path::PathBuf::from("/home/lsgalante/.config/cce/google_client.json");
+    let p = cce_ui::config::cce_config_dir().join("google_client.json");
     let default_config = GoogleClientConfig {
         client_id: GOOGLE_CLIENT_ID.to_string(),
         client_secret: GOOGLE_CLIENT_SECRET.to_string(),
@@ -797,7 +797,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                 client_id,
                 client_secret,
             };
-            let p = std::path::PathBuf::from("/home/lsgalante/.config/cce/google_client.json");
+            let p = cce_ui::config::cce_config_dir().join("google_client.json");
             if let Some(parent) = p.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }

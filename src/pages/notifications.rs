@@ -6,7 +6,6 @@ use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use crate::pages::AppPage;
 
-const CONFIG_PATH: &str = "/home/lsgalante/.config/cce/config.kdl";
 
 #[derive(Debug, Clone)]
 pub struct NotificationsConfig {
@@ -117,7 +116,7 @@ fn get_socket_path() -> String {
 }
 
 pub fn read_notifications_config() -> NotificationsConfig {
-    let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+    let content = fs::read_to_string(get_config_path()).unwrap_or_default();
     let val = parse_json(&content);
     let enable = val["notifications"]["enable"].as_bool().unwrap_or(true);
     let bell = val["notifications"]["bell"].as_str().unwrap_or("none").to_string();
@@ -178,12 +177,12 @@ fn get_config_path() -> String {
             if let Some(path) = p.borrow().as_ref() {
                 return path.clone();
             }
-            "/home/lsgalante/.config/cce/config.kdl".to_string()
+            cce_ui::config::get_config_path().to_string_lossy().into_owned()
         })
     }
     #[cfg(not(test))]
     {
-        "/home/lsgalante/.config/cce/config.kdl".to_string()
+        cce_ui::config::get_config_path().to_string_lossy().into_owned()
     }
 }
 
