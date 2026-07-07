@@ -109,10 +109,7 @@ pub fn update(state: &mut NotificationsState, msg: NotificationsMessage) {
 }
 
 fn get_socket_path() -> String {
-    match std::env::var("WAYLAND_DISPLAY") {
-        Ok(display) => format!("/tmp/cce-{}.sock", display),
-        Err(_) => "/tmp/cce.sock".to_string(),
-    }
+    cce_ui::ipc::socket_path("cce")
 }
 
 pub fn read_notifications_config() -> NotificationsConfig {
