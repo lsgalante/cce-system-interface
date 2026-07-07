@@ -118,9 +118,10 @@ fn get_socket_path() -> String {
 
 pub fn read_notifications_config() -> NotificationsConfig {
     let content = fs::read_to_string(CONFIG_PATH).unwrap_or_default();
-    let enable = parse_notifications_enable(&content);
-    let bell = parse_notifications_bell(&content);
-    let duration = parse_notifications_duration(&content);
+    let val = parse_json(&content);
+    let enable = val["notifications"]["enable"].as_bool().unwrap_or(true);
+    let bell = val["notifications"]["bell"].as_str().unwrap_or("none").to_string();
+    let duration = val["notifications"]["duration"].as_i64().map(|v| v as i32).unwrap_or(5);
     NotificationsConfig {
         enable,
         bell,
@@ -132,16 +133,20 @@ fn parse_json(content: &str) -> serde_json::Value {
     cce_ui::config::parse_kdl_to_json(content)
 }
 
+#[cfg(test)]
 fn parse_notifications_enable(content: &str) -> bool {
     let val = parse_json(content);
     val["notifications"]["enable"].as_bool().unwrap_or(true)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn parse_notifications_bell(content: &str) -> String {
     let val = parse_json(content);
     val["notifications"]["bell"].as_str().unwrap_or("none").to_string()
 }
 
+#[cfg(test)]
 fn parse_notifications_duration(content: &str) -> i32 {
     let val = parse_json(content);
     val["notifications"]["duration"].as_i64().map(|v| v as i32).unwrap_or(5)
