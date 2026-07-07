@@ -43,7 +43,11 @@ pub enum StorageMessage {
 }
 
 fn status_path() -> String {
-    format!("{}/.config/cce/cce-settings/backup_status.txt", std::env::var("HOME").unwrap_or_default())
+    cce_ui::config::cce_config_dir()
+        .join("cce-settings")
+        .join("backup_status.txt")
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub fn read_backup_status() -> (String, String, Option<String>) {
