@@ -79,19 +79,19 @@ impl Default for FontsState {
             terminal: "Noto Sans Mono".to_string(),
             all_fonts: Vec::new(),
             mono_fonts: Vec::new(),
-            sans_box: TextBox::new(String::new()).with_label("Sans-Serif").with_config((&fonts_conf_path()), "sans-serif"),
-            serif_box: TextBox::new(String::new()).with_label("Serif").with_config((&fonts_conf_path()), "serif"),
-            mono_box: TextBox::new(String::new()).with_label("Monospace").with_config((&fonts_conf_path()), "monospace"),
-            borders_box: TextBox::new(String::new()).with_label("Window Borders").with_config((&fonts_conf_path()), "window_borders"),
-            status_box: TextBox::new(String::new()).with_label("Status Interface").with_config((&fonts_conf_path()), "status_interface"),
-            fuzzel_box: TextBox::new(String::new()).with_label("Fuzzel").with_config((&fonts_conf_path()), "fuzzel"),
-            terminal_box: TextBox::new(String::new()).with_label("Terminal").with_config((&fonts_conf_path()), "terminal"),
-            borders_menu: Dropdown::new(Vec::new(), 0).with_config((&fonts_conf_path()), "window_borders"),
-            status_menu: Dropdown::new(Vec::new(), 0).with_config((&fonts_conf_path()), "status_interface"),
-            fuzzel_menu: Dropdown::new(Vec::new(), 0).with_config((&fonts_conf_path()), "fuzzel"),
-            terminal_menu: Dropdown::new(Vec::new(), 0).with_config((&fonts_conf_path()), "terminal"),
-            fuzzel_size_box: Spinbox::new(14, 6, 72, 1).with_config((&fuzzel_ini_path()), "size"),
-            terminal_size_box: Spinbox::new(12, 6, 72, 1).with_config((&foot_ini_path()), "size"),
+            sans_box: TextBox::new(String::new()).with_label("Sans-Serif").with_config(&fonts_conf_path() , "sans-serif"),
+            serif_box: TextBox::new(String::new()).with_label("Serif").with_config(&fonts_conf_path() , "serif"),
+            mono_box: TextBox::new(String::new()).with_label("Monospace").with_config(&fonts_conf_path() , "monospace"),
+            borders_box: TextBox::new(String::new()).with_label("Window Borders").with_config(&fonts_conf_path() , "window_borders"),
+            status_box: TextBox::new(String::new()).with_label("Status Interface").with_config(&fonts_conf_path() , "status_interface"),
+            fuzzel_box: TextBox::new(String::new()).with_label("Fuzzel").with_config(&fonts_conf_path() , "fuzzel"),
+            terminal_box: TextBox::new(String::new()).with_label("Terminal").with_config(&fonts_conf_path() , "terminal"),
+            borders_menu: Dropdown::new(Vec::new(), 0).with_config(&fonts_conf_path() , "window_borders"),
+            status_menu: Dropdown::new(Vec::new(), 0).with_config(&fonts_conf_path() , "status_interface"),
+            fuzzel_menu: Dropdown::new(Vec::new(), 0).with_config(&fonts_conf_path() , "fuzzel"),
+            terminal_menu: Dropdown::new(Vec::new(), 0).with_config(&fonts_conf_path() , "terminal"),
+            fuzzel_size_box: Spinbox::new(14, 6, 72, 1).with_config(&fuzzel_ini_path() , "size"),
+            terminal_size_box: Spinbox::new(12, 6, 72, 1).with_config(&foot_ini_path() , "size"),
         }
     }
 }
@@ -301,7 +301,7 @@ fn parse_font_for_alias(content: &str, alias: &str) -> Option<String> {
 }
 
 pub fn read_preferred_fonts() -> (String, String, String, String, String, String, String) {
-    let content = fs::read_to_string((&fonts_conf_path())).unwrap_or_default();
+    let content = fs::read_to_string(&fonts_conf_path() ).unwrap_or_default();
     
     let sans = parse_font_for_alias(&content, "sans-serif").unwrap_or_else(|| "Noto Sans".to_string());
     let serif = parse_font_for_alias(&content, "serif").unwrap_or_else(|| "Noto Serif".to_string());
@@ -323,7 +323,7 @@ pub fn save_preferred_fonts(
     fuzzel: &str,
     terminal: &str,
 ) {
-    let content = fs::read_to_string((&fonts_conf_path())).unwrap_or_default();
+    let content = fs::read_to_string(&fonts_conf_path() ).unwrap_or_default();
     let mut dirs = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -401,11 +401,11 @@ pub fn save_preferred_fonts(
     new_content.push_str("    </match>\n");
     
     new_content.push_str("</fontconfig>\n");
-    let _ = fs::write((&fonts_conf_path()), new_content);
+    let _ = fs::write(&fonts_conf_path() , new_content);
 }
 
 fn read_fuzzel_size() -> Option<u16> {
-    let ini = fs::read_to_string((&fuzzel_ini_path())).ok()?;
+    let ini = fs::read_to_string(&fuzzel_ini_path() ).ok()?;
     for line in ini.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("font") {
@@ -420,7 +420,7 @@ fn read_fuzzel_size() -> Option<u16> {
 }
 
 fn write_fuzzel_size(size: u16) {
-    let path = (&fuzzel_ini_path());
+    let path = &fuzzel_ini_path() ;
     let ini = fs::read_to_string(path).unwrap_or_default();
     let mut new_lines = Vec::new();
     for line in ini.lines() {
@@ -444,7 +444,7 @@ fn write_fuzzel_size(size: u16) {
 }
 
 fn read_terminal_size() -> Option<u16> {
-    let ini = fs::read_to_string((&foot_ini_path())).ok()?;
+    let ini = fs::read_to_string(&foot_ini_path() ).ok()?;
     for line in ini.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("font") {
@@ -459,7 +459,7 @@ fn read_terminal_size() -> Option<u16> {
 }
 
 fn write_terminal_size(size: u16) {
-    let path = (&foot_ini_path());
+    let path = &foot_ini_path() ;
     let ini = fs::read_to_string(path).unwrap_or_default();
     let mut new_lines = Vec::new();
     for line in ini.lines() {
@@ -542,16 +542,16 @@ pub fn read_typeface_config() -> FontsState {
         "Other".to_string(),
     ];
 
-    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders").with_config((&fonts_conf_path()), "window_borders");
+    let mut borders_box = TextBox::new(borders.clone()).with_label("Window Borders").with_config(&fonts_conf_path() , "window_borders");
     borders_box.disabled = borders_idx != 3;
 
-    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface").with_config((&fonts_conf_path()), "status_interface");
+    let mut status_box = TextBox::new(status.clone()).with_label("Status Interface").with_config(&fonts_conf_path() , "status_interface");
     status_box.disabled = status_idx != 3;
 
-    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel").with_config((&fonts_conf_path()), "fuzzel");
+    let mut fuzzel_box = TextBox::new(fuzzel_font.clone()).with_label("Fuzzel").with_config(&fonts_conf_path() , "fuzzel");
     fuzzel_box.disabled = fuzzel_idx != 3;
 
-    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal").with_config((&fonts_conf_path()), "terminal");
+    let mut terminal_box = TextBox::new(term.clone()).with_label("Terminal").with_config(&fonts_conf_path() , "terminal");
     terminal_box.disabled = terminal_idx != 3;
 
     let fuzzel_size = read_fuzzel_size().unwrap_or(14);
@@ -568,19 +568,19 @@ pub fn read_typeface_config() -> FontsState {
     state.terminal = term;
     state.all_fonts = all_fonts;
     state.mono_fonts = mono_fonts;
-    state.sans_box = TextBox::new(sans).with_label("Sans-Serif").with_config((&fonts_conf_path()), "sans-serif");
-    state.serif_box = TextBox::new(serif).with_label("Serif").with_config((&fonts_conf_path()), "serif");
-    state.mono_box = TextBox::new(mono).with_label("Monospace").with_config((&fonts_conf_path()), "monospace");
+    state.sans_box = TextBox::new(sans).with_label("Sans-Serif").with_config(&fonts_conf_path() , "sans-serif");
+    state.serif_box = TextBox::new(serif).with_label("Serif").with_config(&fonts_conf_path() , "serif");
+    state.mono_box = TextBox::new(mono).with_label("Monospace").with_config(&fonts_conf_path() , "monospace");
     state.borders_box = borders_box;
     state.status_box = status_box;
     state.fuzzel_box = fuzzel_box;
     state.terminal_box = terminal_box;
-    state.borders_menu = Dropdown::new(menu_options.clone(), borders_idx).with_config((&fonts_conf_path()), "window_borders");
-    state.status_menu = Dropdown::new(menu_options.clone(), status_idx).with_config((&fonts_conf_path()), "status_interface");
-    state.fuzzel_menu = Dropdown::new(menu_options.clone(), fuzzel_idx).with_config((&fonts_conf_path()), "fuzzel");
-    state.terminal_menu = Dropdown::new(menu_options, terminal_idx).with_config((&fonts_conf_path()), "terminal");
-    state.fuzzel_size_box = Spinbox::new(fuzzel_size as i32, 6, 72, 1).with_config((&fuzzel_ini_path()), "size");
-    state.terminal_size_box = Spinbox::new(terminal_size as i32, 6, 72, 1).with_config((&foot_ini_path()), "size");
+    state.borders_menu = Dropdown::new(menu_options.clone(), borders_idx).with_config(&fonts_conf_path() , "window_borders");
+    state.status_menu = Dropdown::new(menu_options.clone(), status_idx).with_config(&fonts_conf_path() , "status_interface");
+    state.fuzzel_menu = Dropdown::new(menu_options.clone(), fuzzel_idx).with_config(&fonts_conf_path() , "fuzzel");
+    state.terminal_menu = Dropdown::new(menu_options, terminal_idx).with_config(&fonts_conf_path() , "terminal");
+    state.fuzzel_size_box = Spinbox::new(fuzzel_size as i32, 6, 72, 1).with_config(&fuzzel_ini_path() , "size");
+    state.terminal_size_box = Spinbox::new(terminal_size as i32, 6, 72, 1).with_config(&foot_ini_path() , "size");
     state
 }
 
