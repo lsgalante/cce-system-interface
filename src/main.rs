@@ -303,6 +303,31 @@ impl cce_ui::engine::Application for SystemInterface {
         }
     }
 
+    fn display_list(&mut self) -> Option<cce_ui::scene::paint::DisplayList> {
+        // Phase 3 single paint path. This app flattens its UI into a `widgets` quad list (rebuilt
+        // by view_rounded_quads, which runs before this), so build the DisplayList directly from
+        // that list — the flat-list bridge. CCE_LEGACY_PAINT falls back.
+        if std::env::var("CCE_LEGACY_PAINT").is_ok() {
+            return None;
+        }
+        use cce_ui::scene::layout::Rect;
+        let mut pc = cce_ui::scene::paint::PaintCtx::new();
+        for w in &self.widgets {
+            let color = if w.hovering { w.hover_color } else { w.color };
+            let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
+            if w.radius > 0.1 {
+                pc.rounded_rect(rect, w.radius, w.corners, color);
+            } else {
+                pc.quad(rect, color);
+            }
+        }
+        cce_ui::widget::hover_animation::post_render_check();
+        if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
+            pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
+        }
+        Some(pc.finish())
+    }
+
     fn text_items(&self) -> &[cce_ui::widget::TextItem] {
         &self.text_items
     }
