@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{List, Toggle, Element};
+use cce_ui::widget::{Adapted, List, Toggle, Element};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -33,8 +33,8 @@ pub struct NetworkState {
     pub bt_devices: Vec<BluetoothDevice>,
     pub bt_scanning: bool,
     pub wifi_list_box: List,
-    pub wifi_toggle: Toggle,
-    pub bt_toggle: Toggle,
+    pub wifi_toggle: Adapted<Toggle>,
+    pub bt_toggle: Adapted<Toggle>,
 }
 
 impl Default for NetworkState {

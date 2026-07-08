@@ -18,7 +18,7 @@ pub struct NotificationsConfig {
 pub struct NotificationsState {
     pub loaded: bool,
     pub enable: bool,
-    pub enable_toggle: Toggle,
+    pub enable_toggle: cce_ui::widget::Adapted<Toggle>,
     pub bell: String,
     pub bell_menu: Dropdown,
     pub duration: i32,
