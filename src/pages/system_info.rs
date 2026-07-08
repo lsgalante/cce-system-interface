@@ -34,10 +34,10 @@ pub struct SystemState {
     pub cpu_usage: f32,
     pub cpu_cores: u32,
     pub gpus: Vec<String>,
-    pub cpu_label: Label,
-    pub cpu_usage_label: Label,
-    pub cpu_temp_label: Label,
-    pub gpu_labels: Vec<Label>,
+    pub cpu_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub cpu_usage_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub cpu_temp_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub gpu_labels: Vec<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
 
     // Power-related fields
     pub battery: BatteryInfo,
@@ -50,14 +50,14 @@ pub struct SystemState {
     // Native layout tracking and widgets
     pub initialized: bool,
     pub sender: Option<calloop::channel::Sender<AppAction>>,
-    pub hostname_label: Label,
-    pub uptime_label: Label,
+    pub hostname_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub uptime_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
-    pub battery_label_pct: Label,
-    pub battery_label_state: Label,
-    pub battery_label_time: Label,
-    pub battery_label_details: Label,
-    pub battery_label_ac: Label,
+    pub battery_label_pct: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub battery_label_state: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub battery_label_time: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub battery_label_details: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub battery_label_ac: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
     pub cpu_info_box: InfoBox,
     pub gpu_info_box: InfoBox,
