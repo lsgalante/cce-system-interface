@@ -56,8 +56,8 @@ pub struct FontsState {
     pub status_menu: Dropdown,
     pub fuzzel_menu: Dropdown,
     pub terminal_menu: Dropdown,
-    pub fuzzel_size_box: Spinbox,
-    pub terminal_size_box: Spinbox,
+    pub fuzzel_size_box: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
+    pub terminal_size_box: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
 }
 
 impl std::fmt::Debug for FontsState {

@@ -59,8 +59,8 @@ pub struct SystemState {
     pub battery_label_details: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub battery_label_ac: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
-    pub cpu_info_box: InfoBox,
-    pub gpu_info_box: InfoBox,
+    pub cpu_info_box: cce_ui::widget::Adapted<cce_ui::widget::InfoBox>,
+    pub gpu_info_box: cce_ui::widget::Adapted<cce_ui::widget::InfoBox>,
 
     pub suspend_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
     pub hibernate_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,

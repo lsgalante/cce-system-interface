@@ -22,7 +22,7 @@ pub struct NotificationsState {
     pub bell: String,
     pub bell_menu: Dropdown,
     pub duration: i32,
-    pub duration_spinbox: Spinbox,
+    pub duration_spinbox: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
 }
 
 impl Default for NotificationsState {
