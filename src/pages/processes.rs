@@ -35,7 +35,7 @@ pub struct ProcessesState {
     pub services_active_tab: ServiceTab,
     pub services_search_box: TextBox,
     pub services_list_box: List,
-    pub service_items: Vec<InteractiveListItem>,
+    pub service_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
 }
 
 impl Default for ProcessesState {
