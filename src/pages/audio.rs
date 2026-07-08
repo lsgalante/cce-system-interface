@@ -27,8 +27,8 @@ pub struct AudioState {
     pub sources: Vec<AudioSource>,
     pub sink_spinboxes: Vec<Box<Spinbox>>,
     pub source_spinboxes: Vec<Box<Spinbox>>,
-    pub sink_sliders: Vec<Box<Slider>>,
-    pub source_sliders: Vec<Box<Slider>>,
+    pub sink_sliders: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
+    pub source_sliders: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
     pub sink_dragging: Option<usize>,
     pub source_dragging: Option<usize>,
 }
@@ -533,7 +533,7 @@ impl crate::pages::AppPage for AudioState {
             if let Some(slider) = self.sink_sliders.get_mut(idx) {
                 if slider.drag_update(lx, ly) {
                     let id = self.sinks[idx].id;
-                    let val = slider.value();
+                    let val = slider.inner().value();
                     if idx < self.sink_spinboxes.len() {
                         self.sink_spinboxes[idx].value = (val * 100.0).round() as i32;
                     }
@@ -545,7 +545,7 @@ impl crate::pages::AppPage for AudioState {
             if let Some(slider) = self.source_sliders.get_mut(idx) {
                 if slider.drag_update(lx, ly) {
                     let id = self.sources[idx].id;
-                    let val = slider.value();
+                    let val = slider.inner().value();
                     if idx < self.source_spinboxes.len() {
                         self.source_spinboxes[idx].value = (val * 100.0).round() as i32;
                     }
