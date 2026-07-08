@@ -73,7 +73,7 @@ struct SystemInterface {
     page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
     root_window: cce_ui::widget::Backplate,
     page_dropdown: cce_ui::widget::input::Dropdown,
-    switcher: cce_ui::widget::Switcher,
+    switcher: cce_ui::widget::Adapted<cce_ui::widget::Switcher>,
     pages: Vec<cce_ui::widget::Page>,
     statusbar: cce_ui::widget::StatusBar,
     sans_serif_family: String,
