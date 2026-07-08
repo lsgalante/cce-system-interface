@@ -62,11 +62,11 @@ pub struct SystemState {
     pub cpu_info_box: InfoBox,
     pub gpu_info_box: InfoBox,
 
-    pub suspend_btn: Button,
-    pub hibernate_btn: Button,
-    pub reboot_btn: Button,
-    pub poweroff_btn: Button,
-    pub force_shutdown_btn: Button,
+    pub suspend_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    pub hibernate_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    pub reboot_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    pub poweroff_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    pub force_shutdown_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
 
     pub sec_system: SectionContainer,
     pub sec_actions: SectionContainer,

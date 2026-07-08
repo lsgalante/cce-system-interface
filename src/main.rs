@@ -35,7 +35,7 @@ struct SystemInterface {
     font_system: FontSystem,
     widgets: Vec<AppWidget>,
     text_items: Vec<cce_ui::widget::TextItem>,
-    page_buttons: Vec<(cce_ui::widget::Button, AppAction)>,
+    page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
 
     sidebar_width: f32,
     header_height: f32,
