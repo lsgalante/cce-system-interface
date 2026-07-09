@@ -303,7 +303,7 @@ impl cce_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn display_list(&mut self) -> Option<cce_ui::scene::paint::DisplayList> {
+    fn display_list(&mut self, _size: cce_ui::engine::LogicalSize, _scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
         // Phase 3 single paint path. This app flattens its UI into a `widgets` quad list (rebuilt
         // by view_rounded_quads, which runs before this), so build the DisplayList directly from
         // that list — the flat-list bridge. CCE_LEGACY_PAINT falls back.
