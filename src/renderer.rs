@@ -593,6 +593,72 @@ impl SystemInterface {
             texts.push((t.clone(), *size, *x, *y, *tc, font_opt.clone(), *bounds));
         }
 
+        // Popovers + context menu draw INTO the frame (Phase 6t): the same collector the
+        // engine's xdg popup used, but emitted on top of the whole window — the dropdown's
+        // open-upward popover finally renders where it hit-tests. Kept out of
+        // widgets/texts so the wheel fast-path can't scroll them; dl-text occlusion comes
+        // from the ui_context popover registration (and the engine's context-menu overlay
+        // rect under draws_own_popovers).
+        let mut popover_pc = PageContent::new();
+        {
+            // Chrome popover (the page dropdown) is in window coords; page-widget popovers
+            // (notifications/fonts menus) are in page coords and shift with the viewport —
+            // the same scroll subtraction the old popup positioner applied at creation.
+            let chrome_ptr = self.page_dropdown.as_ptr();
+            let mut page_pop_pc = PageContent::new();
+            for popover_ptr in &self.ui_context.active_popovers {
+                unsafe {
+                    if std::ptr::addr_eq(*popover_ptr, chrome_ptr) {
+                        (**popover_ptr).render_popover(&mut popover_pc);
+                    } else {
+                        (**popover_ptr).render_popover(&mut page_pop_pc);
+                    }
+                }
+            }
+            for (c, x, y, w, h, r, corners) in page_pop_pc.rects {
+                popover_pc.rects.push((c, x, y - self.scroll_y, w, h, r, corners));
+            }
+            for (t, size, x, y, tc, font, bounds) in page_pop_pc.texts {
+                let shifted = bounds.map(|[l, tb, rr, b]| [l, tb - self.scroll_y, rr, b - self.scroll_y]);
+                popover_pc.texts.push((t, size, x, y - self.scroll_y, tc, font, shifted));
+            }
+        }
+        if cce_ui::widget::context_menu::is_visible() {
+            use cce_ui::layout::RenderTarget;
+            let cx = cce_ui::widget::context_menu::x();
+            let cy = cce_ui::widget::context_menu::y();
+            let cw = cce_ui::widget::context_menu::w();
+            let ch = cce_ui::widget::context_menu::h();
+
+            popover_pc.rect([0.22, 0.22, 0.28, 1.0], cx, cy, cw, ch);
+            popover_pc.rect([0.06, 0.06, 0.09, 1.0], cx + 1.0, cy + 1.0, cw - 2.0, ch - 2.0);
+
+            if let Some(h_idx) = cce_ui::widget::context_menu::hovered_item() {
+                let iy = cy + h_idx as f32 * 24.0;
+                popover_pc.rect([0.20, 0.40, 0.65, 0.6], cx + 2.0, iy + 2.0, cw - 4.0, 20.0);
+            }
+
+            for (idx, opt) in cce_ui::widget::context_menu::options().iter().enumerate() {
+                let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
+                let text_color = if idx == 0 {
+                    [0.44, 0.44, 0.47, 1.0]
+                } else if cce_ui::widget::context_menu::hovered_item() == Some(idx) {
+                    [1.0, 1.0, 1.0, 1.0]
+                } else {
+                    [0.80, 0.80, 0.83, 1.0]
+                };
+                popover_pc.text_with_bounds(opt, cx + 8.0, iy, 12.0, text_color, Some([cx, cy, cx + cw, cy + ch]));
+            }
+        }
+        self.popover_widgets = popover_pc.rects.iter().map(|(c, x, y, w, h, r, corners)| AppWidget {
+            x: *x, y: *y, w: *w, h: *h,
+            color: *c, hover_color: *c,
+            hovering: false,
+            radius: *r,
+            corners: *corners,
+        }).collect();
+        self.popover_texts = popover_pc.texts;
+
         self.widgets = widgets;
         self.texts = texts;
         self.page_buttons = page_buttons;

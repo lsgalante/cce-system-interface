@@ -38,6 +38,11 @@ struct SystemInterface {
     // display-list Text prims (scroll shift, search dim/highlight, and viewport clamps
     // already applied by rebuild_layout).
     texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
+    // Popover + context-menu content, drawn INTO the frame on top of everything (Phase 6t —
+    // no engine xdg popup). Separate from widgets/texts so the wheel fast-path never
+    // scrolls them.
+    popover_widgets: Vec<AppWidget>,
+    popover_texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
 
     sidebar_width: f32,
@@ -145,6 +150,8 @@ impl cce_ui::engine::Application for SystemInterface {
             font_system,
             widgets: Vec::new(),
             texts: Vec::new(),
+            popover_widgets: Vec::new(),
+            popover_texts: Vec::new(),
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
@@ -277,7 +284,15 @@ impl cce_ui::engine::Application for SystemInterface {
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
         }
-        for (text, font_size, x, y, col, font, bounds) in &self.texts {
+        for w in &self.popover_widgets {
+            let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
+            if w.radius > 0.1 {
+                pc.rounded_rect(rect, w.radius, w.corners, w.color);
+            } else {
+                pc.quad(rect, w.color);
+            }
+        }
+        for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {
             pc.text_with(
                 text.clone(),
                 *x,
@@ -303,39 +318,10 @@ impl cce_ui::engine::Application for SystemInterface {
         Some(&self.ui_context)
     }
 
-    fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
-        cce_ui::layout::render_popovers(pc, &self.ui_context);
-
-        if cce_ui::widget::context_menu::is_visible() {
-            let cx = cce_ui::widget::context_menu::x();
-            let cy = cce_ui::widget::context_menu::y();
-            let cw = cce_ui::widget::context_menu::w();
-            let ch = cce_ui::widget::context_menu::h();
-
-            // Border
-            pc.rect([0.22, 0.22, 0.28, 1.0], cx, cy, cw, ch);
-            // Bg
-            pc.rect([0.06, 0.06, 0.09, 1.0], cx + 1.0, cy + 1.0, cw - 2.0, ch - 2.0);
-
-            // Hover highlight
-            if let Some(h_idx) = cce_ui::widget::context_menu::hovered_item() {
-                let iy = cy + h_idx as f32 * 24.0;
-                pc.rect([0.20, 0.40, 0.65, 0.6], cx + 2.0, iy + 2.0, cw - 4.0, 20.0);
-            }
-
-            // Texts
-            for (idx, opt) in cce_ui::widget::context_menu::options().iter().enumerate() {
-                let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
-                let text_color = if idx == 0 {
-                    [0.44, 0.44, 0.47, 1.0]
-                } else if cce_ui::widget::context_menu::hovered_item() == Some(idx) {
-                    [1.0, 1.0, 1.0, 1.0]
-                } else {
-                    [0.80, 0.80, 0.83, 1.0]
-                };
-                pc.text_with_bounds(opt, cx + 8.0, iy, 12.0, text_color, Some([cx, cy, cx + cw, cy + ch]));
-            }
-        }
+    fn draws_own_popovers(&self) -> bool {
+        // Popovers + context menu draw into the display list (rebuild_layout) — the engine
+        // must not spawn its render-only xdg popup.
+        true
     }
 
     fn clear_color(&self) -> [f32; 4] {
