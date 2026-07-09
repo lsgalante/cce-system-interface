@@ -75,7 +75,7 @@ struct SystemInterface {
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
     switcher: cce_ui::widget::Adapted<cce_ui::widget::Switcher>,
     pages: Vec<cce_ui::widget::Page>,
-    statusbar: cce_ui::widget::StatusBar,
+    statusbar: cce_ui::widget::Adapted<cce_ui::widget::StatusBar>,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
