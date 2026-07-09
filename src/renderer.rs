@@ -3,6 +3,84 @@ use cce_settings::app::PageContent;
 use cce_settings::pages::Page;
 use cce_ui::widget::Element;
 
+type RectTuple = ([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool));
+type TextTuple = (String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>);
+
+/// One child's contribution to the dissolved root's window assembly, replicating the
+/// legacy `render_widget(root Backplate)` aggregate exactly: plain quads are skipped
+/// when they are a rounded child's own bg (the rounded pass carries it), clipped to
+/// the window, and corner-resolved against the root's rounded rect (a quad flush with
+/// a window corner picks up the plate radius there); rounded quads are clipped;
+/// text bounds are clamped to the window (unbounded labels become window-bounded).
+fn collect_window_child(
+    w: &dyn Element,
+    ctx: &cce_ui::context::UiContext,
+    win_w: f32,
+    win_h: f32,
+    plate_radius: f32,
+    plain: &mut Vec<RectTuple>,
+    rounded: &mut Vec<RectTuple>,
+    texts: &mut Vec<TextTuple>,
+) {
+    let (cx, cy, cw, ch) = w.rect();
+    let child_rounded = w.rounded_corners() != (false, false, false, false);
+    for (qx, qy, qw, qh, qc) in w.all_quads(ctx) {
+        if child_rounded && (qx - cx).abs() < 0.1 && (qy - cy).abs() < 0.1 && (qw - cw).abs() < 0.1 && (qh - ch).abs() < 0.1 {
+            continue;
+        }
+        let x0 = qx.max(0.0);
+        let y0 = qy.max(0.0);
+        let x1 = (qx + qw).min(win_w);
+        let y1 = (qy + qh).min(win_h);
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        let corners = (
+            x0 <= 1.5 && y0 <= 1.5,
+            x1 >= win_w - 1.5 && y0 <= 1.5,
+            x1 >= win_w - 1.5 && y1 >= win_h - 1.5,
+            x0 <= 1.5 && y1 >= win_h - 1.5,
+        );
+        if corners == (false, false, false, false) {
+            plain.push((qc, x0, y0, x1 - x0, y1 - y0, 0.0, (false, false, false, false)));
+        } else {
+            plain.push((qc, x0, y0, x1 - x0, y1 - y0, plate_radius, corners));
+        }
+    }
+    for (qx, qy, qw, qh, qr, qc, qcorners) in w.all_rounded_quads(ctx) {
+        let x0 = qx.max(0.0);
+        let y0 = qy.max(0.0);
+        let x1 = (qx + qw).min(win_w);
+        let y1 = (qy + qh).min(win_h);
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        rounded.push((qc, x0, y0, x1 - x0, y1 - y0, qr, qcorners));
+    }
+    for (label, font, bounds) in w.text_labels_with_font_and_bounds(ctx) {
+        let cb = match bounds {
+            Some(b) => {
+                let bx0 = b[0].max(0.0);
+                let by0 = b[1].max(0.0);
+                let bx1 = b[2].min(win_w);
+                let by1 = b[3].min(win_h);
+                if bx1 <= bx0 || by1 <= by0 {
+                    continue;
+                }
+                Some([bx0, by0, bx1, by1])
+            }
+            None => Some([0.0, 0.0, win_w, win_h]),
+        };
+        let color = [
+            label.color[0] as f32 / 255.0,
+            label.color[1] as f32 / 255.0,
+            label.color[2] as f32 / 255.0,
+            1.0,
+        ];
+        texts.push((label.text.clone(), label.font_size, label.x, label.y, color, font, cb));
+    }
+}
+
 impl SystemInterface {
 
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
@@ -70,22 +148,10 @@ impl SystemInterface {
         self.page_dropdown.selected = page_idx;
         self.switcher.set_active_index(Some(page_idx));
 
-        // Update root window size, background color, opacity, corner radius, and children
-        self.root_window.set_rect(0.0, 0.0, logical_sw, logical_sh);
-        let win_r = 0x0a as f32 / 255.0;
-        let win_g = 0x1a as f32 / 255.0;
-        let win_b = 0x0e as f32 / 255.0;
-        let win_a = 1.0f32;
-        self.root_window.background_color = Some(cce_ui::color::to_linear([win_r, win_g, win_b, win_a]));
-        self.root_window.radius = 12.0;
-        self.root_window.clear_children(&mut self.ui_context);
-        self.root_window.add_child(self.switcher.as_ptr(), &mut self.ui_context);
-        self.root_window.add_child(self.statusbar.as_ptr(), &mut self.ui_context);
-        self.root_window.add_child(self.page_dropdown.as_ptr(), &mut self.ui_context);
-        if self.search_open {
-            use cce_ui::widget::focus::link_parent_child;
-            link_parent_child(&mut self.root_window, &mut self.search_box, &mut self.ui_context);
-        }
+        // Root Backplate DISSOLVED (Phase 6s): top-level widgets stay parentless
+        // (render_widget registers them); the window plate, the root aggregate's
+        // emission order, and the StatusBar's Backplate-coupled theming are all
+        // replicated by hand below.
 
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
@@ -98,6 +164,9 @@ impl SystemInterface {
         let dropdown_gap = (self.status_height - dropdown_h) / 2.0;
         let dropdown_x = logical_sw - dropdown_w - dropdown_gap;
         let dropdown_y = logical_sh - self.status_height + dropdown_gap;
+        // The dropdown sits flush against the window's rounded bottom-right corner; with the
+        // root Backplate dissolved, hand it the plate frame for its concentric-corner cut.
+        self.page_dropdown.set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
         let switcher_h = if self.search_open {
             logical_sh - self.header_height - 42.0 - self.status_height
@@ -105,10 +174,58 @@ impl SystemInterface {
             logical_sh - self.header_height - self.status_height
         };
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, logical_sw - self.sidebar_width, switcher_h, &mut self.ui_context);
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.statusbar, 0.0, logical_sh - self.status_height, logical_sw, self.status_height, &mut self.ui_context);
-        // Render root window recursively
+
+        // Assemble the window exactly as the legacy `render_widget(root Backplate)`
+        // aggregate did: every child plain quad (clipped to the window, with the root's
+        // corner resolution against its rounded rect), then the translucent window
+        // plate, then every child rounded quad, then the root-clamped text — in the old
+        // child order [switcher, statusbar, dropdown, search box]. The StatusBar widget
+        // is dissolved outright: its theming was Backplate-parent-coupled (statusbar
+        // theme color falling back to STATUS_BG, bottom corners rounded at the root's
+        // radius, statusbar text color/font), replicated here as tuples.
+        let plate_radius = 12.0f32;
         let mut window_pc = PageContent::new();
-        cce_ui::layout::render_widget(&mut window_pc, &mut self.root_window, 0.0, 0.0, logical_sw, logical_sh, &mut self.ui_context);
+        {
+            let mut plain: Vec<RectTuple> = Vec::new();
+            let mut rounded: Vec<RectTuple> = Vec::new();
+            let mut wtexts: Vec<TextTuple> = Vec::new();
+
+            collect_window_child(&self.switcher, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
+
+            // The dissolved status bar's slot in the child order.
+            let sb_y = logical_sh - self.status_height;
+            let sb_theme = cce_ui::colors::backplate_statusbar_color();
+            let sb_bg = if sb_theme[3] > 0.001 { sb_theme } else { cce_ui::color::STATUS_BG };
+            rounded.push((sb_bg, 0.0, sb_y, logical_sw, self.status_height, plate_radius, (false, false, true, true)));
+            if !self.status_text.is_empty() {
+                let (_, sb_font_size) = cce_ui::layout::statusbar_font_parsed();
+                let sb_size = if sb_font_size > 0.0 { sb_font_size } else { 12.0 };
+                let c = cce_ui::colors::backplate_statusbar_text_color();
+                // Same u8 round-trip the legacy TextLabel path applied.
+                let sb_color = [
+                    ((c[0] * 255.0) as u8) as f32 / 255.0,
+                    ((c[1] * 255.0) as u8) as f32 / 255.0,
+                    ((c[2] * 255.0) as u8) as f32 / 255.0,
+                    1.0,
+                ];
+                let sb_text_y = cce_ui::layout::align_text_y(sb_y, self.status_height, sb_size, 0.0);
+                wtexts.push((self.status_text.clone(), sb_size, 12.0, sb_text_y, sb_color, None, Some([0.0, 0.0, logical_sw, logical_sh])));
+            }
+
+            collect_window_child(&self.page_dropdown, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
+            if self.search_open {
+                collect_window_child(&self.search_box, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
+            }
+
+            window_pc.rects.extend(plain);
+            let mut plate = cce_ui::color::to_linear([0x0a as f32 / 255.0, 0x1a as f32 / 255.0, 0x0e as f32 / 255.0, 1.0]);
+            if plate[3] > 0.001 {
+                plate[3] = cce_ui::color::active_backplate_opacity();
+            }
+            window_pc.rects.push((plate, 0.0, 0.0, logical_sw, logical_sh, plate_radius, (true, true, true, true)));
+            window_pc.rects.extend(rounded);
+            window_pc.texts.extend(wtexts);
+        }
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
         let active_page_widget = &self.pages[page_idx];

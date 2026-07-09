@@ -74,11 +74,12 @@ struct SystemInterface {
     scrollable_buttons_start_idx: usize,
     last_scroll_y: f32,
     page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
-    root_window: cce_ui::widget::Backplate,
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
     switcher: cce_ui::widget::Adapted<cce_ui::widget::Switcher>,
     pages: Vec<cce_ui::widget::Page>,
-    statusbar: cce_ui::widget::Adapted<cce_ui::widget::StatusBar>,
+    // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
+    // bar are emitted as tuples in rebuild_layout; this is the bar's text.
+    status_text: String,
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -137,10 +138,6 @@ impl cce_ui::engine::Application for SystemInterface {
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
 
-        let win_color = [0x0a, 0x1a, 0x0e];
-        let win_opacity = 1.0f32;
-        let win_radius = 12;
-
         let font_system = cce_ui::create_font_system();
 
         let mut this = Self {
@@ -181,20 +178,10 @@ impl cce_ui::engine::Application for SystemInterface {
             scrollable_buttons_start_idx: 0,
             last_scroll_y: 0.0,
             page_sec_containers: Vec::new(),
-            root_window: cce_ui::widget::Backplate::new(0.0, 0.0, 820.0, 680.0)
-                .with_movable(false)
-                .with_background([
-                    win_color[0] as f32 / 255.0,
-                    win_color[1] as f32 / 255.0,
-                    win_color[2] as f32 / 255.0,
-                    win_opacity,
-                ])
-                .with_border([0.22, 0.22, 0.28, 1.0], 1.5)
-                .with_radius(win_radius as f32),
             page_dropdown,
             switcher,
             pages,
-            statusbar: cce_ui::widget::StatusBar::new(),
+            status_text: String::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -214,10 +201,8 @@ impl cce_ui::engine::Application for SystemInterface {
             this.switcher.add_child(page.as_ptr(), &mut this.ui_context);
         }
 
-        this.root_window.add_child(this.switcher.as_ptr(), &mut this.ui_context);
-        this.root_window.add_child(this.statusbar.as_ptr(), &mut this.ui_context);
-        this.root_window.add_child(this.page_dropdown.as_ptr(), &mut this.ui_context);
-
+        // Root Backplate dissolved: switcher/dropdown register parentless via
+        // render_widget in rebuild_layout.
         this.update_status_text();
 
         this.rebuild_layout(820.0, 680.0);
@@ -609,7 +594,7 @@ fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f3
             Page::Storage => "Storage Settings: Manage local disks, partition structures, and backup runs.",
             Page::System => "System Settings: System properties, power management, and update checks.",
         };
-        self.statusbar.set_text(msg);
+        self.status_text = msg.to_string();
     }
 
 }
