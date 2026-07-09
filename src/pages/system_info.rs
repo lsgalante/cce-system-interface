@@ -44,8 +44,8 @@ pub struct SystemState {
     pub on_ac: bool,
     pub cpu_powersave: bool,
     pub gpu_powersave: bool,
-    pub cpu_gov_menu: Dropdown,
-    pub gpu_gov_menu: Dropdown,
+    pub cpu_gov_menu: cce_ui::widget::Adapted<Dropdown>,
+    pub gpu_gov_menu: cce_ui::widget::Adapted<Dropdown>,
 
     // Native layout tracking and widgets
     pub initialized: bool,

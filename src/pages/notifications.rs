@@ -20,7 +20,7 @@ pub struct NotificationsState {
     pub enable: bool,
     pub enable_toggle: cce_ui::widget::Adapted<Toggle>,
     pub bell: String,
-    pub bell_menu: Dropdown,
+    pub bell_menu: cce_ui::widget::Adapted<Dropdown>,
     pub duration: i32,
     pub duration_spinbox: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
 }
