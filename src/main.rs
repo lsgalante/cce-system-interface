@@ -85,7 +85,7 @@ struct SystemInterface {
     scroll_logs: Vec<String>,
     search_open: bool,
     search_query: String,
-    search_box: cce_ui::widget::input::TextBox,
+    search_box: cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>,
 
 }
 

@@ -323,7 +323,7 @@ impl SystemInterface {
                         self.search_open = true;
                         self.search_box.set_value_string("");
                         self.search_query.clear();
-                        let search_box_ptr = &mut self.search_box as *mut cce_ui::widget::input::TextBox;
+                        let search_box_ptr = self.search_box.as_ptr_mut();
                         unsafe {
                             (*search_box_ptr).focus();
                         }

@@ -33,7 +33,7 @@ pub struct ProcessesState {
     pub services_loaded: bool,
     pub services: Vec<ServiceInfo>,
     pub services_active_tab: ServiceTab,
-    pub services_search_box: TextBox,
+    pub services_search_box: cce_ui::widget::Adapted<TextBox>,
     pub services_list_box: List,
     pub service_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
 }

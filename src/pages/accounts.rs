@@ -29,16 +29,16 @@ pub struct AccountsState {
     pub accounts: Vec<AccountInfo>,
     pub selected_idx: Option<usize>,
     pub adding_new: bool,
-    pub email_box: TextBox,
-    pub password_box: TextBox,
-    pub imap_box: TextBox,
-    pub smtp_box: TextBox,
+    pub email_box: cce_ui::widget::Adapted<TextBox>,
+    pub password_box: cce_ui::widget::Adapted<TextBox>,
+    pub imap_box: cce_ui::widget::Adapted<TextBox>,
+    pub smtp_box: cce_ui::widget::Adapted<TextBox>,
     pub status_msg: Option<String>,
     pub status_msg_timer: f32,
     pub oauth_listener_running: bool,
     pub editing_oauth_creds: bool,
-    pub oauth_client_id_box: TextBox,
-    pub oauth_client_secret_box: TextBox,
+    pub oauth_client_id_box: cce_ui::widget::Adapted<TextBox>,
+    pub oauth_client_secret_box: cce_ui::widget::Adapted<TextBox>,
 }
 
 impl AccountsState {

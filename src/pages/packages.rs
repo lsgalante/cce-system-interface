@@ -33,7 +33,7 @@ pub struct PackagesState {
     pub installed: Vec<PackageInfo>,
     pub updates: Vec<UpdateInfo>,
     pub active_tab: PackageTab,
-    pub search_box: TextBox,
+    pub search_box: cce_ui::widget::Adapted<TextBox>,
     pub installed_list_box: List,
     pub installed_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
     pub updates_list_box: List,
