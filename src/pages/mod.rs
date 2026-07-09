@@ -63,9 +63,10 @@ pub trait AppPage {
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer>;
 
+    /// Wire the page's widgets under the section containers (Phase 6u: the Page widget is
+    /// dissolved — the app-held section clones are the top-level dispatch/focus roots).
     fn link_children(
         &mut self,
-        page_root: &mut dyn cce_ui::widget::Element,
         sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     );

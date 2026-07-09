@@ -85,18 +85,8 @@ impl SystemInterface {
 
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
         self.ui_context.clear_hierarchy();
-        self.switcher.clear_children(&mut self.ui_context);
-        for page in &mut self.pages {
-            self.switcher.add_child(page.as_ptr(), &mut self.ui_context);
-        }
-
-        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-
-        // ── Rebuild Element Focus Hierarchy ──
-        for page in &mut self.pages {
-            page.clear_children(&mut self.ui_context);
-        }
-        let page_root = &mut self.pages[page_idx];
+        // ── Rebuild Element Focus Hierarchy (Switcher + Page dissolved, Phase 6u:
+        // sections are the top-level dispatch/focus roots) ──
         for c in &mut self.page_sec_containers {
             c.clear_children(&mut self.ui_context);
             c.set_parent(None, &mut self.ui_context);
@@ -113,7 +103,7 @@ impl SystemInterface {
         let active_page = self.app.get_current_page_mut();
         self.page_sec_containers = active_page.get_section_containers();
 
-        active_page.link_children(page_root, &mut self.page_sec_containers, &mut self.ui_context);
+        active_page.link_children(&mut self.page_sec_containers, &mut self.ui_context);
 
         self.sidebar_width = 0.0;
         self.header_height = 0.0; // No CSD Titlebar
@@ -146,7 +136,6 @@ impl SystemInterface {
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
         self.page_dropdown.selected = page_idx;
-        self.switcher.set_active_index(Some(page_idx));
 
         // Root Backplate DISSOLVED (Phase 6s): top-level widgets stay parentless
         // (render_widget registers them); the window plate, the root aggregate's
@@ -173,7 +162,19 @@ impl SystemInterface {
         } else {
             logical_sh - self.header_height - self.status_height
         };
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.switcher, self.sidebar_width, self.header_height, logical_sw - self.sidebar_width, switcher_h, &mut self.ui_context);
+        // The page scrollbar (the only geometry the dissolved Page subtree ever emitted):
+        // placed exactly as Page::layout did, updated with LAST frame's content height —
+        // the legacy window pass also ran before this frame's content was measured.
+        self.page_scroll_bar.set_rect(
+            self.sidebar_width + (logical_sw - self.sidebar_width) - 6.0 - 2.0,
+            self.header_height + 4.0,
+            6.0,
+            switcher_h - 8.0,
+        );
+        if self.page_scroll_bar.dragging {
+            self.scroll_y = self.page_scroll_bar.scroll_y;
+        }
+        self.page_scroll_bar.update(self.scroll_y, self.content_h, switcher_h);
 
         // Assemble the window exactly as the legacy `render_widget(root Backplate)`
         // aggregate did: every child plain quad (clipped to the window, with the root's
@@ -190,7 +191,7 @@ impl SystemInterface {
             let mut rounded: Vec<RectTuple> = Vec::new();
             let mut wtexts: Vec<TextTuple> = Vec::new();
 
-            collect_window_child(&self.switcher, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
+            collect_window_child(&self.page_scroll_bar, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
 
             // The dissolved status bar's slot in the child order.
             let sb_y = logical_sh - self.status_height;
@@ -225,13 +226,6 @@ impl SystemInterface {
             window_pc.rects.push((plate, 0.0, 0.0, logical_sw, logical_sh, plate_radius, (true, true, true, true)));
             window_pc.rects.extend(rounded);
             window_pc.texts.extend(wtexts);
-        }
-
-        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        let active_page_widget = &self.pages[page_idx];
-        if self.app.current_page == Page::System {
-            self.scroll_y = active_page_widget.scroll_y;
-            self.max_scroll_y = (active_page_widget.content_h - active_page_widget.base.base.h).max(0.0);
         }
 
         let mut search_pc = PageContent::new();
@@ -298,7 +292,7 @@ impl SystemInterface {
 
 
 
-        if self.search_open && !self.search_query.is_empty() && !self.pages[page_idx].scroll_bar.dragging {
+        if self.search_open && !self.search_query.is_empty() && !self.page_scroll_bar.dragging {
             let query_lower = self.search_query.to_lowercase();
             let mut first_match_y = None;
             for (t, _, _, y, _, _, _) in &pc.texts {
@@ -324,9 +318,6 @@ impl SystemInterface {
             }
         }
 
-        let mut popovers = Vec::new();
-        Self::collect_popover_rects(&self.pages[page_idx], &mut popovers, &self.ui_context);
-
         let mut max_y = 0.0f32;
         for (_, _, y, _, h, _, _) in &pc.rects {
             max_y = max_y.max(y + h);
@@ -348,15 +339,13 @@ impl SystemInterface {
             }
         }
 
-        let page_root = &mut self.pages[page_idx];
-        if page_root.scroll_bar.dragging {
-            self.scroll_y = page_root.scroll_bar.scroll_y;
+        if self.page_scroll_bar.dragging {
+            self.scroll_y = self.page_scroll_bar.scroll_y;
         } else {
-            page_root.scroll_y = self.scroll_y;
-            page_root.scroll_bar.scroll_y = self.scroll_y;
+            self.page_scroll_bar.scroll_y = self.scroll_y;
         }
-        page_root.content_h = max_y;
-        page_root.scroll_bar.update(self.scroll_y, max_y, lch);
+        self.content_h = max_y;
+        self.page_scroll_bar.update(self.scroll_y, max_y, lch);
 
         let scroll_offset_y = self.scroll_y;
 
@@ -675,12 +664,12 @@ impl SystemInterface {
         let cw = (cw - 2.0 * margin).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
-        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        let root_focused = cce_ui::widget::focus::is_focused(&self.pages[page_idx]);
+        // Page root dissolved (6u): the ctrl-nav entry focuses section 0, so root focus is
+        // permanently false; views that highlighted on it OR in their first section's bool.
         let sec_focused: Vec<bool> = self.page_sec_containers.iter()
             .map(|c| cce_ui::widget::focus::is_focused(c))
             .collect();
-        self.app.get_current_page_mut().view(cx, cy, cw, ch, root_focused, &sec_focused, &mut layout, &mut self.ui_context)
+        self.app.get_current_page_mut().view(cx, cy, cw, ch, false, &sec_focused, &mut layout, &mut self.ui_context)
     }
 
 }

@@ -451,12 +451,9 @@ impl crate::pages::AppPage for AudioState {
 
     fn link_children(
         &mut self,
-        page_root: &mut dyn cce_ui::widget::Element,
         sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     ) {
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
 
         for (i, sink) in self.sinks.iter().enumerate() {
             if sink.active {

@@ -34,6 +34,7 @@ pub struct SystemState {
     pub cpu_usage: f32,
     pub cpu_cores: u32,
     pub gpus: Vec<String>,
+    pub gpu_strings: Vec<String>,
     pub cpu_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub cpu_usage_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub cpu_temp_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
@@ -102,6 +103,7 @@ impl Default for SystemState {
             cpu_usage: 0.0,
             cpu_cores: 0,
             gpus: Vec::new(),
+            gpu_strings: Vec::new(),
             cpu_label: Label::new("CPU Info"),
             cpu_usage_label: Label::new("CPU Usage"),
             cpu_temp_label: Label::new("CPU Temp"),
@@ -600,14 +602,12 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         if !state.loaded {
             sec.text("Loading CPU model and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
-            // CPU Info Label
-            sec.widget(&mut state.cpu_label, 12.0, sec.cw - 24.0, 26.0, ctx);
-
-            // CPU Usage Label
-            sec.widget(&mut state.cpu_usage_label, 12.0, sec.cw - 24.0, 26.0, ctx);
-
-            // CPU Temp Label
-            sec.widget(&mut state.cpu_temp_label, 12.0, sec.cw - 24.0, 26.0, ctx);
+            // Same strings the old Label widgets carried, stacked vertically (the
+            // grid-column widget placement overlapped them at narrow widths).
+            sec.text(&format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores), 12.0, 0.0, 12.0, TEXT_FG);
+            sec.text(&format!("Usage  {:.0}%", state.cpu_usage), 12.0, 0.0, 12.0, TEXT_FG);
+            let cpu_temp_text = read_cpu_temp().map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
+            sec.text(&cpu_temp_text, 12.0, 0.0, 12.0, TEXT_FG);
         }
     });
 
@@ -616,8 +616,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         if !state.loaded {
             sec_gpu.text("Loading GPU models...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
-            for gpu_lbl in state.gpu_labels.iter_mut() {
-                sec_gpu.widget(gpu_lbl, 12.0, sec_gpu.cw - 24.0, 26.0, ctx);
+            for gpu_text in state.gpu_strings.iter() {
+                sec_gpu.text(gpu_text, 12.0, 0.0, 12.0, TEXT_FG);
             }
         }
     });
@@ -652,6 +652,11 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             let info_h = 80.0;
             let info_y = sec_gov.ay();
             render_widget(sec_gov.pc, &mut info_box, rx + 12.0, info_y, sec_gov.cw - 24.0, info_h, ctx);
+            // Advance the section cursor past the hand-placed box.
+            sec_gov.content_y = sec_gov.content_y.max(info_y + info_h);
+            for h in &mut sec_gov.grid.col_heights {
+                *h = h.max(sec_gov.content_y);
+            }
         }
     });
 
@@ -685,6 +690,11 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             let info_h = 80.0;
             let info_y = sec_gpow.ay();
             render_widget(sec_gpow.pc, &mut info_box, rx + 12.0, info_y, sec_gpow.cw - 24.0, info_h, ctx);
+            // Advance the section cursor past the hand-placed box.
+            sec_gpow.content_y = sec_gpow.content_y.max(info_y + info_h);
+            for h in &mut sec_gpow.grid.col_heights {
+                *h = h.max(sec_gpow.content_y);
+            }
         }
     });
 
@@ -745,6 +755,7 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
             state.cpu_usage = new.cpu_usage;
             state.cpu_cores = new.cpu_cores;
             state.gpus = new.gpus;
+            state.gpu_strings = new.gpu_strings.clone();
 
             state.battery = new.battery;
             state.on_ac = new.on_ac;
@@ -904,124 +915,34 @@ impl crate::pages::AppPage for SystemState {
 
     fn link_children(
         &mut self,
-        page_root: &mut dyn cce_ui::widget::Element,
-        _sec_containers: &mut [cce_ui::widget::SectionContainer],
+        sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     ) {
-        if !self.initialized {
-            self.initialized = true;
-
-            // Clear page root children to prevent duplicates
-            page_root.clear_children(ctx);
-
-            // Bind click callbacks to actions
-            if let Some(ref tx) = self.sender {
-                let tx1 = tx.clone();
-                self.suspend_btn = self.suspend_btn.clone().on_click(move || {
-                    let _ = tx1.send(AppAction::SystemInfo(SystemMessage::Suspend));
-                });
-
-                let tx2 = tx.clone();
-                self.hibernate_btn = self.hibernate_btn.clone().on_click(move || {
-                    let _ = tx2.send(AppAction::SystemInfo(SystemMessage::Hibernate));
-                });
-
-                let tx3 = tx.clone();
-                self.reboot_btn = self.reboot_btn.clone().on_click(move || {
-                    let _ = tx3.send(AppAction::SystemInfo(SystemMessage::Reboot));
-                });
-
-                let tx4 = tx.clone();
-                self.poweroff_btn = self.poweroff_btn.clone().on_click(move || {
-                    let _ = tx4.send(AppAction::SystemInfo(SystemMessage::PowerOff));
-                });
-
-                let tx5 = tx.clone();
-                self.force_shutdown_btn = self.force_shutdown_btn.clone().on_click(move || {
-                    let _ = tx5.send(AppAction::SystemInfo(SystemMessage::ForceShutdown));
-                });
-            }
-
-            // Set up initial rect sizes for info boxes
-            self.cpu_info_box.set_rect(0.0, 0.0, 0.0, 80.0);
-            self.gpu_info_box.set_rect(0.0, 0.0, 0.0, 80.0);
-
-            // Build layout tree:
-            // ── 1. System Section ──
-            self.sec_system.add_child(self.hostname_label.as_ptr_mut(), ctx);
-            self.sec_system.add_child(self.uptime_label.as_ptr_mut(), ctx);
-
-            // ── 2. Actions Section ──
-            self.actions_row.add_child(self.suspend_btn.as_ptr_mut(), ctx);
-            self.actions_row.add_child(self.hibernate_btn.as_ptr_mut(), ctx);
-            self.actions_row.add_child(self.reboot_btn.as_ptr_mut(), ctx);
-            self.actions_row.add_child(self.poweroff_btn.as_ptr_mut(), ctx);
-
-            self.sec_actions.add_child(self.actions_row.as_ptr_mut(), ctx);
-            self.sec_actions.add_child(self.force_shutdown_btn.as_ptr_mut(), ctx);
-
-            // ── 3. CPU Section ──
-            self.sec_cpu.add_child(self.cpu_label.as_ptr_mut(), ctx);
-            self.sec_cpu.add_child(self.cpu_usage_label.as_ptr_mut(), ctx);
-            self.sec_cpu.add_child(self.cpu_temp_label.as_ptr_mut(), ctx);
-
-            // ── 4. GPU Section ──
-            for gpu_lbl in &mut self.gpu_labels {
-                self.sec_gpu.add_child(gpu_lbl.as_ptr_mut(), ctx);
-            }
-
-            // ── 5. CPU Governor Section ──
-            self.sec_cpu_gov.add_child(self.cpu_gov_menu.as_ptr_mut(), ctx);
-            self.sec_cpu_gov.add_child(self.cpu_info_box.as_ptr_mut(), ctx);
-
-            // ── 6. GPU Power Section ──
-            self.sec_gpu_gov.add_child(self.gpu_gov_menu.as_ptr_mut(), ctx);
-            self.sec_gpu_gov.add_child(self.gpu_info_box.as_ptr_mut(), ctx);
-
-            // ── 7. Battery Section ──
-            self.sec_battery.add_child(self.battery_label_pct.as_ptr_mut(), ctx);
-            self.sec_battery.add_child(self.battery_label_state.as_ptr_mut(), ctx);
-            self.sec_battery.add_child(self.battery_label_time.as_ptr_mut(), ctx);
-            self.sec_battery.add_child(self.battery_label_details.as_ptr_mut(), ctx);
-            self.sec_battery.add_child(self.battery_label_ac.as_ptr_mut(), ctx);
-
-            // Mount SectionContainers onto the Page
-            page_root.add_child(self.sec_system.as_ptr_mut(), ctx);
-            page_root.add_child(self.sec_actions.as_ptr_mut(), ctx);
-            page_root.add_child(self.sec_cpu.as_ptr_mut(), ctx);
-            page_root.add_child(self.sec_gpu.as_ptr_mut(), ctx);
-            page_root.add_child(self.sec_cpu_gov.as_ptr_mut(), ctx);
-            page_root.add_child(self.sec_gpu_gov.as_ptr_mut(), ctx);
-            page_root.add_child(self.sec_battery.as_ptr_mut(), ctx);
-        }
-
-        // Link parent-child for focus context
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_system, ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_actions, ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_cpu, ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_gpu, ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_cpu_gov, ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_gpu_gov, ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut self.sec_battery, ctx);
-
-        cce_ui::widget::link_parent_child(&mut self.sec_cpu_gov, &mut self.cpu_gov_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut self.sec_cpu_gov, &mut self.cpu_info_box, ctx);
-        cce_ui::widget::link_parent_child(&mut self.sec_gpu_gov, &mut self.gpu_gov_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut self.sec_gpu_gov, &mut self.gpu_info_box, ctx);
+        // Phase 6u: System renders through the immediate view like every other page;
+        // only its two menus need event dispatch/focus, linked into the app-held clone
+        // sections exactly as the other pages do (the old one-time widget tree — labels,
+        // buttons, state-owned sections — is dead; the view emits text/buttons directly).
+        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.cpu_gov_menu, ctx);
+        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.gpu_gov_menu, ctx);
     }
 
     fn view(
         &mut self,
-        _cx: f32,
-        _cy: f32,
-        _cw: f32,
-        _ch: f32,
-        _root_focused: bool,
-        _sec_focused: &[bool],
-        _layout: &mut dyn LayoutStrategy,
-        _ctx: &mut cce_ui::context::UiContext,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+        root_focused: bool,
+        sec_focused: &[bool],
+        layout: &mut dyn LayoutStrategy,
+        ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
-        crate::app::PageContent::new()
+        // Phase 6u: System used to render through the WIDGET TREE (the only page that
+        // did) — its content reached the frame via the root aggregate walking
+        // Switcher → Page(AdaptiveGridLayout) → sections → widgets. With that chain
+        // dissolved, the page renders through the same immediate-mode view as every
+        // other page (this free `view` predates the flip; it was never wired up).
+        view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
     fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {

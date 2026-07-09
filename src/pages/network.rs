@@ -549,12 +549,9 @@ impl crate::pages::AppPage for NetworkState {
 
     fn link_children(
         &mut self,
-        page_root: &mut dyn cce_ui::widget::Element,
         sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     ) {
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_toggle, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_list_box.scroll_box, ctx);
@@ -568,11 +565,14 @@ impl crate::pages::AppPage for NetworkState {
         cw: f32,
         ch: f32,
         root_focused: bool,
-        _sec_focused: &[bool],
+        sec_focused: &[bool],
         layout: &mut dyn LayoutStrategy,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
-        view(self, cx, cy, cw, ch, root_focused, layout, ctx)
+        // Page root dissolved (6u): the ctrl-nav entry focuses section 0 now, which used to
+        // be expressed as root focus here.
+        let focused = root_focused || sec_focused.first().copied().unwrap_or(false);
+        view(self, cx, cy, cw, ch, focused, layout, ctx)
     }
 
     fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {

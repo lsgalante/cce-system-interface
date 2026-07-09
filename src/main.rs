@@ -1,4 +1,4 @@
-use cce_ui::widget::{hover_animation, Element};
+use cce_ui::widget::hover_animation;
 use glyphon::{Buffer, FontSystem};
 
 use cce_settings::app::{AppAction, AppState};
@@ -80,8 +80,12 @@ struct SystemInterface {
     last_scroll_y: f32,
     page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
-    switcher: cce_ui::widget::Adapted<cce_ui::widget::Switcher>,
-    pages: Vec<cce_ui::widget::Page>,
+    // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
+    // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
+    // (rendered into the window assembly, evented directly). content_h feeds it — the
+    // window pass reads last frame's value, exactly as the legacy Page did.
+    page_scroll_bar: cce_ui::widget::ScrollBar,
+    content_h: f32,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout; this is the bar's text.
     status_text: String,
@@ -122,23 +126,6 @@ impl cce_ui::engine::Application for SystemInterface {
             .with_open_upward(true)
             .with_auto_width(true);
         let sidebar_width = 0.0f32;
-
-        let switcher = cce_ui::widget::Switcher::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0);
-        let mut pages = Vec::new();
-        for page in Page::ALL.iter() {
-            let mut page_widget = cce_ui::widget::Page::new(sidebar_width, 0.0, 820.0 - sidebar_width, 680.0)
-                .with_label(page.label());
-            if *page == Page::System {
-                page_widget.layout = Box::new(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 320.0,
-                    gap: 20.0,
-                    padding_x: 10.0,
-                    padding_y: 10.0,
-                    grid: None,
-                });
-            }
-            pages.push(page_widget);
-        }
 
         let mut app_state = app;
         app_state.current_page = Page::ALL[initial_page_idx];
@@ -186,8 +173,8 @@ impl cce_ui::engine::Application for SystemInterface {
             last_scroll_y: 0.0,
             page_sec_containers: Vec::new(),
             page_dropdown,
-            switcher,
-            pages,
+            page_scroll_bar: cce_ui::widget::ScrollBar::new(),
+            content_h: 0.0,
             status_text: String::new(),
             sans_serif_family: sans_family,
             serif_family,
@@ -204,12 +191,6 @@ impl cce_ui::engine::Application for SystemInterface {
         };
         this.app.system_info.sender = Some(this.sender.clone());
 
-        for page in &mut this.pages {
-            this.switcher.add_child(page.as_ptr(), &mut this.ui_context);
-        }
-
-        // Root Backplate dissolved: switcher/dropdown register parentless via
-        // render_widget in rebuild_layout.
         this.update_status_text();
 
         this.rebuild_layout(820.0, 680.0);
@@ -358,20 +339,6 @@ impl cce_ui::engine::Application for SystemInterface {
 }
 
 impl SystemInterface {
-
-fn collect_popover_rects(w: &dyn cce_ui::widget::Element, popovers: &mut Vec<(f32, f32, f32, f32)>, ctx: &cce_ui::context::UiContext) {
-    if let Some(rect) = w.popover_rect() {
-        popovers.push(rect);
-    }
-    for child_ptr in w.children(ctx) {
-        unsafe {
-            if let Some(child) = child_ptr.as_ref() {
-                Self::collect_popover_rects(child, popovers, ctx);
-            }
-        }
-    }
-}
-
 
     fn tick_internal(&mut self, dt: f32) -> bool {
         let mut needs_redraw = false;

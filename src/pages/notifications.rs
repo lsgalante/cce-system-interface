@@ -209,13 +209,9 @@ impl AppPage for NotificationsState {
 
     fn link_children(
         &mut self,
-        page_root: &mut dyn cce_ui::widget::Element,
         sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     ) {
-        for sec in sec_containers.iter_mut() {
-            cce_ui::widget::link_parent_child(page_root, sec, ctx);
-        }
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.enable_toggle, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.bell_menu, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.duration_spinbox, ctx);

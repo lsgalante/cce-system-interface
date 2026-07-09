@@ -750,13 +750,9 @@ impl crate::pages::AppPage for PackagesState {
 
     fn link_children(
         &mut self,
-        page_root: &mut dyn cce_ui::widget::Element,
         sec_containers: &mut [cce_ui::widget::SectionContainer],
         ctx: &mut cce_ui::context::UiContext,
     ) {
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[0], ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[1], ctx);
-        cce_ui::widget::link_parent_child(page_root, &mut sec_containers[2], ctx);
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.search_box, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.installed_list_box.scroll_box, ctx);

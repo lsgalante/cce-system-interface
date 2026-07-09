@@ -36,9 +36,6 @@ impl SystemInterface {
         if self.page_dropdown.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
             changed = true;
         }
-        if self.switcher.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-            changed = true;
-        }
 
         // Drag updates are high-priority overrides
         let mut drag_handled = false;
@@ -53,10 +50,8 @@ impl SystemInterface {
 
         if !drag_handled {
             let event = cce_ui::widget::Event::PointerMove { x: lx, y: ly, local_x: lx, local_y: ly };
-            if let Some(root) = self.get_page_root_widget() {
-                if self.ui_context.propagate_event(&event, root) {
-                    changed = true;
-                }
+            if self.dispatch_page_event(&event) {
+                changed = true;
             }
         }
 
@@ -114,7 +109,6 @@ impl SystemInterface {
             }
         }
 
-        let mut handled = false;
         if self.page_dropdown.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
             if self.page_dropdown.take_change() {
                 let idx = self.page_dropdown.selected;
@@ -128,12 +122,6 @@ impl SystemInterface {
                 }
             }
             self.needs_rebuild = true;
-            handled = true;
-        } else if self.switcher.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-            self.needs_rebuild = true;
-            handled = true;
-        }
-        if handled {
             return true;
         }
 
@@ -170,9 +158,7 @@ impl SystemInterface {
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
         let event = cce_ui::widget::Event::MouseButton { button, state, x: lx, y: ly, local_x: lx, local_y: ly };
-        if let Some(root) = self.get_page_root_widget() {
-            self.ui_context.propagate_event(&event, root);
-        }
+        self.dispatch_page_event(&event);
 
         if state == cce_ui::widget::ElementState::Pressed {
             self.app.get_current_page_mut().handle_pointer_down(lx, ly, &mut self.ui_context);
@@ -208,33 +194,10 @@ impl SystemInterface {
 
 
             let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly, local_x: lx, local_y: ly };
-            let mut handled = false;
-            if let Some(root) = self.get_page_root_widget() {
-                if self.app.current_page == Page::System {
-                    if self.ui_context.propagate_event(&event, root) {
-                        handled = true;
-                    }
-                } else {
-                    unsafe {
-                        for child in (*root).children(&self.ui_context).into_iter().rev() {
-                            let (cx, cy, _, _) = (*child).rect();
-                            let mut local_adjusted = event.clone();
-                            match &mut local_adjusted {
-                                cce_ui::widget::Event::MouseWheel { local_x, local_y, .. } => {
-                                    *local_x -= cx;
-                                    *local_y -= cy;
-                                }
-                                _ => {}
-                            }
-                            let adjusted_event = (*root).transform_event_for_child(child, local_adjusted, &self.ui_context);
-                            if self.ui_context.propagate_event(&adjusted_event, child) {
-                                handled = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            // Page dissolved (6u): one dispatch path for every page — scrollbar, then
+            // sections (inner ScrollBoxes take the wheel first), then the manual page
+            // scroll below as the fallback, exactly as the non-System pages worked.
+            let handled = self.dispatch_page_event(&event);
 
             let mut actions = Vec::new();
             self.propagate_widget_changes(&mut actions);
@@ -281,9 +244,74 @@ impl SystemInterface {
         false
     }
 
-    pub(crate) fn get_page_root_widget(&mut self) -> Option<*mut (dyn cce_ui::widget::Element + 'static)> {
-        let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        Some(self.pages[page_idx].as_ptr_mut())
+    /// The current page's event-dispatch roots (Phase 6u — the Page widget is dissolved):
+    /// the app-held section-container clones every page links its widgets under.
+    pub(crate) fn page_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::Element + 'static)> {
+        self.page_sec_containers.iter_mut().map(|s| s.as_ptr_mut()).collect()
+    }
+
+    /// Replicates the dissolved Page's event routing: the out-of-bounds gate (events whose
+    /// screen position is outside the page viewport never reach page widgets, unless the
+    /// scrollbar is mid-drag), then the legacy child order reversed — the scrollbar first
+    /// (with Page's y-unshift, its coords are screen-space while the event carries the
+    /// scroll offset), then the sections last-to-first. PointerMove visits everything
+    /// (hover bookkeeping); other events stop at the first handler.
+    pub(crate) fn dispatch_page_event(&mut self, event: &cce_ui::widget::Event) -> bool {
+        use cce_ui::widget::Event;
+        let is_pointer_event = matches!(
+            event,
+            Event::PointerMove { .. } | Event::MouseButton { .. } | Event::MouseWheel { .. }
+        );
+        if is_pointer_event && !self.page_scroll_bar.dragging {
+            if let Event::PointerMove { x, y, .. }
+            | Event::MouseButton { x, y, .. }
+            | Event::MouseWheel { x, y, .. } = event
+            {
+                let rx = self.sidebar_width;
+                let ry = self.header_height;
+                let rw = self.width as f32 - self.sidebar_width;
+                let mut rh = self.height as f32 - self.header_height - self.status_height;
+                if self.search_open {
+                    rh -= 42.0;
+                }
+                let screen_y = *y - self.scroll_y;
+                if *x < rx || *x > rx + rw || screen_y < ry || screen_y > ry + rh {
+                    return false;
+                }
+            }
+        }
+
+        let is_pointer_move = matches!(event, Event::PointerMove { .. });
+        let mut handled = false;
+
+        if self.page_scroll_bar.content_h > self.page_scroll_bar.viewport_h {
+            let mut sb_event = event.clone();
+            if let Event::PointerMove { y, local_y, .. }
+            | Event::MouseButton { y, local_y, .. }
+            | Event::MouseWheel { y, local_y, .. } = &mut sb_event
+            {
+                *y -= self.scroll_y;
+                *local_y -= self.scroll_y;
+            }
+            let sb_ptr = self.page_scroll_bar.as_ptr_mut();
+            if self.ui_context.propagate_event(&sb_event, sb_ptr) {
+                if !is_pointer_move {
+                    return true;
+                }
+                handled = true;
+            }
+        }
+
+        let roots = self.page_dispatch_roots();
+        for root in roots.into_iter().rev() {
+            if self.ui_context.propagate_event(event, root) {
+                if !is_pointer_move {
+                    return true;
+                }
+                handled = true;
+            }
+        }
+        handled
     }
 
     pub(crate) fn handle_key_input_internal(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
@@ -346,15 +374,46 @@ impl SystemInterface {
                         self.needs_rebuild = true;
                         return true;
                     }
-                } else {
-                    if let Some(root_ptr) = self.get_page_root_widget() {
-                        unsafe {
-                            let root_ref = &mut *root_ptr;
-                            cce_ui::widget::focus::set_focused(root_ref);
-                            root_ref.focus();
-                            self.needs_rebuild = true;
-                            return true;
+                    // Sections are parentless with the Page dissolved (6u), so the
+                    // parent-pointer walk can't cycle BETWEEN them — do it app-side.
+                    if let cce_ui::widget::Key::Character(c) = &event.logical_key {
+                        let forward = c == "j" || c == "J";
+                        let backward = c == "k" || c == "K";
+                        if forward || backward {
+                            let mut roots = self.page_dispatch_roots();
+                            let focused_idx = roots.iter().position(|&r| unsafe {
+                                cce_ui::widget::focus::is_focused(&*r)
+                            });
+                            if let (Some(idx), true) = (focused_idx, !roots.is_empty()) {
+                                let next = if forward {
+                                    (idx + 1) % roots.len()
+                                } else if idx == 0 {
+                                    roots.len() - 1
+                                } else {
+                                    idx - 1
+                                };
+                                unsafe {
+                                    let sec = &mut *roots[next];
+                                    cce_ui::widget::focus::set_focused(sec);
+                                    sec.focus();
+                                }
+                                self.needs_rebuild = true;
+                                return true;
+                            }
                         }
+                    }
+                } else {
+                    // Entry point: the dissolved page root used to take focus here; focus
+                    // the first section instead.
+                    let roots = self.page_dispatch_roots();
+                    if let Some(&first) = roots.first() {
+                        unsafe {
+                            let sec = &mut *first;
+                            cce_ui::widget::focus::set_focused(sec);
+                            sec.focus();
+                        }
+                        self.needs_rebuild = true;
+                        return true;
                     }
                 }
             }
@@ -362,25 +421,47 @@ impl SystemInterface {
 
         let event_wrapper = cce_ui::widget::Event::KeyInput(event.clone());
         let mut key_handled = false;
-        if let Some(root) = self.get_page_root_widget() {
-            let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-            let old_page_scroll = self.pages[page_idx].scroll_y;
-
-            if self.ui_context.propagate_event(&event_wrapper, root) {
-                let mut actions = Vec::new();
-                self.propagate_widget_changes(&mut actions);
-                for a in actions {
-                    self.handle_action(&a);
-                }
-                self.needs_rebuild = true;
-                key_handled = true;
+        if self.dispatch_page_event(&event_wrapper) {
+            let mut actions = Vec::new();
+            self.propagate_widget_changes(&mut actions);
+            for a in actions {
+                self.handle_action(&a);
             }
+            self.needs_rebuild = true;
+            key_handled = true;
+        }
 
-            let new_page_scroll = self.pages[page_idx].scroll_y;
-            if (new_page_scroll - old_page_scroll).abs() > 0.01 {
-                self.scroll_y = new_page_scroll;
-                self.needs_rebuild = true;
-                key_handled = true;
+        // The dissolved Page's keyboard scrolling: when nothing in the page tree took the
+        // key and the cursor is over the page viewport, scroll keys move the page.
+        if !key_handled && event.state == cce_ui::widget::ElementState::Pressed && self.max_scroll_y > 0.0 {
+            let over_page = {
+                let ry = self.header_height;
+                let mut rh = self.height as f32 - self.header_height - self.status_height;
+                if self.search_open {
+                    rh -= 42.0;
+                }
+                self.cursor_x >= self.sidebar_width
+                    && self.cursor_y >= ry
+                    && self.cursor_y <= ry + rh
+            };
+            if over_page {
+                use cce_ui::widget::{Key, NamedKey};
+                let viewport_h = self.height as f32 - self.header_height - self.status_height
+                    - if self.search_open { 42.0 } else { 0.0 };
+                let old_scroll = self.scroll_y;
+                match &event.logical_key {
+                    Key::Named(NamedKey::ArrowDown) => self.scroll_y = (self.scroll_y + 24.0).min(self.max_scroll_y),
+                    Key::Named(NamedKey::ArrowUp) => self.scroll_y = (self.scroll_y - 24.0).max(0.0),
+                    Key::Named(NamedKey::PageDown) => self.scroll_y = (self.scroll_y + viewport_h).min(self.max_scroll_y),
+                    Key::Named(NamedKey::PageUp) => self.scroll_y = (self.scroll_y - viewport_h).max(0.0),
+                    Key::Named(NamedKey::Home) => self.scroll_y = 0.0,
+                    Key::Named(NamedKey::End) => self.scroll_y = self.max_scroll_y,
+                    _ => {}
+                }
+                if (self.scroll_y - old_scroll).abs() > 0.01 {
+                    self.needs_rebuild = true;
+                    key_handled = true;
+                }
             }
         }
 
