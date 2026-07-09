@@ -34,7 +34,10 @@ struct SystemInterface {
     app: AppState,
     font_system: FontSystem,
     widgets: Vec<AppWidget>,
-    text_items: Vec<cce_ui::widget::TextItem>,
+    // (content, font_size, x, y, color, font, bounds) — the frame's text, emitted as
+    // display-list Text prims (scroll shift, search dim/highlight, and viewport clamps
+    // already applied by rebuild_layout).
+    texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
 
     sidebar_width: f32,
@@ -144,7 +147,7 @@ impl cce_ui::engine::Application for SystemInterface {
             app: app_state,
             font_system,
             widgets: Vec::new(),
-            text_items: Vec::new(),
+            texts: Vec::new(),
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
@@ -262,7 +265,10 @@ impl cce_ui::engine::Application for SystemInterface {
         }
     }
 
-    fn view(&mut self, _quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: cce_ui::engine::LogicalSize, scale: f64) {
+    fn display_list(&mut self, size: cce_ui::engine::LogicalSize, scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
+        // Phase 6 single paint path: the whole frame — geometry and text — is this one list.
+        // rebuild_layout flattens the UI into self.widgets/self.texts (scroll shift, search
+        // dim/highlight, and viewport clamps already applied).
         let (width, height) = (size.width, size.height);
         if self.needs_rebuild || self.ui_context.is_dirty() || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
@@ -270,45 +276,6 @@ impl cce_ui::engine::Application for SystemInterface {
             self.scale_factor = scale;
             cce_ui::scale::set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
-        }
-    }
-
-    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: cce_ui::engine::LogicalSize, scale: f64) {
-        let (width, height) = (size.width, size.height);
-        if self.needs_rebuild || self.ui_context.is_dirty() || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
-            self.width = width as u32;
-            self.height = height as u32;
-            self.scale_factor = scale;
-            cce_ui::scale::set_scale_factor(scale as f32);
-            self.rebuild_layout(width, height);
-        }
-        for w in &self.widgets {
-            let color = if w.hovering { w.hover_color } else { w.color };
-            quads.push((w.x, w.y, w.w, w.h, w.radius, color, w.corners));
-        }
-
-        // Draw global hover highlight if active
-        let s = 1.0f32;
-        cce_ui::widget::hover_animation::post_render_check();
-        if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
-            quads.push((
-                qx * s,
-                (qy - self.scroll_y) * s,
-                qw * s,
-                qh * s,
-                0.0,
-                qc,
-                (true, true, true, true),
-            ));
-        }
-    }
-
-    fn display_list(&mut self, _size: cce_ui::engine::LogicalSize, _scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
-        // Phase 3 single paint path. This app flattens its UI into a `widgets` quad list (rebuilt
-        // by view_rounded_quads, which runs before this), so build the DisplayList directly from
-        // that list — the flat-list bridge. CCE_LEGACY_PAINT falls back.
-        if std::env::var("CCE_LEGACY_PAINT").is_ok() {
-            return None;
         }
         use cce_ui::scene::layout::Rect;
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
@@ -325,11 +292,26 @@ impl cce_ui::engine::Application for SystemInterface {
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
         }
+        for (text, font_size, x, y, col, font, bounds) in &self.texts {
+            pc.text_with(
+                text.clone(),
+                *x,
+                *y,
+                *font_size,
+                [
+                    (col[0] * 255.0) as u8,
+                    (col[1] * 255.0) as u8,
+                    (col[2] * 255.0) as u8,
+                ],
+                font.clone(),
+                *bounds,
+            );
+        }
         Some(pc.finish())
     }
 
-    fn text_items(&self) -> &[cce_ui::widget::TextItem] {
-        &self.text_items
+    fn display_list_text(&self) -> bool {
+        true
     }
 
     fn ui_context(&self) -> Option<&cce_ui::context::UiContext> {

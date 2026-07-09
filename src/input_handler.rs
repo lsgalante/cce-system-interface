@@ -262,9 +262,9 @@ impl SystemInterface {
                 for w in &mut self.widgets[self.scrollable_widgets_start_idx..] {
                     w.y -= actual_dy;
                 }
-                for ti in &mut self.text_items[self.scrollable_text_items_start_idx..] {
-                    ti.y -= actual_dy;
-                    if let Some(ref mut b) = ti.bounds {
+                for (_, _, _, ty, _, _, bounds) in &mut self.texts[self.scrollable_text_items_start_idx..] {
+                    *ty -= actual_dy;
+                    if let Some(ref mut b) = bounds {
                         b[1] -= actual_dy;
                         b[3] -= actual_dy;
                     }

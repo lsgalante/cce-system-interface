@@ -1,7 +1,7 @@
 use crate::{SystemInterface, AppWidget, make_text_buffer_with_font};
 use cce_settings::app::PageContent;
 use cce_settings::pages::Page;
-use cce_ui::widget::{Element, TextItem};
+use cce_ui::widget::Element;
 
 impl SystemInterface {
 
@@ -40,7 +40,7 @@ impl SystemInterface {
         self.sidebar_width = 0.0;
         self.header_height = 0.0; // No CSD Titlebar
         let mut widgets = Vec::new();
-        let mut text_items = Vec::new();
+        let mut texts = Vec::new();
         let mut page_buttons = Vec::new();
 
         cce_ui::widget::hover_animation::reset_frame_registration();
@@ -168,27 +168,12 @@ impl SystemInterface {
             }
             for (idx, (t, size, x, y, tc, font_opt, bounds)) in pc_part.texts.iter().enumerate() {
                 eprintln!("WINDOW_PC_TEXT idx={}: text='{}', size={}, x={}, y={}, bounds={:?}", idx, t, size, x, y, bounds);
-                text_items.push(TextItem {
-                    buffer: make_text_buffer_with_font(
-                        &mut self.font_system,
-                        t,
-                        *size,
-                        font_opt.as_deref(),
-                        &self.sans_serif_family,
-                        &self.serif_family,
-                        &self.monospace_family,
-                    ),
-                    x: *x, y: *y,
-                    color: glyphon::Color::rgb(
-                        (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
-                    ),
-                    bounds: *bounds,
-                });
+                texts.push((t.clone(), *size, *x, *y, *tc, font_opt.clone(), *bounds));
             }
         }
 
         self.scrollable_widgets_start_idx = widgets.len();
-        self.scrollable_text_items_start_idx = text_items.len();
+        self.scrollable_text_items_start_idx = texts.len();
         self.scrollable_buttons_start_idx = page_buttons.len();
 
         // Page content in LOGICAL coordinates, then scale to physical
@@ -368,22 +353,7 @@ impl SystemInterface {
                 *tc
             };
 
-            text_items.push(TextItem {
-                buffer: make_text_buffer_with_font(
-                    &mut self.font_system,
-                    t,
-                    *size,
-                    font_opt.as_deref(),
-                    &self.sans_serif_family,
-                    &self.serif_family,
-                    &self.monospace_family,
-                ),
-                x: *x, y: *y - scroll_offset_y,
-                color: glyphon::Color::rgb(
-                    (text_color[0] * 255.0) as u8, (text_color[1] * 255.0) as u8, (text_color[2] * 255.0) as u8,
-                ),
-                bounds: final_bounds,
-            });
+            texts.push((t.clone(), *size, *x, *y - scroll_offset_y, text_color, font_opt.clone(), final_bounds));
         }
         for (btn, action) in &pc.buttons {
             let base = btn.base().unwrap();
@@ -463,16 +433,15 @@ impl SystemInterface {
                 logical_sw,
                 viewport_bottom,
             ]);
-            text_items.push(TextItem {
-                buffer: buf,
-                x: text_x, y: (base.y - scroll_offset_y) + (base.h - logical_lh) / 2.0,
-                color: glyphon::Color::rgb(
-                    (label_color[0] * 255.0) as u8,
-                    (label_color[1] * 255.0) as u8,
-                    (label_color[2] * 255.0) as u8,
-                ),
-                bounds: button_bounds,
-            });
+            texts.push((
+                label.to_string(),
+                label_size,
+                text_x,
+                (base.y - scroll_offset_y) + (base.h - logical_lh) / 2.0,
+                label_color,
+                btn.widget_font(),
+                button_bounds,
+            ));
             let mut btn_clone = btn.clone();
             if let Some(base_mut) = btn_clone.base_mut() {
                 base_mut.x *= s;
@@ -504,26 +473,11 @@ impl SystemInterface {
             });
         }
         for (t, size, x, y, tc, font_opt, bounds) in &search_pc.texts {
-            text_items.push(TextItem {
-                buffer: make_text_buffer_with_font(
-                    &mut self.font_system,
-                    t,
-                    *size,
-                    font_opt.as_deref(),
-                    &self.sans_serif_family,
-                    &self.serif_family,
-                    &self.monospace_family,
-                ),
-                x: *x, y: *y,
-                color: glyphon::Color::rgb(
-                    (tc[0] * 255.0) as u8, (tc[1] * 255.0) as u8, (tc[2] * 255.0) as u8,
-                ),
-                bounds: *bounds,
-            });
+            texts.push((t.clone(), *size, *x, *y, *tc, font_opt.clone(), *bounds));
         }
 
         self.widgets = widgets;
-        self.text_items = text_items;
+        self.texts = texts;
         self.page_buttons = page_buttons;
         self.needs_rebuild = false;
         self.last_scroll_y = self.scroll_y;
