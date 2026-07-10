@@ -1,6 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{List, TextBox, StatusDot, DotStatus, InteractiveListItem, Element};
+use cce_ui::widget::{TextBox, StatusDot, DotStatus, InteractiveListItem, Element};
 
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {
@@ -27,14 +28,14 @@ impl Default for ServiceTab {
 pub struct ProcessesState {
     pub loaded: bool,
     pub processes: Vec<(String, String, String)>, // (pid, cpu, comm)
-    pub cpu_list_box: List,
+    pub cpu_list: ScrollRegion,
 
     // Services-related fields
     pub services_loaded: bool,
     pub services: Vec<ServiceInfo>,
     pub services_active_tab: ServiceTab,
     pub services_search_box: cce_ui::widget::Adapted<TextBox>,
-    pub services_list_box: List,
+    pub services_list: ScrollRegion,
     pub service_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
 }
 
@@ -43,13 +44,13 @@ impl Default for ProcessesState {
         Self {
             loaded: false,
             processes: Vec::new(),
-            cpu_list_box: List::new(24.0, 2.0),
+            cpu_list: ScrollRegion::new(24.0, 2.0),
 
             services_loaded: false,
             services: Vec::new(),
             services_active_tab: ServiceTab::System,
             services_search_box: TextBox::new(String::new()).with_label("Filter Services"),
-            services_list_box: List::new(36.0, 6.0),
+            services_list: ScrollRegion::new(36.0, 6.0),
             service_items: Vec::new(),
         }
     }
@@ -92,12 +93,12 @@ pub async fn fetch_processes_state() -> ProcessesState {
     ProcessesState {
         loaded: true,
         processes,
-        cpu_list_box: List::new(24.0, 2.0),
+        cpu_list: ScrollRegion::new(24.0, 2.0),
         services_loaded: false,
         services: Vec::new(),
         services_active_tab: ServiceTab::System,
         services_search_box: TextBox::new(String::new()).with_label("Filter Services"),
-        services_list_box: List::new(36.0, 6.0),
+        services_list: ScrollRegion::new(36.0, 6.0),
         service_items: Vec::new(),
     }
 }
@@ -122,26 +123,27 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let list_box_w = sec.cw - 24.0;
             let list_box_h = 220.0;
             
-            // Render the standardized ScrollBox widget
-            render_widget(sec.pc, &mut state.cpu_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
-
-            // Header for process list columns (drawn static on top of the ScrollBox background)
+            // Dissolved List (Phase 6v): scroll state + frame prims are app-owned. The
+            // scrollable viewport starts below the header.
             let header_h = 22.0;
+            state.cpu_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+            state.cpu_list.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - 6.0);
+            state.cpu_list.push_prims(sec.pc);
+
+            // Header for process list columns (drawn static on top of the list background)
             sec.pc.rect([0.12, 0.12, 0.16, 0.5], list_box_x + 1.0, list_box_y + 1.0, list_box_w - 2.0, header_h);
             sec.pc.rect([0.18, 0.18, 0.24, 1.0], list_box_x + 1.0, list_box_y + header_h, list_box_w - 2.0, 1.0); // Divider
-            
+
             sec.pc.text("PID", list_box_x + 12.0, list_box_y + 5.0, 11.0, [0.53, 0.53, 0.60, 1.0]);
             sec.pc.text("COMMAND", list_box_x + 80.0, list_box_y + 5.0, 11.0, [0.53, 0.53, 0.60, 1.0]);
             sec.pc.text("CPU %", list_box_x + list_box_w - 60.0, list_box_y + 5.0, 11.0, [0.53, 0.53, 0.60, 1.0]);
 
             let row_h = 24.0;
-            // Update List bounds for the scrollable viewport (which starts below the header)
-            state.cpu_list_box.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - 6.0);
 
             // Visible process rows rendering (virtualized/clipped)
             sec.pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, list_box_h - header_h);
             for (idx, (pid, cpu, comm)) in state.processes.iter().enumerate() {
-                if let Some(draw_y) = state.cpu_list_box.get_item_draw_y(idx, 4.0) {
+                if let Some(draw_y) = state.cpu_list.get_item_draw_y(idx, 4.0) {
                     // Standard row action button (transparent background, highlights on hover)
                     sec.pc.button(
                         "",
@@ -230,9 +232,6 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let list_box_w = sec_w - 24.0;
             let list_box_h = 360.0;
             
-            state.services_list_box.clear_children(ctx);
-            render_widget(sec.pc, &mut state.services_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
-
             // Filter services
             let query = if state.services_search_box.editing {
                 state.services_search_box.edit_buffer.to_lowercase()
@@ -244,10 +243,12 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
                 .collect();
 
-            // Update List bounds
-            state.services_list_box.update_bounds(filtered_services.len(), list_box_y, list_box_h);
+            // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+            state.services_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+            state.services_list.update_bounds(filtered_services.len(), list_box_y, list_box_h);
+            state.services_list.push_prims(sec.pc);
 
-            let item_h = state.services_list_box.item_height;
+            let item_h = state.services_list.item_height;
 
             if state.service_items.len() != filtered_services.len() {
                 state.service_items.clear();
@@ -258,7 +259,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
 
             sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
             for (idx, service) in filtered_services.iter().enumerate() {
-                if let Some(draw_y) = state.services_list_box.get_item_draw_y(idx, 4.0) {
+                if let Some(draw_y) = state.services_list.get_item_draw_y(idx, 4.0) {
                     let is_active = service.active_state == "active" || service.sub_state == "running";
 
                     // Control buttons: Start, Stop, Restart on the right
@@ -286,10 +287,10 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     };
 
                     // Render InteractiveListItem background and text labels
+                    // Rows dispatch as extra roots (the dissolved list is no parent).
                     let item_btn = &mut state.service_items[idx];
                     item_btn.title = service.name.clone();
                     item_btn.subtitle = Some(desc_truncated);
-                    cce_ui::widget::link_parent_child(&mut state.services_list_box.scroll_box, item_btn, ctx);
                     render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
 
                     // Render StatusDot
@@ -376,7 +377,7 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
         }
         ProcessesMessage::ServicesSetTab(tab) => {
             state.services_active_tab = tab;
-            state.services_list_box.set_scroll_y(0.0);
+            state.services_list.set_scroll_y(0.0);
             state.service_items.clear();
         }
         ProcessesMessage::ServicesStart(name, is_system) => {
@@ -481,12 +482,8 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 impl crate::pages::AppPage for ProcessesState {
     fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.cpu_list_box.scroll_box.clear_children(ctx);
-        self.cpu_list_box.scroll_box.set_parent(None, ctx);
         self.services_search_box.clear_children(ctx);
         self.services_search_box.set_parent(None, ctx);
-        self.services_list_box.scroll_box.clear_children(ctx);
-        self.services_list_box.scroll_box.set_parent(None, ctx);
     }
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
@@ -518,9 +515,7 @@ impl crate::pages::AppPage for ProcessesState {
         ctx: &mut cce_ui::context::UiContext,
     ) {
 
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.cpu_list_box.scroll_box, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.services_search_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.services_list_box.scroll_box, ctx);
     }
 
     fn view(
@@ -538,6 +533,44 @@ impl crate::pages::AppPage for ProcessesState {
     }
 
     fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+
+    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn Element + 'static)> {
+        self.service_items.iter_mut().map(|i| i.as_ptr_mut()).collect()
+    }
+
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        let cpu = self.loaded && self.cpu_list.cursor_moved(lx, ly);
+        let services = self.services_loaded && self.services_list.cursor_moved(lx, ly);
+        cpu || services
+    }
+
+    fn handle_pointer_down(&mut self, lx: f32, ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        let cpu = self.loaded && self.cpu_list.press(lx, ly);
+        let services = self.services_loaded && self.services_list.press(lx, ly);
+        cpu || services
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        let cpu = self.cpu_list.release();
+        let services = self.services_list.release();
+        cpu || services
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32) -> bool {
+        (self.loaded && self.cpu_list.wheel(delta, lx, ly))
+            || (self.services_loaded && self.services_list.wheel(delta, lx, ly))
+    }
+
+    fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
+        (self.loaded && self.cpu_list.keyboard(event))
+            || (self.services_loaded && self.services_list.keyboard(event))
+    }
 }
 
 #[cfg(test)]

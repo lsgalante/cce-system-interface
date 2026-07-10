@@ -1,6 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
-use cce_ui::widget::{Element, List, TextBox, InteractiveListItem};
+use cce_ui::widget::{Element, TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
@@ -34,9 +35,9 @@ pub struct PackagesState {
     pub updates: Vec<UpdateInfo>,
     pub active_tab: PackageTab,
     pub search_box: cce_ui::widget::Adapted<TextBox>,
-    pub installed_list_box: List,
+    pub installed_list: ScrollRegion,
     pub installed_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
-    pub updates_list_box: List,
+    pub updates_list: ScrollRegion,
     pub updates_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
     pub updating: bool,
     pub last_update_res: Option<Result<(), String>>,
@@ -54,9 +55,9 @@ impl Default for PackagesState {
             updates: Vec::new(),
             active_tab: PackageTab::Installed,
             search_box: TextBox::new(String::new()).with_placeholder("Filter Packages..."),
-            installed_list_box: List::new(32.0, 4.0),
+            installed_list: ScrollRegion::new(32.0, 4.0),
             installed_items: Vec::new(),
-            updates_list_box: List::new(32.0, 4.0),
+            updates_list: ScrollRegion::new(32.0, 4.0),
             updates_items: Vec::new(),
             updating: false,
             last_update_res: None,
@@ -398,15 +399,15 @@ pub fn view(
 
             match state.active_tab {
                 PackageTab::Installed => {
-                    state.installed_list_box.clear_children(ctx);
-                    render_widget(sec.pc, &mut state.installed_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
-
                     let filtered: Vec<&PackageInfo> = state.installed.iter()
                         .filter(|p| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
                         .collect();
 
-                    state.installed_list_box.update_bounds(filtered.len(), list_box_y, list_box_h);
-                    let item_h = state.installed_list_box.item_height;
+                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                    state.installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    state.installed_list.update_bounds(filtered.len(), list_box_y, list_box_h);
+                    state.installed_list.push_prims(sec.pc);
+                    let item_h = state.installed_list.item_height;
 
                     if state.installed_items.len() != filtered.len() {
                         state.installed_items.clear();
@@ -417,12 +418,12 @@ pub fn view(
 
                     sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                     for (idx, pkg) in filtered.iter().enumerate() {
-                        if let Some(draw_y) = state.installed_list_box.get_item_draw_y(idx, 4.0) {
+                        if let Some(draw_y) = state.installed_list.get_item_draw_y(idx, 4.0) {
+                            // Rows dispatch as extra roots (the dissolved list is no parent).
                             let item = &mut state.installed_items[idx];
                             item.title = pkg.name.clone();
                             item.subtitle = Some(format!("Version: {}", pkg.version));
                             item.selected = Some(&pkg.name) == state.selected_package.as_ref();
-                            cce_ui::widget::link_parent_child(&mut state.installed_list_box.scroll_box, item, ctx);
                             render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                         }
                     }
@@ -433,15 +434,15 @@ pub fn view(
                     }
                 }
                 PackageTab::Updates => {
-                    state.updates_list_box.clear_children(ctx);
-                    render_widget(sec.pc, &mut state.updates_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
-
                     let filtered: Vec<&UpdateInfo> = state.updates.iter()
                         .filter(|p| p.name.to_lowercase().contains(&query))
                         .collect();
 
-                    state.updates_list_box.update_bounds(filtered.len(), list_box_y, list_box_h);
-                    let item_h = state.updates_list_box.item_height;
+                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                    state.updates_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    state.updates_list.update_bounds(filtered.len(), list_box_y, list_box_h);
+                    state.updates_list.push_prims(sec.pc);
+                    let item_h = state.updates_list.item_height;
 
                     if state.updates_items.len() != filtered.len() {
                         state.updates_items.clear();
@@ -452,12 +453,12 @@ pub fn view(
 
                     sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                     for (idx, pkg) in filtered.iter().enumerate() {
-                        if let Some(draw_y) = state.updates_list_box.get_item_draw_y(idx, 4.0) {
+                        if let Some(draw_y) = state.updates_list.get_item_draw_y(idx, 4.0) {
+                            // Rows dispatch as extra roots (the dissolved list is no parent).
                             let item = &mut state.updates_items[idx];
                             item.title = pkg.name.clone();
                             item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
                             item.selected = Some(&pkg.name) == state.selected_package.as_ref();
-                            cce_ui::widget::link_parent_child(&mut state.updates_list_box.scroll_box, item, ctx);
                             render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                         }
                     }
@@ -632,8 +633,8 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
         }
         PackagesMessage::SetTab(tab) => {
             state.active_tab = tab;
-            state.installed_list_box.set_scroll_y(0.0);
-            state.updates_list_box.set_scroll_y(0.0);
+            state.installed_list.set_scroll_y(0.0);
+            state.updates_list.set_scroll_y(0.0);
             state.installed_items.clear();
             state.updates_items.clear();
             state.selected_package = None;
@@ -699,9 +700,19 @@ impl PackagesState {
         self.selected_package_info = None;
         self.loading_info = true;
         if let Some(idx) = self.installed.iter().position(|p| p.name == pkg_name) {
-            let item_height_full = self.installed_list_box.item_height + self.installed_list_box.item_gap;
+            let item_height_full = self.installed_list.item_height + self.installed_list.item_gap;
             let target_y = idx as f32 * item_height_full - 164.0;
-            self.installed_list_box.set_scroll_y(target_y);
+            self.installed_list.set_scroll_y(target_y);
+        }
+    }
+}
+
+impl PackagesState {
+    /// The active tab's dissolved list region (only one is laid out per frame).
+    fn active_list(&mut self) -> &mut ScrollRegion {
+        match self.active_tab {
+            PackageTab::Installed => &mut self.installed_list,
+            PackageTab::Updates => &mut self.updates_list,
         }
     }
 }
@@ -710,10 +721,6 @@ impl crate::pages::AppPage for PackagesState {
     fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
         self.search_box.clear_children(ctx);
         self.search_box.set_parent(None, ctx);
-        self.installed_list_box.scroll_box.clear_children(ctx);
-        self.installed_list_box.scroll_box.set_parent(None, ctx);
-        self.updates_list_box.scroll_box.clear_children(ctx);
-        self.updates_list_box.scroll_box.set_parent(None, ctx);
     }
 
     fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
@@ -755,8 +762,6 @@ impl crate::pages::AppPage for PackagesState {
     ) {
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.search_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.installed_list_box.scroll_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.updates_list_box.scroll_box, ctx);
     }
 
     fn view(
@@ -810,6 +815,39 @@ impl crate::pages::AppPage for PackagesState {
                 }
             }
         }
+    }
+
+    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn Element + 'static)> {
+        match self.active_tab {
+            PackageTab::Installed => self.installed_items.iter_mut().map(|i| i.as_ptr_mut()).collect(),
+            PackageTab::Updates => self.updates_items.iter_mut().map(|i| i.as_ptr_mut()).collect(),
+        }
+    }
+
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        self.loaded && self.active_list().cursor_moved(lx, ly)
+    }
+
+    fn handle_pointer_down(&mut self, lx: f32, ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        self.loaded && self.active_list().press(lx, ly)
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        self.active_list().release()
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32) -> bool {
+        self.loaded && self.active_list().wheel(delta, lx, ly)
+    }
+
+    fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
+        self.loaded && self.active_list().keyboard(event)
     }
 }
 

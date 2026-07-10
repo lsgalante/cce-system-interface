@@ -1,6 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{Adapted, List, Toggle, Element};
+use crate::scroll_region::ScrollRegion;
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use cce_ui::widget::{Adapted, Toggle, Element};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -32,7 +33,7 @@ pub struct NetworkState {
     pub bt_enabled: bool,
     pub bt_devices: Vec<BluetoothDevice>,
     pub bt_scanning: bool,
-    pub wifi_list_box: List,
+    pub wifi_list: ScrollRegion,
     pub wifi_toggle: Adapted<Toggle>,
     pub bt_toggle: Adapted<Toggle>,
 }
@@ -52,7 +53,7 @@ impl Default for NetworkState {
             bt_enabled: false,
             bt_devices: Vec::new(),
             bt_scanning: false,
-            wifi_list_box: List::new(26.0, 4.0),
+            wifi_list: ScrollRegion::new(26.0, 4.0),
             wifi_toggle: Toggle::new(),
             bt_toggle: Toggle::new(),
         }
@@ -126,7 +127,7 @@ pub async fn fetch_network_state() -> NetworkState {
         ip_address, device, available,
         bt_installed, bt_service_active,
         bt_enabled, bt_devices, bt_scanning: false,
-        wifi_list_box: List::new(26.0, 4.0),
+        wifi_list: ScrollRegion::new(26.0, 4.0),
         wifi_toggle: Toggle::new(),
         bt_toggle: Toggle::new(),
     }
@@ -336,16 +337,17 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 let list_box_w = sec_w - 2.0 * margin;
                 let list_box_h = 160.0;
 
-                render_widget(sec.pc, &mut state.wifi_list_box, list_box_x, list_box_y, list_box_w, list_box_h, ctx);
-
-                state.wifi_list_box.update_bounds(state.available.len(), list_box_y, list_box_h);
+                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                state.wifi_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                state.wifi_list.update_bounds(state.available.len(), list_box_y, list_box_h);
+                state.wifi_list.push_prims(sec.pc);
 
                 let btn_w = list_box_w - 2.0 * margin;
                 let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
 
                 sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                 for (idx, net) in state.available.iter().enumerate() {
-                    if let Some(draw_y) = state.wifi_list_box.get_item_draw_y(idx, 4.0) {
+                    if let Some(draw_y) = state.wifi_list.get_item_draw_y(idx, 4.0) {
                         let prefix = if net.in_use { ">" } else { " " };
                         let ssid_truncated = if net.ssid.len() > max_chars {
                             format!("{}...", &net.ssid[..max_chars.saturating_sub(3)])
@@ -514,10 +516,16 @@ pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
     }
 }
 
+impl NetworkState {
+    /// The wifi list is only laid out (and its rect refreshed) when this holds — gate the
+    /// dissolved region's input on it so a stale rect can't eat events.
+    fn wifi_list_visible(&self) -> bool {
+        self.loaded && self.wifi_enabled && !self.available.is_empty()
+    }
+}
+
 impl crate::pages::AppPage for NetworkState {
     fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.wifi_list_box.scroll_box.clear_children(ctx);
-        self.wifi_list_box.scroll_box.set_parent(None, ctx);
         self.wifi_toggle.clear_children(ctx);
         self.wifi_toggle.set_parent(None, ctx);
         self.bt_toggle.clear_children(ctx);
@@ -554,7 +562,6 @@ impl crate::pages::AppPage for NetworkState {
     ) {
 
         cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_toggle, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.wifi_list_box.scroll_box, ctx);
         cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.bt_toggle, ctx);
     }
 
@@ -582,6 +589,32 @@ impl crate::pages::AppPage for NetworkState {
         if self.bt_toggle.take_change() {
             actions.push(crate::app::AppAction::Radios(NetworkMessage::ToggleBluetooth));
         }
+    }
+
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        self.wifi_list_visible() && self.wifi_list.cursor_moved(lx, ly)
+    }
+
+    fn handle_pointer_down(&mut self, lx: f32, ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        self.wifi_list_visible() && self.wifi_list.press(lx, ly)
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        self.wifi_list.release()
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32) -> bool {
+        self.wifi_list_visible() && self.wifi_list.wheel(delta, lx, ly)
+    }
+
+    fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
+        self.wifi_list_visible() && self.wifi_list.keyboard(event)
     }
 }
 

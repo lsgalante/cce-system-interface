@@ -505,19 +505,17 @@ impl SystemInterface {
             let lh = buf.metrics().line_height;
             let mut left_align = btn.justify == cce_ui::widget::Justification::Left;
 
-            // Auto-detect if inside a ScrollBox to apply left alignment by default
+            // Auto-detect if inside a list frame to apply left alignment by default
             if !left_align && base.w >= 60.0 {
                 if self.app.current_page == Page::Processes {
-                    let sb1 = &self.app.processes.cpu_list_box;
-                    let (sb1_x, sb1_y, sb1_w, sb1_h) = sb1.rect();
-                    if base.x >= sb1_x - 1.0 && base.x + base.w <= sb1_x + sb1_w + 1.0
-                       && base.y >= sb1_y - 1.0 && base.y + base.h <= sb1_y + sb1_h + 1.0 {
+                    let sb1 = &self.app.processes.cpu_list;
+                    if base.x >= sb1.x - 1.0 && base.x + base.w <= sb1.x + sb1.w + 1.0
+                       && base.y >= sb1.y - 1.0 && base.y + base.h <= sb1.y + sb1.h + 1.0 {
                         left_align = true;
                     }
-                    let sb2 = &self.app.processes.services_list_box;
-                    let (sb2_x, sb2_y, sb2_w, sb2_h) = sb2.rect();
-                    if base.x >= sb2_x - 1.0 && base.x + base.w <= sb2_x + sb2_w + 1.0
-                       && base.y >= sb2_y - 1.0 && base.y + base.h <= sb2_y + sb2_h + 1.0 {
+                    let sb2 = &self.app.processes.services_list;
+                    if base.x >= sb2.x - 1.0 && base.x + base.w <= sb2.x + sb2.w + 1.0
+                       && base.y >= sb2.y - 1.0 && base.y + base.h <= sb2.y + sb2.h + 1.0 {
                         left_align = true;
                     }
                 }

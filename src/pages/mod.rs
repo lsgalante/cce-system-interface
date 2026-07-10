@@ -102,6 +102,26 @@ pub trait AppPage {
     fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
         false
     }
+
+    /// Extra top-level event-dispatch roots beyond the section containers: the per-row
+    /// widgets that used to hang under a `List`'s ScrollBox (dissolved — the rows now
+    /// dispatch directly; `Adapted` hit-gates presses/wheel so misses fall through).
+    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::Element + 'static)> {
+        Vec::new()
+    }
+
+    /// The dissolved inner lists' wheel (`ScrollBox::mouse_wheel`, hit-scoped). Runs after
+    /// the widget dispatch and before the manual whole-page scroll fallback — the legacy
+    /// "inner ScrollBoxes take the wheel first" order.
+    fn handle_mouse_wheel(&mut self, _delta: &cce_ui::widget::MouseScrollDelta, _lx: f32, _ly: f32) -> bool {
+        false
+    }
+
+    /// The dissolved inner lists' hover/focus-scoped keyboard scrolling
+    /// (`ScrollBox::keyboard_input`). Runs before the whole-page scroll-key fallback.
+    fn handle_key_input(&mut self, _event: &cce_ui::widget::KeyEvent) -> bool {
+        false
+    }
 }
 
 

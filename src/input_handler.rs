@@ -195,9 +195,13 @@ impl SystemInterface {
 
             let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly, local_x: lx, local_y: ly };
             // Page dissolved (6u): one dispatch path for every page — scrollbar, then
-            // sections (inner ScrollBoxes take the wheel first), then the manual page
-            // scroll below as the fallback, exactly as the non-System pages worked.
-            let handled = self.dispatch_page_event(&event);
+            // sections, then the dissolved inner lists (the app-owned ScrollRegions,
+            // hit-scoped like the old inner ScrollBoxes), then the manual page scroll
+            // below as the fallback, exactly as the non-System pages worked.
+            let mut handled = self.dispatch_page_event(&event);
+            if !handled {
+                handled = self.app.get_current_page_mut().handle_mouse_wheel(delta, lx, ly);
+            }
 
             let mut actions = Vec::new();
             self.propagate_widget_changes(&mut actions);
@@ -295,6 +299,21 @@ impl SystemInterface {
             }
             let sb_ptr = self.page_scroll_bar.as_ptr_mut();
             if self.ui_context.propagate_event(&sb_event, sb_ptr) {
+                if !is_pointer_move {
+                    return true;
+                }
+                handled = true;
+            }
+        }
+
+        // Row widgets of the dissolved lists (Phase 6v): they used to receive events as
+        // ScrollBox children under the sections; now they dispatch directly. Adapted's
+        // hit-gate keeps missed presses falling through, so order vs the sections only
+        // matters for overlap — and the rows sit inside list frames the sections never
+        // claim. Collected fresh per event: the item Vecs get rebuilt across frames.
+        let extra_roots = self.app.get_current_page_mut().extra_dispatch_roots();
+        for root in extra_roots {
+            if self.ui_context.propagate_event(event, root) {
                 if !is_pointer_move {
                     return true;
                 }
@@ -427,6 +446,14 @@ impl SystemInterface {
             for a in actions {
                 self.handle_action(&a);
             }
+            self.needs_rebuild = true;
+            key_handled = true;
+        }
+
+        // The dissolved inner lists' keyboard scrolling (hover/focus-scoped, like the old
+        // ScrollBox::keyboard_input) — before the whole-page fallback so a hovered list
+        // takes the scroll keys first.
+        if !key_handled && self.app.get_current_page_mut().handle_key_input(event) {
             self.needs_rebuild = true;
             key_handled = true;
         }
