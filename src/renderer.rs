@@ -564,12 +564,12 @@ impl SystemInterface {
             texts.push((t.clone(), *size, *x, *y, *tc, font_opt.clone(), *bounds));
         }
 
-        // Popovers + context menu draw INTO the frame (Phase 6t): the same collector the
-        // engine's xdg popup used, but emitted on top of the whole window — the dropdown's
-        // open-upward popover finally renders where it hit-tests. Kept out of
+        // Popovers + context menu draw INTO the frame (Phase 6t; the engine xdg popup no
+        // longer exists) — emitted on top of the whole window, so the dropdown's
+        // open-upward popover renders where it hit-tests. Kept out of
         // widgets/texts so the wheel fast-path can't scroll them; dl-text occlusion comes
         // from the ui_context popover registration (and the engine's context-menu overlay
-        // rect under draws_own_popovers).
+        // rect).
         let mut popover_pc = PageContent::new();
         {
             // Chrome popover (the page dropdown) is in window coords; page-widget popovers

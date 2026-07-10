@@ -302,12 +302,6 @@ impl cce_ui::engine::Application for SystemInterface {
         Some(&self.ui_context)
     }
 
-    fn draws_own_popovers(&self) -> bool {
-        // Popovers + context menu draw into the display list (rebuild_layout) — the engine
-        // must not spawn its render-only xdg popup.
-        true
-    }
-
     fn clear_color(&self) -> [f32; 4] {
         [0.039, 0.102, 0.055, 1.0]
     }
