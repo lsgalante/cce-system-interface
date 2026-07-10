@@ -309,45 +309,9 @@ pub fn update(state: &mut StorageState, msg: StorageMessage) {
 }
 
 impl crate::pages::AppPage for StorageState {
-    fn clear_children(&mut self, _ctx: &mut cce_ui::context::UiContext) {}
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
-        vec![
-            cce_ui::widget::SectionContainer::new("Local Storage")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-            cce_ui::widget::SectionContainer::new("Memory")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-            cce_ui::widget::SectionContainer::new("Full System Backup")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-        ]
-    }
-
-    fn link_children(
-        &mut self,
-        _sec_containers: &mut [cce_ui::widget::SectionContainer],
-        _ctx: &mut cce_ui::context::UiContext,
-    ) {
+    // Sections: [Local Storage, Memory, Full System Backup] — no evented widgets.
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
+        vec![Vec::new(), Vec::new(), Vec::new()]
     }
 
     fn view(

@@ -84,26 +84,10 @@ fn collect_window_child(
 impl SystemInterface {
 
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
+        // SectionContainer dissolved (Phase 6w): no per-rebuild section clones to
+        // relink — the page's widgets dispatch directly (registration happens in
+        // render_widget during the view pass below).
         self.ui_context.clear_hierarchy();
-        // ── Rebuild Element Focus Hierarchy (Switcher + Page dissolved, Phase 6u:
-        // sections are the top-level dispatch/focus roots) ──
-        for c in &mut self.page_sec_containers {
-            c.clear_children(&mut self.ui_context);
-            c.set_parent(None, &mut self.ui_context);
-        }
-
-        // Clear all widgets' hierarchy links
-        self.search_box.clear_children(&mut self.ui_context);
-        self.search_box.set_parent(None, &mut self.ui_context);
-
-        for p in Page::ALL {
-            self.app.get_page_mut(p).clear_children(&mut self.ui_context);
-        }
-
-        let active_page = self.app.get_current_page_mut();
-        self.page_sec_containers = active_page.get_section_containers();
-
-        active_page.link_children(&mut self.page_sec_containers, &mut self.ui_context);
 
         self.sidebar_width = 0.0;
         self.header_height = 0.0; // No CSD Titlebar
@@ -664,8 +648,10 @@ impl SystemInterface {
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
         // Page root dissolved (6u): the ctrl-nav entry focuses section 0, so root focus is
         // permanently false; views that highlighted on it OR in their first section's bool.
-        let sec_focused: Vec<bool> = self.page_sec_containers.iter()
-            .map(|c| cce_ui::widget::focus::is_focused(c))
+        // Section focus is the app-side index now (Phase 6w).
+        let n_sections = self.app.get_current_page_mut().section_widgets().len();
+        let sec_focused: Vec<bool> = (0..n_sections)
+            .map(|i| self.focused_section == Some(i))
             .collect();
         self.app.get_current_page_mut().view(cx, cy, cw, ch, false, &sec_focused, &mut layout, &mut self.ui_context)
     }

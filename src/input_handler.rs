@@ -114,6 +114,7 @@ impl SystemInterface {
                 let idx = self.page_dropdown.selected;
                 if idx < Page::ALL.len() {
                     cce_ui::widget::focus::clear_focus();
+                    self.focused_section = None;
                     let new_page = Page::ALL[idx];
                     self.app.current_page = new_page;
                     self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
@@ -165,6 +166,12 @@ impl SystemInterface {
         }
 
         self.propagate_widget_changes(&mut actions);
+
+        // Single-slot focus (Phase 6w): if a widget click took the global focus, the
+        // section-level highlight yields — exactly as when both lived in FOCUSED_WIDGET.
+        if state == cce_ui::widget::ElementState::Pressed && cce_ui::widget::focus::has_focus() {
+            self.focused_section = None;
+        }
 
         for a in &actions {
             self.handle_action(a);
@@ -248,10 +255,18 @@ impl SystemInterface {
         false
     }
 
-    /// The current page's event-dispatch roots (Phase 6u — the Page widget is dissolved):
-    /// the app-held section-container clones every page links its widgets under.
+    /// The current page's event-dispatch roots (Phase 6w — SectionContainer dissolved):
+    /// the pages' widgets themselves, flattened in the legacy propagate order (sections
+    /// last-to-first, and within a section the container children were visited in
+    /// reverse link order).
     pub(crate) fn page_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::Element + 'static)> {
-        self.page_sec_containers.iter_mut().map(|s| s.as_ptr_mut()).collect()
+        self.app
+            .get_current_page_mut()
+            .section_widgets()
+            .into_iter()
+            .rev()
+            .flat_map(|group| group.into_iter().rev())
+            .collect()
     }
 
     /// Replicates the dissolved Page's event routing: the out-of-bounds gate (events whose
@@ -322,7 +337,7 @@ impl SystemInterface {
         }
 
         let roots = self.page_dispatch_roots();
-        for root in roots.into_iter().rev() {
+        for root in roots {
             if self.ui_context.propagate_event(event, root) {
                 if !is_pointer_move {
                     return true;
@@ -383,54 +398,92 @@ impl SystemInterface {
         }
 
         if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
-            let is_nav_key = match (&event.logical_key, event.ctrl) {
-                (cce_ui::widget::Key::Character(c), true) if c == "j" || c == "J" || c == "k" || c == "K" || c == "u" || c == "U" || c == "i" || c == "I" => true,
-                _ => false,
+            let (forward, backward, ascend, descend) = match (&event.logical_key, event.ctrl) {
+                (cce_ui::widget::Key::Character(c), true) => (
+                    c == "j" || c == "J",
+                    c == "k" || c == "K",
+                    c == "u" || c == "U",
+                    c == "i" || c == "I",
+                ),
+                _ => (false, false, false, false),
             };
-            if is_nav_key {
+            if forward || backward || ascend || descend {
+                // SectionContainer dissolved (Phase 6w): section-level focus is the
+                // app-side index, widget-level focus stays in the global focus module,
+                // and the two are single-slot (as when sections and widgets shared the
+                // one FOCUSED_WIDGET). Nav within a section walks the page's widget
+                // group where the container's child list used to be walked.
                 if cce_ui::widget::focus::has_focus() {
+                    // Widget-internal nav first (ctrl+i descend into a widget's own
+                    // children still works through the pointer walk).
                     if cce_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl) {
                         self.needs_rebuild = true;
                         return true;
                     }
-                    // Sections are parentless with the Page dissolved (6u), so the
-                    // parent-pointer walk can't cycle BETWEEN them — do it app-side.
-                    if let cce_ui::widget::Key::Character(c) = &event.logical_key {
-                        let forward = c == "j" || c == "J";
-                        let backward = c == "k" || c == "K";
+                    let groups = self.app.get_current_page_mut().section_widgets();
+                    let focused_pos = groups.iter().enumerate().find_map(|(si, g)| {
+                        g.iter()
+                            .position(|&w| unsafe { cce_ui::widget::focus::is_focused(&*w) })
+                            .map(|wi| (si, wi))
+                    });
+                    if let Some((si, wi)) = focused_pos {
                         if forward || backward {
-                            let mut roots = self.page_dispatch_roots();
-                            let focused_idx = roots.iter().position(|&r| unsafe {
-                                cce_ui::widget::focus::is_focused(&*r)
+                            let group = &groups[si];
+                            let next = if forward {
+                                (wi + 1) % group.len()
+                            } else if wi == 0 {
+                                group.len() - 1
+                            } else {
+                                wi - 1
+                            };
+                            let next_ptr = group[next];
+                            unsafe {
+                                let w = &mut *next_ptr;
+                                cce_ui::widget::focus::set_focused(w);
+                                w.focus();
+                            }
+                            self.needs_rebuild = true;
+                            return true;
+                        }
+                        if ascend {
+                            cce_ui::widget::focus::clear_focus();
+                            self.focused_section = Some(si);
+                            self.needs_rebuild = true;
+                            return true;
+                        }
+                    }
+                } else if let Some(idx) = self.focused_section {
+                    let groups = self.app.get_current_page_mut().section_widgets();
+                    if !groups.is_empty() {
+                        let idx = idx.min(groups.len() - 1);
+                        if forward || backward {
+                            self.focused_section = Some(if forward {
+                                (idx + 1) % groups.len()
+                            } else if idx == 0 {
+                                groups.len() - 1
+                            } else {
+                                idx - 1
                             });
-                            if let (Some(idx), true) = (focused_idx, !roots.is_empty()) {
-                                let next = if forward {
-                                    (idx + 1) % roots.len()
-                                } else if idx == 0 {
-                                    roots.len() - 1
-                                } else {
-                                    idx - 1
-                                };
+                            self.needs_rebuild = true;
+                            return true;
+                        }
+                        if descend {
+                            if let Some(&first) = groups[idx].first() {
                                 unsafe {
-                                    let sec = &mut *roots[next];
-                                    cce_ui::widget::focus::set_focused(sec);
-                                    sec.focus();
+                                    let w = &mut *first;
+                                    cce_ui::widget::focus::set_focused(w);
+                                    w.focus();
                                 }
+                                self.focused_section = None;
                                 self.needs_rebuild = true;
                                 return true;
                             }
                         }
                     }
                 } else {
-                    // Entry point: the dissolved page root used to take focus here; focus
-                    // the first section instead.
-                    let roots = self.page_dispatch_roots();
-                    if let Some(&first) = roots.first() {
-                        unsafe {
-                            let sec = &mut *first;
-                            cce_ui::widget::focus::set_focused(sec);
-                            sec.focus();
-                        }
+                    // Entry point: focus the first section.
+                    if !self.app.get_current_page_mut().section_widgets().is_empty() {
+                        self.focused_section = Some(0);
                         self.needs_rebuild = true;
                         return true;
                     }

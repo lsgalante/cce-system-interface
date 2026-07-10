@@ -97,68 +97,16 @@ impl Default for FontsState {
 }
 
 impl AppPage for FontsState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.sans_box.clear_children(ctx);
-        self.sans_box.set_parent(None, ctx);
-        self.serif_box.clear_children(ctx);
-        self.serif_box.set_parent(None, ctx);
-        self.mono_box.clear_children(ctx);
-        self.mono_box.set_parent(None, ctx);
-        self.borders_box.clear_children(ctx);
-        self.borders_box.set_parent(None, ctx);
-        self.status_box.clear_children(ctx);
-        self.status_box.set_parent(None, ctx);
-        self.fuzzel_box.clear_children(ctx);
-        self.fuzzel_box.set_parent(None, ctx);
-        self.terminal_box.clear_children(ctx);
-        self.terminal_box.set_parent(None, ctx);
-        self.borders_menu.clear_children(ctx);
-        self.borders_menu.set_parent(None, ctx);
-        self.status_menu.clear_children(ctx);
-        self.status_menu.set_parent(None, ctx);
-        self.fuzzel_menu.clear_children(ctx);
-        self.fuzzel_menu.set_parent(None, ctx);
-        self.terminal_menu.clear_children(ctx);
-        self.terminal_menu.set_parent(None, ctx);
-        self.fuzzel_size_box.clear_children(ctx);
-        self.fuzzel_size_box.set_parent(None, ctx);
-        self.terminal_size_box.clear_children(ctx);
-        self.terminal_size_box.set_parent(None, ctx);
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+    // Sections: [Preferred Fonts, Borders, Status Interface, Fuzzel, Terminal]
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
+        use cce_ui::widget::Element;
         vec![
-            cce_ui::widget::SectionContainer::new("Preferred Fonts").with_draw_children(false),
-            cce_ui::widget::SectionContainer::new("Borders").with_draw_children(false),
-            cce_ui::widget::SectionContainer::new("Status Interface").with_draw_children(false),
-            cce_ui::widget::SectionContainer::new("Fuzzel").with_draw_children(false),
-            cce_ui::widget::SectionContainer::new("Terminal").with_draw_children(false),
+            vec![self.sans_box.as_ptr_mut(), self.serif_box.as_ptr_mut(), self.mono_box.as_ptr_mut()],
+            vec![self.borders_menu.as_ptr_mut(), self.borders_box.as_ptr_mut()],
+            vec![self.status_menu.as_ptr_mut(), self.status_box.as_ptr_mut()],
+            vec![self.fuzzel_menu.as_ptr_mut(), self.fuzzel_box.as_ptr_mut(), self.fuzzel_size_box.as_ptr_mut()],
+            vec![self.terminal_menu.as_ptr_mut(), self.terminal_box.as_ptr_mut(), self.terminal_size_box.as_ptr_mut()],
         ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-        
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.sans_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.serif_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.mono_box, ctx);
-
-        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.borders_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.borders_box, ctx);
-
-        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[2], &mut self.status_box, ctx);
-
-        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.fuzzel_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.fuzzel_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[3], &mut self.fuzzel_size_box, ctx);
-
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.terminal_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.terminal_box, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.terminal_size_box, ctx);
     }
 
     fn view(

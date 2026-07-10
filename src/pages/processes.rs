@@ -481,41 +481,12 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 }
 
 impl crate::pages::AppPage for ProcessesState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.services_search_box.clear_children(ctx);
-        self.services_search_box.set_parent(None, ctx);
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+    // Sections: [Processes, Services]
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn Element + 'static)>> {
         vec![
-            cce_ui::widget::SectionContainer::new("Processes")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-            cce_ui::widget::SectionContainer::new("Services")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
+            Vec::new(),
+            vec![self.services_search_box.as_ptr_mut()],
         ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-
-        cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.services_search_box, ctx);
     }
 
     fn view(

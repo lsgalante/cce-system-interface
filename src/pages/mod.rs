@@ -59,17 +59,12 @@ impl Page {
 }
 
 pub trait AppPage {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext);
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer>;
-
-    /// Wire the page's widgets under the section containers (Phase 6u: the Page widget is
-    /// dissolved — the app-held section clones are the top-level dispatch/focus roots).
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    );
+    /// Per-section event/nav widget groups (Phase 6w: SectionContainer dissolved). One
+    /// inner Vec per section — same count and order as the old section containers (the
+    /// outer length drives the `sec_focused` flags) — holding the widgets that used to
+    /// hang under that section's container, in the old link order. The widgets dispatch
+    /// directly as propagate roots and the groups drive the app-side ctrl-nav.
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>>;
 
     fn view(
         &mut self,

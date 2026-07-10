@@ -823,59 +823,25 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
 }
 
 impl crate::pages::AppPage for AccountsState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.email_box.clear_children(ctx);
-        self.email_box.set_parent(None, ctx);
-        self.password_box.clear_children(ctx);
-        self.password_box.set_parent(None, ctx);
-        self.imap_box.clear_children(ctx);
-        self.imap_box.set_parent(None, ctx);
-        self.smtp_box.clear_children(ctx);
-        self.smtp_box.set_parent(None, ctx);
-        self.oauth_client_id_box.clear_children(ctx);
-        self.oauth_client_id_box.set_parent(None, ctx);
-        self.oauth_client_secret_box.clear_children(ctx);
-        self.oauth_client_secret_box.set_parent(None, ctx);
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
-        vec![
-            cce_ui::widget::SectionContainer::new("Accounts")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-            cce_ui::widget::SectionContainer::new("Modify Accounts")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-        ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-
-        if self.editing_oauth_creds {
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.oauth_client_id_box, ctx);
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.oauth_client_secret_box, ctx);
+    // Sections: [Accounts, Modify Accounts] — the modify group depends on the mode.
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
+        use cce_ui::widget::Element;
+        let modify: Vec<*mut (dyn Element + 'static)> = if self.editing_oauth_creds {
+            vec![
+                self.oauth_client_id_box.as_ptr_mut(),
+                self.oauth_client_secret_box.as_ptr_mut(),
+            ]
         } else if self.adding_new {
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.email_box, ctx);
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.password_box, ctx);
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.imap_box, ctx);
-            cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut self.smtp_box, ctx);
-        }
+            vec![
+                self.email_box.as_ptr_mut(),
+                self.password_box.as_ptr_mut(),
+                self.imap_box.as_ptr_mut(),
+                self.smtp_box.as_ptr_mut(),
+            ]
+        } else {
+            Vec::new()
+        };
+        vec![Vec::new(), modify]
     }
 
     fn view(

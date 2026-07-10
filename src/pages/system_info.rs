@@ -894,36 +894,18 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
 
 impl crate::pages::AppPage for SystemState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.cpu_gov_menu.clear_children(ctx);
-        self.cpu_gov_menu.set_parent(None, ctx);
-        self.gpu_gov_menu.clear_children(ctx);
-        self.gpu_gov_menu.set_parent(None, ctx);
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+    // Sections: [System, System Actions, CPU, GPU, CPU Governor, GPU Power, Battery]
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
+        use cce_ui::widget::Element;
         vec![
-            cce_ui::widget::SectionContainer::new("System").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("System Actions").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("CPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("GPU").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("CPU Governor").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("GPU Power").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
-            cce_ui::widget::SectionContainer::new("Battery").with_layout(cce_ui::widget::AdaptiveGridLayout { min_col_width: 140.0, gap: 8.0, padding_x: 0.0, padding_y: 0.0, grid: None }),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![self.cpu_gov_menu.as_ptr_mut()],
+            vec![self.gpu_gov_menu.as_ptr_mut()],
+            Vec::new(),
         ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-        // Phase 6u: System renders through the immediate view like every other page;
-        // only its two menus need event dispatch/focus, linked into the app-held clone
-        // sections exactly as the other pages do (the old one-time widget tree — labels,
-        // buttons, state-owned sections — is dead; the view emits text/buttons directly).
-        cce_ui::widget::link_parent_child(&mut sec_containers[4], &mut self.cpu_gov_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[5], &mut self.gpu_gov_menu, ctx);
     }
 
     fn view(

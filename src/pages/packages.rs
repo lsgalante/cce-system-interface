@@ -718,50 +718,13 @@ impl PackagesState {
 }
 
 impl crate::pages::AppPage for PackagesState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.search_box.clear_children(ctx);
-        self.search_box.set_parent(None, ctx);
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
+    // Sections: [Packages, Package Info, System Update]
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn Element + 'static)>> {
         vec![
-            cce_ui::widget::SectionContainer::new("Packages")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-            cce_ui::widget::SectionContainer::new("Package Info")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-            cce_ui::widget::SectionContainer::new("System Update")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
+            vec![self.search_box.as_ptr_mut()],
+            Vec::new(),
+            Vec::new(),
         ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.search_box, ctx);
     }
 
     fn view(

@@ -184,37 +184,14 @@ fn get_config_path() -> String {
 }
 
 impl AppPage for NotificationsState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        self.enable_toggle.clear_children(ctx);
-        self.enable_toggle.set_parent(None, ctx);
-        self.bell_menu.clear_children(ctx);
-        self.bell_menu.set_parent(None, ctx);
-        self.duration_spinbox.clear_children(ctx);
-        self.duration_spinbox.set_parent(None, ctx);
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
-        vec![
-            cce_ui::widget::SectionContainer::new("Notifications Settings")
-                .with_draw_children(false)
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                }),
-        ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.enable_toggle, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.bell_menu, ctx);
-        cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut self.duration_spinbox, ctx);
+    // Sections: [Notifications Settings]
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
+        use cce_ui::widget::Element;
+        vec![vec![
+            self.enable_toggle.as_ptr_mut(),
+            self.bell_menu.as_ptr_mut(),
+            self.duration_spinbox.as_ptr_mut(),
+        ]]
     }
 
     fn view(

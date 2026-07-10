@@ -407,75 +407,33 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
 }
 
 impl crate::pages::AppPage for AudioState {
-    fn clear_children(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        for sb in &mut self.sink_spinboxes {
-            sb.clear_children(ctx);
-            sb.set_parent(None, ctx);
-        }
-        for sb in &mut self.source_spinboxes {
-            sb.clear_children(ctx);
-            sb.set_parent(None, ctx);
-        }
-        for slider in &mut self.sink_sliders {
-            slider.clear_children(ctx);
-            slider.set_parent(None, ctx);
-        }
-        for slider in &mut self.source_sliders {
-            slider.clear_children(ctx);
-            slider.set_parent(None, ctx);
-        }
-    }
-
-    fn get_section_containers(&self) -> Vec<cce_ui::widget::SectionContainer> {
-        vec![
-            cce_ui::widget::SectionContainer::new("Output")
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                })
-                .with_draw_children(false),
-            cce_ui::widget::SectionContainer::new("Input")
-                .with_layout(cce_ui::widget::AdaptiveGridLayout {
-                    min_col_width: 140.0,
-                    gap: 8.0,
-                    padding_x: 0.0,
-                    padding_y: 0.0,
-                    grid: None,
-                })
-                .with_draw_children(false),
-        ]
-    }
-
-    fn link_children(
-        &mut self,
-        sec_containers: &mut [cce_ui::widget::SectionContainer],
-        ctx: &mut cce_ui::context::UiContext,
-    ) {
-
+    // Sections: [Output, Input] — only active devices' controls, spinbox before slider
+    // per device (the old link order).
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
+        use cce_ui::widget::Element;
+        let mut output: Vec<*mut (dyn Element + 'static)> = Vec::new();
         for (i, sink) in self.sinks.iter().enumerate() {
             if sink.active {
-                if i < self.sink_spinboxes.len() {
-                    cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut *self.sink_spinboxes[i], ctx);
+                if let Some(sb) = self.sink_spinboxes.get_mut(i) {
+                    output.push(sb.as_ptr_mut());
                 }
-                if i < self.sink_sliders.len() {
-                    cce_ui::widget::link_parent_child(&mut sec_containers[0], &mut *self.sink_sliders[i], ctx);
+                if let Some(sl) = self.sink_sliders.get_mut(i) {
+                    output.push(sl.as_ptr_mut());
                 }
             }
         }
-
+        let mut input: Vec<*mut (dyn Element + 'static)> = Vec::new();
         for (i, src) in self.sources.iter().enumerate() {
             if src.active {
-                if i < self.source_spinboxes.len() {
-                    cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut *self.source_spinboxes[i], ctx);
+                if let Some(sb) = self.source_spinboxes.get_mut(i) {
+                    input.push(sb.as_ptr_mut());
                 }
-                if i < self.source_sliders.len() {
-                    cce_ui::widget::link_parent_child(&mut sec_containers[1], &mut *self.source_sliders[i], ctx);
+                if let Some(sl) = self.source_sliders.get_mut(i) {
+                    input.push(sl.as_ptr_mut());
                 }
             }
         }
+        vec![output, input]
     }
 
     fn view(

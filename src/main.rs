@@ -78,7 +78,10 @@ struct SystemInterface {
     scrollable_text_items_start_idx: usize,
     scrollable_buttons_start_idx: usize,
     last_scroll_y: f32,
-    page_sec_containers: Vec<cce_ui::widget::SectionContainer>,
+    // SectionContainer DISSOLVED (Phase 6w): section-level keyboard focus is this index
+    // (single-slot with the global widget focus — descending clears it); the per-section
+    // widget groups come from AppPage::section_widgets each time they're needed.
+    focused_section: Option<usize>,
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
     // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
@@ -171,7 +174,7 @@ impl cce_ui::engine::Application for SystemInterface {
             scrollable_text_items_start_idx: 0,
             scrollable_buttons_start_idx: 0,
             last_scroll_y: 0.0,
-            page_sec_containers: Vec::new(),
+            focused_section: None,
             page_dropdown,
             page_scroll_bar: cce_ui::widget::ScrollBar::new(),
             content_h: 0.0,
