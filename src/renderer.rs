@@ -57,27 +57,34 @@ fn collect_window_child(
         }
         rounded.push((qc, x0, y0, x1 - x0, y1 - y0, qr, qcorners));
     }
-    for (label, font, bounds) in w.text_labels_with_font_and_bounds(ctx) {
-        let cb = match bounds {
-            Some(b) => {
-                let bx0 = b[0].max(0.0);
-                let by0 = b[1].max(0.0);
-                let bx1 = b[2].min(win_w);
-                let by1 = b[3].min(win_h);
-                if bx1 <= bx0 || by1 <= by0 {
-                    continue;
+    // Text via the paint walk (not the legacy text_labels* getters): same labels, with the
+    // widget's content font and any container clip composed into the prim bounds; clamped
+    // to the window exactly as before.
+    let mut scratch = cce_ui::scene::paint::PaintCtx::new();
+    cce_ui::scene::painter::append_widget_text(ctx, w, &mut scratch);
+    for item in scratch.finish().items {
+        if let cce_ui::scene::paint::Prim::Text { text, x, y, font_size, color, font, bounds, .. } = item.prim {
+            let cb = match bounds {
+                Some(b) => {
+                    let bx0 = b[0].max(0.0);
+                    let by0 = b[1].max(0.0);
+                    let bx1 = b[2].min(win_w);
+                    let by1 = b[3].min(win_h);
+                    if bx1 <= bx0 || by1 <= by0 {
+                        continue;
+                    }
+                    Some([bx0, by0, bx1, by1])
                 }
-                Some([bx0, by0, bx1, by1])
-            }
-            None => Some([0.0, 0.0, win_w, win_h]),
-        };
-        let color = [
-            label.color[0] as f32 / 255.0,
-            label.color[1] as f32 / 255.0,
-            label.color[2] as f32 / 255.0,
-            1.0,
-        ];
-        texts.push((label.text.clone(), label.font_size, label.x, label.y, color, font, cb));
+                None => Some([0.0, 0.0, win_w, win_h]),
+            };
+            let colorf = [
+                color[0] as f32 / 255.0,
+                color[1] as f32 / 255.0,
+                color[2] as f32 / 255.0,
+                1.0,
+            ];
+            texts.push((text, font_size, x, y, colorf, font, cb));
+        }
     }
 }
 
