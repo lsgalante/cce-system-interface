@@ -88,7 +88,7 @@ struct SystemInterface {
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
     // (rendered into the window assembly, evented directly). content_h feeds it — the
     // window pass reads last frame's value, exactly as the legacy Page did.
-    page_scroll_bar: crate::scroll_bar::ScrollBar,
+    page_scroll_bar: cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>,
     content_h: f32,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout; this is the bar's text.
