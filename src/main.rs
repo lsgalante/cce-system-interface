@@ -5,6 +5,7 @@ use cce_settings::app::{AppAction, AppState};
 use cce_settings::pages::{self, Page};
 mod input_handler;
 mod renderer;
+mod scroll_bar;
 
 fn make_text_buffer_with_font(
     fs: &mut FontSystem,
@@ -87,7 +88,7 @@ struct SystemInterface {
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
     // (rendered into the window assembly, evented directly). content_h feeds it — the
     // window pass reads last frame's value, exactly as the legacy Page did.
-    page_scroll_bar: cce_ui::widget::ScrollBar,
+    page_scroll_bar: crate::scroll_bar::ScrollBar,
     content_h: f32,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout; this is the bar's text.
@@ -176,7 +177,7 @@ impl cce_ui::engine::Application for SystemInterface {
             last_scroll_y: 0.0,
             focused_section: None,
             page_dropdown,
-            page_scroll_bar: cce_ui::widget::ScrollBar::new(),
+            page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
             status_text: String::new(),
             sans_serif_family: sans_family,
