@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, Element, Button, SectionContainer, Container};
+use cce_ui::widget::{Label, Dropdown, InfoBox, Element, Button, Container};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -38,7 +38,6 @@ pub struct SystemState {
     pub cpu_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub cpu_usage_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub cpu_temp_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub gpu_labels: Vec<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
 
     // Power-related fields
     pub battery: BatteryInfo,
@@ -69,13 +68,6 @@ pub struct SystemState {
     pub poweroff_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
     pub force_shutdown_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
 
-    pub sec_system: SectionContainer,
-    pub sec_actions: SectionContainer,
-    pub sec_cpu: SectionContainer,
-    pub sec_gpu: SectionContainer,
-    pub sec_cpu_gov: SectionContainer,
-    pub sec_gpu_gov: SectionContainer,
-    pub sec_battery: SectionContainer,
 
     pub actions_row: Container,
 }
@@ -107,7 +99,6 @@ impl Default for SystemState {
             cpu_label: Label::new("CPU Info"),
             cpu_usage_label: Label::new("CPU Usage"),
             cpu_temp_label: Label::new("CPU Temp"),
-            gpu_labels: Vec::new(),
 
             battery: BatteryInfo::default(),
             on_ac: true,
@@ -161,56 +152,6 @@ impl Default for SystemState {
                 .with_bg([0.67, 0.20, 0.20, 1.0])
                 .with_hover_bg([0.25, 0.30, 0.26, 1.0])
                 .with_label_color([1.0, 1.0, 1.0, 1.0]),
-
-            sec_system: SectionContainer::new("System").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
-            sec_actions: SectionContainer::new("System Actions").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
-            sec_cpu: SectionContainer::new("CPU").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
-            sec_gpu: SectionContainer::new("GPU").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
-            sec_cpu_gov: SectionContainer::new("CPU Governor").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
-            sec_gpu_gov: SectionContainer::new("GPU Power").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
-            sec_battery: SectionContainer::new("Battery").with_layout({
-                let mut l = cce_ui::widget::VerticalLayout::default();
-                l.padding_x = 12.0;
-                l.padding_y = 8.0;
-                l.spacing = 8.0;
-                l
-            }),
 
             actions_row: Container::new().with_layout(cce_ui::widget::ColumnsLayout {
                 padding_x: 0.0,
@@ -775,15 +716,6 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
                 state.cpu_label.set_text(&cpu_label_text);
                 state.cpu_usage_label.set_text(&cpu_usage_text);
                 state.cpu_temp_label.set_text(&cpu_temp_text);
-
-                // Re-populate GPU labels
-                state.sec_gpu.clear_children(ctx);
-                state.gpu_labels.clear();
-                for text in &new.gpu_strings {
-                    let mut lbl = Label::new(text).with_font_size(12.0).with_color([212, 212, 212]);
-                    state.sec_gpu.add_child(lbl.as_ptr_mut(), ctx);
-                    state.gpu_labels.push(lbl);
-                }
 
                 // Update info boxes
                 let (cpu_title, cpu_lines) = if state.cpu_powersave {
