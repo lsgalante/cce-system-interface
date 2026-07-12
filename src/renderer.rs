@@ -1,7 +1,7 @@
 use crate::{SystemInterface, AppWidget, make_text_buffer_with_font};
 use cce_settings::app::PageContent;
 use cce_settings::pages::Page;
-use cce_ui::widget::Element;
+use cce_ui::widget::WidgetHost;
 
 type RectTuple = ([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool));
 type TextTuple = (String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>);
@@ -13,7 +13,7 @@ type TextTuple = (String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 
 /// a window corner picks up the plate radius there); rounded quads are clipped;
 /// text bounds are clamped to the window (unbounded labels become window-bounded).
 fn collect_window_child(
-    w: &dyn Element,
+    w: &dyn WidgetHost,
     ctx: &cce_ui::context::UiContext,
     win_w: f32,
     win_h: f32,

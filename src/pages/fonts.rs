@@ -1,6 +1,6 @@
 use std::fs;
 use cce_ui::layout::LayoutStrategy;
-use cce_ui::widget::{TextBox, Dropdown, Spinbox, Element};
+use cce_ui::widget::{TextBox, Dropdown, Spinbox, WidgetHost};
 use crate::app::{PageContent, AppAction};
 use crate::pages::AppPage;
 
@@ -98,8 +98,8 @@ impl Default for FontsState {
 
 impl AppPage for FontsState {
     // Sections: [Preferred Fonts, Borders, Status Interface, Fuzzel, Terminal]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
-        use cce_ui::widget::Element;
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
+        use cce_ui::widget::WidgetHost;
         vec![
             vec![self.sans_box.as_ptr_mut(), self.serif_box.as_ptr_mut(), self.mono_box.as_ptr_mut()],
             vec![self.borders_menu.as_ptr_mut(), self.borders_box.as_ptr_mut()],

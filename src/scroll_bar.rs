@@ -3,7 +3,7 @@
 //! assembly (`collect_window_child`) and evented directly (`dispatch_page_event` feeds it
 //! through `propagate_event`). Phase 6az: on the narrow traits, wrapped in
 //! `Adapted<ScrollBar>` — the constructor returns the wrapper so every call site keeps its
-//! shape (Element methods on the wrapper, fields/`update` through Deref).
+//! shape (WidgetHost methods on the wrapper, fields/`update` through Deref).
 
 use cce_ui::scene::layout::Rect;
 use cce_ui::scene::paint::PaintCtx;

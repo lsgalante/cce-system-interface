@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{TextBox, Element};
+use cce_ui::widget::{TextBox, WidgetHost};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct AccountInfo {
@@ -824,9 +824,9 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
 
 impl crate::pages::AppPage for AccountsState {
     // Sections: [Accounts, Modify Accounts] — the modify group depends on the mode.
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
-        use cce_ui::widget::Element;
-        let modify: Vec<*mut (dyn Element + 'static)> = if self.editing_oauth_creds {
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
+        use cce_ui::widget::WidgetHost;
+        let modify: Vec<*mut (dyn WidgetHost + 'static)> = if self.editing_oauth_creds {
             vec![
                 self.oauth_client_id_box.as_ptr_mut(),
                 self.oauth_client_secret_box.as_ptr_mut(),

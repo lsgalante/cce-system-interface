@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, Element, Button};
+use cce_ui::widget::{Label, Dropdown, InfoBox, WidgetHost, Button};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -820,8 +820,8 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
 impl crate::pages::AppPage for SystemState {
     // Sections: [System, System Actions, CPU, GPU, CPU Governor, GPU Power, Battery]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
-        use cce_ui::widget::Element;
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
+        use cce_ui::widget::WidgetHost;
         vec![
             Vec::new(),
             Vec::new(),

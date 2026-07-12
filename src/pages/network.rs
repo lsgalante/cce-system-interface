@@ -1,7 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{Adapted, Toggle, Element};
+use cce_ui::widget::{Adapted, Toggle, WidgetHost};
 
 #[derive(Debug, Clone)]
 pub struct WifiNetwork {
@@ -526,7 +526,7 @@ impl NetworkState {
 
 impl crate::pages::AppPage for NetworkState {
     // Sections: [WiFi, Bluetooth]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn Element + 'static)>> {
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn WidgetHost + 'static)>> {
         vec![
             vec![self.wifi_toggle.as_ptr_mut()],
             vec![self.bt_toggle.as_ptr_mut()],

@@ -1,7 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
-use cce_ui::widget::{Element, TextBox, InteractiveListItem};
+use cce_ui::widget::{WidgetHost, TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
@@ -719,7 +719,7 @@ impl PackagesState {
 
 impl crate::pages::AppPage for PackagesState {
     // Sections: [Packages, Package Info, System Update]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn Element + 'static)>> {
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn WidgetHost + 'static)>> {
         vec![
             vec![self.search_box.as_ptr_mut()],
             Vec::new(),
@@ -780,7 +780,7 @@ impl crate::pages::AppPage for PackagesState {
         }
     }
 
-    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn Element + 'static)> {
+    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn WidgetHost + 'static)> {
         match self.active_tab {
             PackageTab::Installed => self.installed_items.iter_mut().map(|i| i.as_ptr_mut()).collect(),
             PackageTab::Updates => self.updates_items.iter_mut().map(|i| i.as_ptr_mut()).collect(),

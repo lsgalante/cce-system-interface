@@ -1,7 +1,7 @@
 use crate::SystemInterface;
 use cce_settings::app::AppAction;
 use cce_settings::pages::Page;
-use cce_ui::widget::Element;
+use cce_ui::widget::WidgetHost;
 
 impl SystemInterface {
 
@@ -257,7 +257,7 @@ impl SystemInterface {
     /// the pages' widgets themselves, flattened in the legacy propagate order (sections
     /// last-to-first, and within a section the container children were visited in
     /// reverse link order).
-    pub(crate) fn page_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::Element + 'static)> {
+    pub(crate) fn page_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)> {
         self.app
             .get_current_page_mut()
             .section_widgets()

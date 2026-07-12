@@ -1,7 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{TextBox, StatusDot, DotStatus, InteractiveListItem, Element};
+use cce_ui::widget::{TextBox, StatusDot, DotStatus, InteractiveListItem, WidgetHost};
 
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {
@@ -482,7 +482,7 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 impl crate::pages::AppPage for ProcessesState {
     // Sections: [Processes, Services]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn Element + 'static)>> {
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn WidgetHost + 'static)>> {
         vec![
             Vec::new(),
             vec![self.services_search_box.as_ptr_mut()],
@@ -505,7 +505,7 @@ impl crate::pages::AppPage for ProcessesState {
 
     fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
 
-    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn Element + 'static)> {
+    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn WidgetHost + 'static)> {
         self.service_items.iter_mut().map(|i| i.as_ptr_mut()).collect()
     }
 

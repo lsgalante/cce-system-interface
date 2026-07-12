@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Spinbox, Slider, Element};
+use cce_ui::widget::{Spinbox, Slider, WidgetHost};
 
 #[derive(Debug, Clone)]
 pub struct AudioSink {
@@ -409,9 +409,9 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
 impl crate::pages::AppPage for AudioState {
     // Sections: [Output, Input] — only active devices' controls, spinbox before slider
     // per device (the old link order).
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::Element + 'static)>> {
-        use cce_ui::widget::Element;
-        let mut output: Vec<*mut (dyn Element + 'static)> = Vec::new();
+    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
+        use cce_ui::widget::WidgetHost;
+        let mut output: Vec<*mut (dyn WidgetHost + 'static)> = Vec::new();
         for (i, sink) in self.sinks.iter().enumerate() {
             if sink.active {
                 if let Some(sb) = self.sink_spinboxes.get_mut(i) {
@@ -422,7 +422,7 @@ impl crate::pages::AppPage for AudioState {
                 }
             }
         }
-        let mut input: Vec<*mut (dyn Element + 'static)> = Vec::new();
+        let mut input: Vec<*mut (dyn WidgetHost + 'static)> = Vec::new();
         for (i, src) in self.sources.iter().enumerate() {
             if src.active {
                 if let Some(sb) = self.source_spinboxes.get_mut(i) {
@@ -592,7 +592,7 @@ mod tests {
     #[test]
     #[allow(unused_assignments)]
     fn test_boxed_spinbox_right_click_crash() {
-        use cce_ui::widget::{Element, Spinbox};
+        use cce_ui::widget::{WidgetHost, Spinbox};
         let mut state = AudioState::default();
         state.sink_spinboxes.push(Box::new(Spinbox::new(50, 0, 100, 1)));
         let mut ctx = cce_ui::context::UiContext::new();
