@@ -23,7 +23,7 @@ fn collect_window_child(
     texts: &mut Vec<TextTuple>,
 ) {
     let (cx, cy, cw, ch) = w.rect();
-    let child_rounded = w.rounded_corners() != (false, false, false, false);
+    let child_rounded = w.corner_style().1 != (false, false, false, false);
     for (qx, qy, qw, qh, qc) in w.all_quads(ctx) {
         if child_rounded && (qx - cx).abs() < 0.1 && (qy - cy).abs() < 0.1 && (qw - cw).abs() < 0.1 && (qh - ch).abs() < 0.1 {
             continue;
