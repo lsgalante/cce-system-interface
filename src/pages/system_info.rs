@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, Element, Button, Container};
+use cce_ui::widget::{Label, Dropdown, InfoBox, Element, Button};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -69,7 +69,6 @@ pub struct SystemState {
     pub force_shutdown_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
 
 
-    pub actions_row: Container,
 }
 
 impl std::fmt::Debug for SystemState {
@@ -152,12 +151,6 @@ impl Default for SystemState {
                 .with_bg([0.67, 0.20, 0.20, 1.0])
                 .with_hover_bg([0.25, 0.30, 0.26, 1.0])
                 .with_label_color([1.0, 1.0, 1.0, 1.0]),
-
-            actions_row: Container::new().with_layout(cce_ui::widget::ColumnsLayout {
-                padding_x: 0.0,
-                padding_y: 0.0,
-                spacing: 8.0,
-            }),
         }
     }
 }
