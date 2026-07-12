@@ -894,7 +894,7 @@ mod tests {
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut cce_ui::context::UiContext::new());
         println!("PC BUTTONS COUNT: {}", pc.buttons.len());
         for (i, (btn, _)) in pc.buttons.iter().enumerate() {
-            let base = btn.base().unwrap();
+            let base = btn.base();
             println!(
                 "Button {}: label={:?}, x={}, y={}, w={}, h={}, bg={:?}, hover_bg={:?}, label_color={:?}",
                 i, base.label, base.x, base.y, base.w, base.h, btn.bg, btn.hover_bg, btn.label_color

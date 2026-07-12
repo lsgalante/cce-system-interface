@@ -244,9 +244,7 @@ impl SystemInterface {
                     }
                 }
                 for (btn, _) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
-                    if let Some(base) = btn.base_mut() {
-                        base.y -= actual_dy;
-                    }
+                    btn.base_mut().y -= actual_dy;
                 }
                 self.last_scroll_y = self.scroll_y;
                 return true;
