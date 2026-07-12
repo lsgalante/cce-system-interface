@@ -113,7 +113,7 @@ impl SystemInterface {
             if self.page_dropdown.take_change() {
                 let idx = self.page_dropdown.selected;
                 if idx < Page::ALL.len() {
-                    cce_ui::widget::focus::clear_focus();
+                    cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
                     self.focused_section = None;
                     let new_page = Page::ALL[idx];
                     self.app.current_page = new_page;
@@ -372,7 +372,9 @@ impl SystemInterface {
             }
         }
 
-        let is_text_box_focused = if let Some(focused) = self.ui_context.focused_widget {
+        let is_text_box_focused = if let Some(focused) =
+            self.ui_context.focused_widget.and_then(|id| self.ui_context.tree.get_ptr(id))
+        {
             unsafe { (*focused).as_any().is::<cce_ui::widget::input::TextBox>() }
         } else {
             false
@@ -416,7 +418,7 @@ impl SystemInterface {
                 if cce_ui::widget::focus::has_focus() {
                     // Widget-internal nav first (ctrl+i descend into a widget's own
                     // children still works through the pointer walk).
-                    if cce_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl) {
+                    if cce_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl, &mut self.ui_context) {
                         self.needs_rebuild = true;
                         return true;
                     }
@@ -439,14 +441,14 @@ impl SystemInterface {
                             let next_ptr = group[next];
                             unsafe {
                                 let w = &mut *next_ptr;
-                                cce_ui::widget::focus::set_focused(w);
+                                cce_ui::widget::focus::set_focused(w, Some(&mut self.ui_context));
                                 w.focus();
                             }
                             self.needs_rebuild = true;
                             return true;
                         }
                         if ascend {
-                            cce_ui::widget::focus::clear_focus();
+                            cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
                             self.focused_section = Some(si);
                             self.needs_rebuild = true;
                             return true;
@@ -471,7 +473,7 @@ impl SystemInterface {
                             if let Some(&first) = groups[idx].first() {
                                 unsafe {
                                     let w = &mut *first;
-                                    cce_ui::widget::focus::set_focused(w);
+                                    cce_ui::widget::focus::set_focused(w, Some(&mut self.ui_context));
                                     w.focus();
                                 }
                                 self.focused_section = None;
