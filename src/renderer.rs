@@ -581,14 +581,15 @@ impl SystemInterface {
             // Chrome popover (the page dropdown) is in window coords; page-widget popovers
             // (notifications/fonts menus) are in page coords and shift with the viewport —
             // the same scroll subtraction the old popup positioner applied at creation.
-            let chrome_ptr = self.page_dropdown.as_ptr();
+            let chrome_id = self.page_dropdown.id();
             let mut page_pop_pc = PageContent::new();
-            for popover_ptr in &self.ui_context.active_popovers {
+            for &pop_id in &self.ui_context.active_popovers {
+                let Some(pop_ptr) = self.ui_context.tree.get_ptr(pop_id) else { continue };
                 unsafe {
-                    if std::ptr::addr_eq(*popover_ptr, chrome_ptr) {
-                        (**popover_ptr).render_popover(&mut popover_pc);
+                    if pop_id == chrome_id {
+                        (*pop_ptr).render_popover(&mut popover_pc);
                     } else {
-                        (**popover_ptr).render_popover(&mut page_pop_pc);
+                        (*pop_ptr).render_popover(&mut page_pop_pc);
                     }
                 }
             }

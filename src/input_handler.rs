@@ -98,7 +98,7 @@ impl SystemInterface {
         // CSD Close Button Interaction removed
 
         if cce_ui::widget::context_menu::is_visible() {
-            if cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll) {
+            if cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll, Some(&mut self.ui_context)) {
                 let mut actions = Vec::new();
                 self.propagate_widget_changes(&mut actions);
                 for action in actions {
