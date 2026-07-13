@@ -438,12 +438,9 @@ impl SystemInterface {
                 // one FOCUSED_WIDGET). Nav within a section walks the page's widget
                 // group where the container's child list used to be walked.
                 if cce_ui::widget::focus::has_focus() {
-                    // Widget-internal nav first (ctrl+i descend into a widget's own
-                    // children still works through the pointer walk).
-                    if cce_ui::widget::focus::navigate_focus(&event.logical_key, event.ctrl, &mut self.ui_context) {
-                        self.needs_rebuild = true;
-                        return true;
-                    }
+                    // (`focus::navigate_focus` is gone — it walked an empty dummy context
+                    // and always returned false here; the section machinery below is the
+                    // real ctrl-nav.)
                     let groups = self.app.get_current_page_mut().section_widgets();
                     let focused_pos = groups.iter().enumerate().find_map(|(si, g)| {
                         g.iter()
