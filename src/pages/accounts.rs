@@ -824,19 +824,18 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
 
 impl crate::pages::AppPage for AccountsState {
     // Sections: [Accounts, Modify Accounts] — the modify group depends on the mode.
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
-        use cce_ui::widget::WidgetHost;
-        let modify: Vec<*mut (dyn WidgetHost + 'static)> = if self.editing_oauth_creds {
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
+        let modify: Vec<cce_ui::widget::WidgetId> = if self.editing_oauth_creds {
             vec![
-                self.oauth_client_id_box.as_ptr_mut(),
-                self.oauth_client_secret_box.as_ptr_mut(),
+                self.oauth_client_id_box.id(),
+                self.oauth_client_secret_box.id(),
             ]
         } else if self.adding_new {
             vec![
-                self.email_box.as_ptr_mut(),
-                self.password_box.as_ptr_mut(),
-                self.imap_box.as_ptr_mut(),
-                self.smtp_box.as_ptr_mut(),
+                self.email_box.id(),
+                self.password_box.id(),
+                self.imap_box.id(),
+                self.smtp_box.id(),
             ]
         } else {
             Vec::new()

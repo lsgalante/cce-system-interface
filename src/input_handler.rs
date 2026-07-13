@@ -16,7 +16,7 @@ impl SystemInterface {
         if self.search_open && ly_no_scroll >= (sh_logical - 42.0) {
             // Routed (6bd): chrome coords, no scroll offset — same as the direct call.
             let ev = cce_ui::widget::Event::PointerMove { x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
-            let sb = self.search_box.as_ptr_mut();
+            let sb = self.search_box.id();
             if self.ui_context.propagate_event(&ev, sb) {
                 self.needs_rebuild = true;
             }
@@ -37,7 +37,7 @@ impl SystemInterface {
         let mut changed = false;
         {
             let ev = cce_ui::widget::Event::PointerMove { x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
-            let dd = self.page_dropdown.as_ptr_mut();
+            let dd = self.page_dropdown.id();
             if self.ui_context.propagate_event(&ev, dd) {
                 changed = true;
             }
@@ -97,7 +97,7 @@ impl SystemInterface {
         let sh_logical = self.height as f32 / s;
         if self.search_open && ly_no_scroll >= (sh_logical - 42.0) {
             let ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
-            let sb = self.search_box.as_ptr_mut();
+            let sb = self.search_box.id();
             if self.ui_context.propagate_event(&ev, sb) {
                 self.needs_rebuild = true;
             }
@@ -127,8 +127,8 @@ impl SystemInterface {
         }
 
         let dd_ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
-        let dd_ptr = self.page_dropdown.as_ptr_mut();
-        if self.ui_context.propagate_event(&dd_ev, dd_ptr) {
+        let dd_root = self.page_dropdown.id();
+        if self.ui_context.propagate_event(&dd_ev, dd_root) {
             if self.page_dropdown.take_change() {
                 let idx = self.page_dropdown.selected;
                 if idx < Page::ALL.len() {
@@ -153,9 +153,9 @@ impl SystemInterface {
         let mut button_handled = false;
         let mut clicked_action = None;
         let btn_ev = cce_ui::widget::Event::MouseButton { button, state, x: phys_x, y: phys_y, local_x: phys_x, local_y: phys_y };
-        let btn_ptrs: Vec<_> = self.page_buttons[self.scrollable_buttons_start_idx..].iter_mut().map(|(b, _)| b.as_ptr_mut()).collect();
-        for ptr in btn_ptrs {
-            if self.ui_context.propagate_event(&btn_ev, ptr) {
+        let btn_roots: Vec<_> = self.page_buttons[self.scrollable_buttons_start_idx..].iter().map(|(b, _)| b.id()).collect();
+        for root in btn_roots {
+            if self.ui_context.propagate_event(&btn_ev, root) {
                 button_handled = true;
             }
         }
@@ -280,7 +280,7 @@ impl SystemInterface {
     /// the pages' widgets themselves, flattened in the legacy propagate order (sections
     /// last-to-first, and within a section the container children were visited in
     /// reverse link order).
-    pub(crate) fn page_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)> {
+    pub(crate) fn page_dispatch_roots(&mut self) -> Vec<cce_ui::widget::WidgetId> {
         self.app
             .get_current_page_mut()
             .section_widgets()
@@ -333,8 +333,8 @@ impl SystemInterface {
                 *y -= self.scroll_y;
                 *local_y -= self.scroll_y;
             }
-            let sb_ptr = self.page_scroll_bar.as_ptr_mut();
-            if self.ui_context.propagate_event(&sb_event, sb_ptr) {
+            let sb_root = self.page_scroll_bar.id();
+            if self.ui_context.propagate_event(&sb_event, sb_root) {
                 if !is_pointer_move {
                     return true;
                 }
@@ -347,7 +347,11 @@ impl SystemInterface {
         // hit-gate keeps missed presses falling through, so order vs the sections only
         // matters for overlap — and the rows sit inside list frames the sections never
         // claim. Collected fresh per event: the item Vecs get rebuilt across frames.
-        let extra_roots = self.app.get_current_page_mut().extra_dispatch_roots();
+        let extra_roots = {
+            let page = self.app.get_current_page_mut();
+            page.register_extra_dispatch_roots(&mut self.ui_context);
+            page.extra_dispatch_roots()
+        };
         for root in extra_roots {
             if self.ui_context.propagate_event(event, root) {
                 if !is_pointer_move {
@@ -408,10 +412,7 @@ impl SystemInterface {
                         self.search_open = true;
                         self.search_box.set_value_string("");
                         self.search_query.clear();
-                        let search_box_ptr = self.search_box.as_ptr_mut();
-                        unsafe {
-                            (*search_box_ptr).focus();
-                        }
+                        cce_ui::widget::WidgetHost::focus(&mut self.search_box);
                         self.ui_context.set_focused(&mut self.search_box);
                         self.needs_rebuild = true;
                         return true;
@@ -446,7 +447,7 @@ impl SystemInterface {
                     let groups = self.app.get_current_page_mut().section_widgets();
                     let focused_pos = groups.iter().enumerate().find_map(|(si, g)| {
                         g.iter()
-                            .position(|&w| unsafe { cce_ui::widget::focus::is_focused(&*w) })
+                            .position(|&id| cce_ui::widget::focus::is_focused_id(id))
                             .map(|wi| (si, wi))
                     });
                     if let Some((si, wi)) = focused_pos {
@@ -459,10 +460,9 @@ impl SystemInterface {
                             } else {
                                 wi - 1
                             };
-                            let next_ptr = group[next];
-                            unsafe {
-                                let w = &mut *next_ptr;
-                                cce_ui::widget::focus::set_focused(w, Some(&mut self.ui_context));
+                            let next_id = group[next];
+                            cce_ui::widget::focus::set_focused_id(next_id, Some(&mut self.ui_context));
+                            if let Some(w) = self.ui_context.get_widget_mut(next_id) {
                                 w.focus();
                             }
                             self.needs_rebuild = true;
@@ -492,9 +492,8 @@ impl SystemInterface {
                         }
                         if descend {
                             if let Some(&first) = groups[idx].first() {
-                                unsafe {
-                                    let w = &mut *first;
-                                    cce_ui::widget::focus::set_focused(w, Some(&mut self.ui_context));
+                                cce_ui::widget::focus::set_focused_id(first, Some(&mut self.ui_context));
+                                if let Some(w) = self.ui_context.get_widget_mut(first) {
                                     w.focus();
                                 }
                                 self.focused_section = None;

@@ -719,9 +719,9 @@ impl PackagesState {
 
 impl crate::pages::AppPage for PackagesState {
     // Sections: [Packages, Package Info, System Update]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn WidgetHost + 'static)>> {
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
-            vec![self.search_box.as_ptr_mut()],
+            vec![self.search_box.id()],
             Vec::new(),
             Vec::new(),
         ]
@@ -780,10 +780,21 @@ impl crate::pages::AppPage for PackagesState {
         }
     }
 
-    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn WidgetHost + 'static)> {
+    fn extra_dispatch_roots(&mut self) -> Vec<cce_ui::widget::WidgetId> {
         match self.active_tab {
-            PackageTab::Installed => self.installed_items.iter_mut().map(|i| i.as_ptr_mut()).collect(),
-            PackageTab::Updates => self.updates_items.iter_mut().map(|i| i.as_ptr_mut()).collect(),
+            PackageTab::Installed => self.installed_items.iter().map(|i| i.id()).collect(),
+            PackageTab::Updates => self.updates_items.iter().map(|i| i.id()).collect(),
+        }
+    }
+
+    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        let items = match self.active_tab {
+            PackageTab::Installed => &mut self.installed_items,
+            PackageTab::Updates => &mut self.updates_items,
+        };
+        for i in items.iter_mut() {
+            let (id, ptr) = (i.id(), i.as_ptr_mut());
+            ctx.register_widget(id, ptr);
         }
     }
 

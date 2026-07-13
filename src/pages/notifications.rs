@@ -185,12 +185,11 @@ fn get_config_path() -> String {
 
 impl AppPage for NotificationsState {
     // Sections: [Notifications Settings]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
-        use cce_ui::widget::WidgetHost;
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![vec![
-            self.enable_toggle.as_ptr_mut(),
-            self.bell_menu.as_ptr_mut(),
-            self.duration_spinbox.as_ptr_mut(),
+            self.enable_toggle.id(),
+            self.bell_menu.id(),
+            self.duration_spinbox.id(),
         ]]
     }
 

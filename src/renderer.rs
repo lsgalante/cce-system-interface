@@ -641,6 +641,27 @@ impl SystemInterface {
         self.widgets = widgets;
         self.texts = texts;
         self.page_buttons = page_buttons;
+
+        // The id-rooted router (`propagate_event(event, WidgetId)`) resolves roots
+        // through the registry, and `clear_hierarchy` above wiped it. The view pass
+        // re-registers page widgets through `render_widget`; the chrome dispatch roots
+        // never go through it, so re-register them here. The page buttons are
+        // per-rebuild clones — registration follows the fresh allocations.
+        {
+            let id = self.search_box.id();
+            let ptr = self.search_box.as_ptr_mut();
+            self.ui_context.register_widget(id, ptr);
+            let id = self.page_dropdown.id();
+            let ptr = self.page_dropdown.as_ptr_mut();
+            self.ui_context.register_widget(id, ptr);
+            let id = self.page_scroll_bar.id();
+            let ptr = self.page_scroll_bar.as_ptr_mut();
+            self.ui_context.register_widget(id, ptr);
+            for (btn, _) in self.page_buttons.iter_mut() {
+                let (id, ptr) = (btn.id(), btn.as_ptr_mut());
+                self.ui_context.register_widget(id, ptr);
+            }
+        }
         self.needs_rebuild = false;
         self.last_scroll_y = self.scroll_y;
         self.ui_context.clear_dirty();

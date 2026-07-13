@@ -482,10 +482,10 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 
 impl crate::pages::AppPage for ProcessesState {
     // Sections: [Processes, Services]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn WidgetHost + 'static)>> {
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
             Vec::new(),
-            vec![self.services_search_box.as_ptr_mut()],
+            vec![self.services_search_box.id()],
         ]
     }
 
@@ -505,8 +505,15 @@ impl crate::pages::AppPage for ProcessesState {
 
     fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
 
-    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn WidgetHost + 'static)> {
-        self.service_items.iter_mut().map(|i| i.as_ptr_mut()).collect()
+    fn extra_dispatch_roots(&mut self) -> Vec<cce_ui::widget::WidgetId> {
+        self.service_items.iter().map(|i| i.id()).collect()
+    }
+
+    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        for i in self.service_items.iter_mut() {
+            let (id, ptr) = (i.id(), i.as_ptr_mut());
+            ctx.register_widget(id, ptr);
+        }
     }
 
     fn handle_pointer_move(

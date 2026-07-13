@@ -310,7 +310,7 @@ pub fn update(state: &mut StorageState, msg: StorageMessage) {
 
 impl crate::pages::AppPage for StorageState {
     // Sections: [Local Storage, Memory, Full System Backup] — no evented widgets.
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![Vec::new(), Vec::new(), Vec::new()]
     }
 

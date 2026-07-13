@@ -820,17 +820,26 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
 impl crate::pages::AppPage for SystemState {
     // Sections: [System, System Actions, CPU, GPU, CPU Governor, GPU Power, Battery]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
-        use cce_ui::widget::WidgetHost;
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
             Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            vec![self.cpu_gov_menu.as_ptr_mut()],
-            vec![self.gpu_gov_menu.as_ptr_mut()],
+            vec![self.cpu_gov_menu.id()],
+            vec![self.gpu_gov_menu.id()],
             Vec::new(),
         ]
+    }
+
+    // The governor menus draw custom (no `render_widget` registration side effect);
+    // the id-rooted router needs them resolvable.
+    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        use cce_ui::widget::WidgetHost;
+        let (id, ptr) = (self.cpu_gov_menu.id(), self.cpu_gov_menu.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.gpu_gov_menu.id(), self.gpu_gov_menu.as_ptr_mut());
+        ctx.register_widget(id, ptr);
     }
 
     fn view(

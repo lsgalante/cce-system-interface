@@ -405,27 +405,26 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
 impl crate::pages::AppPage for AudioState {
     // Sections: [Output, Input] — only active devices' controls, spinbox before slider
     // per device (the old link order).
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
-        use cce_ui::widget::WidgetHost;
-        let mut output: Vec<*mut (dyn WidgetHost + 'static)> = Vec::new();
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
+        let mut output: Vec<cce_ui::widget::WidgetId> = Vec::new();
         for (i, sink) in self.sinks.iter().enumerate() {
             if sink.active {
                 if let Some(sb) = self.sink_spinboxes.get_mut(i) {
-                    output.push(sb.as_ptr_mut());
+                    output.push(sb.id());
                 }
                 if let Some(sl) = self.sink_sliders.get_mut(i) {
-                    output.push(sl.as_ptr_mut());
+                    output.push(sl.id());
                 }
             }
         }
-        let mut input: Vec<*mut (dyn WidgetHost + 'static)> = Vec::new();
+        let mut input: Vec<cce_ui::widget::WidgetId> = Vec::new();
         for (i, src) in self.sources.iter().enumerate() {
             if src.active {
                 if let Some(sb) = self.source_spinboxes.get_mut(i) {
-                    input.push(sb.as_ptr_mut());
+                    input.push(sb.id());
                 }
                 if let Some(sl) = self.source_sliders.get_mut(i) {
-                    input.push(sl.as_ptr_mut());
+                    input.push(sl.id());
                 }
             }
         }

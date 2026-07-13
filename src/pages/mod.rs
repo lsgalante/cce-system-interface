@@ -64,7 +64,7 @@ pub trait AppPage {
     /// outer length drives the `sec_focused` flags) — holding the widgets that used to
     /// hang under that section's container, in the old link order. The widgets dispatch
     /// directly as propagate roots and the groups drive the app-side ctrl-nav.
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>>;
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>>;
 
     fn view(
         &mut self,
@@ -101,9 +101,15 @@ pub trait AppPage {
     /// Extra top-level event-dispatch roots beyond the section containers: the per-row
     /// widgets that used to hang under a `List`'s ScrollBox (dissolved — the rows now
     /// dispatch directly; `Adapted` hit-gates presses/wheel so misses fall through).
-    fn extra_dispatch_roots(&mut self) -> Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)> {
+    fn extra_dispatch_roots(&mut self) -> Vec<cce_ui::widget::WidgetId> {
         Vec::new()
     }
+
+    /// Refresh the extra dispatch roots' registrations (id-rooted router: roots resolve
+    /// through the registry). The row Vecs are rebuilt on data refresh, so pages
+    /// re-register the current allocations right before each dispatch — the same
+    /// liveness contract the pointer-rooted dispatch had. Default no-op.
+    fn register_extra_dispatch_roots(&mut self, _ctx: &mut cce_ui::context::UiContext) {}
 
     /// The dissolved inner lists' wheel (`ScrollBox::mouse_wheel`, hit-scoped). Runs after
     /// the widget dispatch and before the manual whole-page scroll fallback — the legacy

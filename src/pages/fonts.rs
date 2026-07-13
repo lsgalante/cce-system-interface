@@ -1,6 +1,6 @@
 use std::fs;
 use cce_ui::layout::LayoutStrategy;
-use cce_ui::widget::{TextBox, Dropdown, Spinbox, WidgetHost};
+use cce_ui::widget::{TextBox, Dropdown, Spinbox};
 use crate::app::{PageContent, AppAction};
 use crate::pages::AppPage;
 
@@ -98,15 +98,46 @@ impl Default for FontsState {
 
 impl AppPage for FontsState {
     // Sections: [Preferred Fonts, Borders, Status Interface, Fuzzel, Terminal]
-    fn section_widgets(&mut self) -> Vec<Vec<*mut (dyn cce_ui::widget::WidgetHost + 'static)>> {
-        use cce_ui::widget::WidgetHost;
+    fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
-            vec![self.sans_box.as_ptr_mut(), self.serif_box.as_ptr_mut(), self.mono_box.as_ptr_mut()],
-            vec![self.borders_menu.as_ptr_mut(), self.borders_box.as_ptr_mut()],
-            vec![self.status_menu.as_ptr_mut(), self.status_box.as_ptr_mut()],
-            vec![self.fuzzel_menu.as_ptr_mut(), self.fuzzel_box.as_ptr_mut(), self.fuzzel_size_box.as_ptr_mut()],
-            vec![self.terminal_menu.as_ptr_mut(), self.terminal_box.as_ptr_mut(), self.terminal_size_box.as_ptr_mut()],
+            vec![self.sans_box.id(), self.serif_box.id(), self.mono_box.id()],
+            vec![self.borders_menu.id(), self.borders_box.id()],
+            vec![self.status_menu.id(), self.status_box.id()],
+            vec![self.fuzzel_menu.id(), self.fuzzel_box.id(), self.fuzzel_size_box.id()],
+            vec![self.terminal_menu.id(), self.terminal_box.id(), self.terminal_size_box.id()],
         ]
+    }
+
+    // Not every section widget passes through `render_widget`'s registration side
+    // effect (the menus draw custom); the id-rooted router needs them all resolvable.
+    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
+        use cce_ui::widget::WidgetHost;
+        let (id, ptr) = (self.sans_box.id(), self.sans_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.serif_box.id(), self.serif_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.mono_box.id(), self.mono_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.borders_menu.id(), self.borders_menu.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.borders_box.id(), self.borders_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.status_menu.id(), self.status_menu.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.status_box.id(), self.status_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.fuzzel_menu.id(), self.fuzzel_menu.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.fuzzel_box.id(), self.fuzzel_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.fuzzel_size_box.id(), self.fuzzel_size_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.terminal_menu.id(), self.terminal_menu.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.terminal_box.id(), self.terminal_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
+        let (id, ptr) = (self.terminal_size_box.id(), self.terminal_size_box.as_ptr_mut());
+        ctx.register_widget(id, ptr);
     }
 
     fn view(
