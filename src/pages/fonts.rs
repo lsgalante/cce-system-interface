@@ -111,7 +111,6 @@ impl AppPage for FontsState {
     // Not every section widget passes through `render_widget`'s registration side
     // effect (the menus draw custom); the id-rooted router needs them all resolvable.
     fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        use cce_ui::widget::WidgetHost;
         let (id, ptr) = (self.sans_box.id(), self.sans_box.as_ptr_mut());
         ctx.register_widget(id, ptr);
         let (id, ptr) = (self.serif_box.id(), self.serif_box.as_ptr_mut());

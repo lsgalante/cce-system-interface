@@ -835,7 +835,6 @@ impl crate::pages::AppPage for SystemState {
     // The governor menus draw custom (no `render_widget` registration side effect);
     // the id-rooted router needs them resolvable.
     fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        use cce_ui::widget::WidgetHost;
         let (id, ptr) = (self.cpu_gov_menu.id(), self.cpu_gov_menu.as_ptr_mut());
         ctx.register_widget(id, ptr);
         let (id, ptr) = (self.gpu_gov_menu.id(), self.gpu_gov_menu.as_ptr_mut());
