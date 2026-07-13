@@ -29,8 +29,6 @@ pub struct AudioState {
     pub source_spinboxes: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>,
     pub sink_sliders: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
     pub source_sliders: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
-    pub sink_dragging: Option<usize>,
-    pub source_dragging: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,8 +128,6 @@ pub async fn fetch_audio_state() -> AudioState {
         source_spinboxes: Vec::new(),
         sink_sliders: Vec::new(),
         source_sliders: Vec::new(),
-        sink_dragging: None,
-        source_dragging: None,
     }
 }
 
@@ -466,82 +462,28 @@ impl crate::pages::AppPage for AudioState {
         for (i, slider) in self.sink_sliders.iter_mut().enumerate() {
             if slider.take_change() {
                 let id = self.sinks[i].id;
+                // Keep the paired spinbox display in step, as the old drag path did.
+                if let Some(sb) = self.sink_spinboxes.get_mut(i) {
+                    sb.value = slider.value();
+                }
                 actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, slider.value() as f32 / 100.0)));
             }
         }
         for (i, slider) in self.source_sliders.iter_mut().enumerate() {
             if slider.take_change() {
                 let id = self.sources[i].id;
+                if let Some(sb) = self.source_spinboxes.get_mut(i) {
+                    sb.value = slider.value();
+                }
                 actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, slider.value() as f32 / 100.0)));
             }
         }
     }
 
-    fn handle_pointer_move(
-        &mut self,
-        lx: f32,
-        ly: f32,
-        actions: &mut Vec<crate::app::AppAction>,
-        _ctx: &mut cce_ui::context::UiContext,
-    ) -> bool {
-        if let Some(idx) = self.sink_dragging {
-            if let Some(slider) = self.sink_sliders.get_mut(idx) {
-                if slider.drag_update(lx, ly) {
-                    let id = self.sinks[idx].id;
-                    let val = slider.inner().value();
-                    if idx < self.sink_spinboxes.len() {
-                        self.sink_spinboxes[idx].value = (val * 100.0).round() as i32;
-                    }
-                    actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, val)));
-                    return true;
-                }
-            }
-        } else if let Some(idx) = self.source_dragging {
-            if let Some(slider) = self.source_sliders.get_mut(idx) {
-                if slider.drag_update(lx, ly) {
-                    let id = self.sources[idx].id;
-                    let val = slider.inner().value();
-                    if idx < self.source_spinboxes.len() {
-                        self.source_spinboxes[idx].value = (val * 100.0).round() as i32;
-                    }
-                    actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, val)));
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    fn handle_pointer_down(&mut self, _lx: f32, _ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
-        for (i, s) in self.sink_sliders.iter().enumerate() {
-            if s.is_dragging() {
-                self.sink_dragging = Some(i);
-                return true;
-            }
-        }
-        for (i, s) in self.source_sliders.iter().enumerate() {
-            if s.is_dragging() {
-                self.source_dragging = Some(i);
-                return true;
-            }
-        }
-        false
-    }
-
-    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
-        let mut any = false;
-        if let Some(idx) = self.sink_dragging {
-            self.sink_sliders[idx].drag_end();
-            self.sink_dragging = None;
-            any = true;
-        }
-        if let Some(idx) = self.source_dragging {
-            self.source_sliders[idx].drag_end();
-            self.source_dragging = None;
-            any = true;
-        }
-        any
-    }
+    // The pointer drag hooks are GONE (6bd routed events): slider drags ride the
+    // router's drag-target machinery — presses were already routed through the section
+    // roots, and DragUpdate/DragEnd now reach the sliders the same way. Value changes
+    // surface through the take_change drain above.
 }
 
 #[cfg(test)]
@@ -575,8 +517,6 @@ mod tests {
                 Box::new(Slider::new()),
             ],
             source_sliders: vec![],
-            sink_dragging: None,
-            source_dragging: None,
         };
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());

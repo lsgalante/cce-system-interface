@@ -14,8 +14,10 @@ impl SystemInterface {
 
         let sh_logical = self.height as f32 / s;
         if self.search_open && ly_no_scroll >= (sh_logical - 42.0) {
-            let changed = self.search_box.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context);
-            if changed {
+            // Routed (6bd): chrome coords, no scroll offset — same as the direct call.
+            let ev = cce_ui::widget::Event::PointerMove { x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
+            let sb = self.search_box.as_ptr_mut();
+            if self.ui_context.propagate_event(&ev, sb) {
                 self.needs_rebuild = true;
             }
             return true;
@@ -33,8 +35,12 @@ impl SystemInterface {
         let ly = self.cursor_y / s + self.scroll_y;
         cce_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
-        if self.page_dropdown.cursor_moved(lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
-            changed = true;
+        {
+            let ev = cce_ui::widget::Event::PointerMove { x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
+            let dd = self.page_dropdown.as_ptr_mut();
+            if self.ui_context.propagate_event(&ev, dd) {
+                changed = true;
+            }
         }
 
         // Drag updates are high-priority overrides
@@ -52,6 +58,16 @@ impl SystemInterface {
             let event = cce_ui::widget::Event::PointerMove { x: lx, y: ly, local_x: lx, local_y: ly };
             if self.dispatch_page_event(&event) {
                 changed = true;
+            }
+            // Routed drags (6bd): a DragUpdate delivered inside the dispatch surfaces as
+            // widget take_change — drain and act per move, as the old page drag hooks did.
+            let mut move_actions = Vec::new();
+            self.propagate_widget_changes(&mut move_actions);
+            if !move_actions.is_empty() {
+                changed = true;
+                for action in move_actions {
+                    self.handle_action(&action);
+                }
             }
         }
 
@@ -80,8 +96,9 @@ impl SystemInterface {
 
         let sh_logical = self.height as f32 / s;
         if self.search_open && ly_no_scroll >= (sh_logical - 42.0) {
-            let handled = self.search_box.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context);
-            if handled {
+            let ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
+            let sb = self.search_box.as_ptr_mut();
+            if self.ui_context.propagate_event(&ev, sb) {
                 self.needs_rebuild = true;
             }
             return true;
@@ -109,7 +126,9 @@ impl SystemInterface {
             }
         }
 
-        if self.page_dropdown.mouse_input(button, state, lx_no_scroll, ly_no_scroll, &mut self.ui_context) {
+        let dd_ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
+        let dd_ptr = self.page_dropdown.as_ptr_mut();
+        if self.ui_context.propagate_event(&dd_ev, dd_ptr) {
             if self.page_dropdown.take_change() {
                 let idx = self.page_dropdown.selected;
                 if idx < Page::ALL.len() {
@@ -133,10 +152,14 @@ impl SystemInterface {
 
         let mut button_handled = false;
         let mut clicked_action = None;
-        for (btn, action) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
-            if btn.mouse_input(button, state, phys_x, phys_y, &mut self.ui_context) {
+        let btn_ev = cce_ui::widget::Event::MouseButton { button, state, x: phys_x, y: phys_y, local_x: phys_x, local_y: phys_y };
+        let btn_ptrs: Vec<_> = self.page_buttons[self.scrollable_buttons_start_idx..].iter_mut().map(|(b, _)| b.as_ptr_mut()).collect();
+        for ptr in btn_ptrs {
+            if self.ui_context.propagate_event(&btn_ev, ptr) {
                 button_handled = true;
             }
+        }
+        for (btn, action) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
             if btn.take_click() {
                 clicked_action = Some(action.clone());
                 button_handled = true;
@@ -279,7 +302,7 @@ impl SystemInterface {
             event,
             Event::PointerMove { .. } | Event::MouseButton { .. } | Event::MouseWheel { .. }
         );
-        if is_pointer_event && !self.page_scroll_bar.dragging {
+        if is_pointer_event && !self.page_scroll_bar.dragging && !self.ui_context.is_dragging {
             if let Event::PointerMove { x, y, .. }
             | Event::MouseButton { x, y, .. }
             | Event::MouseWheel { x, y, .. } = event
