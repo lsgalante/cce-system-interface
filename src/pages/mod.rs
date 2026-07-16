@@ -2,7 +2,6 @@ pub mod audio;
 pub mod network;
 pub mod storage;
 pub mod system_info;
-pub mod keybindings;
 pub mod processes;
 pub mod fonts;
 pub mod accounts;
