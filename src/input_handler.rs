@@ -3,6 +3,30 @@ use cce_settings::app::AppAction;
 use cce_settings::pages::Page;
 use cce_ui::widget::WidgetHost;
 
+/// App shortcuts, resolved once per process from input.kdl
+/// (`cce-system-settings` domain → `cce-ui` domain).
+struct SettingsKeys {
+    open_search: String,
+    focus_next: String,
+    focus_prev: String,
+    focus_ascend: String,
+    focus_descend: String,
+}
+
+fn settings_keys() -> &'static SettingsKeys {
+    static KEYS: std::sync::OnceLock<SettingsKeys> = std::sync::OnceLock::new();
+    KEYS.get_or_init(|| {
+        let get = cce_ui::input::app_chord;
+        SettingsKeys {
+            open_search: get("open_search", "/"),
+            focus_next: get("focus_next", "ctrl+j"),
+            focus_prev: get("focus_prev", "ctrl+k"),
+            focus_ascend: get("focus_ascend", "ctrl+u"),
+            focus_descend: get("focus_descend", "ctrl+i"),
+        }
+    })
+}
+
 impl SystemInterface {
 
     pub(crate) fn handle_cursor_moved(&mut self, x: f32, y: f32) -> bool {
@@ -407,30 +431,27 @@ impl SystemInterface {
 
         if !self.search_open && !is_text_box_focused {
             if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
-                if let cce_ui::widget::Key::Character(ref c) = event.logical_key {
-                    if c == "/" {
-                        self.search_open = true;
-                        self.search_box.set_value_string("");
-                        self.search_query.clear();
-                        cce_ui::widget::WidgetHost::focus(&mut self.search_box);
-                        self.ui_context.set_focused(&mut self.search_box);
-                        self.needs_rebuild = true;
-                        return true;
-                    }
+                if cce_ui::widget::match_key_shortcut(event, &settings_keys().open_search) {
+                    self.search_open = true;
+                    self.search_box.set_value_string("");
+                    self.search_query.clear();
+                    cce_ui::widget::WidgetHost::focus(&mut self.search_box);
+                    self.ui_context.set_focused(&mut self.search_box);
+                    self.needs_rebuild = true;
+                    return true;
                 }
             }
         }
 
         if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
-            let (forward, backward, ascend, descend) = match (&event.logical_key, event.ctrl) {
-                (cce_ui::widget::Key::Character(c), true) => (
-                    c == "j" || c == "J",
-                    c == "k" || c == "K",
-                    c == "u" || c == "U",
-                    c == "i" || c == "I",
-                ),
-                _ => (false, false, false, false),
-            };
+            let keys = settings_keys();
+            let m = |chord: &str| cce_ui::widget::match_key_shortcut(event, chord);
+            let (forward, backward, ascend, descend) = (
+                m(&keys.focus_next),
+                m(&keys.focus_prev),
+                m(&keys.focus_ascend),
+                m(&keys.focus_descend),
+            );
             if forward || backward || ascend || descend {
                 // SectionContainer dissolved (Phase 6w): section-level focus is the
                 // app-side index, widget-level focus stays in the global focus module,
