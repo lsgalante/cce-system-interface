@@ -226,8 +226,11 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
     
     let (verifier, challenge) = generate_pkce();
     
+    // Mail scopes: these accounts feed cce-email's IMAP/SMTP (XOAUTH2 needs
+    // https://mail.google.com/). The old request asked for cloud-platform/
+    // cclog/aicode scopes — tokens Gmail rejects with AUTHENTICATIONFAILED.
     let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fmail.google.com%2F+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
         client_config.client_id,
         challenge
     );
@@ -319,25 +322,6 @@ pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: ca
                                     client_id: Some(client_config.client_id.clone()),
                                     client_secret: Some(client_config.client_secret.clone()),
                                 };
-                                
-                                // Save standard Google Application Default Credentials (ADC)
-                                if !refresh_token.is_empty() {
-                                    if let Ok(home) = std::env::var("HOME") {
-                                        let adc_path = std::path::PathBuf::from(home).join(".config/gcloud/application_default_credentials.json");
-                                        if let Some(parent) = adc_path.parent() {
-                                            let _ = std::fs::create_dir_all(parent);
-                                        }
-                                        let adc_json = serde_json::json!({
-                                            "client_id": client_config.client_id,
-                                            "client_secret": client_config.client_secret,
-                                            "refresh_token": refresh_token,
-                                            "type": "authorized_user"
-                                        });
-                                        if let Ok(content) = serde_json::to_string_pretty(&adc_json) {
-                                            let _ = std::fs::write(adc_path, content);
-                                        }
-                                    }
-                                }
                                 
                                 let _ = sender.send(AppAction::Accounts(AccountsMessage::GoogleLoginSuccess(new_acc)));
                                 return;
@@ -579,8 +563,9 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
             } else if state.editing_oauth_creds {
                 stack.context.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
 
-                stack.context.text("Configures client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
-                stack.context.text("Required: Gmail API enabled & redirect URI set to http://127.0.0.1:8080", 12.0, 0.0, 11.0, TEXT_DIM);
+                stack.context.text("Client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
+                stack.context.text("Use a 'Desktop app' OAuth client with the Gmail API enabled —", 12.0, 0.0, 11.0, TEXT_DIM);
+                stack.context.text("loopback redirects (http://localhost:*) are then allowed automatically.", 12.0, 0.0, 11.0, TEXT_DIM);
 
                 // Client ID textbox
                 state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
@@ -740,6 +725,10 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                     state.accounts[0].is_default = true;
                 }
                 save_accounts(&state.accounts);
+                // Drop cce-email's cached mail for the account too.
+                let safe_email = deleted.email.replace('@', "_").replace('.', "_");
+                let cache = cce_ui::config::cce_config_dir().join(format!("emails_{}.json", safe_email));
+                let _ = std::fs::remove_file(cache);
                 state.selected_idx = if state.accounts.is_empty() { None } else { Some(0) };
                 state.status_msg = Some("Account deleted successfully!".to_string());
             }
