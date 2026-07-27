@@ -648,6 +648,19 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
     final_pc
 }
 
+/// A TextBox's live contents: the in-progress edit buffer while the box is
+/// still focused, the committed text otherwise. Reading `.text` alone drops
+/// whatever was typed into the last-focused field (its buffer only commits on
+/// FocusOut), which made Save fail with "All fields must be filled!" unless
+/// the user happened to click elsewhere first.
+fn live_text(tb: &cce_ui::widget::Adapted<TextBox>) -> String {
+    if tb.editing {
+        tb.edit_buffer.trim().to_string()
+    } else {
+        tb.text.trim().to_string()
+    }
+}
+
 pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
     match msg {
         AccountsMessage::Refreshed(accs) => {
@@ -683,14 +696,29 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             state.selected_idx = if state.accounts.is_empty() { None } else { Some(0) };
         }
         AccountsMessage::AddAccountSave => {
-            let email = state.email_box.text.trim().to_string();
-            let password = state.password_box.text.trim().to_string();
-            let imap = state.imap_box.text.trim().to_string();
-            let smtp = state.smtp_box.text.trim().to_string();
+            let email = live_text(&state.email_box);
+            let password = live_text(&state.password_box);
+            let imap = live_text(&state.imap_box);
+            let smtp = live_text(&state.smtp_box);
 
             if email.is_empty() || password.is_empty() || imap.is_empty() || smtp.is_empty() {
                 state.status_msg = Some("All fields must be filled!".to_string());
                 return;
+            }
+
+            // The password goes to the Secret Service under the SAME entry
+            // cce-email resolves (service "cce-email", account = address) and
+            // the on-disk field stays blank; plaintext-on-disk only as the
+            // fallback when no keyring answers (cce-email migrates it later).
+            let mut stored_password = password.clone();
+            let mut in_keyring = false;
+            if password != "mock_password" {
+                if let Ok(entry) = keyring::Entry::new("cce-email", &email) {
+                    if entry.set_password(&password).is_ok() {
+                        stored_password = String::new();
+                        in_keyring = true;
+                    }
+                }
             }
 
             let new_acc = AccountInfo {
@@ -698,7 +726,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                 imap,
                 smtp,
                 is_default: state.accounts.is_empty(),
-                password,
+                password: stored_password,
                 is_oauth: false,
                 access_token: None,
                 refresh_token: None,
@@ -716,7 +744,11 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             save_accounts(&state.accounts);
             state.adding_new = false;
             state.selected_idx = state.accounts.iter().position(|a| a.email == email);
-            state.status_msg = Some("Account saved successfully!".to_string());
+            state.status_msg = Some(if in_keyring {
+                "Account saved (password in keyring)".to_string()
+            } else {
+                "Account saved (keyring unavailable — password stored in file)".to_string()
+            });
         }
         AccountsMessage::DeleteAccount(idx) => {
             if idx < state.accounts.len() {
@@ -725,7 +757,10 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                     state.accounts[0].is_default = true;
                 }
                 save_accounts(&state.accounts);
-                // Drop cce-email's cached mail for the account too.
+                // Drop the keyring password and cce-email's cached mail too.
+                if let Ok(entry) = keyring::Entry::new("cce-email", &deleted.email) {
+                    let _ = entry.delete_credential();
+                }
                 let safe_email = deleted.email.replace('@', "_").replace('.', "_");
                 let cache = cce_ui::config::cce_config_dir().join(format!("emails_{}.json", safe_email));
                 let _ = std::fs::remove_file(cache);
@@ -776,8 +811,8 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             state.oauth_client_secret_box.edit_buffer = config.client_secret;
         }
         AccountsMessage::EditOAuthCredsSave => {
-            let client_id = state.oauth_client_id_box.text.trim().to_string();
-            let client_secret = state.oauth_client_secret_box.text.trim().to_string();
+            let client_id = live_text(&state.oauth_client_id_box);
+            let client_secret = live_text(&state.oauth_client_secret_box);
             if client_id.is_empty() || client_secret.is_empty() {
                 state.status_msg = Some("Both Client ID and Client Secret are required!".to_string());
                 return;
