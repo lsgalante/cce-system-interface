@@ -296,7 +296,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 height: (height - self.header_height - self.status_height
                     - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
             };
-            let r = 13.0f32;
+            let r = 20.0f32;
             let scroll_y = self.scroll_y;
             pc.clip(view, |pc| {
                 for &((cx, cy, cw, ch), tab) in &self.page_reliefs {
