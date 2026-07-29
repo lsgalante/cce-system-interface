@@ -183,23 +183,18 @@ impl SystemInterface {
 
             collect_window_child(&self.page_scroll_bar, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
 
-            // The dissolved status bar's slot in the child order.
-            let sb_y = logical_sh - self.status_height;
-            let sb_theme = cce_ui::colors::backplate_statusbar_color();
-            let sb_bg = if sb_theme[3] > 0.001 { sb_theme } else { cce_ui::color::STATUS_BG };
-            rounded.push((sb_bg, 0.0, sb_y, logical_sw, self.status_height, plate_radius, (false, false, true, true)));
+            // The status bar has no background of its own anymore: the beveled window
+            // plate shows through and display_list carves its recess (data-editor's
+            // with_recess idiom).
 
             collect_window_child(&self.page_dropdown, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
             if self.search_open {
                 collect_window_child(&self.search_box, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
             }
 
+            // The window plate itself is emitted by display_list as a beveled
+            // pc.plate() prim, under everything collected here.
             window_pc.rects.extend(plain);
-            let mut plate = cce_ui::color::to_linear([0x0a as f32 / 255.0, 0x1a as f32 / 255.0, 0x0e as f32 / 255.0, 1.0]);
-            if plate[3] > 0.001 {
-                plate[3] = cce_ui::color::active_backplate_opacity();
-            }
-            window_pc.rects.push((plate, 0.0, 0.0, logical_sw, logical_sh, plate_radius, (true, true, true, true)));
             window_pc.rects.extend(rounded);
             window_pc.texts.extend(wtexts);
         }

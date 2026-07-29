@@ -252,6 +252,26 @@ impl cce_ui::engine::Application for SystemInterface {
         }
         use cce_ui::scene::layout::Rect;
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
+
+        // One glass slab (data-editor's idiom): the beveled window plate, with the
+        // status bar carved into it as a step — everything else paints on top.
+        {
+            let mut plate = cce_ui::color::to_linear([0x0a as f32 / 255.0, 0x1a as f32 / 255.0, 0x0e as f32 / 255.0, 1.0]);
+            if plate[3] > 0.001 {
+                plate[3] = cce_ui::color::active_backplate_opacity();
+            }
+            let r = 12.0f32;
+            pc.plate(Rect { x: 0.0, y: 0.0, width, height }, (r, r, r, r), plate, cce_ui::layout::bevel_width());
+            let sb_h = self.status_height;
+            let depth = cce_ui::layout::bar_wall_width().min(sb_h * 0.6);
+            pc.recess_edges(
+                Rect { x: 0.0, y: height - sb_h, width, height: sb_h },
+                (0.0, 0.0, 0.0, 0.0),
+                depth,
+                (true, false, false, false),
+            );
+        }
+
         for w in &self.widgets {
             let color = if w.hovering { w.hover_color } else { w.color };
             let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
