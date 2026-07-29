@@ -162,7 +162,6 @@ impl SystemInterface {
                     self.app.current_page = new_page;
                     self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
                     self.scroll_y = 0.0;
-                    self.update_status_text();
                 }
             }
             self.needs_rebuild = true;

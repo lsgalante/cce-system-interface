@@ -188,20 +188,6 @@ impl SystemInterface {
             let sb_theme = cce_ui::colors::backplate_statusbar_color();
             let sb_bg = if sb_theme[3] > 0.001 { sb_theme } else { cce_ui::color::STATUS_BG };
             rounded.push((sb_bg, 0.0, sb_y, logical_sw, self.status_height, plate_radius, (false, false, true, true)));
-            if !self.status_text.is_empty() {
-                let (_, sb_font_size) = cce_ui::layout::statusbar_font_parsed();
-                let sb_size = if sb_font_size > 0.0 { sb_font_size } else { 12.0 };
-                let c = cce_ui::colors::backplate_statusbar_text_color();
-                // Same u8 round-trip the legacy TextLabel path applied.
-                let sb_color = [
-                    ((c[0] * 255.0) as u8) as f32 / 255.0,
-                    ((c[1] * 255.0) as u8) as f32 / 255.0,
-                    ((c[2] * 255.0) as u8) as f32 / 255.0,
-                    1.0,
-                ];
-                let sb_text_y = cce_ui::layout::align_text_y(sb_y, self.status_height, sb_size, 0.0);
-                wtexts.push((self.status_text.clone(), sb_size, 12.0, sb_text_y, sb_color, None, Some([0.0, 0.0, logical_sw, logical_sh])));
-            }
 
             collect_window_child(&self.page_dropdown, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
             if self.search_open {
@@ -251,10 +237,8 @@ impl SystemInterface {
 
         // CSD Titlebar removed
 
-        eprintln!("WINDOW_PC_RECTS_LEN: {}", window_pc.rects.len());
         for pc_part in &[window_pc] {
-            for (idx, (c, x, y, w, h, r, corners)) in pc_part.rects.iter().enumerate() {
-                eprintln!("WINDOW_PC_RECT idx={}: color={:?}, x={}, y={}, w={}, h={}", idx, c, x, y, w, h);
+            for (c, x, y, w, h, r, corners) in pc_part.rects.iter() {
                 let wx = *x * s;
                 let wy = *y * s;
                 let ww = *w * s;
@@ -267,8 +251,7 @@ impl SystemInterface {
                     corners: *corners,
                 });
             }
-            for (idx, (t, size, x, y, tc, font_opt, bounds)) in pc_part.texts.iter().enumerate() {
-                eprintln!("WINDOW_PC_TEXT idx={}: text='{}', size={}, x={}, y={}, bounds={:?}", idx, t, size, x, y, bounds);
+            for (t, size, x, y, tc, font_opt, bounds) in pc_part.texts.iter() {
                 texts.push((t.clone(), *size, *x, *y, *tc, font_opt.clone(), *bounds));
             }
         }
@@ -320,7 +303,6 @@ impl SystemInterface {
             max_y = max_y.max(base.y + base.h);
         }
         self.max_scroll_y = (max_y - lch).max(0.0);
-        eprintln!("SCROLL_DEBUG: max_y={}, lch={}, max_scroll_y={}, scroll_y={}", max_y, lch, self.max_scroll_y, self.scroll_y);
         static mut FRAME_COUNT: usize = 0;
         unsafe {
             FRAME_COUNT += 1;
@@ -339,8 +321,7 @@ impl SystemInterface {
 
         let scroll_offset_y = self.scroll_y;
 
-        for (idx, (c, x, y, w, h, r, corners)) in pc.rects.iter().enumerate() {
-            eprintln!("PAGE_PC_RECT idx={}: color={:?}, x={}, y={}, w={}, h={}", idx, c, x, y, w, h);
+        for (c, x, y, w, h, r, corners) in pc.rects.iter() {
             let wx = *x * s;
             let mut wy = (*y - scroll_offset_y) * s;
             let ww = *w * s;
@@ -367,8 +348,7 @@ impl SystemInterface {
                 corners: *corners,
             });
         }
-        for (idx, (t, size, x, y, tc, font_opt, bounds)) in pc.texts.iter().enumerate() {
-            eprintln!("PAGE_PC_TEXT idx={}: text='{}', size={}, x={}, y={}, bounds={:?}", idx, t, size, x, y, bounds);
+        for (t, size, x, y, tc, font_opt, bounds) in pc.texts.iter() {
             let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
                 [bl, bt - scroll_offset_y, br, bb - scroll_offset_y]
             });

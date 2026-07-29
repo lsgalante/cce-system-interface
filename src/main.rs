@@ -91,8 +91,7 @@ struct SystemInterface {
     page_scroll_bar: cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>,
     content_h: f32,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
-    // bar are emitted as tuples in rebuild_layout; this is the bar's text.
-    status_text: String,
+    // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -179,7 +178,6 @@ impl cce_ui::engine::Application for SystemInterface {
             page_dropdown,
             page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
-            status_text: String::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -194,8 +192,6 @@ impl cce_ui::engine::Application for SystemInterface {
                 .with_draw_bg_border(false),
         };
         this.app.system_info.sender = Some(this.sender.clone());
-
-        this.update_status_text();
 
         this.rebuild_layout(820.0, 680.0);
         this.needs_rebuild = true;
@@ -531,21 +527,6 @@ impl SystemInterface {
                 _ => pages::packages::update(&mut self.app.packages, m.clone()),
             },
         }
-    }
-
-    fn update_status_text(&mut self) {
-        let msg = match self.app.current_page {
-            Page::Accounts => "Accounts: Manage your online identities, keys, and credentials.",
-            Page::Audio => "Audio Settings: Configure volume levels, inputs, and sound options.",
-            Page::Fonts => "Fonts Settings: Adjust font family preferences, typography, and scaling.",
-            Page::Packages => "Package Manager: Search, install, and update system packages.",
-            Page::Processes => "System Monitor: Inspect running tasks, system resources, and services.",
-            Page::Notifications => "Notifications: Configure system notifications, sound, and duration.",
-            Page::Radios => "Network Settings: Configure wireless networks, radios, and connections.",
-            Page::Storage => "Storage Settings: Manage local disks, partition structures, and backup runs.",
-            Page::System => "System Settings: System properties, power management, and update checks.",
-        };
-        self.status_text = msg.to_string();
     }
 
 }
