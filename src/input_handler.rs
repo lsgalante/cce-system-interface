@@ -11,6 +11,8 @@ struct SettingsKeys {
     focus_prev: String,
     focus_ascend: String,
     focus_descend: String,
+    page_next: String,
+    page_prev: String,
 }
 
 fn settings_keys() -> &'static SettingsKeys {
@@ -23,6 +25,8 @@ fn settings_keys() -> &'static SettingsKeys {
             focus_prev: get("focus_prev", "ctrl+k"),
             focus_ascend: get("focus_ascend", "ctrl+u"),
             focus_descend: get("focus_descend", "ctrl+i"),
+            page_next: get("page_next", "pagedown"),
+            page_prev: get("page_prev", "pageup"),
         }
     })
 }
@@ -439,6 +443,21 @@ impl SystemInterface {
                     self.needs_rebuild = true;
                     return true;
                 }
+
+                let next = cce_ui::widget::match_key_shortcut(event, &settings_keys().page_next);
+                let prev = cce_ui::widget::match_key_shortcut(event, &settings_keys().page_prev);
+                if next || prev {
+                    let n = Page::ALL.len();
+                    let cur = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+                    let idx = if next { (cur + 1) % n } else { (cur + n - 1) % n };
+                    cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
+                    self.focused_section = None;
+                    self.app.current_page = Page::ALL[idx];
+                    self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
+                    self.scroll_y = 0.0;
+                    self.needs_rebuild = true;
+                    return true;
+                }
             }
         }
 
@@ -565,14 +584,10 @@ impl SystemInterface {
             };
             if over_page {
                 use cce_ui::widget::{Key, NamedKey};
-                let viewport_h = self.height as f32 - self.header_height - self.status_height
-                    - if self.search_open { 42.0 } else { 0.0 };
                 let old_scroll = self.scroll_y;
                 match &event.logical_key {
                     Key::Named(NamedKey::ArrowDown) => self.scroll_y = (self.scroll_y + 24.0).min(self.max_scroll_y),
                     Key::Named(NamedKey::ArrowUp) => self.scroll_y = (self.scroll_y - 24.0).max(0.0),
-                    Key::Named(NamedKey::PageDown) => self.scroll_y = (self.scroll_y + viewport_h).min(self.max_scroll_y),
-                    Key::Named(NamedKey::PageUp) => self.scroll_y = (self.scroll_y - viewport_h).max(0.0),
                     Key::Named(NamedKey::Home) => self.scroll_y = 0.0,
                     Key::Named(NamedKey::End) => self.scroll_y = self.max_scroll_y,
                     _ => {}
