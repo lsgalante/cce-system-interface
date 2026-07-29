@@ -257,6 +257,7 @@ impl SystemInterface {
 
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
+        self.page_reliefs = pc.reliefs.clone();
 
 
 

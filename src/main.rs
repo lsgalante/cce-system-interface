@@ -90,6 +90,9 @@ struct SystemInterface {
     // window pass reads last frame's value, exactly as the legacy Page did.
     page_scroll_bar: cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>,
     content_h: f32,
+    // Section wells: body box + title tab (page coords, pre-scroll) — carved by
+    // display_list.
+    page_reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
@@ -178,6 +181,7 @@ impl cce_ui::engine::Application for SystemInterface {
             page_dropdown,
             page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
+            page_reliefs: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -281,6 +285,105 @@ impl cce_ui::engine::Application for SystemInterface {
                 pc.quad(rect, color);
             }
         }
+        // The section wells, carved after the page's flat quads so the walls shade
+        // the fills they cross (the designer relief order), clipped to the page
+        // viewport so a scrolled-off well can't shade the status bar or search row.
+        if !self.page_reliefs.is_empty() {
+            let view = Rect {
+                x: self.sidebar_width,
+                y: self.header_height,
+                width: width - self.sidebar_width,
+                height: (height - self.header_height - self.status_height
+                    - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
+            };
+            let r = 13.0f32;
+            let scroll_y = self.scroll_y;
+            pc.clip(view, |pc| {
+                for &((cx, cy, cw, ch), tab) in &self.page_reliefs {
+                    let cy = cy - scroll_y;
+                    let depth = cce_ui::layout::bevel_width().min(ch * 0.2);
+                    match tab {
+                        Some((tx, ty, tw, th)) => {
+                            // The designer union carve: the title tab bottom-open, one
+                            // piece owning the whole right run so its corners are real
+                            // turns, a left piece carrying the left wall — pieces
+                            // extend past their interior seam by `depth` so the walls
+                            // crossfade there instead of notching — and the throat's
+                            // inside corner rounded by a concave fillet.
+                            let ty = ty - scroll_y;
+                            let rt = r.min(th * 0.45);
+                            let throat_r = tx + tw;
+                            let rho = 10.0f32; // designer SECTION_FILLET_R
+                            let body_lr = |x_run: f32, pc: &mut cce_ui::scene::paint::PaintCtx| {
+                                pc.recess_edges(
+                                    Rect { x: x_run, y: cy, width: cx + cw - x_run, height: ch },
+                                    (0.0, r, r, 0.0),
+                                    depth,
+                                    (true, true, true, false),
+                                );
+                                pc.recess_edges(
+                                    Rect { x: cx, y: cy, width: x_run + depth - cx, height: ch },
+                                    (0.0, 0.0, 0.0, r),
+                                    depth,
+                                    (false, false, true, true),
+                                );
+                            };
+                            if cx + cw > throat_r + 2.0 * rho {
+                                // Filleted throat: the tab's right wall ends at the
+                                // fillet's vertical tangent, a left-only bridge
+                                // carries the left wall across the fillet span.
+                                pc.recess_edges(
+                                    Rect { x: tx, y: ty, width: tw, height: (cy - rho) - ty + depth },
+                                    (rt, rt, 0.0, 0.0),
+                                    depth,
+                                    (true, true, false, true),
+                                );
+                                pc.recess_edges(
+                                    Rect { x: tx, y: cy - rho, width: tw, height: rho + depth },
+                                    (0.0, 0.0, 0.0, 0.0),
+                                    depth,
+                                    (false, false, false, true),
+                                );
+                                body_lr(throat_r + rho - depth, pc);
+                                pc.concave_fillet(throat_r + rho, cy - rho, rho, depth, std::f32::consts::FRAC_PI_2, false);
+                            } else if cx + cw > throat_r + 0.5 {
+                                // Too narrow for the fillet: the plain square throat.
+                                pc.recess_edges(
+                                    Rect { x: tx, y: ty, width: tw, height: (cy - ty) + depth },
+                                    (rt, rt, 0.0, 0.0),
+                                    depth,
+                                    (true, true, false, true),
+                                );
+                                body_lr(throat_r - depth, pc);
+                            } else {
+                                // The tab spans the body: no top wall at all.
+                                pc.recess_edges(
+                                    Rect { x: tx, y: ty, width: tw, height: (cy - ty) + depth },
+                                    (rt, rt, 0.0, 0.0),
+                                    depth,
+                                    (true, true, false, true),
+                                );
+                                pc.recess_edges(
+                                    Rect { x: cx, y: cy, width: cw, height: ch },
+                                    (0.0, 0.0, r, r),
+                                    depth,
+                                    (false, true, true, true),
+                                );
+                            }
+                        }
+                        None => {
+                            pc.recess_edges(
+                                Rect { x: cx, y: cy, width: cw, height: ch },
+                                (r, r, r, r),
+                                depth,
+                                (true, true, true, true),
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
         cce_ui::widget::hover_animation::post_render_check();
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);

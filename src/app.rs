@@ -98,6 +98,10 @@ pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
+    /// Section wells claimed via `RenderTarget::section_relief` — the body box
+    /// plus the title tab box, carved into the window plate by display_list as
+    /// recess prims (page coordinates, pre-scroll).
+    pub reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
     pub clip_stack: Vec<[f32; 4]>,
     pub measure_only: bool,
 }
@@ -108,6 +112,7 @@ impl Default for PageContent {
             rects: Vec::new(),
             texts: Vec::new(),
             buttons: Vec::new(),
+            reliefs: Vec::new(),
             clip_stack: Vec::new(),
             measure_only: true,
         }
@@ -116,7 +121,7 @@ impl Default for PageContent {
 
 impl PageContent {
     pub fn new() -> Self {
-        Self { rects: Vec::new(), texts: Vec::new(), buttons: Vec::new(), clip_stack: Vec::new(), measure_only: false }
+        Self { rects: Vec::new(), texts: Vec::new(), buttons: Vec::new(), reliefs: Vec::new(), clip_stack: Vec::new(), measure_only: false }
     }
 
     fn get_clipped_rect(&self, x: f32, y: f32, w: f32, h: f32) -> Option<(f32, f32, f32, f32)> {
@@ -244,6 +249,22 @@ impl RenderTarget for PageContent {
         if self.measure_only { return; }
         let cb = self.get_clipped_bounds(bounds);
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
+    }
+
+    fn section_relief_style(&self) -> bool {
+        cce_ui::layout::control_relief()
+    }
+
+    fn section_relief(&mut self, f: &cce_ui::layout::SectionFrame) -> bool {
+        // Focused sections keep the legacy green outline (the ctrl-nav feedback);
+        // relief-off styling keeps the outline everywhere.
+        if f.focused || !cce_ui::layout::control_relief() {
+            return false;
+        }
+        if !self.measure_only {
+            self.reliefs.push(((f.x, f.y, f.w, f.h), f.tab));
+        }
+        true
     }
 
     fn push_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
