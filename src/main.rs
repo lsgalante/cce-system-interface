@@ -658,6 +658,11 @@ fn main() {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let _guard = rt.enter();
 
+    // One gap everywhere: the wells fill their grid allocations, so the grid
+    // gap is the visual section gap — pin it to the page margin so
+    // section-to-section and section-to-plate-edge spacing match.
+    cce_ui::layout::set_grid_gap(cce_ui::layout::page_margin());
+
     let mut initial_page = Page::ALL[0];
 
 
