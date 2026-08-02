@@ -41,7 +41,7 @@ impl Default for ServicesState {
             services: Vec::new(),
             active_tab: ServiceTab::System,
             search_box: TextBox::new(String::new()).with_label("Filter Services"),
-            list: ScrollRegion::new(36.0, 6.0),
+            list: ScrollRegion::new(36.0, 6.0).with_frame(false),
             items: Vec::new(),
         }
     }
