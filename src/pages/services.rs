@@ -120,7 +120,9 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             let list_box_x = sec.left + 12.0;
             let list_box_y = sec.ay();
             let list_box_w = sec_w - 24.0;
-            let list_box_h = 360.0;
+            // Fill the page: the well's bottom wall lands at the page bottom,
+            // the list keeps a 12px inset above it.
+            let list_box_h = ((cy + ch) - 12.0 - list_box_y).max(120.0);
 
             // Filter services
             let query = if state.search_box.editing {
@@ -247,7 +249,9 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                 sec.pc.text("No services match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
             }
 
-            sec.content_y += list_box_h;
+            // End the section so the well's bottom wall sits 12px below the
+            // list (finish() places the wall at content_y + padding + 12).
+            sec.content_y = list_box_y + list_box_h + 12.0 - (sec.padding() + 12.0);
         }
     });
 

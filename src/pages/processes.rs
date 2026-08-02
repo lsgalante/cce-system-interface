@@ -73,7 +73,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let list_box_x = rx + inset;
             let list_box_y = sec.well_top() + inset;
             let list_box_w = sec.cw - 2.0 * inset;
-            let list_box_h = 400.0;
+            // Fill the page: the well's bottom wall lands at the page bottom,
+            // the list keeps its even inset inside the well.
+            let list_box_h = ((cy + ch) - inset - list_box_y).max(120.0);
 
             // Dissolved List (Phase 6v): scroll state + frame prims are app-owned. The
             // scrollable viewport starts below the header.
