@@ -117,12 +117,14 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
         if !state.loaded {
             sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
-            // Scrolling box configuration for process list
-            let list_box_x = rx + 12.0;
-            let list_box_y = sec.ay();
-            let list_box_w = sec.cw - 24.0;
+            // Scrolling box configuration for process list: one even inset
+            // between the list and the well's walls on all four sides.
+            let inset = 12.0;
+            let list_box_x = rx + inset;
+            let list_box_y = sec.well_top() + inset;
+            let list_box_w = sec.cw - 2.0 * inset;
             let list_box_h = 400.0;
-            
+
             // Dissolved List (Phase 6v): scroll state + frame prims are app-owned. The
             // scrollable viewport starts below the header.
             let header_h = 22.0;
@@ -130,8 +132,8 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             state.cpu_list.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - 6.0);
             state.cpu_list.push_prims(sec.pc);
 
-            // Header for process list columns (drawn static on top of the list background)
-            sec.pc.rect([0.12, 0.12, 0.16, 0.5], list_box_x + 1.0, list_box_y + 1.0, list_box_w - 2.0, header_h);
+            // Header row is background-less (the well shows through); only the
+            // divider separates it from the rows.
             sec.pc.rect([0.18, 0.18, 0.24, 1.0], list_box_x + 1.0, list_box_y + header_h, list_box_w - 2.0, 1.0); // Divider
 
             sec.pc.text("PID", list_box_x + 12.0, list_box_y + 5.0, 11.0, [0.53, 0.53, 0.60, 1.0]);
@@ -168,7 +170,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 sec.pc.text("No active processes", list_box_x + 12.0, list_box_y + header_h + 16.0, 12.0, TEXT_DIM);
             }
 
-            sec.content_y += list_box_h;
+            // End the section so the well's bottom wall sits `inset` below the
+            // list (finish() places the wall at content_y + padding + 12).
+            sec.content_y = list_box_y + list_box_h + inset - (sec.padding() + 12.0);
         }
     });
 
