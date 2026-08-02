@@ -44,7 +44,7 @@ impl Default for ProcessesState {
         Self {
             loaded: false,
             processes: Vec::new(),
-            cpu_list: ScrollRegion::new(24.0, 2.0),
+            cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
 
             services_loaded: false,
             services: Vec::new(),
@@ -93,7 +93,7 @@ pub async fn fetch_processes_state() -> ProcessesState {
     ProcessesState {
         loaded: true,
         processes,
-        cpu_list: ScrollRegion::new(24.0, 2.0),
+        cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
         services_loaded: false,
         services: Vec::new(),
         services_active_tab: ServiceTab::System,
@@ -121,7 +121,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let list_box_x = rx + 12.0;
             let list_box_y = sec.ay();
             let list_box_w = sec.cw - 24.0;
-            let list_box_h = 220.0;
+            let list_box_h = 400.0;
             
             // Dissolved List (Phase 6v): scroll state + frame prims are app-owned. The
             // scrollable viewport starts below the header.

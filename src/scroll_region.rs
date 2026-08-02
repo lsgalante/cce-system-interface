@@ -32,6 +32,9 @@ pub struct ScrollRegion {
     /// Local stand-in for the legacy global focus flag (`ScrollBox::focus()` on any press
     /// inside the frame): set on a press that hits the region, cleared on one that misses.
     pub focused: bool,
+    /// Draw the border + background plate in `push_prims`. Off = frameless: rows
+    /// sit directly on the window plate (the scrollbar still draws).
+    pub draw_frame: bool,
 }
 
 impl ScrollRegion {
@@ -52,7 +55,13 @@ impl ScrollRegion {
             drag_offset_y: 0.0,
             hovered: false,
             focused: false,
+            draw_frame: true,
         }
+    }
+
+    pub fn with_frame(mut self, draw_frame: bool) -> Self {
+        self.draw_frame = draw_frame;
+        self
     }
 
     pub fn set_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
@@ -222,25 +231,27 @@ impl ScrollRegion {
     /// The legacy frame, single-drawn: 1px rounded border (focus/hover tinted, from
     /// `List::solid_border`), inset rounded bg, then the scrollbar track and thumb ON TOP.
     pub fn push_prims(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
-        let radius = cce_ui::layout::list_corner_radius();
-        let border_color = if self.focused {
-            [0.30, 0.50, 0.32, 1.0]
-        } else if self.hovered {
-            [0.25, 0.25, 0.35, 1.0]
-        } else {
-            [0.18, 0.18, 0.24, 1.0]
-        };
-        let all = (true, true, true, true);
-        pc.rect_with_radius_corners(border_color, self.x, self.y, self.w, self.h, radius, all);
-        pc.rect_with_radius_corners(
-            cce_ui::color::list_bg_color(),
-            self.x + 1.0,
-            self.y + 1.0,
-            self.w - 2.0,
-            self.h - 2.0,
-            (radius - 1.0).max(0.0),
-            all,
-        );
+        if self.draw_frame {
+            let radius = cce_ui::layout::list_corner_radius();
+            let border_color = if self.focused {
+                [0.30, 0.50, 0.32, 1.0]
+            } else if self.hovered {
+                [0.25, 0.25, 0.35, 1.0]
+            } else {
+                [0.18, 0.18, 0.24, 1.0]
+            };
+            let all = (true, true, true, true);
+            pc.rect_with_radius_corners(border_color, self.x, self.y, self.w, self.h, radius, all);
+            pc.rect_with_radius_corners(
+                cce_ui::color::list_bg_color(),
+                self.x + 1.0,
+                self.y + 1.0,
+                self.w - 2.0,
+                self.h - 2.0,
+                (radius - 1.0).max(0.0),
+                all,
+            );
+        }
         if self.content_h > self.viewport_h {
             let (sb_x, track_y, sb_w, track_h, thumb_y, thumb_h) = self.scrollbar_geom();
             pc.rect(cce_ui::color::scrollbar_track_color(), sb_x, track_y, sb_w, track_h);
