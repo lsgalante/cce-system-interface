@@ -3,6 +3,7 @@ use cce_ui::layout::RenderTarget;
 use crate::pages::audio;
 use crate::pages::network;
 use crate::pages::processes;
+use crate::pages::services;
 use crate::pages::system_info;
 use crate::pages::storage;
 use crate::pages::fonts;
@@ -16,6 +17,7 @@ pub struct AppState {
     pub audio: audio::AudioState,
     pub network: network::NetworkState,
     pub processes: processes::ProcessesState,
+    pub services: services::ServicesState,
     pub system_info: system_info::SystemState,
     pub storage: storage::StorageState,
     pub fonts: fonts::FontsState,
@@ -31,6 +33,7 @@ impl Default for AppState {
             audio: audio::AudioState::default(),
             network: network::NetworkState::default(),
             processes: processes::ProcessesState::default(),
+            services: services::ServicesState::default(),
             system_info: system_info::SystemState::default(),
             storage: storage::StorageState::default(),
             fonts: fonts::FontsState::default(),
@@ -48,6 +51,7 @@ impl AppState {
             Page::Audio => &self.audio,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
+            Page::Services => &self.services,
             Page::Radios => &self.network,
             Page::Storage => &self.storage,
             Page::System => &self.system_info,
@@ -62,6 +66,7 @@ impl AppState {
             Page::Audio => &mut self.audio,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
+            Page::Services => &mut self.services,
             Page::Radios => &mut self.network,
             Page::Storage => &mut self.storage,
             Page::System => &mut self.system_info,
@@ -85,6 +90,7 @@ pub enum AppAction {
     Audio(audio::AudioMessage),
     Radios(network::NetworkMessage),
     Processes(processes::ProcessesMessage),
+    Services(services::ServicesMessage),
     SystemInfo(system_info::SystemMessage),
     Storage(storage::StorageMessage),
     Fonts(fonts::FontsMessage),

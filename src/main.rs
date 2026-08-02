@@ -59,7 +59,7 @@ struct SystemInterface {
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemInfo>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
-    rx_services: std::sync::mpsc::Receiver<Vec<pages::processes::ServiceInfo>>,
+    rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_fonts: std::sync::mpsc::Receiver<pages::fonts::FontsState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
@@ -518,8 +518,8 @@ impl SystemInterface {
             }
         }
         while let Ok(s) = self.rx_services.try_recv() {
-            processes::update(&mut self.app.processes, processes::ProcessesMessage::ServicesRefreshed(s));
-            if self.app.current_page == Page::Processes {
+            services::update(&mut self.app.services, services::ServicesMessage::Refreshed(s));
+            if self.app.current_page == Page::Services {
                 self.needs_rebuild = true;
             }
         }
@@ -558,6 +558,7 @@ impl SystemInterface {
             AppAction::Radios(m) => network::update(&mut self.app.network, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone(), &mut self.ui_context),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
+            AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {

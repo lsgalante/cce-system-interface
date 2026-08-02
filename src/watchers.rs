@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, audio, network, fonts, processes, system_info, storage, packages, accounts, notifications};
+use crate::pages::{Page, audio, network, fonts, processes, services, system_info, storage, packages, accounts, notifications};
 
 pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
@@ -10,7 +10,7 @@ pub struct Watchers {
     pub rx_system: Receiver<system_info::SystemInfo>,
     pub rx_storage: Receiver<storage::StorageState>,
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
-    pub rx_services: Receiver<Vec<processes::ServiceInfo>>,
+    pub rx_services: Receiver<Vec<services::ServiceInfo>>,
     pub rx_fonts: Receiver<fonts::FontsState>,
     pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
     pub rx_packages: Receiver<packages::PackagesState>,
@@ -91,7 +91,7 @@ pub fn spawn_all(
     };
 
     let rx_fonts = spawn_bg_active(current_page_shared.clone(), Page::Fonts.index() as u8, 30, || fonts::fetch_typeface_state());
-    let rx_services = spawn_bg_active(current_page_shared.clone(), Page::Processes.index() as u8, 3, || processes::fetch_services());
+    let rx_services = spawn_bg_active(current_page_shared.clone(), Page::Services.index() as u8, 3, || services::fetch_services());
     let rx_accounts = spawn_bg_active(current_page_shared.clone(), Page::Accounts.index() as u8, 3, || accounts::fetch_accounts());
 
     let (tx_backup, rx_backup) = channel();

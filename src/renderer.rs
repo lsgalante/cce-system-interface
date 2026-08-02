@@ -479,7 +479,9 @@ impl SystemInterface {
                        && base.y >= sb1.y - 1.0 && base.y + base.h <= sb1.y + sb1.h + 1.0 {
                         left_align = true;
                     }
-                    let sb2 = &self.app.processes.services_list;
+                }
+                if self.app.current_page == Page::Services {
+                    let sb2 = &self.app.services.list;
                     if base.x >= sb2.x - 1.0 && base.x + base.w <= sb2.x + sb2.w + 1.0
                        && base.y >= sb2.y - 1.0 && base.y + base.h <= sb2.y + sb2.h + 1.0 {
                         left_align = true;
