@@ -155,10 +155,11 @@ impl SystemInterface {
         // The page scrollbar (the only geometry the dissolved Page subtree ever emitted):
         // placed exactly as Page::layout did, updated with LAST frame's content height —
         // the legacy window pass also ran before this frame's content was measured.
+        let sb_w = cce_ui::layout::scrollbar_width();
         self.page_scroll_bar.set_rect(
-            self.sidebar_width + (logical_sw - self.sidebar_width) - 6.0 - 2.0,
+            self.sidebar_width + (logical_sw - self.sidebar_width) - sb_w - 2.0,
             self.header_height + 4.0,
-            6.0,
+            sb_w,
             switcher_h - 8.0,
         );
         if self.page_scroll_bar.dragging {
