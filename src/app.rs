@@ -103,7 +103,10 @@ pub enum AppAction {
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
-    pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
+    /// (button, action, clip): clip is the innermost push_clip_rect at emission
+    /// time (page coords) — the renderer clamps the drawn quad, label bounds,
+    /// and the dispatch clone's hit rect to it.
+    pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction, Option<[f32; 4]>)>,
     /// Section wells claimed via `RenderTarget::section_relief` — the body box
     /// plus the title tab box, carved into the window plate by display_list as
     /// recess prims (page coordinates, pre-scroll).
@@ -194,7 +197,8 @@ impl PageContent {
             .with_bg(bg)
             .with_hover_bg(hover_bg)
             .with_label_color(label_color);
-        self.buttons.push((btn, action));
+        let clip = self.clip_stack.last().copied();
+        self.buttons.push((btn, action, clip));
     }
 
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -207,7 +211,8 @@ impl PageContent {
             .with_hover_bg(hover_bg)
             .with_label_color(label_color)
             .with_left_align(true);
-        self.buttons.push((btn, action));
+        let clip = self.clip_stack.last().copied();
+        self.buttons.push((btn, action, clip));
     }
 }
 

@@ -279,7 +279,7 @@ impl SystemInterface {
                 for (_, size, _, y, _, _, _) in &pc.texts {
                     max_y = max_y.max(y + size);
                 }
-                for (btn, _) in &pc.buttons {
+                for (btn, _, _) in &pc.buttons {
                     let base = btn.base();
                     max_y = max_y.max(base.y + base.h);
                 }
@@ -295,7 +295,7 @@ impl SystemInterface {
         for (_, size, _, y, _, _, _) in &pc.texts {
             max_y = max_y.max(y + size);
         }
-        for (btn, _) in &pc.buttons {
+        for (btn, _, _) in &pc.buttons {
             let base = btn.base();
             max_y = max_y.max(base.y + base.h);
         }
@@ -428,14 +428,27 @@ impl SystemInterface {
 
             texts.push((t.clone(), *size, *x, *y - scroll_offset_y, text_color, font_opt.clone(), final_bounds));
         }
-        for (btn, action) in &pc.buttons {
+        for (btn, action, clip) in &pc.buttons {
             let base = btn.base();
             let bg = btn.bg.unwrap_or([0.16, 0.16, 0.24, 1.0]);
             let hover_bg = btn.hover_bg.unwrap_or([0.25, 0.30, 0.26, 1.0]);
-            let wx = base.x * s;
-            let mut wy = (base.y - scroll_offset_y) * s;
-            let ww = base.w * s;
-            let mut wh = base.h * s;
+            // Clamp to the emission-time clip rect (page coords) so a partially
+            // scrolled list row's button draws cut at the list edge, not bleeding.
+            let (mut px0, mut py0, mut px1, mut py1) =
+                (base.x, base.y, base.x + base.w, base.y + base.h);
+            if let Some(c) = clip {
+                px0 = px0.max(c[0]);
+                py0 = py0.max(c[1]);
+                px1 = px1.min(c[0] + c[2]);
+                py1 = py1.min(c[1] + c[3]);
+                if px0 >= px1 || py0 >= py1 {
+                    continue;
+                }
+            }
+            let wx = px0 * s;
+            let mut wy = (py0 - scroll_offset_y) * s;
+            let ww = (px1 - px0) * s;
+            let mut wh = (py1 - py0) * s;
 
             let viewport_bottom = logical_sh - self.status_height;
             if wy >= viewport_bottom || wy + wh <= 0.0 {
@@ -500,12 +513,15 @@ impl SystemInterface {
             };
 
             let label_color = btn.label_color.unwrap_or([0.83, 0.83, 0.83, 1.0]);
-            let button_bounds = Some([
-                0.0,
-                0.0,
-                logical_sw,
-                viewport_bottom,
-            ]);
+            let button_bounds = Some(match clip {
+                Some(c) => [
+                    c[0],
+                    (c[1] - scroll_offset_y).max(0.0),
+                    (c[0] + c[2]).min(logical_sw),
+                    (c[1] + c[3] - scroll_offset_y).min(viewport_bottom),
+                ],
+                None => [0.0, 0.0, logical_sw, viewport_bottom],
+            });
             texts.push((
                 label.to_string(),
                 label_size,
@@ -517,11 +533,13 @@ impl SystemInterface {
             ));
             let mut btn_clone = btn.clone();
             {
+                // The dispatch clone hit-tests at the CLAMPED rect, so clicks in
+                // a row's clipped-away region fall through to what's visible there.
                 let base_mut = btn_clone.base_mut();
-                base_mut.x *= s;
-                base_mut.y = (base_mut.y - scroll_offset_y) * s;
-                base_mut.w *= s;
-                base_mut.h *= s;
+                base_mut.x = wx;
+                base_mut.y = wy;
+                base_mut.w = ww;
+                base_mut.h = wh;
             }
             page_buttons.push((btn_clone, action.clone()));
         }

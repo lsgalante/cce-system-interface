@@ -92,12 +92,13 @@ impl ScrollRegion {
     }
 
     /// Row virtualization (`List::get_item_draw_y`): screen y for row `idx`, or `None`
-    /// when the row isn't fully inside the viewport.
+    /// when the row doesn't intersect the viewport at all. Partially visible rows
+    /// ARE returned — callers draw under a clip rect, so they render cut, not culled.
     pub fn get_item_draw_y(&self, idx: usize, offset: f32) -> Option<f32> {
         let virtual_y = idx as f32 * (self.item_height + self.item_gap) + offset;
         let draw_y = self.viewport_y + virtual_y - self.scroll_y;
-        if draw_y >= self.viewport_y - 1.0
-            && draw_y + self.item_height <= self.viewport_y + self.viewport_h + 1.0
+        if draw_y + self.item_height >= self.viewport_y - 1.0
+            && draw_y <= self.viewport_y + self.viewport_h + 1.0
         {
             Some(draw_y)
         } else {
@@ -291,8 +292,25 @@ mod tests {
         r.set_scroll_y(0.0);
         // Row 0 at viewport_y + 0*(44) + 4 = 24; fits (24 + 40 <= 121).
         assert_eq!(r.get_item_draw_y(0, 4.0), Some(24.0));
-        // Row 2 at 20 + 92 - 0 = 112; 112 + 40 > 121 → culled.
-        assert!(r.get_item_draw_y(2, 4.0).is_none());
+        // Row 2 at 20 + 92 - 0 = 112: extends past the viewport bottom (121) but
+        // still intersects it — returned so the caller draws it cut by the clip.
+        assert_eq!(r.get_item_draw_y(2, 4.0), Some(112.0));
+        // Row 3 at 20 + 136 = 156: fully below the viewport → culled.
+        assert!(r.get_item_draw_y(3, 4.0).is_none());
+    }
+
+    #[test]
+    fn virtualization_keeps_partial_row_at_top() {
+        let mut r = region();
+        r.update_bounds(10, 20.0, 100.0);
+        // Scrolled so row 0 (virtual 4..44) is half above the viewport top:
+        // draw_y = 20 + 4 - 24 = 0 < viewport_y, but its bottom (40) intersects.
+        r.set_scroll_y(24.0);
+        assert_eq!(r.get_item_draw_y(0, 4.0), Some(0.0));
+        // A row whose bottom ends above the viewport top would be culled; with
+        // this geometry row 0 always intersects, so scroll far and check row 0.
+        r.set_scroll_y(80.0);
+        assert!(r.get_item_draw_y(0, 4.0).is_none());
     }
 
     #[test]
