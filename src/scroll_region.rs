@@ -253,9 +253,11 @@ impl ScrollRegion {
             );
         }
         if self.content_h > self.viewport_h {
+            // Track and thumb are pills — half-width radius (the designer look).
             let (sb_x, track_y, sb_w, track_h, thumb_y, thumb_h) = self.scrollbar_geom();
-            pc.rect(cce_ui::color::scrollbar_track_color(), sb_x, track_y, sb_w, track_h);
-            pc.rect(cce_ui::color::scrollbar_thumb_color(), sb_x, thumb_y, sb_w, thumb_h);
+            let all = (true, true, true, true);
+            pc.rect_with_radius_corners(cce_ui::color::scrollbar_track_color(), sb_x, track_y, sb_w, track_h, sb_w.min(track_h) * 0.5, all);
+            pc.rect_with_radius_corners(cce_ui::color::scrollbar_thumb_color(), sb_x, thumb_y, sb_w, thumb_h, sb_w.min(thumb_h) * 0.5, all);
         }
     }
 }

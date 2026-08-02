@@ -81,7 +81,9 @@ impl cce_ui::widget::Paint for ScrollBar {
 
     fn paint(&self, rect: Rect, ctx: &mut PaintCtx) {
         if self.content_h > self.viewport_h && rect.height > 0.0 {
-            ctx.quad(rect, [0.15, 0.15, 0.20, 0.3]);
+            // Track and thumb are pills — half-width radius (the designer look).
+            let all = (true, true, true, true);
+            ctx.rounded_rect(rect, rect.width.min(rect.height) * 0.5, all, [0.15, 0.15, 0.20, 0.3]);
 
             if let Some((tx, ty, tw, th)) = self.thumb_rect(rect) {
                 let thumb_color = if self.dragging {
@@ -91,7 +93,7 @@ impl cce_ui::widget::Paint for ScrollBar {
                 } else {
                     [0.60, 0.60, 0.65, 0.4]
                 };
-                ctx.quad(Rect { x: tx, y: ty, width: tw, height: th }, thumb_color);
+                ctx.rounded_rect(Rect { x: tx, y: ty, width: tw, height: th }, tw.min(th) * 0.5, all, thumb_color);
             }
         }
     }
