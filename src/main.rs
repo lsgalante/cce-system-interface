@@ -422,6 +422,12 @@ impl cce_ui::engine::Application for SystemInterface {
         Some(&self.ui_context)
     }
 
+    // The engine ticks the exposed context each loop — this is what drives the
+    // dropdown expand/contract animation frames.
+    fn ui_context_mut(&mut self) -> Option<&mut cce_ui::context::UiContext> {
+        Some(&mut self.ui_context)
+    }
+
     fn clear_color(&self) -> [f32; 4] {
         [0.039, 0.102, 0.055, 1.0]
     }
