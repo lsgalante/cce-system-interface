@@ -60,6 +60,7 @@ struct SystemInterface {
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
+    rx_default_apps: std::sync::mpsc::Receiver<pages::default_apps::DefaultAppsInfo>,
     rx_fonts: std::sync::mpsc::Receiver<pages::fonts::FontsState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
@@ -154,6 +155,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_audio: watchers.rx_audio,
             rx_network: watchers.rx_network,
             rx_processes: watchers.rx_processes,
+            rx_default_apps: watchers.rx_default_apps,
             rx_system: watchers.rx_system,
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
@@ -523,6 +525,12 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
+        while let Ok(s) = self.rx_default_apps.try_recv() {
+            pages::default_apps::update(&mut self.app.default_apps, pages::default_apps::DefaultAppsMessage::Refreshed(s));
+            if self.app.current_page == Page::DefaultApps {
+                self.needs_rebuild = true;
+            }
+        }
         while let Ok(s) = self.rx_services.try_recv() {
             services::update(&mut self.app.services, services::ServicesMessage::Refreshed(s));
             if self.app.current_page == Page::Services {
@@ -565,6 +573,7 @@ impl SystemInterface {
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone(), &mut self.ui_context),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
+            AppAction::DefaultApps(m) => pages::default_apps::update(&mut self.app.default_apps, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {

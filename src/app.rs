@@ -1,6 +1,7 @@
 use cce_ui::layout::RenderTarget;
 
 use crate::pages::audio;
+use crate::pages::default_apps;
 use crate::pages::network;
 use crate::pages::processes;
 use crate::pages::services;
@@ -15,6 +16,7 @@ use crate::pages::Page;
 pub struct AppState {
     pub current_page: Page,
     pub audio: audio::AudioState,
+    pub default_apps: default_apps::DefaultAppsState,
     pub network: network::NetworkState,
     pub processes: processes::ProcessesState,
     pub services: services::ServicesState,
@@ -31,6 +33,7 @@ impl Default for AppState {
         Self {
             current_page: Page::ALL[0],
             audio: audio::AudioState::default(),
+            default_apps: default_apps::DefaultAppsState::default(),
             network: network::NetworkState::default(),
             processes: processes::ProcessesState::default(),
             services: services::ServicesState::default(),
@@ -49,6 +52,7 @@ impl AppState {
         match page {
             Page::Accounts => &self.accounts,
             Page::Audio => &self.audio,
+            Page::DefaultApps => &self.default_apps,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
             Page::Services => &self.services,
@@ -64,6 +68,7 @@ impl AppState {
         match page {
             Page::Accounts => &mut self.accounts,
             Page::Audio => &mut self.audio,
+            Page::DefaultApps => &mut self.default_apps,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
             Page::Services => &mut self.services,
@@ -88,6 +93,7 @@ impl AppState {
 pub enum AppAction {
     Exit,
     Audio(audio::AudioMessage),
+    DefaultApps(default_apps::DefaultAppsMessage),
     Radios(network::NetworkMessage),
     Processes(processes::ProcessesMessage),
     Services(services::ServicesMessage),
