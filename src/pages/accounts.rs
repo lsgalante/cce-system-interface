@@ -343,306 +343,186 @@ pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: ca
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
+/// A dim label / bright value pair on one line (the details block).
+fn kv_row(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>, label: &str, value: &str) {
+    let mut y = sc.content_y;
+    if y > sc.content_start_y {
+        y += sc.row_gap;
+    }
+    let lx = sc.ax(12.0);
+    sc.pc.text(label, lx, y, 12.0, TEXT_DIM);
+    sc.pc.text(value, lx + 130.0, y, 12.0, [0.90, 0.90, 0.95, 1.0]);
+    sc.content_y = y + 18.0;
+    for h in &mut sc.grid.col_heights {
+        *h = sc.content_y;
+    }
+}
+
+/// A hairline separating the well's zones.
+fn divider(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>) {
+    let y = sc.content_y + sc.row_gap + 4.0;
+    let x = sc.ax(12.0);
+    let w = sc.cw - 2.0 * (sc.padding() + 12.0);
+    sc.pc.rect([1.0, 1.0, 1.0, 0.06], x, y, w, 1.0);
+    sc.content_y = y + 5.0;
+    for h in &mut sc.grid.col_heights {
+        *h = sc.content_y;
+    }
+}
+
+// The calm palette: neutral chrome, one green primary, quiet red danger, and
+// the accent tint marking both the selected row and an active mode button.
+const BTN_NEUTRAL: ([f32; 4], [f32; 4]) = ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0]);
+const BTN_PRIMARY: ([f32; 4], [f32; 4]) = ([0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0]);
+const BTN_DANGER: ([f32; 4], [f32; 4]) = ([0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0]);
+const ACCENT_BG: [f32; 4] = [0.20, 0.40, 0.65, 0.35];
+const TEXT_BTN: [f32; 4] = [0.90, 0.90, 0.95, 1.0];
+const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
+
 pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    let lm = cce_ui::layout::label_margin();
     let row_h = cce_ui::layout::spinbox_height();
     let widget_h = cce_ui::layout::spinbox_height();
-    let btn_gap = lm * 1.0;
+    let btn_h = 26.0;
 
-    // ── Accounts Section ──
-    builder.add_section(&mut final_pc, "Accounts", false, |sec_accounts| {
+    builder.add_section_spanned(&mut final_pc, "", 1, false, |sec| {
         if !state.loaded {
-            sec_accounts.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
+            return;
+        }
+        let item_w = sec.cw - 2.0 * (sec.padding() + 12.0);
+        let rx = sec.left;
+        let mut stack = sec.vstack(8.0);
+
+        // ── Account list: frameless rows, selection tinted, default marked ──
+        if state.accounts.is_empty() {
+            stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
-
-
-            let mut stack = sec_accounts.vstack(8.0);
-
-            if state.accounts.is_empty() {
-                stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
-            } else {
-                for (idx, acc) in state.accounts.iter().enumerate() {
-                    let label = if acc.is_default {
-                        format!("{} [Default]", acc.email)
-                    } else {
-                        acc.email.clone()
-                    };
-                    let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
-                    let bg_col = if is_selected { [0.20, 0.40, 0.65, 0.4] } else { [0.10, 0.10, 0.16, 0.3] };
-
-                    stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
-                        ctx.button(
-                            &label,
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            bg_col,
-                            [0.20, 0.20, 0.25, 0.15],
-                            [0.90, 0.90, 0.95, 1.0],
-                            AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
-                        );
-                    });
-                }
-            }
-
-            stack.context.spacing(4.0);
-
-            let add_bg = if state.adding_new { [0.20, 0.40, 0.65, 0.4] } else { [0.13, 0.18, 0.14, 1.0] };
-
-            stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
-                if i == 0 {
-                    ctx.button(
-                        "Add Account",
-                        x,
-                        ctx.ay(),
-                        w,
-                        row_h,
-                        add_bg,
-                        [0.25, 0.30, 0.26, 1.0],
-                        [1.0, 1.0, 1.0, 1.0],
-                        AppAction::Accounts(AccountsMessage::AddAccountStart),
-                    );
+            for (idx, acc) in state.accounts.iter().enumerate() {
+                let label = if acc.is_default {
+                    format!("{}   \u{2022} default", acc.email)
                 } else {
-                    ctx.button(
-                        "Sign in with Google",
+                    acc.email.clone()
+                };
+                let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
+                let (bg, hover) = if is_selected {
+                    (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
+                } else {
+                    ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
+                };
+                stack.add_row(1, 0.0, row_h, |c, _, x, w| {
+                    c.button_left(
+                        &label,
                         x,
-                        ctx.ay(),
+                        c.ay(),
                         w,
                         row_h,
-                        [0.15, 0.15, 0.25, 1.0],
-                        [0.25, 0.25, 0.35, 1.0],
-                        [1.0, 1.0, 1.0, 1.0],
-                        AppAction::Accounts(AccountsMessage::GoogleLoginInit),
+                        bg,
+                        hover,
+                        TEXT_BTN,
+                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
                     );
-                }
-            });
-
-            let oauth_bg = if state.editing_oauth_creds { [0.20, 0.40, 0.65, 0.4] } else { [0.15, 0.15, 0.20, 1.0] };
-            stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
-                ctx.button(
-                    "Google API Settings",
-                    x,
-                    ctx.ay(),
-                    w,
-                    row_h,
-                    oauth_bg,
-                    [0.25, 0.25, 0.30, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Accounts(AccountsMessage::EditOAuthCredsStart),
-                );
-            });
-
-            if let Some(selected_idx) = state.selected_idx {
-                if selected_idx < state.accounts.len() && !state.adding_new && !state.editing_oauth_creds {
-                    let acc = &state.accounts[selected_idx];
-                    if !acc.is_default {
-                        stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
-                            ctx.button(
-                                "Make Default",
-                                x,
-                                ctx.ay(),
-                                w,
-                                row_h,
-                                [0.15, 0.15, 0.25, 1.0],
-                                [0.25, 0.25, 0.35, 1.0],
-                                [1.0, 1.0, 1.0, 1.0],
-                                AppAction::Accounts(AccountsMessage::MakeDefault(selected_idx)),
-                            );
-                        });
-                    }
-                    stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
-                        ctx.button(
-                            "Delete Account",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.33, 0.20, 0.20, 1.0],
-                            [0.45, 0.25, 0.25, 1.0],
-                            [1.0, 0.33, 0.33, 1.0],
-                            AppAction::Accounts(AccountsMessage::DeleteAccount(selected_idx)),
-                        );
-                    });
-                }
+                });
             }
         }
-    });
 
-    // ── Modify Accounts Section ──
-    builder.add_section(&mut final_pc, "Modify Accounts", false, |sec_modify| {
-        let item_w = sec_modify.cw - 2.0 * (sec_modify.padding() + 12.0);
-        let rx = sec_modify.left;
+        stack.context.spacing(6.0);
 
-        if state.loaded {
-            let mut stack = sec_modify.vstack(8.0);
+        // ── Global actions: one compact row ──
+        let add_bg = if state.adding_new { (ACCENT_BG, ACCENT_BG) } else { BTN_PRIMARY };
+        let oauth_bg = if state.editing_oauth_creds { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
+        let narrow = item_w < 520.0;
+        stack.add_row(3, 8.0, btn_h, |c, i, x, w| {
+            let (label, colors, action) = match i {
+                0 => (if narrow { "Add" } else { "Add Account" }, add_bg, AccountsMessage::AddAccountStart),
+                1 => (if narrow { "Google Login" } else { "Sign in with Google" }, BTN_NEUTRAL, AccountsMessage::GoogleLoginInit),
+                _ => (if narrow { "Google API" } else { "Google API Settings" }, oauth_bg, AccountsMessage::EditOAuthCredsStart),
+            };
+            c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
+        });
 
-            if state.adding_new {
-                stack.context.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+        divider(stack.context);
 
-                stack.context.text("Note: Gmail uses Google Login. iCloud requires App PW.", 12.0, 0.0, 11.0, TEXT_DIM);
+        // ── Context zone: add form / OAuth form / selected details ──
+        if state.adding_new {
+            stack.context.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+            stack.context.text("Gmail uses Google Login; iCloud requires an App Password.", 12.0, 0.0, 11.0, TEXT_DIM);
 
-                // Email Address textbox
-                state.email_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.email_box, item_w, widget_h, ctx);
+            state.email_box.set_row_rect(rx + 12.0, item_w);
+            stack.add_widget(&mut state.email_box, item_w, widget_h, ctx);
+            state.password_box.set_row_rect(rx + 12.0, item_w);
+            stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
+            state.imap_box.set_row_rect(rx + 12.0, item_w);
+            stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
+            state.smtp_box.set_row_rect(rx + 12.0, item_w);
+            stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
 
-                // Password textbox
-                state.password_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
+            stack.context.spacing(4.0);
+            stack.add_row(4, 8.0, btn_h, |c, i, x, w| {
+                let (label, colors, text_col, action) = match i {
+                    0 => ("Save", BTN_PRIMARY, TEXT_BTN, AccountsMessage::AddAccountSave),
+                    1 => ("Cancel", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::AddAccountCancel),
+                    2 => ("Login (Google)", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::GoogleLoginInit),
+                    _ => ("Login (iCloud)", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::ICloudLoginHelp),
+                };
+                c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
+            });
+        } else if state.editing_oauth_creds {
+            stack.context.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+            stack.context.text("Client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
+            stack.context.text("Use a 'Desktop app' OAuth client with the Gmail API enabled \u{2014}", 12.0, 0.0, 11.0, TEXT_DIM);
+            stack.context.text("loopback redirects (http://localhost:*) are then allowed automatically.", 12.0, 0.0, 11.0, TEXT_DIM);
 
-                // IMAP Server textbox
-                state.imap_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
+            state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
+            stack.add_widget(&mut state.oauth_client_id_box, item_w, widget_h, ctx);
+            state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
+            stack.add_widget(&mut state.oauth_client_secret_box, item_w, widget_h, ctx);
 
-                // SMTP Server textbox
-                state.smtp_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
+            stack.context.spacing(4.0);
+            stack.add_row(2, 8.0, btn_h, |c, i, x, w| {
+                let (label, colors, action) = match i {
+                    0 => ("Save Credentials", BTN_PRIMARY, AccountsMessage::EditOAuthCredsSave),
+                    _ => ("Cancel", BTN_NEUTRAL, AccountsMessage::EditOAuthCredsCancel),
+                };
+                c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
+            });
+        } else if let Some(selected_idx) = state.selected_idx {
+            if selected_idx < state.accounts.len() {
+                let acc = state.accounts[selected_idx].clone();
 
-                stack.context.spacing(4.0);
+                kv_row(stack.context, "Email", &acc.email);
+                let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password" };
+                kv_row(stack.context, "Authentication", auth_type);
+                kv_row(stack.context, "IMAP", &acc.imap);
+                kv_row(stack.context, "SMTP", &acc.smtp);
 
+                stack.context.spacing(6.0);
 
-                stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
-                    if i == 0 {
-                        ctx.button(
-                            "Login (Google)",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.15, 0.15, 0.25, 1.0],
-                            [0.25, 0.25, 0.35, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::GoogleLoginInit),
-                        );
-                    } else {
-                        ctx.button(
-                            "Login (iCloud)",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.15, 0.15, 0.25, 1.0],
-                            [0.25, 0.25, 0.35, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::ICloudLoginHelp),
-                        );
-                    }
-                });
-
-                stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
-                    if i == 0 {
-                        ctx.button(
-                            "Save Account",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.13, 0.18, 0.14, 1.0],
-                            [0.25, 0.30, 0.26, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::AddAccountSave),
-                        );
-                    } else {
-                        ctx.button(
-                            "Cancel",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.33, 0.20, 0.20, 1.0],
-                            [0.45, 0.25, 0.25, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::AddAccountCancel),
-                        );
-                    }
-                });
-            } else if state.editing_oauth_creds {
-                stack.context.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-
-                stack.context.text("Client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
-                stack.context.text("Use a 'Desktop app' OAuth client with the Gmail API enabled —", 12.0, 0.0, 11.0, TEXT_DIM);
-                stack.context.text("loopback redirects (http://localhost:*) are then allowed automatically.", 12.0, 0.0, 11.0, TEXT_DIM);
-
-                // Client ID textbox
-                state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.oauth_client_id_box, item_w, widget_h, ctx);
-
-                // Client Secret textbox
-                state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.oauth_client_secret_box, item_w, widget_h, ctx);
-
-                stack.context.spacing(4.0);
-
-
-                stack.add_row(2, btn_gap, row_h, |ctx, i, x, w| {
-                    if i == 0 {
-                        ctx.button(
-                            "Save Credentials",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.13, 0.18, 0.14, 1.0],
-                            [0.25, 0.30, 0.26, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::EditOAuthCredsSave),
-                        );
-                    } else {
-                        ctx.button(
-                            "Cancel",
-                            x,
-                            ctx.ay(),
-                            w,
-                            row_h,
-                            [0.33, 0.20, 0.20, 1.0],
-                            [0.45, 0.25, 0.25, 1.0],
-                            [1.0, 1.0, 1.0, 1.0],
-                            AppAction::Accounts(AccountsMessage::EditOAuthCredsCancel),
-                        );
-                    }
-                });
-            } else if let Some(selected_idx) = state.selected_idx {
-                if selected_idx < state.accounts.len() {
-                    let acc = &state.accounts[selected_idx];
-
-                    stack.context.text("Account Details", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-
-                    stack.context.text(&format!("Email Address:   {}", acc.email), 12.0, 0.0, 12.0, [0.90, 0.90, 0.95, 1.0]);
-
-                    let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password-based" };
-                    stack.context.text(&format!("Authentication:  {}", auth_type), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-
-                    stack.context.text(&format!("IMAP Server:     {}", acc.imap), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-
-                    stack.context.text(&format!("SMTP Server:     {}", acc.smtp), 12.0, 0.0, 12.0, [0.83, 0.83, 0.83, 1.0]);
-
-                    if acc.is_oauth {
-                        stack.add_row(1, 0.0, row_h, |ctx, _, x, w| {
-                            ctx.button(
-                                "Click to Login (Browser)",
-                                x,
-                                ctx.ay(),
-                                w,
-                                row_h,
-                                [0.15, 0.15, 0.25, 1.0],
-                                [0.25, 0.25, 0.35, 1.0],
-                                [1.0, 1.0, 1.0, 1.0],
-                                AppAction::Accounts(AccountsMessage::GoogleLoginInit),
-                            );
-                        });
-                    }
+                // Per-account actions, compact; Delete quiet-red, at the end.
+                let mut actions: Vec<(&str, ([f32; 4], [f32; 4]), [f32; 4], AccountsMessage)> = Vec::new();
+                if !acc.is_default {
+                    actions.push(("Make Default", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::MakeDefault(selected_idx)));
                 }
-            } else {
-                stack.context.text("Select an account to view details, or click Add Account.", 12.0, 0.0, 12.0, TEXT_DIM);
+                if acc.is_oauth {
+                    actions.push(("Re-login (Browser)", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::GoogleLoginInit));
+                }
+                actions.push(("Delete", BTN_DANGER, TEXT_DANGER, AccountsMessage::DeleteAccount(selected_idx)));
+                stack.add_row(3, 8.0, btn_h, |c, i, x, w| {
+                    if let Some((label, colors, text_col, action)) = actions.get(i).cloned() {
+                        c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
+                    }
+                });
             }
+        } else {
+            stack.context.text("Select an account to view details, or add one.", 12.0, 0.0, 12.0, TEXT_DIM);
+        }
 
-            if let Some(ref msg) = state.status_msg {
-                sec_modify.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
-            }
+        if let Some(ref msg) = state.status_msg {
+            stack.context.spacing(6.0);
+            stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
         }
     });
     final_pc
@@ -847,7 +727,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
 }
 
 impl crate::pages::AppPage for AccountsState {
-    // Sections: [Accounts, Modify Accounts] — the modify group depends on the mode.
+    // Sections: [the one well] — the group depends on the mode.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         let modify: Vec<cce_ui::widget::WidgetId> = if self.editing_oauth_creds {
             vec![
@@ -864,7 +744,7 @@ impl crate::pages::AppPage for AccountsState {
         } else {
             Vec::new()
         };
-        vec![Vec::new(), modify]
+        vec![modify]
     }
 
     fn view(

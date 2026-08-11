@@ -513,15 +513,14 @@ impl SystemInterface {
             };
 
             let label_color = btn.label_color.unwrap_or([0.83, 0.83, 0.83, 1.0]);
-            let button_bounds = Some(match clip {
-                Some(c) => [
-                    c[0],
-                    (c[1] - scroll_offset_y).max(0.0),
-                    (c[0] + c[2]).min(logical_sw),
-                    (c[1] + c[3] - scroll_offset_y).min(viewport_bottom),
-                ],
-                None => [0.0, 0.0, logical_sw, viewport_bottom],
-            });
+            // Label bounds: the button's own (clip-clamped) box — a label longer
+            // than its button truncates instead of spilling over the neighbor.
+            let button_bounds = Some([
+                wx,
+                wy.max(0.0),
+                (wx + ww).min(logical_sw),
+                (wy + wh).min(viewport_bottom),
+            ]);
             texts.push((
                 label.to_string(),
                 label_size,
