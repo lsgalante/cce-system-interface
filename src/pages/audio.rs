@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent, SectionContextExt, section_divider};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Slider, WidgetHost};
 
@@ -221,142 +221,131 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 #[allow(dead_code)]
 const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
 
+const HEADING: [f32; 4] = [0.35, 0.65, 0.90, 1.0];
+const BTN_NEUTRAL: ([f32; 4], [f32; 4]) = ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0]);
+const BTN_DANGER: ([f32; 4], [f32; 4]) = ([0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0]);
+const TEXT_BTN: [f32; 4] = [0.90, 0.90, 0.95, 1.0];
+const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
+
+/// One device on one line: name, volume slider, spinbox, mute — or a dim
+/// "inactive" note. The widgets stay index-aligned with the device vecs.
+#[allow(clippy::too_many_arguments)]
+fn device_row(
+    stack: &mut cce_ui::layout::VStack<'_, '_, PageContent>,
+    name: &str,
+    active: bool,
+    muted: bool,
+    volume: f32,
+    slider: &mut cce_ui::widget::Adapted<Slider>,
+    spin: &mut cce_ui::widget::Adapted<Spinbox>,
+    mute_action: AppAction,
+    ctx: &mut cce_ui::context::UiContext,
+) {
+    if !active {
+        let sc = &mut *stack.context;
+        let mut y = sc.content_y;
+        if y > sc.content_start_y {
+            y += sc.row_gap;
+        }
+        let lx = sc.ax(12.0);
+        sc.pc.text(name, lx, y, 12.0, TEXT_DIM);
+        sc.pc.text("inactive", lx + 150.0, y, 12.0, TEXT_DIM);
+        sc.content_y = y + 18.0;
+        for h in &mut sc.grid.col_heights {
+            *h = sc.content_y;
+        }
+        return;
+    }
+
+    slider.set_value(volume);
+    spin.value = (volume * 100.0).round() as i32;
+
+    let sb_h = cce_ui::layout::spinbox_height();
+    let sl_h = cce_ui::layout::slider_height();
+    let row_h = sb_h.max(sl_h).max(22.0);
+    let (mute_label, colors, mute_text) = if muted {
+        ("Unmute", BTN_DANGER, TEXT_DANGER)
+    } else {
+        ("Mute", BTN_NEUTRAL, TEXT_BTN)
+    };
+
+    stack.add_row(1, 0.0, row_h, |c, _, x, w| {
+        let name_w = 150.0;
+        let spin_w = 90.0;
+        let mute_w = 80.0;
+        let gap = 8.0;
+        let slider_w = (w - name_w - spin_w - mute_w - 2.0 * gap).max(60.0);
+        let y = c.ay();
+
+        c.pc.text(name, x, y + (row_h - 14.0) / 2.0, 12.0, TEXT_FG);
+        render_widget(c.pc, slider, x + name_w, y + (row_h - sl_h) / 2.0, slider_w, sl_h, ctx);
+        let spin_x = x + name_w + slider_w + gap;
+        spin.set_row_rect(spin_x, spin_w);
+        render_widget(c.pc, spin, spin_x, y + (row_h - sb_h) / 2.0, spin_w, sb_h, ctx);
+        c.button(
+            mute_label,
+            spin_x + spin_w + gap,
+            y + (row_h - 22.0) / 2.0,
+            mute_w,
+            22.0,
+            colors.0,
+            colors.1,
+            mute_text,
+            mute_action.clone(),
+        );
+    });
+}
+
 pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    // ── Output section ──
-    builder.add_section(&mut final_pc, "Output", sec_focused.first().copied().unwrap_or(false), |sec| {
+    builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         if !state.loaded {
-            sec.text("Loading output devices...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else if state.sinks.is_empty() {
-            sec.text("No output devices found", 12.0, 0.0, 12.0, TEXT_DIM);
+            sec.text("Loading audio devices...", 12.0, 0.0, 12.0, TEXT_DIM);
+            return;
+        }
+        let mut stack = sec.vstack(8.0);
+
+        stack.context.text("Output", 12.0, 0.0, 14.0, HEADING);
+        if state.sinks.is_empty() {
+            stack.context.text("No output devices found", 12.0, 0.0, 12.0, TEXT_DIM);
+        }
+        let sinks = state.sinks.clone();
+        for (idx, sink) in sinks.iter().enumerate() {
+            device_row(
+                &mut stack,
+                &sink.name,
+                sink.active,
+                sink.muted,
+                sink.volume,
+                &mut state.sink_sliders[idx],
+                &mut state.sink_spinboxes[idx],
+                AppAction::Audio(AudioMessage::SinkMute(sink.id)),
+                ctx,
+            );
         }
 
-        if state.loaded {
-            for (idx, sink) in state.sinks.iter().enumerate() {
-                let sec_title = if sink.active {
-                    sink.name.clone()
-                } else {
-                    format!("{} (inactive)", sink.name)
-                };
+        section_divider(stack.context);
 
-                sec.add_section(&sec_title, false, |subsec| {
-                    if !sink.active {
-                        subsec.text("Device is inactive.", 12.0, 0.0, 12.0, TEXT_DIM);
-                    } else {
-                        let label = if sink.muted {
-                            format!("Volume: {:.0}%  (muted)", sink.volume * 100.0)
-                        } else {
-                            format!("Volume: {:.0}%", sink.volume * 100.0)
-                        };
-                        state.sink_sliders[idx].set_label(&label);
-                        state.sink_sliders[idx].set_value(sink.volume);
-
-                        let mut stack = subsec.vstack(8.0);
-
-                        let label_h = cce_ui::widget::label_offset(&*state.sink_sliders[idx]);
-                        let slider_h = cce_ui::layout::slider_height() + label_h;
-                        stack.add_widget(&mut *state.sink_sliders[idx], stack.context.cw - 28.0, slider_h, ctx);
-
-                        let sb_h = cce_ui::layout::spinbox_height();
-                        let gap = 8.0;
-
-                        state.sink_spinboxes[idx].value = (sink.volume * 100.0).round() as i32;
-
-                        let mute_label = if sink.muted { "Unmute" } else { "Mute" };
-                        let mute_col = if sink.muted { MUTED_BG } else { BTN_INACTIVE };
-
-                        stack.add_row(2, gap, sb_h, |sec_ctx, i, x, w| {
-                            if i == 0 {
-                                state.sink_spinboxes[idx].set_row_rect(x, w);
-                                let y = sec_ctx.ay();
-                                render_widget(sec_ctx.pc, &mut *state.sink_spinboxes[idx], x, y, w, sb_h, ctx);
-                            } else {
-                                sec_ctx.button(
-                                    mute_label,
-                                    x,
-                                    sec_ctx.ay(),
-                                    w,
-                                    sb_h,
-                                    mute_col,
-                                    BTN_HOVER,
-                                    WHITE,
-                                    AppAction::Audio(AudioMessage::SinkMute(sink.id)),
-                                );
-                            }
-                        });
-                    }
-                });
-            }
+        stack.context.text("Input", 12.0, 0.0, 14.0, HEADING);
+        if state.sources.is_empty() {
+            stack.context.text("No input devices found", 12.0, 0.0, 12.0, TEXT_DIM);
         }
-    });
-
-    // ── Input section ──
-    builder.add_section(&mut final_pc, "Input", sec_focused.get(1).copied().unwrap_or(false), |sec| {
-        if !state.loaded {
-            sec.text("Loading input devices...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else if state.sources.is_empty() {
-            sec.text("No input devices found", 12.0, 0.0, 12.0, TEXT_DIM);
-        }
-
-        if state.loaded {
-            for (idx, src) in state.sources.iter().enumerate() {
-                let sec_title = if src.active {
-                    src.name.clone()
-                } else {
-                    format!("{} (inactive)", src.name)
-                };
-
-                sec.add_section(&sec_title, false, |subsec| {
-                    if !src.active {
-                        subsec.text("Device is inactive.", 12.0, 0.0, 12.0, TEXT_DIM);
-                    } else {
-                        let label = if src.muted {
-                            format!("Volume: {:.0}%  (muted)", src.volume * 100.0)
-                        } else {
-                            format!("Volume: {:.0}%", src.volume * 100.0)
-                        };
-                        state.source_sliders[idx].set_label(&label);
-                        state.source_sliders[idx].set_value(src.volume);
-
-                        let mut stack = subsec.vstack(8.0);
-
-                        let label_h = cce_ui::widget::label_offset(&*state.source_sliders[idx]);
-                        let slider_h = cce_ui::layout::slider_height() + label_h;
-                        stack.add_widget(&mut *state.source_sliders[idx], stack.context.cw - 28.0, slider_h, ctx);
-
-                        let sb_h = cce_ui::layout::spinbox_height();
-                        let gap = 8.0;
-
-                        state.source_spinboxes[idx].value = (src.volume * 100.0).round() as i32;
-
-                        let mute_label = if src.muted { "Unmute" } else { "Mute" };
-                        let mute_col = if src.muted { MUTED_BG } else { BTN_INACTIVE };
-
-                        stack.add_row(2, gap, sb_h, |sec_ctx, i, x, w| {
-                            if i == 0 {
-                                state.source_spinboxes[idx].set_row_rect(x, w);
-                                let y = sec_ctx.ay();
-                                render_widget(sec_ctx.pc, &mut *state.source_spinboxes[idx], x, y, w, sb_h, ctx);
-                            } else {
-                                sec_ctx.button(
-                                    mute_label,
-                                    x,
-                                    sec_ctx.ay(),
-                                    w,
-                                    sb_h,
-                                    mute_col,
-                                    BTN_HOVER,
-                                    WHITE,
-                                    AppAction::Audio(AudioMessage::SourceMute(src.id)),
-                                );
-                            }
-                        });
-                    }
-                });
-            }
+        let sources = state.sources.clone();
+        for (idx, src) in sources.iter().enumerate() {
+            device_row(
+                &mut stack,
+                &src.name,
+                src.active,
+                src.muted,
+                src.volume,
+                &mut state.source_sliders[idx],
+                &mut state.source_spinboxes[idx],
+                AppAction::Audio(AudioMessage::SourceMute(src.id)),
+                ctx,
+            );
         }
     });
 
@@ -428,7 +417,8 @@ impl crate::pages::AppPage for AudioState {
                 }
             }
         }
-        vec![output, input]
+        output.extend(input);
+        vec![output]
     }
 
     fn view(

@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, section_kv_row};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{TextBox, WidgetHost};
 
@@ -343,33 +343,6 @@ pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: ca
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-/// A dim label / bright value pair on one line (the details block).
-fn kv_row(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>, label: &str, value: &str) {
-    let mut y = sc.content_y;
-    if y > sc.content_start_y {
-        y += sc.row_gap;
-    }
-    let lx = sc.ax(12.0);
-    sc.pc.text(label, lx, y, 12.0, TEXT_DIM);
-    sc.pc.text(value, lx + 130.0, y, 12.0, [0.90, 0.90, 0.95, 1.0]);
-    sc.content_y = y + 18.0;
-    for h in &mut sc.grid.col_heights {
-        *h = sc.content_y;
-    }
-}
-
-/// A hairline separating the well's zones.
-fn divider(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>) {
-    let y = sc.content_y + sc.row_gap + 4.0;
-    let x = sc.ax(12.0);
-    let w = sc.cw - 2.0 * (sc.padding() + 12.0);
-    sc.pc.rect([1.0, 1.0, 1.0, 0.06], x, y, w, 1.0);
-    sc.content_y = y + 5.0;
-    for h in &mut sc.grid.col_heights {
-        *h = sc.content_y;
-    }
-}
-
 // The calm palette: neutral chrome, one green primary, quiet red danger, and
 // the accent tint marking both the selected row and an active mode button.
 const BTN_NEUTRAL: ([f32; 4], [f32; 4]) = ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0]);
@@ -444,7 +417,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
             c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
         });
 
-        divider(stack.context);
+        section_divider(stack.context);
 
         // ── Context zone: add form / OAuth form / selected details ──
         if state.adding_new {
@@ -493,11 +466,11 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
             if selected_idx < state.accounts.len() {
                 let acc = state.accounts[selected_idx].clone();
 
-                kv_row(stack.context, "Email", &acc.email);
+                section_kv_row(stack.context, "Email", &acc.email, TEXT_BTN);
                 let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password" };
-                kv_row(stack.context, "Authentication", auth_type);
-                kv_row(stack.context, "IMAP", &acc.imap);
-                kv_row(stack.context, "SMTP", &acc.smtp);
+                section_kv_row(stack.context, "Authentication", auth_type, TEXT_BTN);
+                section_kv_row(stack.context, "IMAP", &acc.imap, TEXT_BTN);
+                section_kv_row(stack.context, "SMTP", &acc.smtp, TEXT_BTN);
 
                 stack.context.spacing(6.0);
 

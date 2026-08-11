@@ -304,6 +304,34 @@ impl RenderTarget for PageContent {
     }
 }
 
+
+/// A dim label / bright value pair on one line (the shared details idiom).
+pub fn section_kv_row(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>, label: &str, value: &str, value_color: [f32; 4]) {
+    let mut y = sc.content_y;
+    if y > sc.content_start_y {
+        y += sc.row_gap;
+    }
+    let lx = sc.ax(12.0);
+    sc.pc.text(label, lx, y, 12.0, [0.53, 0.53, 0.60, 1.0]);
+    sc.pc.text(value, lx + 130.0, y, 12.0, value_color);
+    sc.content_y = y + 18.0;
+    for h in &mut sc.grid.col_heights {
+        *h = sc.content_y;
+    }
+}
+
+/// A hairline separating a well's zones.
+pub fn section_divider(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>) {
+    let y = sc.content_y + sc.row_gap + 4.0;
+    let x = sc.ax(12.0);
+    let w = sc.cw - 2.0 * (sc.padding() + 12.0);
+    sc.pc.rect([1.0, 1.0, 1.0, 0.06], x, y, w, 1.0);
+    sc.content_y = y + 5.0;
+    for h in &mut sc.grid.col_heights {
+        *h = sc.content_y;
+    }
+}
+
 pub trait SectionContextExt {
     fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
     fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
