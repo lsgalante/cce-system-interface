@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
@@ -12,14 +12,6 @@ pub struct WifiNetwork {
 }
 
 #[derive(Debug, Clone)]
-pub struct BluetoothDevice {
-    pub mac: String,
-    pub name: String,
-    pub icon: String,
-    pub connected: bool,
-}
-
-#[derive(Debug, Clone)]
 pub struct NetworkState {
     pub loaded: bool,
     pub wifi_enabled: bool,
@@ -28,14 +20,8 @@ pub struct NetworkState {
     pub ip_address: String,
     pub device: String,
     pub available: Vec<WifiNetwork>,
-    pub bt_installed: bool,
-    pub bt_service_active: bool,
-    pub bt_enabled: bool,
-    pub bt_devices: Vec<BluetoothDevice>,
-    pub bt_scanning: bool,
     pub wifi_list: ScrollRegion,
     pub wifi_toggle: Adapted<Toggle>,
-    pub bt_toggle: Adapted<Toggle>,
 }
 
 impl Default for NetworkState {
@@ -48,14 +34,8 @@ impl Default for NetworkState {
             ip_address: String::new(),
             device: String::new(),
             available: Vec::new(),
-            bt_installed: false,
-            bt_service_active: false,
-            bt_enabled: false,
-            bt_devices: Vec::new(),
-            bt_scanning: false,
             wifi_list: ScrollRegion::new(26.0, 4.0),
             wifi_toggle: Toggle::new(),
-            bt_toggle: Toggle::new(),
         }
     }
 }
@@ -65,12 +45,6 @@ pub enum NetworkMessage {
     Refreshed(NetworkState),
     ToggleWifi,
     ConnectWifi(String),
-    ToggleBluetooth,
-    BtConnect(String),
-    BtDisconnect(String),
-    BtScan,
-    InstallBtTools,
-    StartBtService,
 }
 
 pub async fn fetch_network_state() -> NetworkState {
@@ -119,17 +93,13 @@ pub async fn fetch_network_state() -> NetworkState {
         }).unwrap_or_default();
 
     let available = if wifi_enabled { fetch_wifi_list().await } else { Vec::new() };
-    let (bt_installed, bt_service_active, bt_enabled, bt_devices) = fetch_bluetooth_state().await;
 
     NetworkState {
         loaded: true,
         wifi_enabled, connected_ssid, signal_strength: signal,
         ip_address, device, available,
-        bt_installed, bt_service_active,
-        bt_enabled, bt_devices, bt_scanning: false,
         wifi_list: ScrollRegion::new(26.0, 4.0),
         wifi_toggle: Toggle::new(),
-        bt_toggle: Toggle::new(),
     }
 }
 
@@ -161,79 +131,6 @@ async fn fetch_wifi_list() -> Vec<WifiNetwork> {
     networks
 }
 
-async fn fetch_bluetooth_state() -> (bool, bool, bool, Vec<BluetoothDevice>) {
-    let bt_installed = tokio::process::Command::new("bluetoothctl")
-        .arg("--version")
-        .output()
-        .await
-        .is_ok();
-
-    if !bt_installed {
-        return (false, false, false, Vec::new());
-    }
-
-    let bt_service_active = tokio::process::Command::new("systemctl")
-        .args(["is-active", "bluetooth"])
-        .output()
-        .await
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
-        .unwrap_or(false);
-
-    if !bt_service_active {
-        return (true, false, false, Vec::new());
-    }
-
-    let bt_enabled = tokio::process::Command::new("bluetoothctl")
-        .args(["show"]).output().await.ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.contains("Powered: yes")))
-        .unwrap_or(false);
-
-    let devices = if bt_enabled { fetch_bt_devices().await } else { Vec::new() };
-    (true, true, bt_enabled, devices)
-}
-
-async fn fetch_bt_devices() -> Vec<BluetoothDevice> {
-    let out = match tokio::process::Command::new("bluetoothctl")
-        .args(["devices"]).output().await
-    {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-        Err(_) => return Vec::new(),
-    };
-
-    let mut devices = Vec::new();
-    for line in out.lines() {
-        let rest = line.strip_prefix("Device ").unwrap_or("");
-        let parts: Vec<&str> = rest.splitn(2, ' ').collect();
-        if parts.len() < 2 || parts[0].is_empty() || parts[1].is_empty() { continue; }
-        let mac = parts[0].to_string();
-        let default_name = parts[1].to_string();
-
-        let info = tokio::process::Command::new("bluetoothctl")
-            .args(["info", &mac]).output().await.ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
-
-        let info_name = info.lines()
-            .find(|l| l.contains("Name:"))
-            .and_then(|l| l.splitn(2, ':').nth(1).map(|s| s.trim().to_string()));
-
-        let info_alias = info.lines()
-            .find(|l| l.contains("Alias:"))
-            .and_then(|l| l.splitn(2, ':').nth(1).map(|s| s.trim().to_string()));
-
-        let name = info_name.or(info_alias).unwrap_or(default_name);
-
-        let connected = info.lines().any(|l| l.contains("Connected: yes"));
-        let icon = info.lines()
-            .find(|l| l.contains("Icon:"))
-            .and_then(|l| l.split(':').nth(1).map(|s| s.trim().to_string()))
-            .unwrap_or_else(|| "audio-card".into());
-
-        devices.push(BluetoothDevice { mac, name, icon, connected });
-    }
-    devices
-}
-
 fn wifi_connect(ssid: &str) {
     let _ = tokio::process::Command::new("nmcli")
         .args(["dev", "wifi", "connect", ssid]).spawn();
@@ -244,45 +141,20 @@ fn wifi_toggle(enable: bool) {
         .args(["radio", "wifi", if enable { "on" } else { "off" }]).spawn();
 }
 
-fn bt_toggle(enable: bool) {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args([if enable { "power" } else { "power" }, if enable { "on" } else { "off" }]).spawn();
-}
-
-fn bt_connect(mac: &str) {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["connect", mac]).spawn();
-}
-
-fn bt_disconnect(mac: &str) {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["disconnect", mac]).spawn();
-}
-
-fn bt_scan() {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["scan", "on"]).spawn();
-    let _ = tokio::process::Command::new("sh")
-        .args(["-c", "sleep 5 && bluetoothctl scan off"]).spawn();
-}
-
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const TOGGLE_ON: [f32; 4] = [0.16, 0.41, 0.18, 1.0];
-const TOGGLE_OFF: [f32; 4] = [0.16, 0.16, 0.24, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
 const ACT_BTN: [f32; 4] = [0.16, 0.29, 0.18, 1.0];
-const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    // ── WiFi ──
-    builder.add_section(&mut final_pc, "WiFi", root_focused, |sec| {
+    // ── WiFi (label-less well) ──
+    builder.add_section_spanned(&mut final_pc, "", 1, root_focused, |sec| {
         let sec_w = sec.cw;
         let rx = sec.left;
         let padding = sec.padding();
@@ -293,42 +165,37 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             sec.text("Loading WiFi interfaces...", margin, 0.0, 12.0, TEXT_DIM);
         } else {
             let wifi_btn_w = if sec_w < 200.0 { 40.0 } else { 60.0 };
-            let wifi_btn_x = margin;
 
             state.wifi_toggle.set_toggled(state.wifi_enabled);
             state.wifi_toggle.set_label(if state.wifi_enabled { "ON" } else { "OFF" });
-            sec.widget(&mut state.wifi_toggle, wifi_btn_x, wifi_btn_w, 28.0, ctx);
+            // Hand-placed at its real width — sec.widget grid-places at full
+            // column width (the old wide "ON" plate).
+            let yt = sec.ay();
+            let tx = sec.ax(margin);
+            cce_ui::layout::render_widget(sec.pc, &mut state.wifi_toggle, tx, yt, wifi_btn_w, 28.0, ctx);
+            sec.content_y = yt + 28.0 + row_gap;
 
             if state.wifi_enabled {
-                let status_y = sec.ay();
-                let font_size_1 = 13.0;
-                let font_size_2 = 12.0;
-                let status_area_h;
-
+                // Flowing text rows — sec.text advances content_y itself.
                 if !state.connected_ssid.is_empty() {
-                    let y1 = 0.0;
-                    let y2 = font_size_1 + row_gap;
-                    status_area_h = y2 + font_size_2 + row_gap;
-
                     let ssid_max_chars = ((sec_w - 2.0 * margin) / 7.0) as usize;
                     let ssid_truncated = if state.connected_ssid.len() > ssid_max_chars {
                         format!("{}...", &state.connected_ssid[..ssid_max_chars.saturating_sub(3)])
                     } else {
                         state.connected_ssid.clone()
                     };
-                    sec.text(&format!("Connected: {}", ssid_truncated), margin, y1, font_size_1, ACCENT);
+                    sec.text(&format!("Connected: {}", ssid_truncated), margin, 0.0, 13.0, ACCENT);
 
                     if sec_w < 220.0 {
-                        sec.text(&format!("Signal: {}%", state.signal_strength), margin, y2, font_size_2, TEXT_DIM);
+                        sec.text(&format!("Signal: {}%", state.signal_strength), margin, 0.0, 12.0, TEXT_DIM);
                     } else {
                         sec.text(&format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
-                            margin, y2, font_size_2, TEXT_DIM);
+                            margin, 0.0, 12.0, TEXT_DIM);
                     }
                 } else {
-                    status_area_h = font_size_2 + row_gap;
-                    sec.text("Not connected", margin, 0.0, font_size_2, TEXT_DIM);
+                    sec.text("Not connected", margin, 0.0, 12.0, TEXT_DIM);
                 }
-                sec.content_y = status_y + status_area_h;
+                sec.content_y += row_gap;
             }
 
             if state.wifi_enabled && !state.available.is_empty() {
@@ -359,115 +226,11 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                         sec.pc.button(&label, list_box_x + margin, draw_y, btn_w, 26.0,
                             if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
                             if active { ACCENT } else { TEXT_FG },
-                            AppAction::Radios(NetworkMessage::ConnectWifi(net.ssid.clone())));
+                            AppAction::Network(NetworkMessage::ConnectWifi(net.ssid.clone())));
                     }
                 }
                 sec.pc.pop_clip_rect();
                 sec.content_y += list_box_h + row_gap;
-            }
-        }
-    });
-
-    // ── Bluetooth ──
-    builder.add_section(&mut final_pc, "Bluetooth", false, |sec| {
-        let bt_sec_w = sec.cw;
-        let padding = sec.padding();
-        let row_gap = cce_ui::layout::label_margin();
-        let margin = padding.max(12.0);
-        let font_size = 12.0;
-        let btn_h = 28.0;
-
-        if !state.loaded {
-            sec.text("Loading Bluetooth status...", margin, 0.0, font_size, TEXT_DIM);
-        } else if !state.bt_installed {
-            sec.text("Bluetooth tools (bluez) not installed", margin, 0.0, font_size, TEXT_DIM);
-            let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
-            let yt = sec.ay();
-            sec.button("Install Tools", sec.ax(margin), yt, btn_w, btn_h,
-                TOGGLE_ON, BTN_HOVER, WHITE,
-                AppAction::Radios(NetworkMessage::InstallBtTools));
-            sec.content_y = yt + btn_h + row_gap;
-        } else if !state.bt_service_active {
-            sec.text("Bluetooth service is stopped", margin, 0.0, font_size, TEXT_DIM);
-            let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
-            let yt = sec.ay();
-            sec.button("Start Service", sec.ax(margin), yt, btn_w, btn_h,
-                TOGGLE_ON, BTN_HOVER, WHITE,
-                AppAction::Radios(NetworkMessage::StartBtService));
-            sec.content_y = yt + btn_h + row_gap;
-        } else {
-            let yt = sec.ay();
-            let bt_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 60.0 };
-            let scan_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 52.0 };
-            let bt_btn_x = margin;
-            let scan_btn_x = margin + bt_btn_w + row_gap;
- 
-            state.bt_toggle.set_toggled(state.bt_enabled);
-            state.bt_toggle.set_label(if state.bt_enabled { "ON" } else { "OFF" });
-            sec.widget(&mut state.bt_toggle, bt_btn_x, bt_btn_w, btn_h, ctx);
-            sec.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, btn_h,
-                TOGGLE_OFF, BTN_HOVER, WHITE,
-                AppAction::Radios(NetworkMessage::BtScan));
-            sec.content_y = yt + btn_h + row_gap;
- 
-            if state.bt_devices.is_empty() {
-                if state.bt_enabled {
-                    let no_devices_msg = if bt_sec_w < 200.0 { "No paired devices" } else { "No paired devices found" };
-                    sec.text(no_devices_msg, margin, 0.0, font_size, TEXT_DIM);
-                }
-            } else {
-                let item_h = 22.0;
-                for dev in &state.bt_devices {
-                    let status = if dev.connected { ">" } else { " " };
-                    let btn_w = if bt_sec_w < 250.0 { 42.0 } else { 70.0 };
-                    let action_label = if dev.connected {
-                        if bt_sec_w < 250.0 { "Disc" } else { "Disconnect" }
-                    } else {
-                        if bt_sec_w < 250.0 { "Conn" } else { "Connect" }
-                    };
- 
-                    let label_max_w = (bt_sec_w - btn_w - 2.0 * padding - margin - row_gap).max(20.0);
-                    let label_max_chars = ((label_max_w / 6.0) as usize).max(5);
- 
-                    let is_unknown = dev.name.replace('-', ":").eq_ignore_ascii_case(&dev.mac);
-                    let label = if is_unknown {
-                        if bt_sec_w < 350.0 {
-                            format!("{} {}", status, dev.mac)
-                        } else {
-                            format!("{} Unknown Device ({})", status, dev.mac)
-                        }
-                    } else {
-                        if bt_sec_w < 350.0 {
-                            let name_truncated = if dev.name.len() > label_max_chars {
-                                format!("{}...", &dev.name[..label_max_chars.saturating_sub(3)])
-                            } else {
-                                dev.name.clone()
-                            };
-                            format!("{} {}", status, name_truncated)
-                        } else {
-                            let full_label = format!("{} {} ({})", status, dev.name, dev.mac);
-                            if full_label.len() > label_max_chars {
-                                format!("{}...", &full_label[..label_max_chars.saturating_sub(3)])
-                            } else {
-                                full_label
-                            }
-                        }
-                    };
- 
-                    let yt = sec.ay();
-                    let btn_x = margin;
-                    let text_x = margin + btn_w + row_gap;
-                    let text_y_offset = (item_h - font_size) / 2.0;
-                    sec.button(action_label, sec.ax(btn_x), yt, btn_w, item_h,
-                        if dev.connected { TOGGLE_OFF } else { TOGGLE_ON }, BTN_HOVER, WHITE,
-                        if dev.connected {
-                            AppAction::Radios(NetworkMessage::BtDisconnect(dev.mac.clone()))
-                        } else {
-                            AppAction::Radios(NetworkMessage::BtConnect(dev.mac.clone()))
-                        });
-                    sec.text(&label, text_x, text_y_offset, font_size, if dev.connected { ACCENT } else { TEXT_FG });
-                    sec.content_y = yt + item_h + row_gap;
-                }
             }
         }
     });
@@ -485,34 +248,12 @@ pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
             state.ip_address = new.ip_address;
             state.device = new.device;
             state.available = new.available;
-            state.bt_installed = new.bt_installed;
-            state.bt_service_active = new.bt_service_active;
-            state.bt_enabled = new.bt_enabled;
-            state.bt_devices = new.bt_devices;
-            state.bt_scanning = new.bt_scanning;
         }
         NetworkMessage::ToggleWifi => {
             state.wifi_enabled = !state.wifi_enabled;
             wifi_toggle(state.wifi_enabled);
         }
         NetworkMessage::ConnectWifi(ssid) => { wifi_connect(&ssid); }
-        NetworkMessage::ToggleBluetooth => {
-            state.bt_enabled = !state.bt_enabled;
-            bt_toggle(state.bt_enabled);
-        }
-        NetworkMessage::BtConnect(mac) => { bt_connect(&mac); }
-        NetworkMessage::BtDisconnect(mac) => { bt_disconnect(&mac); }
-        NetworkMessage::BtScan => { bt_scan(); }
-        NetworkMessage::InstallBtTools => {
-            let _ = tokio::process::Command::new("pkexec")
-                .args(["sh", "-c", "pacman -S --noconfirm bluez bluez-utils && systemctl enable --now bluetooth"])
-                .spawn();
-        }
-        NetworkMessage::StartBtService => {
-            let _ = tokio::process::Command::new("pkexec")
-                .args(["systemctl", "enable", "--now", "bluetooth"])
-                .spawn();
-        }
     }
 }
 
@@ -525,12 +266,9 @@ impl NetworkState {
 }
 
 impl crate::pages::AppPage for NetworkState {
-    // Sections: [WiFi, Bluetooth]
+    // Sections: [WiFi]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        vec![
-            vec![self.wifi_toggle.id()],
-            vec![self.bt_toggle.id()],
-        ]
+        vec![vec![self.wifi_toggle.id()]]
     }
 
     fn view(
@@ -552,10 +290,7 @@ impl crate::pages::AppPage for NetworkState {
 
     fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
         if self.wifi_toggle.take_change() {
-            actions.push(crate::app::AppAction::Radios(NetworkMessage::ToggleWifi));
-        }
-        if self.bt_toggle.take_change() {
-            actions.push(crate::app::AppAction::Radios(NetworkMessage::ToggleBluetooth));
+            actions.push(crate::app::AppAction::Network(NetworkMessage::ToggleWifi));
         }
     }
 

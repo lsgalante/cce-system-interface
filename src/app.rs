@@ -1,6 +1,7 @@
 use cce_ui::layout::RenderTarget;
 
 use crate::pages::audio;
+use crate::pages::bluetooth;
 use crate::pages::default_apps;
 use crate::pages::network;
 use crate::pages::processes;
@@ -16,6 +17,7 @@ use crate::pages::Page;
 pub struct AppState {
     pub current_page: Page,
     pub audio: audio::AudioState,
+    pub bluetooth: bluetooth::BluetoothState,
     pub default_apps: default_apps::DefaultAppsState,
     pub network: network::NetworkState,
     pub processes: processes::ProcessesState,
@@ -33,6 +35,7 @@ impl Default for AppState {
         Self {
             current_page: Page::ALL[0],
             audio: audio::AudioState::default(),
+            bluetooth: bluetooth::BluetoothState::default(),
             default_apps: default_apps::DefaultAppsState::default(),
             network: network::NetworkState::default(),
             processes: processes::ProcessesState::default(),
@@ -52,11 +55,12 @@ impl AppState {
         match page {
             Page::Accounts => &self.accounts,
             Page::Audio => &self.audio,
+            Page::Bluetooth => &self.bluetooth,
             Page::DefaultApps => &self.default_apps,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
             Page::Services => &self.services,
-            Page::Radios => &self.network,
+            Page::Network => &self.network,
             Page::Storage => &self.storage,
             Page::System => &self.system_info,
             Page::Fonts => &self.fonts,
@@ -68,11 +72,12 @@ impl AppState {
         match page {
             Page::Accounts => &mut self.accounts,
             Page::Audio => &mut self.audio,
+            Page::Bluetooth => &mut self.bluetooth,
             Page::DefaultApps => &mut self.default_apps,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
             Page::Services => &mut self.services,
-            Page::Radios => &mut self.network,
+            Page::Network => &mut self.network,
             Page::Storage => &mut self.storage,
             Page::System => &mut self.system_info,
             Page::Fonts => &mut self.fonts,
@@ -94,7 +99,8 @@ pub enum AppAction {
     Exit,
     Audio(audio::AudioMessage),
     DefaultApps(default_apps::DefaultAppsMessage),
-    Radios(network::NetworkMessage),
+    Network(network::NetworkMessage),
+    Bluetooth(bluetooth::BluetoothMessage),
     Processes(processes::ProcessesMessage),
     Services(services::ServicesMessage),
     SystemInfo(system_info::SystemMessage),

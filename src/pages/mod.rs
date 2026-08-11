@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod bluetooth;
 pub mod default_apps;
 pub mod network;
 pub mod storage;
@@ -14,9 +15,10 @@ pub mod notifications;
 pub enum Page {
     Accounts,
     Audio,
+    Bluetooth,
     DefaultApps,
+    Network,
     Notifications,
-    Radios,
     Storage,
     System,
     Processes,
@@ -26,15 +28,16 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 11] = [
+    pub const ALL: [Page; 12] = [
         Page::Accounts,
         Page::Audio,
+        Page::Bluetooth,
         Page::DefaultApps,
         Page::Fonts,
+        Page::Network,
         Page::Notifications,
         Page::Packages,
         Page::Processes,
-        Page::Radios,
         Page::Services,
         Page::Storage,
         Page::System,
@@ -44,9 +47,10 @@ impl Page {
         match self {
             Page::Accounts => "Accounts",
             Page::Audio => "Audio",
+            Page::Bluetooth => "Bluetooth",
             Page::DefaultApps => "Default Apps",
+            Page::Network => "Network",
             Page::Notifications => "Notifications",
-            Page::Radios => "Radios",
             Page::Storage => "Storage",
             Page::System => "System",
             Page::Processes => "Processes",
