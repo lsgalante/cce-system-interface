@@ -62,6 +62,7 @@ struct SystemInterface {
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_default_apps: std::sync::mpsc::Receiver<pages::default_apps::DefaultAppsInfo>,
+    rx_timers: std::sync::mpsc::Receiver<Vec<pages::timers::TimerInfo>>,
     rx_fonts: std::sync::mpsc::Receiver<pages::fonts::FontsState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
@@ -158,6 +159,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_bluetooth: watchers.rx_bluetooth,
             rx_processes: watchers.rx_processes,
             rx_default_apps: watchers.rx_default_apps,
+            rx_timers: watchers.rx_timers,
             rx_system: watchers.rx_system,
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
@@ -494,6 +496,12 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
+        while let Ok(s) = self.rx_timers.try_recv() {
+            pages::timers::update(&mut self.app.timers, pages::timers::TimersMessage::Refreshed(s));
+            if self.app.current_page == Page::Timers {
+                self.needs_rebuild = true;
+            }
+        }
         while let Ok(s) = self.rx_bluetooth.try_recv() {
             pages::bluetooth::update(&mut self.app.bluetooth, pages::bluetooth::BluetoothMessage::Refreshed(s));
             if self.app.current_page == Page::Bluetooth {
@@ -579,6 +587,7 @@ impl SystemInterface {
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Network(m) => network::update(&mut self.app.network, m.clone()),
             AppAction::Bluetooth(m) => pages::bluetooth::update(&mut self.app.bluetooth, m.clone()),
+            AppAction::Timers(m) => pages::timers::update(&mut self.app.timers, m.clone()),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone(), &mut self.ui_context),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),

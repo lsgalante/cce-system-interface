@@ -4,6 +4,7 @@ pub mod default_apps;
 pub mod network;
 pub mod storage;
 pub mod system_info;
+pub mod timers;
 pub mod processes;
 pub mod services;
 pub mod fonts;
@@ -21,6 +22,7 @@ pub enum Page {
     Notifications,
     Storage,
     System,
+    Timers,
     Processes,
     Services,
     Fonts,
@@ -28,7 +30,7 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 12] = [
+    pub const ALL: [Page; 13] = [
         Page::Accounts,
         Page::Audio,
         Page::Bluetooth,
@@ -41,6 +43,7 @@ impl Page {
         Page::Services,
         Page::Storage,
         Page::System,
+        Page::Timers,
     ];
 
     pub fn label(self) -> &'static str {
@@ -53,6 +56,7 @@ impl Page {
             Page::Notifications => "Notifications",
             Page::Storage => "Storage",
             Page::System => "System",
+            Page::Timers => "Timers",
             Page::Processes => "Processes",
             Page::Services => "Services",
             Page::Fonts => "Fonts",
