@@ -13,12 +13,14 @@ use crate::pages::fonts;
 use crate::pages::accounts;
 use crate::pages::packages;
 use crate::pages::notifications;
+use crate::pages::browser;
 use crate::pages::Page;
 
 pub struct AppState {
     pub current_page: Page,
     pub audio: audio::AudioState,
     pub bluetooth: bluetooth::BluetoothState,
+    pub browser: browser::BrowserState,
     pub default_apps: default_apps::DefaultAppsState,
     pub network: network::NetworkState,
     pub processes: processes::ProcessesState,
@@ -38,6 +40,7 @@ impl Default for AppState {
             current_page: Page::ALL[0],
             audio: audio::AudioState::default(),
             bluetooth: bluetooth::BluetoothState::default(),
+            browser: browser::BrowserState::default(),
             default_apps: default_apps::DefaultAppsState::default(),
             network: network::NetworkState::default(),
             processes: processes::ProcessesState::default(),
@@ -59,6 +62,7 @@ impl AppState {
             Page::Accounts => &self.accounts,
             Page::Audio => &self.audio,
             Page::Bluetooth => &self.bluetooth,
+            Page::Browser => &self.browser,
             Page::DefaultApps => &self.default_apps,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
@@ -77,6 +81,7 @@ impl AppState {
             Page::Accounts => &mut self.accounts,
             Page::Audio => &mut self.audio,
             Page::Bluetooth => &mut self.bluetooth,
+            Page::Browser => &mut self.browser,
             Page::DefaultApps => &mut self.default_apps,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
@@ -103,6 +108,7 @@ impl AppState {
 pub enum AppAction {
     Exit,
     Audio(audio::AudioMessage),
+    Browser(browser::BrowserMessage),
     DefaultApps(default_apps::DefaultAppsMessage),
     Network(network::NetworkMessage),
     Bluetooth(bluetooth::BluetoothMessage),

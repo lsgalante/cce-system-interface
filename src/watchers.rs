@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, audio, bluetooth, default_apps, network, fonts, processes, services, system_info, storage, packages, accounts, notifications, timers};
+use crate::pages::{Page, audio, bluetooth, browser, default_apps, network, fonts, processes, services, system_info, storage, packages, accounts, notifications, timers};
 
 pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
@@ -11,6 +11,7 @@ pub struct Watchers {
     pub rx_system: Receiver<system_info::SystemInfo>,
     pub rx_storage: Receiver<storage::StorageState>,
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
+    pub rx_browser: Receiver<browser::BrowserConfig>,
     pub rx_services: Receiver<Vec<services::ServiceInfo>>,
     pub rx_default_apps: Receiver<default_apps::DefaultAppsInfo>,
     pub rx_timers: Receiver<Vec<timers::TimerInfo>>,
@@ -94,6 +95,34 @@ pub fn spawn_all(
         rx
     };
 
+    // Config-file poll while the Browser page is open: catches edits made
+    // outside this app (the browser itself, cce-data-editor).
+    let rx_browser = {
+        let (tx, rx) = channel::<browser::BrowserConfig>();
+        let current_page_shared = current_page_shared.clone();
+        tokio::spawn(async move {
+            let mut last_fetch: Option<std::time::Instant> = None;
+            loop {
+                let current_page = current_page_shared.load(Ordering::SeqCst);
+                if current_page == Page::Browser.index() as u8 {
+                    let should_fetch = match last_fetch {
+                        None => true,
+                        Some(t) => t.elapsed() >= std::time::Duration::from_secs(5),
+                    };
+                    if should_fetch {
+                        let val = tokio::task::spawn_blocking(browser::read_browser_config).await;
+                        if let Ok(val) = val {
+                            if tx.send(val).is_err() { break; }
+                        }
+                        last_fetch = Some(std::time::Instant::now());
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+        });
+        rx
+    };
+
     let rx_fonts = spawn_bg_active(current_page_shared.clone(), Page::Fonts.index() as u8, 30, || fonts::fetch_typeface_state());
     let rx_services = spawn_bg_active(current_page_shared.clone(), Page::Services.index() as u8, 3, || services::fetch_services());
     let rx_default_apps = spawn_bg_active(current_page_shared.clone(), Page::DefaultApps.index() as u8, 10, || default_apps::fetch_default_apps());
@@ -113,6 +142,7 @@ pub fn spawn_all(
             rx_system,
             rx_storage,
             rx_notifications,
+            rx_browser,
             rx_services,
             rx_default_apps,
             rx_timers,

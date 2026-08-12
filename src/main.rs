@@ -60,6 +60,7 @@ struct SystemInterface {
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemInfo>,
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
+    rx_browser: std::sync::mpsc::Receiver<pages::browser::BrowserConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_default_apps: std::sync::mpsc::Receiver<pages::default_apps::DefaultAppsInfo>,
     rx_timers: std::sync::mpsc::Receiver<Vec<pages::timers::TimerInfo>>,
@@ -163,6 +164,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_system: watchers.rx_system,
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
+            rx_browser: watchers.rx_browser,
             rx_services: watchers.rx_services,
             rx_fonts: watchers.rx_fonts,
             rx_accounts: watchers.rx_accounts,
@@ -532,6 +534,12 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
+        while let Ok(s) = self.rx_browser.try_recv() {
+            pages::browser::update(&mut self.app.browser, pages::browser::BrowserMessage::Refreshed(s));
+            if self.app.current_page == Page::Browser {
+                self.needs_rebuild = true;
+            }
+        }
         while let Ok(s) = self.rx_fonts.try_recv() {
             self.sans_serif_family = s.sans_serif.clone();
             self.serif_family = s.serif.clone();
@@ -593,6 +601,7 @@ impl SystemInterface {
             AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
             AppAction::DefaultApps(m) => pages::default_apps::update(&mut self.app.default_apps, m.clone()),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
+            AppAction::Browser(m) => pages::browser::update(&mut self.app.browser, m.clone()),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {
                     pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup);
