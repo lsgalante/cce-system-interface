@@ -5,7 +5,7 @@
 use crate::app::{PageContent, SectionContextExt};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, WidgetHost};
+use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox, WidgetHost};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerTab {
@@ -33,6 +33,11 @@ pub struct TimersState {
     pub active_tab: TimerTab,
     pub list: ScrollRegion,
     pub items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
+    pub creating: bool,
+    pub name_box: cce_ui::widget::Adapted<TextBox>,
+    pub command_box: cce_ui::widget::Adapted<TextBox>,
+    pub schedule_box: cce_ui::widget::Adapted<TextBox>,
+    pub status_msg: Option<String>,
 }
 
 impl Default for TimersState {
@@ -43,6 +48,14 @@ impl Default for TimersState {
             active_tab: TimerTab::System,
             list: ScrollRegion::new(36.0, 6.0).with_frame(false),
             items: Vec::new(),
+            creating: false,
+            name_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Name")
+                .with_placeholder("backup"),
+            command_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Command")
+                .with_placeholder("/home/me/bin/backup.sh --fast"),
+            schedule_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Schedule (OnCalendar)")
+                .with_placeholder("daily \u{2022} Mon 09:00 \u{2022} *-*-* 03:00:00"),
+            status_msg: None,
         }
     }
 }
@@ -55,6 +68,9 @@ pub enum TimersMessage {
     RunNow(String, bool),
     Enable(String, bool),
     Disable(String, bool),
+    CreateStart,
+    CreateCancel,
+    CreateSave,
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
@@ -166,6 +182,59 @@ pub async fn fetch_timers() -> Vec<TimerInfo> {
     all
 }
 
+/// A TextBox's live contents: the in-progress edit buffer while focused, the
+/// committed text otherwise (the recurring TextBox landmine).
+fn live_text(tb: &cce_ui::widget::Adapted<TextBox>) -> String {
+    if tb.editing {
+        tb.edit_buffer.trim().to_string()
+    } else {
+        tb.text.trim().to_string()
+    }
+}
+
+/// Create and enable a USER timer: `<name>.service` + `<name>.timer` under
+/// ~/.config/systemd/user, schedule validated by `systemd-analyze calendar`.
+fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String, String> {
+    if name.is_empty() || command.is_empty() || schedule.is_empty() {
+        return Err("All fields are required".into());
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("Name: letters, digits, - and _ only".into());
+    }
+    let valid = std::process::Command::new("systemd-analyze")
+        .args(["calendar", schedule])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !valid {
+        return Err(format!("Invalid OnCalendar expression: {}", schedule));
+    }
+
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = std::path::PathBuf::from(home).join(".config/systemd/user");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let timer_path = dir.join(format!("{}.timer", name));
+    if timer_path.exists() {
+        return Err(format!("{}.timer already exists", name));
+    }
+
+    let service = format!(
+        "[Unit]\nDescription={name} (created by cce-system-interface)\n\n[Service]\nType=oneshot\nExecStart=/bin/sh -c '{command}'\n",
+        name = name,
+        command = command.replace('\'', "'\\''"),
+    );
+    let timer = format!(
+        "[Unit]\nDescription={name} schedule\n\n[Timer]\nOnCalendar={schedule}\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+    );
+    std::fs::write(dir.join(format!("{}.service", name)), service).map_err(|e| e.to_string())?;
+    std::fs::write(&timer_path, timer).map_err(|e| e.to_string())?;
+
+    let _ = tokio::process::Command::new("sh")
+        .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user enable --now {}.timer", name)])
+        .spawn();
+    Ok(format!("Created and enabled {}.timer", name))
+}
+
 fn systemctl_action(args: &[&str], is_system: bool) {
     if is_system {
         let mut full = vec!["systemctl"];
@@ -225,6 +294,50 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     );
                 }
             });
+
+            stack.context.spacing(4.0);
+
+            // New Timer (user scope) — compact button; the form unfolds below.
+            let new_bg = if state.creating { active_bg } else { [0.13, 0.18, 0.14, 1.0] };
+            stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+                if i == 0 {
+                    c.button("New Timer", x, c.ay(), w, 26.0,
+                        new_bg, [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
+                        crate::app::AppAction::Timers(TimersMessage::CreateStart));
+                }
+            });
+
+            if state.creating {
+                let item_w = sec_w - 2.0 * (stack.context.padding() + 12.0);
+                let rx = stack.context.left;
+                let widget_h = cce_ui::layout::spinbox_height();
+
+                stack.context.text("New user timer \u{2014} runs the command on the schedule.", 12.0, 0.0, 11.0, TEXT_DIM);
+
+                state.name_box.set_row_rect(rx + 12.0, item_w);
+                stack.add_widget(&mut state.name_box, item_w, widget_h, ctx);
+                state.command_box.set_row_rect(rx + 12.0, item_w);
+                stack.add_widget(&mut state.command_box, item_w, widget_h, ctx);
+                state.schedule_box.set_row_rect(rx + 12.0, item_w);
+                stack.add_widget(&mut state.schedule_box, item_w, widget_h, ctx);
+
+                stack.context.spacing(4.0);
+                stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+                    match i {
+                        0 => c.button("Create", x, c.ay(), w, 26.0,
+                            [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
+                            crate::app::AppAction::Timers(TimersMessage::CreateSave)),
+                        1 => c.button("Cancel", x, c.ay(), w, 26.0,
+                            [0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], [0.90, 0.90, 0.95, 1.0],
+                            crate::app::AppAction::Timers(TimersMessage::CreateCancel)),
+                        _ => {}
+                    }
+                });
+            }
+
+            if let Some(ref msg) = state.status_msg {
+                stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
+            }
 
             stack.context.spacing(8.0);
 
@@ -381,13 +494,50 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
             }
             systemctl_action(&["disable", "--now", &unit], is_system);
         }
+        TimersMessage::CreateStart => {
+            state.creating = true;
+            state.status_msg = None;
+            for tb in [&mut state.name_box, &mut state.command_box, &mut state.schedule_box] {
+                tb.text = String::new();
+                tb.edit_buffer = String::new();
+            }
+        }
+        TimersMessage::CreateCancel => {
+            state.creating = false;
+            state.status_msg = None;
+        }
+        TimersMessage::CreateSave => {
+            let name = live_text(&state.name_box);
+            let command = live_text(&state.command_box);
+            let schedule = live_text(&state.schedule_box);
+            match create_user_timer(&name, &command, &schedule) {
+                Ok(msg) => {
+                    state.creating = false;
+                    state.status_msg = Some(msg);
+                    // Show the new unit where it will appear on the next refresh.
+                    state.active_tab = TimerTab::User;
+                    state.items.clear();
+                }
+                Err(e) => {
+                    state.status_msg = Some(e);
+                }
+            }
+        }
     }
 }
 
 impl crate::pages::AppPage for TimersState {
-    // Sections: [Timers]
+    // Sections: [Timers] — the create-form boxes join the group while open.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        vec![Vec::new()]
+        if self.creating {
+            vec![vec![
+                self.name_box.id(),
+                self.command_box.id(),
+                self.schedule_box.id(),
+            ]]
+        } else {
+            vec![Vec::new()]
+        }
     }
 
     fn view(
@@ -455,6 +605,14 @@ mod tests {
         assert_eq!(humanize(3 * 3600), "3h");
         assert_eq!(humanize(3 * 3600 + 20 * 60), "3h 20min");
         assert_eq!(humanize(5 * 86_400 + 3 * 3600), "5d 3h");
+    }
+
+    #[test]
+    fn create_timer_validation_rejects_before_side_effects() {
+        assert!(create_user_timer("", "echo hi", "daily").is_err());
+        assert!(create_user_timer("backup", "", "daily").is_err());
+        assert!(create_user_timer("backup", "echo hi", "").is_err());
+        assert!(create_user_timer("bad name!", "echo hi", "daily").is_err());
     }
 
     #[test]
