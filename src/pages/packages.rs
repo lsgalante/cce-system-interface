@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent, SectionContextExt, section_divider};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
 use cce_ui::widget::{WidgetHost, TextBox, InteractiveListItem};
@@ -55,9 +55,9 @@ impl Default for PackagesState {
             updates: Vec::new(),
             active_tab: PackageTab::Installed,
             search_box: TextBox::new(String::new()).with_placeholder("Filter Packages..."),
-            installed_list: ScrollRegion::new(32.0, 4.0),
+            installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false),
             installed_items: Vec::new(),
-            updates_list: ScrollRegion::new(32.0, 4.0),
+            updates_list: ScrollRegion::new(32.0, 4.0).with_frame(false),
             updates_items: Vec::new(),
             updating: false,
             last_update_res: None,
@@ -329,167 +329,113 @@ pub fn view(
 ) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    // Section 1: Packages List
-    builder.add_section(&mut final_pc, "Packages", sec_focused.first().copied().unwrap_or(false), |sec| {
+    builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading package lists...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else {
-            // Tab header: Installed, Updates
-            let mut stack = sec.vstack(8.0);
-            let tab_h = 28.0;
-            let active_bg = [0.20, 0.40, 0.65, 0.4];
-            let inactive_bg = [0.10, 0.10, 0.16, 0.3];
-            let hover_bg = [0.20, 0.20, 0.25, 0.15];
+            return;
+        }
 
-            let label1 = "Installed";
-            let label2 = "Updates";
+        // ── Tabs (with counts), filter, compact update row ──
+        let mut stack = sec.vstack(8.0);
+        let tab_h = 28.0;
+        let active_bg = [0.20, 0.40, 0.65, 0.4];
+        let inactive_bg = [0.10, 0.10, 0.16, 0.3];
+        let hover_bg = [0.20, 0.20, 0.25, 0.15];
 
-            stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
-                if i == 0 {
-                    ctx.button(
-                        label1,
-                        x,
-                        ctx.ay(),
-                        w,
-                        tab_h,
-                        if state.active_tab == PackageTab::Installed { active_bg } else { inactive_bg },
-                        hover_bg,
-                        [0.90, 0.90, 0.95, 1.0],
-                        AppAction::Packages(PackagesMessage::SetTab(PackageTab::Installed)),
-                    );
-                } else {
-                    ctx.button(
-                        label2,
-                        x,
-                        ctx.ay(),
-                        w,
-                        tab_h,
-                        if state.active_tab == PackageTab::Updates { active_bg } else { inactive_bg },
-                        hover_bg,
-                        [0.90, 0.90, 0.95, 1.0],
-                        AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)),
-                    );
-                }
-            });
+        let label1 = format!("Installed ({})", state.installed.len());
+        let label2 = format!("Updates ({})", state.updates.len());
 
-            stack.context.spacing(4.0);
-
-            // Search box
-            let search_w = sec_w - 24.0;
-            let search_h = 46.0;
-
-            state.search_box.set_row_rect(stack.context.left + 12.0, search_w);
-            stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
-            stack.context.spacing(8.0);
-
-            // List area
-            let list_box_x = sec.left + 12.0;
-            let list_box_y = sec.ay();
-            let list_box_w = sec_w - 24.0;
-            let list_box_h = 360.0;
-
-            let query = if state.search_box.editing {
-                state.search_box.edit_buffer.to_lowercase()
+        stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
+            if i == 0 {
+                ctx.button(
+                    &label1,
+                    x,
+                    ctx.ay(),
+                    w,
+                    tab_h,
+                    if state.active_tab == PackageTab::Installed { active_bg } else { inactive_bg },
+                    hover_bg,
+                    [0.90, 0.90, 0.95, 1.0],
+                    AppAction::Packages(PackagesMessage::SetTab(PackageTab::Installed)),
+                );
             } else {
-                state.search_box.text.to_lowercase()
-            };
+                ctx.button(
+                    &label2,
+                    x,
+                    ctx.ay(),
+                    w,
+                    tab_h,
+                    if state.active_tab == PackageTab::Updates { active_bg } else { inactive_bg },
+                    hover_bg,
+                    [0.90, 0.90, 0.95, 1.0],
+                    AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)),
+                );
+            }
+        });
 
-            match state.active_tab {
-                PackageTab::Installed => {
-                    let filtered: Vec<&PackageInfo> = state.installed.iter()
-                        .filter(|p| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
-                        .collect();
+        stack.context.spacing(4.0);
 
-                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-                    state.installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                    state.installed_list.update_bounds(filtered.len(), list_box_y, list_box_h);
-                    state.installed_list.push_prims(sec.pc);
-                    let item_h = state.installed_list.item_height;
+        let search_w = sec_w - 24.0;
+        let search_h = 46.0;
+        state.search_box.set_row_rect(stack.context.left + 12.0, search_w);
+        stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
+        stack.context.spacing(4.0);
 
-                    if state.installed_items.len() != filtered.len() {
-                        state.installed_items.clear();
-                        for _ in 0..filtered.len() {
-                            state.installed_items.push(InteractiveListItem::new(""));
-                        }
-                    }
+        // Update System: compact button + status text on one row.
+        let status_line = if state.updating {
+            "Updating system...".to_string()
+        } else if state.updates.is_empty() {
+            "System is up to date".to_string()
+        } else {
+            format!("{} updates available", state.updates.len())
+        };
+        let status_color = if state.updating || !state.updates.is_empty() { ACCENT } else { TEXT_DIM };
+        let (btn_lbl, bg, hover) = if state.updating {
+            ("Updating...", [0.15, 0.15, 0.20, 1.0], [0.15, 0.15, 0.20, 1.0])
+        } else {
+            ("Update System", [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0])
+        };
+        stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+            if i == 0 {
+                c.button(btn_lbl, x, c.ay(), w, 26.0, bg, hover, [0.90, 0.90, 0.95, 1.0],
+                    AppAction::Packages(PackagesMessage::StartUpdate));
+            } else if i == 1 {
+                let y = c.ay();
+                c.pc.text(&status_line, x, y + 6.0, 12.0, status_color);
+            }
+        });
 
-                    sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                    for (idx, pkg) in filtered.iter().enumerate() {
-                        if let Some(draw_y) = state.installed_list.get_item_draw_y(idx, 4.0) {
-                            // Rows dispatch as extra roots (the dissolved list is no parent).
-                            let item = &mut state.installed_items[idx];
-                            item.title = pkg.name.clone();
-                            item.subtitle = Some(format!("Version: {}", pkg.version));
-                            item.selected = Some(&pkg.name) == state.selected_package.as_ref();
-                            render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
-                        }
-                    }
-                    sec.pc.pop_clip_rect();
-
-                    if filtered.is_empty() {
-                        sec.pc.text("No packages match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
-                    }
-                }
-                PackageTab::Updates => {
-                    let filtered: Vec<&UpdateInfo> = state.updates.iter()
-                        .filter(|p| p.name.to_lowercase().contains(&query))
-                        .collect();
-
-                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-                    state.updates_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                    state.updates_list.update_bounds(filtered.len(), list_box_y, list_box_h);
-                    state.updates_list.push_prims(sec.pc);
-                    let item_h = state.updates_list.item_height;
-
-                    if state.updates_items.len() != filtered.len() {
-                        state.updates_items.clear();
-                        for _ in 0..filtered.len() {
-                            state.updates_items.push(InteractiveListItem::new(""));
-                        }
-                    }
-
-                    sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                    for (idx, pkg) in filtered.iter().enumerate() {
-                        if let Some(draw_y) = state.updates_list.get_item_draw_y(idx, 4.0) {
-                            // Rows dispatch as extra roots (the dissolved list is no parent).
-                            let item = &mut state.updates_items[idx];
-                            item.title = pkg.name.clone();
-                            item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
-                            item.selected = Some(&pkg.name) == state.selected_package.as_ref();
-                            render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
-                        }
-                    }
-                    sec.pc.pop_clip_rect();
-
-                    if filtered.is_empty() {
-                        sec.pc.text("No updates match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
-                    }
+        if let Some(ref res) = state.last_update_res {
+            match res {
+                Ok(_) => stack.context.text("Last update succeeded", 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]),
+                Err(err) => {
+                    stack.context.text("Last update failed:", 12.0, 0.0, 12.0, RED);
+                    stack.context.text(err, 12.0, 0.0, 11.0, RED);
                 }
             }
-
-            sec.content_y += list_box_h;
         }
-    });
 
-    // Section 2: Package Details Info
-    builder.add_section(&mut final_pc, "Package Info", sec_focused.get(1).copied().unwrap_or(false), |sec1| {
+        // ── Selected package details ──
+        if state.loading_info || state.selected_package.is_some() {
+            section_divider(stack.context);
+        }
         if state.loading_info {
-            sec1.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else if let Some(ref pkg_name) = state.selected_package {
-            if let Some(ref info_raw) = state.selected_package_info {
-                let mut parsed = parse_package_info(info_raw);
+            stack.context.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
+        } else if let Some(pkg_name) = state.selected_package.clone() {
+            if let Some(info_raw) = state.selected_package_info.clone() {
+                let mut parsed = parse_package_info(&info_raw);
                 if parsed.name.is_empty() {
                     parsed.name = pkg_name.clone();
                 }
 
-                sec1.text(&parsed.name, 12.0, 0.0, 13.0, WHITE);
+                stack.context.text(&parsed.name, 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
 
                 let render_detail = |sub: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
                     sub.text(key, 12.0, 0.0, 11.0, TEXT_DIM);
-                    let val_start_x = 90.0f32;
+                    let val_start_x = 130.0f32;
                     let usable_w = sub.cw - val_start_x - 12.0;
                     let char_w = 6.0f32;
                     let max_chars = (usable_w / char_w).max(15.0) as usize;
@@ -500,29 +446,27 @@ pub fn view(
                     }
                 };
 
-                render_detail(sec1, "Version:", &parsed.version);
+                render_detail(stack.context, "Version:", &parsed.version);
                 if !parsed.size.is_empty() {
-                    render_detail(sec1, "Size:", &parsed.size);
+                    render_detail(stack.context, "Size:", &parsed.size);
                 }
                 if !parsed.licenses.is_empty() {
-                    render_detail(sec1, "Licenses:", &parsed.licenses);
+                    render_detail(stack.context, "Licenses:", &parsed.licenses);
                 }
                 if !parsed.website.is_empty() {
-                    render_detail(sec1, "Website:", &parsed.website);
+                    render_detail(stack.context, "Website:", &parsed.website);
                 }
                 if !parsed.packager.is_empty() {
-                    render_detail(sec1, "Packager:", &parsed.packager);
+                    render_detail(stack.context, "Packager:", &parsed.packager);
                 }
                 if !parsed.build_date.is_empty() {
-                    render_detail(sec1, "Build Date:", &parsed.build_date);
+                    render_detail(stack.context, "Build Date:", &parsed.build_date);
                 }
                 if !parsed.description.is_empty() {
-                    sec1.separator();
-                    render_detail(sec1, "Description:", &parsed.description);
+                    render_detail(stack.context, "Description:", &parsed.description);
                 }
                 if !parsed.required_by.is_empty() && parsed.required_by != "None" {
-                    sec1.separator();
-                    sec1.text("Required By:", 12.0, 0.0, 11.0, TEXT_DIM);
+                    stack.context.text("Required By:", 12.0, 0.0, 11.0, TEXT_DIM);
 
                     let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
                     let cols_count = 3;
@@ -530,89 +474,128 @@ pub fn view(
                     let btn_h = 24.0;
 
                     for chunk in reqs.chunks(cols_count) {
-                        let btn_y = sec1.ay();
-                        let cols = sec1.row_layout(cols_count, gap);
+                        let btn_y = stack.context.ay();
+                        let cols = stack.context.row_layout(cols_count, gap);
                         for (i, &pkg) in chunk.iter().enumerate() {
                             if let Some(&(x, w)) = cols.get(i) {
                                 let action = AppAction::Packages(PackagesMessage::SelectAndScrollPackage(pkg.to_string()));
-                                sec1.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
+                                stack.context.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
                             }
                         }
                     }
                 }
                 if !parsed.commands.is_empty() {
-                    sec1.separator();
-                    render_detail(sec1, "Commands:", &parsed.commands);
+                    render_detail(stack.context, "Commands:", &parsed.commands);
                 }
 
                 if state.active_tab == PackageTab::Installed {
-                    let mut stack = sec1.vstack(8.0);
-                    let btn_h = 32.0;
-                    let (btn_lbl, bg, hover, action) = if state.uninstalling {
-                        ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
+                    stack.context.spacing(4.0);
+                    let (btn_lbl, bg, hover, text_col) = if state.uninstalling {
+                        ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
                     } else {
-                        ("Uninstall Package", RED, BTN_HOVER, AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())))
+                        ("Uninstall", [0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
                     };
-                    stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-                        ctx.button(btn_lbl, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
+                    stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+                        if i == 0 {
+                            c.button(btn_lbl, x, c.ay(), w, 26.0, bg, hover, text_col,
+                                AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())));
+                        }
                     });
                 }
             } else {
-                sec1.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
+                stack.context.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
             }
-        } else {
-            sec1.text("Select a package to view details.", 12.0, 0.0, 12.0, TEXT_DIM);
         }
-    });
 
-    // Section 3: Update Actions / Status
-    builder.add_section(&mut final_pc, "System Update", sec_focused.get(2).copied().unwrap_or(false), |sec2| {
-        if !state.loaded {
-            sec2.text("Loading update status...", 12.0, 0.0, 12.0, TEXT_DIM);
+        section_divider(stack.context);
+
+        // ── List fills the rest of the page ──
+        let list_box_x = sec.left + 12.0;
+        let list_box_y = sec.ay();
+        let list_box_w = sec_w - 24.0;
+        let list_box_h = ((cy + ch) - 12.0 - list_box_y).max(120.0);
+
+        let query = if state.search_box.editing {
+            state.search_box.edit_buffer.to_lowercase()
         } else {
-            // Display summaries
-            sec2.text("Installed Packages:", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec2.text(&format!("{}", state.installed.len()), 150.0, 0.0, 12.0, TEXT_FG);
+            state.search_box.text.to_lowercase()
+        };
 
-            sec2.text("Available Updates:", 12.0, 0.0, 12.0, TEXT_DIM);
-            let updates_color = if state.updates.is_empty() { TEXT_FG } else { ACCENT };
-            sec2.text(&format!("{}", state.updates.len()), 150.0, 0.0, 12.0, updates_color);
+        match state.active_tab {
+            PackageTab::Installed => {
+                let filtered: Vec<&PackageInfo> = state.installed.iter()
+                    .filter(|p| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
+                    .collect();
 
-            let status_lbl = if state.updating {
-                "Updating..."
-            } else if state.updates.is_empty() {
-                "System is up to date"
-            } else {
-                "Updates available"
-            };
-            sec2.text("Status:", 12.0, 0.0, 12.0, TEXT_DIM);
-            sec2.text(status_lbl, 150.0, 0.0, 12.0, if state.updating { ACCENT } else { TEXT_FG });
+                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                state.installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                state.installed_list.update_bounds(filtered.len(), list_box_y, list_box_h);
+                state.installed_list.push_prims(sec.pc);
+                let item_h = state.installed_list.item_height;
 
-            if let Some(ref res) = state.last_update_res {
-                match res {
-                    Ok(_) => {
-                        sec2.text("Last update succeeded!", 12.0, 0.0, 12.0, ACCENT);
-                    }
-                    Err(err) => {
-                        sec2.text("Last update failed:", 12.0, 0.0, 12.0, RED);
-                        sec2.text(err, 12.0, 0.0, 11.0, RED);
+                if state.installed_items.len() != filtered.len() {
+                    state.installed_items.clear();
+                    for _ in 0..filtered.len() {
+                        state.installed_items.push(InteractiveListItem::new(""));
                     }
                 }
+
+                sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                for (idx, pkg) in filtered.iter().enumerate() {
+                    if let Some(draw_y) = state.installed_list.get_item_draw_y(idx, 4.0) {
+                        // Rows dispatch as extra roots (the dissolved list is no parent).
+                        let item = &mut state.installed_items[idx];
+                        item.title = pkg.name.clone();
+                        item.subtitle = Some(format!("Version: {}", pkg.version));
+                        item.selected = Some(&pkg.name) == state.selected_package.as_ref();
+                        render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                    }
+                }
+                sec.pc.pop_clip_rect();
+
+                if filtered.is_empty() {
+                    sec.pc.text("No packages match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                }
             }
+            PackageTab::Updates => {
+                let filtered: Vec<&UpdateInfo> = state.updates.iter()
+                    .filter(|p| p.name.to_lowercase().contains(&query))
+                    .collect();
 
-            let mut stack = sec2.vstack(8.0);
-            let btn_h = 32.0;
+                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                state.updates_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                state.updates_list.update_bounds(filtered.len(), list_box_y, list_box_h);
+                state.updates_list.push_prims(sec.pc);
+                let item_h = state.updates_list.item_height;
 
-            let (btn_lbl, bg, hover, action) = if state.updating {
-                ("Updating...", TOGGLE_OFF, TOGGLE_OFF, AppAction::Packages(PackagesMessage::StartUpdate))
-            } else {
-                ("Update System", TOGGLE_ON, BTN_HOVER, AppAction::Packages(PackagesMessage::StartUpdate))
-            };
+                if state.updates_items.len() != filtered.len() {
+                    state.updates_items.clear();
+                    for _ in 0..filtered.len() {
+                        state.updates_items.push(InteractiveListItem::new(""));
+                    }
+                }
 
-            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-                ctx.button(btn_lbl, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
-            });
+                sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                for (idx, pkg) in filtered.iter().enumerate() {
+                    if let Some(draw_y) = state.updates_list.get_item_draw_y(idx, 4.0) {
+                        // Rows dispatch as extra roots (the dissolved list is no parent).
+                        let item = &mut state.updates_items[idx];
+                        item.title = pkg.name.clone();
+                        item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
+                        item.selected = Some(&pkg.name) == state.selected_package.as_ref();
+                        render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                    }
+                }
+                sec.pc.pop_clip_rect();
+
+                if filtered.is_empty() {
+                    sec.pc.text("No updates match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                }
+            }
         }
+
+        // End the section so the well's bottom wall sits 12px below the list.
+        sec.content_y = list_box_y + list_box_h + 12.0 - (sec.padding() + 12.0);
     });
 
     final_pc
@@ -718,13 +701,9 @@ impl PackagesState {
 }
 
 impl crate::pages::AppPage for PackagesState {
-    // Sections: [Packages, Package Info, System Update]
+    // Sections: [the one well]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        vec![
-            vec![self.search_box.id()],
-            Vec::new(),
-            Vec::new(),
-        ]
+        vec![vec![self.search_box.id()]]
     }
 
     fn view(
