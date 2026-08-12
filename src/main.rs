@@ -212,8 +212,8 @@ impl cce_ui::engine::Application for SystemInterface {
 
     fn settings(&self) -> cce_ui::engine::WindowSettings {
         cce_ui::engine::WindowSettings {
-            title: "CCE System Settings".to_string(),
-            app_id: "cce-system-settings".to_string(),
+            title: "CCE System Interface".to_string(),
+            app_id: "cce-system-interface".to_string(),
             width: 820,
             height: 680,
             fullscreen: false,

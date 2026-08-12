@@ -1,5 +1,5 @@
 [package]
-name = "cce-system-settings"
+name = "cce-system-interface"
 version = "0.1.0"
 edition = "2021"
 
@@ -33,4 +33,4 @@ path = "src/lib.rs"
 
 [[bin]]
 path = "src/main.rs"
-name = "cce-system-settings"
+name = "cce-system-interface"

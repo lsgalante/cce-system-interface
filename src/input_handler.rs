@@ -4,7 +4,7 @@ use cce_settings::pages::Page;
 use cce_ui::widget::WidgetHost;
 
 /// App shortcuts, resolved once per process from input.kdl
-/// (`cce-system-settings` domain → `cce-ui` domain).
+/// (`cce-system-interface` domain → `cce-ui` domain).
 struct SettingsKeys {
     open_search: String,
     focus_next: String,

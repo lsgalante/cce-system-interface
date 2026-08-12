@@ -86,7 +86,7 @@ pub fn update(state: &mut NotificationsState, msg: NotificationsMessage) {
                         Some("org.freedesktop.Notifications"),
                         "Notify",
                         &(
-                            "cce-system-settings",
+                            "cce-system-interface",
                             0u32,
                             "",
                             "Test Notification",
