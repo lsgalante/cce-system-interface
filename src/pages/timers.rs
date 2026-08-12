@@ -24,6 +24,8 @@ pub struct TimerInfo {
     /// systemd UnitFileState: enabled / disabled / static / ...
     pub file_state: String,
     pub is_system: bool,
+    /// The unit file lives in ~/.config/systemd/user — safe to edit in place.
+    pub editable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +36,8 @@ pub struct TimersState {
     pub list: ScrollRegion,
     pub items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
     pub creating: bool,
+    /// Base unit name (without .timer) being edited, form shared with create.
+    pub editing: Option<String>,
     pub name_box: cce_ui::widget::Adapted<TextBox>,
     pub command_box: cce_ui::widget::Adapted<TextBox>,
     pub schedule_box: cce_ui::widget::Adapted<TextBox>,
@@ -49,6 +53,7 @@ impl Default for TimersState {
             list: ScrollRegion::new(36.0, 6.0).with_frame(false),
             items: Vec::new(),
             creating: false,
+            editing: None,
             name_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Name")
                 .with_placeholder("backup"),
             command_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Command")
@@ -71,6 +76,8 @@ pub enum TimersMessage {
     CreateStart,
     CreateCancel,
     CreateSave,
+    /// Open the form pre-filled from the unit files (user timers only).
+    EditStart(String),
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
@@ -133,6 +140,7 @@ async fn fetch_scope(user: bool) -> Vec<TimerInfo> {
                 active: false,
                 file_state: String::new(),
                 is_system: !user,
+                editable: false,
             })
         })
         .collect();
@@ -172,8 +180,19 @@ async fn fetch_scope(user: bool) -> Vec<TimerInfo> {
             }
         }
     }
+    if user {
+        if let Some(dir) = user_unit_dir() {
+            for t in timers.iter_mut() {
+                t.editable = dir.join(&t.unit).exists();
+            }
+        }
+    }
     timers.sort_by(|a, b| a.unit.to_lowercase().cmp(&b.unit.to_lowercase()));
     timers
+}
+
+fn user_unit_dir() -> Option<std::path::PathBuf> {
+    std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join(".config/systemd/user"))
 }
 
 pub async fn fetch_timers() -> Vec<TimerInfo> {
@@ -233,6 +252,62 @@ fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String
         .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user enable --now {}.timer", name)])
         .spawn();
     Ok(format!("Created and enabled {}.timer", name))
+}
+
+/// First `Key=value` in a unit file, or None.
+fn read_unit_field(path: &std::path::Path, key: &str) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    content
+        .lines()
+        .find_map(|l| l.trim().strip_prefix(key).and_then(|r| r.strip_prefix('=')).map(|v| v.trim().to_string()))
+}
+
+/// Replace the first `key=` line's value in-place, preserving everything else;
+/// errors when the file has no such line (an unusual unit we shouldn't rewrite).
+fn replace_unit_field(path: &std::path::Path, key: &str, value: &str) -> Result<(), String> {
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut replaced = false;
+    let out: Vec<String> = content
+        .lines()
+        .map(|l| {
+            if !replaced && l.trim_start().starts_with(key) && l.trim_start()[key.len()..].starts_with('=') {
+                replaced = true;
+                format!("{}={}", key, value)
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    if !replaced {
+        return Err(format!("{} has no {}= line", path.display(), key));
+    }
+    std::fs::write(path, out.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+/// Edit an existing USER timer in place: swap the .service ExecStart and the
+/// .timer OnCalendar lines, keeping the rest of both files untouched.
+fn update_user_timer(base: &str, command: &str, schedule: &str) -> Result<String, String> {
+    if command.is_empty() || schedule.is_empty() {
+        return Err("Command and schedule are required".into());
+    }
+    let valid = std::process::Command::new("systemd-analyze")
+        .args(["calendar", schedule])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !valid {
+        return Err(format!("Invalid OnCalendar expression: {}", schedule));
+    }
+    let dir = user_unit_dir().ok_or("HOME not set")?;
+    replace_unit_field(&dir.join(format!("{}.timer", base)), "OnCalendar", schedule)?;
+    let service_path = dir.join(format!("{}.service", base));
+    if service_path.exists() {
+        replace_unit_field(&service_path, "ExecStart", command)?;
+    }
+    let _ = tokio::process::Command::new("sh")
+        .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user try-restart {}.timer", base)])
+        .spawn();
+    Ok(format!("Updated {}.timer", base))
 }
 
 fn systemctl_action(args: &[&str], is_system: bool) {
@@ -307,24 +382,31 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 }
             });
 
-            if state.creating {
+            if state.creating || state.editing.is_some() {
                 let item_w = sec_w - 2.0 * (stack.context.padding() + 12.0);
                 let rx = stack.context.left;
                 let widget_h = cce_ui::layout::spinbox_height();
 
-                stack.context.text("New user timer \u{2014} runs the command on the schedule.", 12.0, 0.0, 11.0, TEXT_DIM);
+                if let Some(base) = &state.editing {
+                    stack.context.text(&format!("Editing {}.timer \u{2014} command and schedule rewrite in place.", base), 12.0, 0.0, 11.0, TEXT_DIM);
+                } else {
+                    stack.context.text("New user timer \u{2014} runs the command on the schedule.", 12.0, 0.0, 11.0, TEXT_DIM);
+                }
 
-                state.name_box.set_row_rect(rx + 12.0, item_w);
-                stack.add_widget(&mut state.name_box, item_w, widget_h, ctx);
+                if state.creating {
+                    state.name_box.set_row_rect(rx + 12.0, item_w);
+                    stack.add_widget(&mut state.name_box, item_w, widget_h, ctx);
+                }
                 state.command_box.set_row_rect(rx + 12.0, item_w);
                 stack.add_widget(&mut state.command_box, item_w, widget_h, ctx);
                 state.schedule_box.set_row_rect(rx + 12.0, item_w);
                 stack.add_widget(&mut state.schedule_box, item_w, widget_h, ctx);
 
                 stack.context.spacing(4.0);
+                let save_label = if state.editing.is_some() { "Save" } else { "Create" };
                 stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
                     match i {
-                        0 => c.button("Create", x, c.ay(), w, 26.0,
+                        0 => c.button(save_label, x, c.ay(), w, 26.0,
                             [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
                             crate::app::AppAction::Timers(TimersMessage::CreateSave)),
                         1 => c.button("Cancel", x, c.ay(), w, 26.0,
@@ -371,17 +453,20 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     let is_small = sec_w < 350.0;
                     let run_w = if is_small { 40.0 } else { 76.0 };
                     let en_w = if is_small { 40.0 } else { 66.0 };
+                    let edit_w = if is_small { 36.0 } else { 50.0 };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
                     let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
 
                     let en_x = right_edge - en_w;
                     let run_x = en_x - btn_gap - run_w;
+                    let edit_x = run_x - btn_gap - edit_w;
 
                     let btn_y = draw_y + (item_h - 22.0) / 2.0;
                     let btn_h = 22.0;
 
-                    // Title + schedule subtitle (truncated to the space before Run Now).
-                    let text_max_w = (run_x - 8.0) - (list_box_x + 32.0);
+                    // Title + schedule subtitle (truncated to the space before the buttons).
+                    let text_left_edge = if timer.editable { edit_x } else { run_x };
+                    let text_max_w = (text_left_edge - 8.0) - (list_box_x + 32.0);
                     let max_chars = ((text_max_w / 6.0) as usize).max(10);
                     let subtitle_full = schedule_line(timer, now);
                     let subtitle = if subtitle_full.len() > max_chars {
@@ -400,6 +485,22 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
+
+                    // Edit: only for user units living in ~/.config/systemd/user.
+                    if timer.editable {
+                        let lbl = if is_small { "\u{270e}" } else { "Edit" };
+                        sec.pc.button(
+                            lbl,
+                            edit_x,
+                            btn_y,
+                            edit_w,
+                            btn_h,
+                            [0.15, 0.15, 0.20, 1.0],
+                            [0.22, 0.22, 0.28, 1.0],
+                            active_txt,
+                            crate::app::AppAction::Timers(TimersMessage::EditStart(timer.unit.clone())),
+                        );
+                    }
 
                     // Run Now: start the activated service immediately.
                     let run_lbl = if is_small { "\u{25b6}" } else { "Run Now" };
@@ -496,6 +597,7 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
         }
         TimersMessage::CreateStart => {
             state.creating = true;
+            state.editing = None;
             state.status_msg = None;
             for tb in [&mut state.name_box, &mut state.command_box, &mut state.schedule_box] {
                 tb.text = String::new();
@@ -504,17 +606,42 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
         }
         TimersMessage::CreateCancel => {
             state.creating = false;
+            state.editing = None;
             state.status_msg = None;
         }
+        TimersMessage::EditStart(unit) => {
+            let base = unit.trim_end_matches(".timer").to_string();
+            let dir = user_unit_dir();
+            let schedule = dir.as_ref()
+                .and_then(|d| read_unit_field(&d.join(format!("{}.timer", base)), "OnCalendar"))
+                .unwrap_or_default();
+            let command = dir.as_ref()
+                .and_then(|d| read_unit_field(&d.join(format!("{}.service", base)), "ExecStart"))
+                .unwrap_or_default();
+            state.creating = false;
+            state.editing = Some(base.clone());
+            state.status_msg = None;
+            state.name_box.text = base.clone();
+            state.name_box.edit_buffer = base;
+            state.command_box.text = command.clone();
+            state.command_box.edit_buffer = command;
+            state.schedule_box.text = schedule.clone();
+            state.schedule_box.edit_buffer = schedule;
+        }
         TimersMessage::CreateSave => {
-            let name = live_text(&state.name_box);
             let command = live_text(&state.command_box);
             let schedule = live_text(&state.schedule_box);
-            match create_user_timer(&name, &command, &schedule) {
+            let result = if let Some(base) = state.editing.clone() {
+                update_user_timer(&base, &command, &schedule)
+            } else {
+                create_user_timer(&live_text(&state.name_box), &command, &schedule)
+            };
+            match result {
                 Ok(msg) => {
                     state.creating = false;
+                    state.editing = None;
                     state.status_msg = Some(msg);
-                    // Show the new unit where it will appear on the next refresh.
+                    // Show the unit where it (re)appears on the next refresh.
                     state.active_tab = TimerTab::User;
                     state.items.clear();
                 }
@@ -527,11 +654,17 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
 }
 
 impl crate::pages::AppPage for TimersState {
-    // Sections: [Timers] — the create-form boxes join the group while open.
+    // Sections: [Timers] — the form boxes join the group while it is open
+    // (name box only on create; edits keep the unit name fixed).
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         if self.creating {
             vec![vec![
                 self.name_box.id(),
+                self.command_box.id(),
+                self.schedule_box.id(),
+            ]]
+        } else if self.editing.is_some() {
+            vec![vec![
                 self.command_box.id(),
                 self.schedule_box.id(),
             ]]
@@ -608,6 +741,21 @@ mod tests {
     }
 
     #[test]
+    fn unit_field_read_and_replace() {
+        let dir = std::env::temp_dir().join("cce-timer-edit-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.timer");
+        std::fs::write(&p, "[Unit]\nDescription=x\n\n[Timer]\nOnCalendar=daily\nPersistent=true\n").unwrap();
+
+        assert_eq!(read_unit_field(&p, "OnCalendar").as_deref(), Some("daily"));
+        replace_unit_field(&p, "OnCalendar", "Mon 09:00").unwrap();
+        let content = std::fs::read_to_string(&p).unwrap();
+        assert!(content.contains("OnCalendar=Mon 09:00"), "{content}");
+        assert!(content.contains("Persistent=true"), "rest preserved: {content}");
+        assert!(replace_unit_field(&p, "Nonexistent", "x").is_err());
+    }
+
+    #[test]
     fn create_timer_validation_rejects_before_side_effects() {
         assert!(create_user_timer("", "echo hi", "daily").is_err());
         assert!(create_user_timer("backup", "", "daily").is_err());
@@ -626,6 +774,7 @@ mod tests {
             active: true,
             file_state: "enabled".into(),
             is_system: true,
+            editable: false,
         };
         let line = schedule_line(&t, now);
         assert!(line.contains("x.service"), "{line}");
