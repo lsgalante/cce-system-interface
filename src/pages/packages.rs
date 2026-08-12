@@ -431,47 +431,74 @@ pub fn view(
                     parsed.name = pkg_name.clone();
                 }
 
-                stack.context.text(&parsed.name, 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
+                // Heading row: name left, Uninstall (compact, quiet-red) right.
+                {
+                    let sc = &mut *stack.context;
+                    let mut y = sc.content_y;
+                    if y > sc.content_start_y {
+                        y += sc.row_gap;
+                    }
+                    let lx = sc.ax(12.0);
+                    sc.pc.text(&parsed.name, lx, y, 14.0, [0.35, 0.65, 0.90, 1.0]);
+                    sc.content_y = y + 20.0;
+                    for h in &mut sc.grid.col_heights {
+                        *h = sc.content_y;
+                    }
+                    if state.active_tab == PackageTab::Installed {
+                        let item_w = sc.cw - 2.0 * (sc.padding() + 12.0);
+                        let bw = 100.0;
+                        let bx = lx + item_w - bw;
+                        let (btn_lbl, bg, hover, text_col) = if state.uninstalling {
+                            ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
+                        } else {
+                            ("Uninstall", [0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
+                        };
+                        sc.button(btn_lbl, bx, y - 2.0, bw, 22.0, bg, hover, text_col,
+                            AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())));
+                    }
+                }
 
-                let render_detail = |sub: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
-                    sub.text(key, 12.0, 0.0, 11.0, TEXT_DIM);
-                    let val_start_x = 130.0f32;
-                    let usable_w = sub.cw - val_start_x - 12.0;
-                    let char_w = 6.0f32;
-                    let max_chars = (usable_w / char_w).max(15.0) as usize;
-
+                // Same-line kv rows, values wrapping at the value column.
+                let kv_wrap = |sc: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
+                    if val.is_empty() {
+                        return;
+                    }
+                    let mut y = sc.content_y + 4.0;
+                    let lx = sc.ax(12.0);
+                    let vx = lx + 118.0;
+                    let usable_w = sc.cw - 118.0 - 2.0 * (sc.padding() + 12.0);
+                    let max_chars = ((usable_w / 6.0) as usize).max(15);
+                    sc.pc.text(key, lx, y, 11.0, TEXT_DIM);
                     let lines = wrap_text(val, max_chars);
                     for line in &lines {
-                        sub.text(line, val_start_x, 0.0, 11.0, TEXT_FG);
+                        sc.pc.text(line, vx, y, 11.0, TEXT_FG);
+                        y += 15.0;
+                    }
+                    if lines.is_empty() {
+                        y += 15.0;
+                    }
+                    sc.content_y = y + 1.0;
+                    for h in &mut sc.grid.col_heights {
+                        *h = sc.content_y;
                     }
                 };
 
-                render_detail(stack.context, "Version:", &parsed.version);
-                if !parsed.size.is_empty() {
-                    render_detail(stack.context, "Size:", &parsed.size);
-                }
-                if !parsed.licenses.is_empty() {
-                    render_detail(stack.context, "Licenses:", &parsed.licenses);
-                }
-                if !parsed.website.is_empty() {
-                    render_detail(stack.context, "Website:", &parsed.website);
-                }
-                if !parsed.packager.is_empty() {
-                    render_detail(stack.context, "Packager:", &parsed.packager);
-                }
-                if !parsed.build_date.is_empty() {
-                    render_detail(stack.context, "Build Date:", &parsed.build_date);
-                }
-                if !parsed.description.is_empty() {
-                    render_detail(stack.context, "Description:", &parsed.description);
-                }
+                kv_wrap(stack.context, "Version", &parsed.version);
+                kv_wrap(stack.context, "Size", &parsed.size);
+                kv_wrap(stack.context, "Licenses", &parsed.licenses);
+                kv_wrap(stack.context, "Website", &parsed.website);
+                kv_wrap(stack.context, "Packager", &parsed.packager);
+                kv_wrap(stack.context, "Built", &parsed.build_date);
+                kv_wrap(stack.context, "Description", &parsed.description);
+                kv_wrap(stack.context, "Commands", &parsed.commands);
+
                 if !parsed.required_by.is_empty() && parsed.required_by != "None" {
-                    stack.context.text("Required By:", 12.0, 0.0, 11.0, TEXT_DIM);
+                    stack.context.text("Required By", 12.0, 0.0, 11.0, TEXT_DIM);
 
                     let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
-                    let cols_count = 3;
-                    let gap = 6.0;
-                    let btn_h = 24.0;
+                    let cols_count = 4;
+                    let gap = 4.0;
+                    let btn_h = 20.0;
 
                     for chunk in reqs.chunks(cols_count) {
                         let btn_y = stack.context.ay();
@@ -483,24 +510,6 @@ pub fn view(
                             }
                         }
                     }
-                }
-                if !parsed.commands.is_empty() {
-                    render_detail(stack.context, "Commands:", &parsed.commands);
-                }
-
-                if state.active_tab == PackageTab::Installed {
-                    stack.context.spacing(4.0);
-                    let (btn_lbl, bg, hover, text_col) = if state.uninstalling {
-                        ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
-                    } else {
-                        ("Uninstall", [0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
-                    };
-                    stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
-                        if i == 0 {
-                            c.button(btn_lbl, x, c.ay(), w, 26.0, bg, hover, text_col,
-                                AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())));
-                        }
-                    });
                 }
             } else {
                 stack.context.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -607,12 +616,18 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
             state.loaded = new.loaded;
             state.installed = new.installed;
             state.updates = new.updates;
-            state.updating = new.updating;
-            state.last_update_res = new.last_update_res;
-            state.selected_package = new.selected_package;
-            state.selected_package_info = new.selected_package_info;
-            state.loading_info = new.loading_info;
-            state.uninstalling = new.uninstalling;
+            // Selection, fetched info, and in-flight update/uninstall flags are
+            // LOCAL state — the periodic background refresh must not clear them.
+            // Only drop a selection whose package no longer exists anywhere.
+            if let Some(sel) = state.selected_package.clone() {
+                let still_exists = state.installed.iter().any(|p| p.name == sel)
+                    || state.updates.iter().any(|u| u.name == sel);
+                if !still_exists {
+                    state.selected_package = None;
+                    state.selected_package_info = None;
+                    state.loading_info = false;
+                }
+            }
         }
         PackagesMessage::SetTab(tab) => {
             state.active_tab = tab;
@@ -807,6 +822,32 @@ impl crate::pages::AppPage for PackagesState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_preserves_selection_and_flags() {
+        let mut st = PackagesState::default();
+        st.loaded = true;
+        st.installed = vec![PackageInfo { name: "foo".into(), version: "1".into() }];
+        st.selected_package = Some("foo".into());
+        st.selected_package_info = Some("info".into());
+        st.updating = true;
+
+        let fresh = PackagesState {
+            loaded: true,
+            installed: vec![PackageInfo { name: "foo".into(), version: "2".into() }],
+            ..Default::default()
+        };
+        update(&mut st, PackagesMessage::Refreshed(fresh));
+        assert_eq!(st.selected_package.as_deref(), Some("foo"), "refresh must keep the selection");
+        assert!(st.selected_package_info.is_some(), "refresh must keep fetched info");
+        assert!(st.updating, "refresh must not clear the in-flight update flag");
+
+        // A package that vanished from both lists does clear the selection.
+        let fresh2 = PackagesState { loaded: true, ..Default::default() };
+        update(&mut st, PackagesMessage::Refreshed(fresh2));
+        assert!(st.selected_package.is_none());
+        assert!(st.selected_package_info.is_none());
+    }
 
     #[test]
     fn test_view_layout_grid() {
