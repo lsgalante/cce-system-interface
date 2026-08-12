@@ -91,6 +91,10 @@ fn collect_window_child(
 impl SystemInterface {
 
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
+        if std::env::var("CCE_HOVER_DEBUG").is_ok() {
+            let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() % 100000;
+            eprintln!("[hover] t={} rebuild", t);
+        }
         // SectionContainer dissolved (Phase 6w): no per-rebuild section clones to
         // relink — the page's widgets dispatch directly (registration happens in
         // render_widget during the view pass below).

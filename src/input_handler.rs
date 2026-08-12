@@ -114,6 +114,10 @@ impl SystemInterface {
         if changed {
             self.needs_rebuild = true;
         }
+        if std::env::var("CCE_HOVER_DEBUG").is_ok() {
+            let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() % 100000;
+            eprintln!("[hover] t={} move ({:.0},{:.0}) changed={}", t, self.cursor_x, self.cursor_y, changed);
+        }
         changed
     }
 
