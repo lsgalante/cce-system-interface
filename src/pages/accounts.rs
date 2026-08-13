@@ -352,7 +352,7 @@ const ACCENT_BG: [f32; 4] = [0.20, 0.40, 0.65, 0.35];
 const TEXT_BTN: [f32; 4] = [0.90, 0.90, 0.95, 1.0];
 const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 
-pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -361,7 +361,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, layou
     let widget_h = cce_ui::layout::spinbox_height();
     let btn_h = 26.0;
 
-    builder.add_section_spanned(&mut final_pc, "", 1, false, |sec| {
+    builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
             return;
@@ -727,11 +727,11 @@ impl crate::pages::AppPage for AccountsState {
         cw: f32,
         ch: f32,
         _root_focused: bool,
-        _sec_focused: &[bool],
+        sec_focused: &[bool],
         layout: &mut dyn cce_ui::layout::LayoutStrategy,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
-        view(self, cx, cy, cw, ch, layout, ctx)
+        view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
     fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {

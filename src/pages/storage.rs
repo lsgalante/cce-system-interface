@@ -170,13 +170,13 @@ const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
 
     // Section 1: Local Storage
-    builder.add_section(&mut final_pc, "Local Storage", false, |sec| {
+    builder.add_section(&mut final_pc, "Local Storage", sec_focused.first().copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading storage usage...", 12.0, 0.0, 12.0, TEXT_FG);
@@ -203,7 +203,7 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
     });
 
     // Section 2: Memory
-    builder.add_section(&mut final_pc, "Memory", false, |sec| {
+    builder.add_section(&mut final_pc, "Memory", sec_focused.get(1).copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
         if !state.loaded {
             sec.text("Loading memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
@@ -230,7 +230,7 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, layout: &m
     });
 
     // Section 2: Full System Backup
-    builder.add_section(&mut final_pc, "Full System Backup", false, |sec| {
+    builder.add_section(&mut final_pc, "Full System Backup", sec_focused.get(2).copied().unwrap_or(false), |sec| {
         if !state.backup_loaded {
             sec.text("Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
@@ -321,11 +321,11 @@ impl crate::pages::AppPage for StorageState {
         cw: f32,
         ch: f32,
         _root_focused: bool,
-        _sec_focused: &[bool],
+        sec_focused: &[bool],
         layout: &mut dyn LayoutStrategy,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
-        view(self, cx, cy, cw, ch, layout, ctx)
+        view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
     fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
