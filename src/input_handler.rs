@@ -31,9 +31,25 @@ fn settings_keys() -> &'static SettingsKeys {
     })
 }
 
+/// `CCE_HOVER_DEBUG`, resolved once. The move handler runs ~60/s, so the old
+/// per-event `std::env::var` (which allocates and scans the environment) had no
+/// business being on this path.
+fn hover_debug() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var_os("CCE_HOVER_DEBUG").is_some())
+}
+
 impl SystemInterface {
 
     pub(crate) fn handle_cursor_moved(&mut self, x: f32, y: f32) -> bool {
+        // Runs once per pointer motion event — ~60/s while the mouse moves — and
+        // the loop trace puts a single dispatch of ~60 of them at ~839ms, i.e.
+        // ~14ms each. Time the stages to find which scales with the 1359-row list.
+        let hov_t0 = if hover_debug() {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         self.cursor_x = x;
         self.cursor_y = y;
         let s = 1.0f32;
@@ -70,6 +86,7 @@ impl SystemInterface {
                 changed = true;
             }
         }
+        let t_dropdown = hov_t0.map(|s| s.elapsed().as_micros());
 
         // Drag updates are high-priority overrides
         let mut drag_handled = false;
@@ -81,6 +98,8 @@ impl SystemInterface {
                 self.handle_action(&action);
             }
         }
+
+        let t_pagemove = hov_t0.map(|s| s.elapsed().as_micros());
 
         if !drag_handled {
             let event = cce_ui::widget::Event::PointerMove { x: lx, y: ly, local_x: lx, local_y: ly };
@@ -99,6 +118,8 @@ impl SystemInterface {
             }
         }
 
+        let t_dispatch = hov_t0.map(|s| s.elapsed().as_micros());
+
         let phys_x = x;
         let phys_y = y;
 
@@ -114,9 +135,14 @@ impl SystemInterface {
         if changed {
             self.needs_rebuild = true;
         }
-        if std::env::var("CCE_HOVER_DEBUG").is_ok() {
+        if let (Some(s), Some(dd), Some(pm), Some(dp)) = (hov_t0, t_dropdown, t_pagemove, t_dispatch) {
             let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() % 100000;
-            eprintln!("[hover] t={} move ({:.0},{:.0}) changed={}", t, self.cursor_x, self.cursor_y, changed);
+            eprintln!(
+                "[hover] t={} move ({:.0},{:.0}) changed={} total={}us dropdown={}us page={}us dispatch={}us widgets={}us n_widgets={}",
+                t, self.cursor_x, self.cursor_y, changed,
+                s.elapsed().as_micros(), dd, pm - dd, dp - pm, s.elapsed().as_micros() - dp,
+                self.widgets.len()
+            );
         }
         changed
     }
@@ -378,11 +404,18 @@ impl SystemInterface {
         // hit-gate keeps missed presses falling through, so order vs the sections only
         // matters for overlap — and the rows sit inside list frames the sections never
         // claim. Collected fresh per event: the item Vecs get rebuilt across frames.
+        let dbg_t0 = if hover_debug() && is_pointer_move {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         let extra_roots = {
             let page = self.app.get_current_page_mut();
             page.register_extra_dispatch_roots(&mut self.ui_context);
             page.extra_dispatch_roots()
         };
+        let t_register = dbg_t0.map(|s| s.elapsed().as_micros());
+        let n_roots = extra_roots.len();
         for root in extra_roots {
             if self.ui_context.propagate_event(event, root) {
                 if !is_pointer_move {
@@ -390,6 +423,13 @@ impl SystemInterface {
                 }
                 handled = true;
             }
+        }
+        if let (Some(s), Some(reg)) = (dbg_t0, t_register) {
+            let total = s.elapsed().as_micros();
+            eprintln!(
+                "[hover]   extra_roots n={} register+collect={}us propagate={}us",
+                n_roots, reg, total - reg
+            );
         }
 
         let roots = self.page_dispatch_roots();
