@@ -58,7 +58,7 @@ struct SystemInterface {
     rx_bluetooth: std::sync::mpsc::Receiver<pages::bluetooth::BluetoothState>,
     pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
     rx_system: std::sync::mpsc::Receiver<pages::system_info::SystemInfo>,
-    rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageState>,
+    rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageInfo>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_browser: std::sync::mpsc::Receiver<pages::browser::BrowserConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,

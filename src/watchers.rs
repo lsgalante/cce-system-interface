@@ -9,7 +9,7 @@ pub struct Watchers {
     pub rx_bluetooth: Receiver<bluetooth::BluetoothState>,
     pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemInfo>,
-    pub rx_storage: Receiver<storage::StorageState>,
+    pub rx_storage: Receiver<storage::StorageInfo>,
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
     pub rx_browser: Receiver<browser::BrowserConfig>,
     pub rx_services: Receiver<Vec<services::ServiceInfo>>,

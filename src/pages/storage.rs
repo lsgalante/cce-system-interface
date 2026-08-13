@@ -1,6 +1,22 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent};
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use std::fs;
+
+/// What the background poll produces — the fetched numbers only, never the
+/// widgets. `Refreshed` carries this rather than a whole `StorageState` so a
+/// refresh cannot clobber `backup_button` (the notifications-page pattern; the
+/// old `*state = new` would have swapped the live widget for a fresh one with a
+/// different id, mid-frame, every ten seconds).
+#[derive(Debug, Clone)]
+pub struct StorageInfo {
+    pub disk_total: f64,
+    pub disk_used: f64,
+    pub ram_total: f64,
+    pub ram_used: f64,
+    pub last_backup_time: String,
+    pub backup_size: String,
+    pub error_message: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct StorageState {
@@ -16,6 +32,9 @@ pub struct StorageState {
     pub last_backup_time: String,
     pub backup_size: String,
     pub error_message: Option<String>,
+    /// Retained so it can hold keyboard focus: ctrl+i descends into the Full
+    /// System Backup section and lands here, and Enter/Space runs the backup.
+    pub backup_button: cce_ui::widget::Adapted<cce_ui::widget::Button>,
 }
 
 impl Default for StorageState {
@@ -31,13 +50,23 @@ impl Default for StorageState {
             last_backup_time: "Never".to_string(),
             backup_size: "0 B".to_string(),
             error_message: None,
+            backup_button: cce_ui::widget::Button::new(0.0, 0.0, 0.0, 32.0)
+                // Flat fill + border, not the SDF bevel: PageContent's RenderTarget
+                // has no `bevel`, so a raised plate silently draws nothing here
+                // (the label renders, the plate does not). The border path is also
+                // what carries the keyboard focus ring.
+                .with_raised(false)
+                .with_label("Run Backup")
+                .with_bg(BTN_BG)
+                .with_hover_bg(BTN_HOVER)
+                .with_label_color(WHITE),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum StorageMessage {
-    Refreshed(StorageState),
+    Refreshed(StorageInfo),
     StartBackup,
     BackupFinished(Result<(String, String), String>),
 }
@@ -81,7 +110,7 @@ pub fn read_backup_status() -> (String, String, Option<String>) {
     (last_backup, size, err_msg)
 }
 
-pub async fn fetch_storage_state() -> StorageState {
+pub async fn fetch_storage_state() -> StorageInfo {
     let disk_output = tokio::process::Command::new("df")
         .args(["-BG", "/"])
         .output().await.ok()
@@ -98,14 +127,11 @@ pub async fn fetch_storage_state() -> StorageState {
 
     let (last_backup, size, err) = read_backup_status();
 
-    StorageState {
+    StorageInfo {
         disk_total,
         disk_used,
         ram_total,
         ram_used,
-        loaded: true,
-        backup_loaded: true,
-        backup_in_progress: false,
         last_backup_time: last_backup,
         backup_size: size,
         error_message: err,
@@ -170,7 +196,7 @@ const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
@@ -266,14 +292,22 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focuse
             let mut stack = sec.vstack(8.0);
             let btn_h = 32.0;
             
-            let (btn_label, bg, hover, action) = if state.backup_in_progress {
-                ("Backing up...", BTN_DISABLED, BTN_DISABLED, AppAction::Storage(StorageMessage::StartBackup))
+            // Retained widget rather than an immediate `sec.button`, so it can hold
+            // keyboard focus. Its label/colours are re-synced each frame from the
+            // backup state, the way cce-email drives its retained btn_unread.
+            let (btn_label, bg, hover) = if state.backup_in_progress {
+                ("Backing up...", BTN_DISABLED, BTN_DISABLED)
             } else {
-                ("Run Backup", BTN_BG, BTN_HOVER, AppAction::Storage(StorageMessage::StartBackup))
+                ("Run Backup", BTN_BG, BTN_HOVER)
             };
-            
-            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-                ctx.button(btn_label, x, ctx.ay(), w, btn_h, bg, hover, WHITE, action.clone());
+            state.backup_button.set_label(btn_label);
+            state.backup_button.bg = Some(bg);
+            state.backup_button.hover_bg = Some(hover);
+
+            let btn = &mut state.backup_button;
+            stack.add_row(1, 0.0, btn_h, |sctx, _, x, w| {
+                let y = sctx.ay();
+                render_widget(sctx.pc, btn, x, y, w, btn_h, ctx);
             });
         }
     });
@@ -284,9 +318,16 @@ pub fn view(state: &StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focuse
 pub fn update(state: &mut StorageState, msg: StorageMessage) {
     match msg {
         StorageMessage::Refreshed(new) => {
-            let in_prog = state.backup_in_progress;
-            *state = new;
-            state.backup_in_progress = in_prog;
+            // Field-wise, so the retained button and an in-flight backup survive.
+            state.disk_total = new.disk_total;
+            state.disk_used = new.disk_used;
+            state.ram_total = new.ram_total;
+            state.ram_used = new.ram_used;
+            state.last_backup_time = new.last_backup_time;
+            state.backup_size = new.backup_size;
+            state.error_message = new.error_message;
+            state.loaded = true;
+            state.backup_loaded = true;
         }
         StorageMessage::StartBackup => {
             state.backup_in_progress = true;
@@ -311,7 +352,9 @@ pub fn update(state: &mut StorageState, msg: StorageMessage) {
 impl crate::pages::AppPage for StorageState {
     // Sections: [Local Storage, Memory, Full System Backup] — no evented widgets.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        vec![Vec::new(), Vec::new(), Vec::new()]
+        // Only the third section (Full System Backup) has anything focusable;
+        // the first two are read-only readouts, so ctrl+i there has no target.
+        vec![Vec::new(), Vec::new(), vec![self.backup_button.id()]]
     }
 
     fn view(
@@ -328,5 +371,10 @@ impl crate::pages::AppPage for StorageState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+        // Mouse click and Enter/Space on the focused button both land here.
+        if self.backup_button.take_click() && !self.backup_in_progress {
+            actions.push(AppAction::Storage(StorageMessage::StartBackup));
+        }
+    }
 }
