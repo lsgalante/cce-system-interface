@@ -311,10 +311,8 @@ pub fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const TOGGLE_ON: [f32; 4] = [0.16, 0.41, 0.18, 1.0];
 const TOGGLE_OFF: [f32; 4] = [0.16, 0.16, 0.24, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
-const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
 
 pub fn view(
