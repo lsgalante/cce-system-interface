@@ -36,9 +36,6 @@ pub struct AccountsState {
     pub status_msg: Option<String>,
     pub status_msg_timer: f32,
     pub oauth_listener_running: bool,
-    pub editing_oauth_creds: bool,
-    pub oauth_client_id_box: cce_ui::widget::Adapted<TextBox>,
-    pub oauth_client_secret_box: cce_ui::widget::Adapted<TextBox>,
 }
 
 impl AccountsState {
@@ -52,14 +49,6 @@ impl AccountsState {
         };
         state.imap_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server");
         state.smtp_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server");
-        
-        let client_config = load_google_client_config();
-        state.oauth_client_id_box = TextBox::new(client_config.client_id).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID");
-        state.oauth_client_secret_box = {
-            let mut tb = TextBox::new(client_config.client_secret).with_multiline(false).with_draw_bg_border(true).with_label("Google Client Secret");
-            tb.is_password = true;
-            tb
-        };
         state
     }
 }
@@ -81,9 +70,6 @@ pub enum AccountsMessage {
     /// never believed to be alive after its task is gone.
     GoogleLoginFinished,
     ICloudLoginHelp,
-    EditOAuthCredsStart,
-    EditOAuthCredsSave,
-    EditOAuthCredsCancel,
 }
 
 pub fn get_accounts_path() -> std::path::PathBuf {
@@ -406,7 +392,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 } else {
                     acc.email.clone()
                 };
-                let is_selected = state.selected_idx == Some(idx) && !state.adding_new && !state.editing_oauth_creds;
+                let is_selected = state.selected_idx == Some(idx) && !state.adding_new;
                 let (bg, hover) = if is_selected {
                     (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
                 } else {
@@ -430,22 +416,21 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
         stack.context.spacing(6.0);
 
-        // ── Global actions: one compact row ──
+        // ── Global actions ──
+        // Adding is the only one left. Google sign-in lives inside the form
+        // (next to Save) because adding an account is a single intent, and the
+        // Google API client id/secret is file-backed config edited in
+        // ~/.config/cce/google_client.json — set once or never, so it follows
+        // input.kdl's precedent of having no settings UI at all.
         let add_bg = if state.adding_new { (ACCENT_BG, ACCENT_BG) } else { BTN_PRIMARY };
-        let oauth_bg = if state.editing_oauth_creds { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
         // A login in flight is an active mode too — tint whichever button could
         // have started it, so the "already waiting on the browser" reply is not
         // the only clue.
         let login_bg = if state.oauth_listener_running { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
         let narrow = item_w < 520.0;
-        // Google sign-in is deliberately NOT up here: adding an account is one
-        // intent, and the auth method is chosen inside the form (next to Save).
-        stack.add_row(2, 8.0, btn_h, |c, i, x, w| {
-            let (label, colors, action) = match i {
-                0 => (if narrow { "Add" } else { "Add Account" }, add_bg, AccountsMessage::AddAccountStart),
-                _ => (if narrow { "Google API" } else { "Google API Settings" }, oauth_bg, AccountsMessage::EditOAuthCredsStart),
-            };
-            c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
+        stack.add_row(1, 8.0, btn_h, |c, _, x, w| {
+            c.button("Add Account", x, c.ay(), w, btn_h, add_bg.0, add_bg.1, TEXT_BTN,
+                AppAction::Accounts(AccountsMessage::AddAccountStart));
         });
 
         section_divider(stack.context);
@@ -476,25 +461,6 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     _ => (if narrow { "iCloud" } else { "Login (iCloud)" }, BTN_NEUTRAL, TEXT_BTN, AccountsMessage::ICloudLoginHelp),
                 };
                 c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
-            });
-        } else if state.editing_oauth_creds {
-            stack.context.text("Google OAuth Credentials", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-            stack.context.text("Client ID & secret from your Google Cloud Console.", 12.0, 0.0, 11.0, TEXT_DIM);
-            stack.context.text("Use a 'Desktop app' OAuth client with the Gmail API enabled \u{2014}", 12.0, 0.0, 11.0, TEXT_DIM);
-            stack.context.text("loopback redirects (http://localhost:*) are then allowed automatically.", 12.0, 0.0, 11.0, TEXT_DIM);
-
-            state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
-            stack.add_widget(&mut state.oauth_client_id_box, item_w, widget_h, ctx);
-            state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
-            stack.add_widget(&mut state.oauth_client_secret_box, item_w, widget_h, ctx);
-
-            stack.context.spacing(4.0);
-            stack.add_row(2, 8.0, btn_h, |c, i, x, w| {
-                let (label, colors, action) = match i {
-                    0 => ("Save Credentials", BTN_PRIMARY, AccountsMessage::EditOAuthCredsSave),
-                    _ => ("Cancel", BTN_NEUTRAL, AccountsMessage::EditOAuthCredsCancel),
-                };
-                c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
             });
         } else if let Some(selected_idx) = state.selected_idx {
             if selected_idx < state.accounts.len() {
@@ -565,11 +531,9 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         AccountsMessage::SelectAccount(idx) => {
             state.selected_idx = Some(idx);
             state.adding_new = false;
-            state.editing_oauth_creds = false;
         }
         AccountsMessage::AddAccountStart => {
             state.adding_new = true;
-            state.editing_oauth_creds = false;
             state.email_box.text = String::new();
             state.email_box.edit_buffer = String::new();
             state.password_box.text = String::new();
@@ -693,60 +657,13 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             let _ = cce_ui::process::spawn_detached(cmd);
             state.status_msg = Some("Generate iCloud App Password...".to_string());
         }
-        AccountsMessage::EditOAuthCredsStart => {
-            state.editing_oauth_creds = true;
-            state.adding_new = false;
-            let config = load_google_client_config();
-            state.oauth_client_id_box.text = config.client_id.clone();
-            state.oauth_client_id_box.edit_buffer = config.client_id;
-            state.oauth_client_secret_box.text = config.client_secret.clone();
-            state.oauth_client_secret_box.edit_buffer = config.client_secret;
-        }
-        AccountsMessage::EditOAuthCredsSave => {
-            let client_id = live_text(&state.oauth_client_id_box);
-            let client_secret = live_text(&state.oauth_client_secret_box);
-            if client_id.is_empty() || client_secret.is_empty() {
-                state.status_msg = Some("Both Client ID and Client Secret are required!".to_string());
-                return;
-            }
-            let config = GoogleClientConfig {
-                client_id,
-                client_secret,
-            };
-            let p = cce_ui::config::cce_config_dir().join("google_client.json");
-            if let Some(parent) = p.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Ok(content) = serde_json::to_string_pretty(&config) {
-                let _ = std::fs::write(&p, content);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Ok(metadata) = std::fs::metadata(&p) {
-                        let mut perms = metadata.permissions();
-                        perms.set_mode(0o600);
-                        let _ = std::fs::set_permissions(&p, perms);
-                    }
-                }
-            }
-            state.editing_oauth_creds = false;
-            state.status_msg = Some("Google API credentials updated successfully!".to_string());
-        }
-        AccountsMessage::EditOAuthCredsCancel => {
-            state.editing_oauth_creds = false;
-        }
     }
 }
 
 impl crate::pages::AppPage for AccountsState {
     // Sections: [the one well] — the group depends on the mode.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        let modify: Vec<cce_ui::widget::WidgetId> = if self.editing_oauth_creds {
-            vec![
-                self.oauth_client_id_box.id(),
-                self.oauth_client_secret_box.id(),
-            ]
-        } else if self.adding_new {
+        let modify: Vec<cce_ui::widget::WidgetId> = if self.adding_new {
             vec![
                 self.email_box.id(),
                 self.password_box.id(),
