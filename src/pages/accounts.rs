@@ -258,7 +258,7 @@ async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
         Ok(res) => res,
         Err(_) => {
             let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(
-                "Google sign-in timed out — press Sign in with Google to retry.".to_string(),
+                "Google sign-in timed out — start the sign-in again to retry.".to_string(),
             )));
             return;
         }
@@ -433,14 +433,16 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         // ── Global actions: one compact row ──
         let add_bg = if state.adding_new { (ACCENT_BG, ACCENT_BG) } else { BTN_PRIMARY };
         let oauth_bg = if state.editing_oauth_creds { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
-        // A login in flight is an active mode too — tint it like the others so
-        // the "already waiting on the browser" reply isn't the only clue.
+        // A login in flight is an active mode too — tint whichever button could
+        // have started it, so the "already waiting on the browser" reply is not
+        // the only clue.
         let login_bg = if state.oauth_listener_running { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
         let narrow = item_w < 520.0;
-        stack.add_row(3, 8.0, btn_h, |c, i, x, w| {
+        // Google sign-in is deliberately NOT up here: adding an account is one
+        // intent, and the auth method is chosen inside the form (next to Save).
+        stack.add_row(2, 8.0, btn_h, |c, i, x, w| {
             let (label, colors, action) = match i {
                 0 => (if narrow { "Add" } else { "Add Account" }, add_bg, AccountsMessage::AddAccountStart),
-                1 => (if narrow { "Google Login" } else { "Sign in with Google" }, login_bg, AccountsMessage::GoogleLoginInit),
                 _ => (if narrow { "Google API" } else { "Google API Settings" }, oauth_bg, AccountsMessage::EditOAuthCredsStart),
             };
             c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
@@ -451,7 +453,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         // ── Context zone: add form / OAuth form / selected details ──
         if state.adding_new {
             stack.context.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-            stack.context.text("Gmail uses Google Login; iCloud requires an App Password.", 12.0, 0.0, 11.0, TEXT_DIM);
+            stack.context.text("Gmail signs in with Google below; iCloud requires an App Password.", 12.0, 0.0, 11.0, TEXT_DIM);
 
             state.email_box.set_row_rect(rx + 12.0, item_w);
             stack.add_widget(&mut state.email_box, item_w, widget_h, ctx);
@@ -467,8 +469,11 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 let (label, colors, text_col, action) = match i {
                     0 => ("Save", BTN_PRIMARY, TEXT_BTN, AccountsMessage::AddAccountSave),
                     1 => ("Cancel", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::AddAccountCancel),
-                    2 => ("Login (Google)", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::GoogleLoginInit),
-                    _ => ("Login (iCloud)", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::ICloudLoginHelp),
+                    // Four buttons in one row is the tightest cell on the page —
+                    // the full labels clip below ~440px of section width, so they
+                    // ride the same `narrow` switch the header row uses.
+                    2 => (if narrow { "Google" } else { "Login (Google)" }, login_bg, TEXT_BTN, AccountsMessage::GoogleLoginInit),
+                    _ => (if narrow { "iCloud" } else { "Login (iCloud)" }, BTN_NEUTRAL, TEXT_BTN, AccountsMessage::ICloudLoginHelp),
                 };
                 c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
             });
@@ -509,7 +514,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     actions.push(("Make Default", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::MakeDefault(selected_idx)));
                 }
                 if acc.is_oauth {
-                    actions.push(("Re-login (Browser)", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::GoogleLoginInit));
+                    let relogin = if narrow { "Re-login" } else { "Re-login (Browser)" };
+                    actions.push((relogin, login_bg, TEXT_BTN, AccountsMessage::GoogleLoginInit));
                 }
                 actions.push(("Delete", BTN_DANGER, TEXT_DANGER, AccountsMessage::DeleteAccount(selected_idx)));
                 stack.add_row(3, 8.0, btn_h, |c, i, x, w| {
