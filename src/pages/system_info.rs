@@ -489,7 +489,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
 
     // ── 1. System Section ──
-    builder.add_section(&mut final_pc, "System", false, |sec| {
+    builder.add_section(&mut final_pc, "System", sec_focused.first().copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
         } else {
@@ -499,7 +499,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     });
 
     // ── 2. System Actions Section ──
-    builder.add_section(&mut final_pc, "System Actions", false, |sec| {
+    builder.add_section(&mut final_pc, "System Actions", sec_focused.get(1).copied().unwrap_or(false), |sec| {
         let mut stack = sec.vstack(8.0);
         let act_btn_h = 32.0;
 
@@ -532,7 +532,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     });
 
     // ── 3. CPU Section ──
-    builder.add_section(&mut final_pc, "CPU", false, |sec| {
+    builder.add_section(&mut final_pc, "CPU", sec_focused.get(2).copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading CPU model and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
@@ -546,7 +546,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     });
 
     // ── 4. GPU Section ──
-    builder.add_section(&mut final_pc, "GPU", false, |sec_gpu| {
+    builder.add_section(&mut final_pc, "GPU", sec_focused.get(3).copied().unwrap_or(false), |sec_gpu| {
         if !state.loaded {
             sec_gpu.text("Loading GPU models...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
@@ -633,7 +633,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     });
 
     // ── 7. Battery Section ──
-    builder.add_section(&mut final_pc, "Battery", false, |sec_bat| {
+    builder.add_section(&mut final_pc, "Battery", sec_focused.get(6).copied().unwrap_or(false), |sec_bat| {
         if !state.loaded {
             sec_bat.text("Loading battery status...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
