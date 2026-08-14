@@ -1,5 +1,5 @@
 use cce_ui::widget::hover_animation;
-use glyphon::{Buffer, FontSystem};
+use cce_ui::cosmic_text::{Buffer, FontSystem};
 
 use cce_settings::app::{AppAction, AppState};
 use cce_settings::pages::{self, Page};
