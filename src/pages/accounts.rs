@@ -767,7 +767,7 @@ mod tests {
         let mut state = AccountsState::default_mock();
         state.loaded = true;
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
         println!("PC BUTTONS COUNT: {}", pc.buttons.len());
         for (i, (btn, _, _)) in pc.buttons.iter().enumerate() {
             let base = btn.base();
