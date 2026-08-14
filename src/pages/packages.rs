@@ -716,7 +716,15 @@ impl PackagesState {
 impl crate::pages::AppPage for PackagesState {
     // Sections: [the one well]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        vec![vec![self.search_box.id()]]
+        // Mirrors the view's `!loaded` early return: the search box is only painted
+        // (and so only registered) once `pacman -Q` + `checkupdates` land, which is
+        // the longest load window of any page. The group count stays 1 either way —
+        // an empty outer Vec would kill the ctrl-nav entry point.
+        if self.loaded {
+            vec![vec![self.search_box.id()]]
+        } else {
+            vec![Vec::new()]
+        }
     }
 
     fn view(

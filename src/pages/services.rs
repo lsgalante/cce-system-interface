@@ -372,7 +372,14 @@ fn service_action(name: &str, action: &str, is_system: bool) {
 impl crate::pages::AppPage for ServicesState {
     // Sections: [Services]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
-        vec![vec![self.search_box.id()]]
+        // Mirrors the view's `!loaded` branch: the search box is only painted (and
+        // so only registered) once the unit list has landed. The group count stays
+        // 1 either way — an empty outer Vec would kill the ctrl-nav entry point.
+        if self.loaded {
+            vec![vec![self.search_box.id()]]
+        } else {
+            vec![Vec::new()]
+        }
     }
 
     fn view(

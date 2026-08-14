@@ -354,7 +354,15 @@ impl crate::pages::AppPage for StorageState {
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         // Only the third section (Full System Backup) has anything focusable;
         // the first two are read-only readouts, so ctrl+i there has no target.
-        vec![Vec::new(), Vec::new(), vec![self.backup_button.id()]]
+        // Gated on `backup_loaded` to mirror the view: the button is only painted
+        // (and so only registered) in that branch, and an id reported here while
+        // unregistered is a dead root the router drops with a warning.
+        let backup = if self.backup_loaded {
+            vec![self.backup_button.id()]
+        } else {
+            Vec::new()
+        };
+        vec![Vec::new(), Vec::new(), backup]
     }
 
     fn view(
