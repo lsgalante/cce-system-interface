@@ -623,11 +623,23 @@ impl SystemInterface {
             }
             AppAction::Accounts(m) => match m {
                 pages::accounts::AccountsMessage::GoogleLoginInit => {
-                    pages::accounts::update(&mut self.app.accounts, m.clone());
-                    let sender = self.sender.clone();
-                    tokio::spawn(async move {
-                        pages::accounts::run_google_login(sender).await;
-                    });
+                    // One listener at a time: port 36137 is fixed, so a second
+                    // flow could only fail to bind and report it as a broken app
+                    // rather than "you already have a login in the browser".
+                    if self.app.accounts.oauth_listener_running {
+                        pages::accounts::update(
+                            &mut self.app.accounts,
+                            pages::accounts::AccountsMessage::StatusMessage(
+                                "A Google sign-in is already waiting on the browser.".to_string(),
+                            ),
+                        );
+                    } else {
+                        pages::accounts::update(&mut self.app.accounts, m.clone());
+                        let sender = self.sender.clone();
+                        tokio::spawn(async move {
+                            pages::accounts::run_google_login(sender).await;
+                        });
+                    }
                 }
                 _ => pages::accounts::update(&mut self.app.accounts, m.clone()),
             },

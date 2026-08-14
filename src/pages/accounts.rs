@@ -76,6 +76,10 @@ pub enum AccountsMessage {
     StatusMessage(String),
     GoogleLoginInit,
     GoogleLoginSuccess(AccountInfo),
+    /// The browser flow ended — successfully, in error, or by timing out. Sent
+    /// from `run_google_login` on every exit path so the port-36137 listener is
+    /// never believed to be alive after its task is gone.
+    GoogleLoginFinished,
     ICloudLoginHelp,
     EditOAuthCredsStart,
     EditOAuthCredsSave,
@@ -212,7 +216,19 @@ pub fn load_google_client_config() -> GoogleClientConfig {
     default_config
 }
 
+/// How long the loopback listener waits for the browser redirect before giving
+/// up. Without a bound, abandoning the consent screen would hold port 36137 —
+/// and `oauth_listener_running` with it — for the life of the process.
+const OAUTH_WAIT: std::time::Duration = std::time::Duration::from_secs(300);
+
 pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
+    google_login_flow(&sender).await;
+    // The listener is dropped by now, so the button is live again whether the
+    // flow succeeded, failed to bind, or timed out.
+    let _ = sender.send(AppAction::Accounts(AccountsMessage::GoogleLoginFinished));
+}
+
+async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
     let client_config = load_google_client_config();
     let listener = match tokio::net::TcpListener::bind("127.0.0.1:36137").await {
         Ok(l) => l,
@@ -238,7 +254,17 @@ pub async fn run_google_login(sender: calloop::channel::Sender<AppAction>) {
     cmd.arg(&auth_url);
     let _ = cce_ui::process::spawn_detached(cmd);
 
-    if let Ok((mut stream, _)) = listener.accept().await {
+    let accepted = match tokio::time::timeout(OAUTH_WAIT, listener.accept()).await {
+        Ok(res) => res,
+        Err(_) => {
+            let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(
+                "Google sign-in timed out — press Sign in with Google to retry.".to_string(),
+            )));
+            return;
+        }
+    };
+
+    if let Ok((mut stream, _)) = accepted {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut buffer = [0; 1024];
         if let Ok(n) = stream.read(&mut buffer).await {
@@ -407,11 +433,14 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         // ── Global actions: one compact row ──
         let add_bg = if state.adding_new { (ACCENT_BG, ACCENT_BG) } else { BTN_PRIMARY };
         let oauth_bg = if state.editing_oauth_creds { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
+        // A login in flight is an active mode too — tint it like the others so
+        // the "already waiting on the browser" reply isn't the only clue.
+        let login_bg = if state.oauth_listener_running { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
         let narrow = item_w < 520.0;
         stack.add_row(3, 8.0, btn_h, |c, i, x, w| {
             let (label, colors, action) = match i {
                 0 => (if narrow { "Add" } else { "Add Account" }, add_bg, AccountsMessage::AddAccountStart),
-                1 => (if narrow { "Google Login" } else { "Sign in with Google" }, BTN_NEUTRAL, AccountsMessage::GoogleLoginInit),
+                1 => (if narrow { "Google Login" } else { "Sign in with Google" }, login_bg, AccountsMessage::GoogleLoginInit),
                 _ => (if narrow { "Google API" } else { "Google API Settings" }, oauth_bg, AccountsMessage::EditOAuthCredsStart),
             };
             c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
@@ -634,7 +663,11 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             state.status_msg = Some(msg);
         }
         AccountsMessage::GoogleLoginInit => {
+            state.oauth_listener_running = true;
             state.status_msg = Some("Starting Google Sign-In...".to_string());
+        }
+        AccountsMessage::GoogleLoginFinished => {
+            state.oauth_listener_running = false;
         }
         AccountsMessage::GoogleLoginSuccess(new_acc) => {
             let email = new_acc.email.clone();
@@ -777,6 +810,21 @@ mod tests {
             );
         }
         assert!(!pc.buttons.is_empty(), "Accounts page should have buttons");
+    }
+
+    /// The listener flag has to come back down on EVERY exit path, not just the
+    /// happy one — a stuck `true` would disable the button for the life of the
+    /// process, which is worse than the double-bind it prevents.
+    #[test]
+    fn oauth_listener_flag_tracks_the_flow() {
+        let mut state = AccountsState::default();
+        assert!(!state.oauth_listener_running);
+
+        update(&mut state, AccountsMessage::GoogleLoginInit);
+        assert!(state.oauth_listener_running, "starting a login marks the port busy");
+
+        update(&mut state, AccountsMessage::GoogleLoginFinished);
+        assert!(!state.oauth_listener_running, "a finished flow frees the button");
     }
 }
 
