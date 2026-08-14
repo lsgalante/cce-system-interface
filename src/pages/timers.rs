@@ -689,12 +689,25 @@ impl crate::pages::AppPage for TimersState {
 
     fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
 
+    // Filtered by `get_item_draw_y`, the same predicate the view's paint loop virtualizes
+    // on — a scrolled-out row keeps its last-drawn rect and would otherwise win the
+    // hit-test against the row actually on screen. See the note in packages.rs.
     fn extra_dispatch_roots(&mut self) -> Vec<cce_ui::widget::WidgetId> {
-        self.items.iter().map(|i| i.id()).collect()
+        let (list, items) = (&self.list, &self.items);
+        items
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| list.get_item_draw_y(*idx, 4.0).is_some())
+            .map(|(_, i)| i.id())
+            .collect()
     }
 
     fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        for i in self.items.iter_mut() {
+        let (list, items) = (&self.list, &mut self.items);
+        for (idx, i) in items.iter_mut().enumerate() {
+            if list.get_item_draw_y(idx, 4.0).is_none() {
+                continue;
+            }
             let (id, ptr) = (i.id(), i.as_ptr_mut());
             ctx.register_widget(id, ptr);
         }

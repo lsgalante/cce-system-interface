@@ -772,19 +772,34 @@ impl crate::pages::AppPage for PackagesState {
         }
     }
 
+    // Both root methods below filter by `get_item_draw_y`, the SAME predicate the view's
+    // paint loop uses to virtualize rows. Only a row that was drawn had `render_widget`
+    // refresh its rect; a scrolled-out row keeps the rect from the last frame it was
+    // visible, and since `dispatch_page_event` takes the first root that hit-tests true
+    // in index order, an unfiltered list let a stale low-index row swallow clicks meant
+    // for the row actually on screen (click "fontforge", select "appstream").
     fn extra_dispatch_roots(&mut self) -> Vec<cce_ui::widget::WidgetId> {
-        match self.active_tab {
-            PackageTab::Installed => self.installed_items.iter().map(|i| i.id()).collect(),
-            PackageTab::Updates => self.updates_items.iter().map(|i| i.id()).collect(),
-        }
+        let (list, items) = match self.active_tab {
+            PackageTab::Installed => (&self.installed_list, &self.installed_items),
+            PackageTab::Updates => (&self.updates_list, &self.updates_items),
+        };
+        items
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| list.get_item_draw_y(*idx, 4.0).is_some())
+            .map(|(_, i)| i.id())
+            .collect()
     }
 
     fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        let items = match self.active_tab {
-            PackageTab::Installed => &mut self.installed_items,
-            PackageTab::Updates => &mut self.updates_items,
+        let (list, items) = match self.active_tab {
+            PackageTab::Installed => (&self.installed_list, &mut self.installed_items),
+            PackageTab::Updates => (&self.updates_list, &mut self.updates_items),
         };
-        for i in items.iter_mut() {
+        for (idx, i) in items.iter_mut().enumerate() {
+            if list.get_item_draw_y(idx, 4.0).is_none() {
+                continue;
+            }
             let (id, ptr) = (i.id(), i.as_ptr_mut());
             ctx.register_widget(id, ptr);
         }
