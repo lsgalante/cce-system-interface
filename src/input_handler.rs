@@ -355,6 +355,16 @@ impl SystemInterface {
     /// (hover bookkeeping); other events stop at the first handler.
     pub(crate) fn dispatch_page_event(&mut self, event: &cce_ui::widget::Event) -> bool {
         use cce_ui::widget::Event;
+        // A page switch takes effect immediately, but widget registration is a side effect
+        // of the view pass and `clear_hierarchy` wipes the registry every rebuild — so
+        // until the new page has been laid out once, none of its `section_widgets()` ids
+        // resolve. Dispatching anyway can't reach a widget; it only emits one
+        // "unregistered/stale root" warning per root (the pages that implement
+        // `register_extra_dispatch_roots` were incidentally immune, which is why only 9 of
+        // the 14 spammed). Suppress across the gap instead — the rebuild is one frame away.
+        if self.laid_out_page != Some(self.app.current_page) {
+            return false;
+        }
         let is_pointer_event = matches!(
             event,
             Event::PointerMove { .. } | Event::MouseButton { .. } | Event::MouseWheel { .. }

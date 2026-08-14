@@ -663,6 +663,7 @@ impl SystemInterface {
             }
         }
         self.needs_rebuild = false;
+        self.laid_out_page = Some(self.app.current_page);
         self.last_scroll_y = self.scroll_y;
         self.ui_context.clear_dirty();
     }

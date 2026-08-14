@@ -87,6 +87,12 @@ struct SystemInterface {
     // (single-slot with the global widget focus — descending clears it); the per-section
     // widget groups come from AppPage::section_widgets each time they're needed.
     focused_section: Option<usize>,
+    // The page the last `rebuild_layout` actually laid out. Registration is a side effect
+    // of the view pass (`render_widget`), and `clear_hierarchy` wipes the registry each
+    // rebuild — so between a page switch and the next rebuild, the NEW page's
+    // `section_widgets()` ids are not registered and every event to them is dropped with
+    // a router warning. `dispatch_page_event` suppresses dispatch across that gap.
+    laid_out_page: Option<Page>,
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
     // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
@@ -186,6 +192,7 @@ impl cce_ui::engine::Application for SystemInterface {
             scrollable_buttons_start_idx: 0,
             last_scroll_y: 0.0,
             focused_section: None,
+            laid_out_page: None,
             page_dropdown,
             page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
