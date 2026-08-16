@@ -294,7 +294,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
             
             // Retained widget rather than an immediate `sec.button`, so it can hold
             // keyboard focus. Its label/colours are re-synced each frame from the
-            // backup state, the way cce-email drives its retained btn_unread.
+            // backup state, the way cce-mail drives its retained btn_unread.
             let (btn_label, bg, hover) = if state.backup_in_progress {
                 ("Backing up...", BTN_DISABLED, BTN_DISABLED)
             } else {

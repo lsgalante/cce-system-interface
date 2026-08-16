@@ -2,6 +2,13 @@ use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, sec
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{TextBox, WidgetHost};
 
+/// Secret Service entries are keyed by (service, address) — the same pair
+/// cce-mail resolves passwords through. `KEYRING_SERVICE_LEGACY` is the
+/// pre-rename name (the app was `cce-email`); it is only ever deleted here,
+/// never written, since cce-mail adopts those entries on its next start.
+const KEYRING_SERVICE: &str = "cce-mail";
+const KEYRING_SERVICE_LEGACY: &str = "cce-email";
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct AccountInfo {
     pub email: String,
@@ -41,7 +48,7 @@ pub struct AccountsState {
     /// quietly re-point the open form at a different account.
     pub editing_email: Option<String>,
     /// Per-account OAuth credentials — the copy in `accounts.json` that
-    /// cce-email actually refreshes with, not the global template.
+    /// cce-mail actually refreshes with, not the global template.
     pub oauth_client_id_box: cce_ui::widget::Adapted<TextBox>,
     pub oauth_client_secret_box: cce_ui::widget::Adapted<TextBox>,
 }
@@ -245,7 +252,7 @@ async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
     
     let (verifier, challenge) = generate_pkce();
     
-    // Mail scopes: these accounts feed cce-email's IMAP/SMTP (XOAUTH2 needs
+    // Mail scopes: these accounts feed cce-mail's IMAP/SMTP (XOAUTH2 needs
     // https://mail.google.com/). The old request asked for cloud-platform/
     // cclog/aicode scopes — tokens Gmail rejects with AUTHENTICATIONFAILED.
     let auth_url = format!(
@@ -636,13 +643,13 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             }
 
             // The password goes to the Secret Service under the SAME entry
-            // cce-email resolves (service "cce-email", account = address) and
+            // cce-mail resolves (service "cce-mail", account = address) and
             // the on-disk field stays blank; plaintext-on-disk only as the
-            // fallback when no keyring answers (cce-email migrates it later).
+            // fallback when no keyring answers (cce-mail migrates it later).
             let mut stored_password = password.clone();
             let mut in_keyring = false;
             if password != "mock_password" {
-                if let Ok(entry) = keyring::Entry::new("cce-email", &email) {
+                if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &email) {
                     if entry.set_password(&password).is_ok() {
                         stored_password = String::new();
                         in_keyring = true;
@@ -686,9 +693,13 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                     state.accounts[0].is_default = true;
                 }
                 save_accounts(&state.accounts);
-                // Drop the keyring password and cce-email's cached mail too.
-                if let Ok(entry) = keyring::Entry::new("cce-email", &deleted.email) {
-                    let _ = entry.delete_credential();
+                // Drop the keyring password and cce-mail's cached mail too.
+                // The pre-rename service is cleared as well, so an account
+                // deleted before cce-mail ever adopted it leaves nothing behind.
+                for service in [KEYRING_SERVICE, KEYRING_SERVICE_LEGACY] {
+                    if let Ok(entry) = keyring::Entry::new(service, &deleted.email) {
+                        let _ = entry.delete_credential();
+                    }
                 }
                 let safe_email = deleted.email.replace('@', "_").replace('.', "_");
                 let cache = cce_ui::config::cce_config_dir().join(format!("emails_{}.json", safe_email));
@@ -789,10 +800,10 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
 
             let mut msg = "Account updated".to_string();
             if !password.is_empty() {
-                // Same Secret Service entry cce-email resolves; the on-disk
+                // Same Secret Service entry cce-mail resolves; the on-disk
                 // field stays blank whenever the keyring accepted it.
                 let mut stored = password.clone();
-                if let Ok(entry) = keyring::Entry::new("cce-email", &email) {
+                if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &email) {
                     if entry.set_password(&password).is_ok() {
                         stored = String::new();
                         msg = "Account updated (password in keyring)".to_string();
