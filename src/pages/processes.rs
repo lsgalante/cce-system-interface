@@ -16,6 +16,10 @@ pub struct ProcessesState {
     pub loaded: bool,
     pub processes: Vec<ProcessRow>,
     pub cpu_list: ScrollRegion,
+    /// Pids a kill was requested for, dimmed until the next refresh. The
+    /// refresh clears it: a killed process is gone from the new list, and a
+    /// survivor (EPERM, ignored TERM) un-dims — an honest "didn't die".
+    pub killing: std::collections::HashSet<String>,
 }
 
 impl Default for ProcessesState {
@@ -24,6 +28,7 @@ impl Default for ProcessesState {
             loaded: false,
             processes: Vec::new(),
             cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
+            killing: std::collections::HashSet::new(),
         }
     }
 }
@@ -31,6 +36,8 @@ impl Default for ProcessesState {
 #[derive(Debug, Clone)]
 pub enum ProcessesMessage {
     Refreshed(ProcessesState),
+    /// The row's ✕ button: SIGTERM this pid.
+    Kill(String),
     None,
 }
 
@@ -88,6 +95,7 @@ pub async fn fetch_processes_state() -> ProcessesState {
         loaded: true,
         processes,
         cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
+        killing: std::collections::HashSet::new(),
     }
 }
 
@@ -125,6 +133,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             const COL_RSS: f32 = 420.0;
             const COL_MEM: f32 = 510.0;
             const COL_CPU: f32 = 580.0;
+            const COL_KILL: f32 = 624.0;
             const CONTENT_W: f32 = 650.0;
 
             let header_h = 22.0;
@@ -172,11 +181,37 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                         AppAction::Processes(ProcessesMessage::None),
                     );
 
-                    sec.pc.text(&p.pid, list_box_x + COL_PID - ox, draw_y + 6.0, 12.0, [0.80, 0.80, 0.85, 1.0]);
-                    sec.pc.text(&p.command, list_box_x + COL_COMMAND - ox, draw_y + 6.0, 12.0, [0.80, 0.80, 0.85, 1.0]);
-                    sec.pc.text(&format_rss(p.rss_kb), list_box_x + COL_RSS - ox, draw_y + 6.0, 12.0, [0.62, 0.72, 0.88, 1.0]);
-                    sec.pc.text(&format!("{}%", p.mem_pct), list_box_x + COL_MEM - ox, draw_y + 6.0, 12.0, [0.62, 0.72, 0.88, 1.0]);
-                    sec.pc.text(&format!("{}%", p.cpu), list_box_x + COL_CPU - ox, draw_y + 6.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
+                    // A pending kill dims the row until the next refresh
+                    // settles it (gone, or alive again = the kill didn't take).
+                    let dim = state.killing.contains(&p.pid);
+                    let fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.80, 0.80, 0.85, 1.0] };
+                    let mem_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.62, 0.72, 0.88, 1.0] };
+                    let cpu_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.56, 0.83, 0.56, 1.0] };
+
+                    sec.pc.text(&p.pid, list_box_x + COL_PID - ox, draw_y + 6.0, 12.0, fg);
+                    sec.pc.text(&p.command, list_box_x + COL_COMMAND - ox, draw_y + 6.0, 12.0, fg);
+                    sec.pc.text(&format_rss(p.rss_kb), list_box_x + COL_RSS - ox, draw_y + 6.0, 12.0, mem_fg);
+                    sec.pc.text(&format!("{}%", p.mem_pct), list_box_x + COL_MEM - ox, draw_y + 6.0, 12.0, mem_fg);
+                    sec.pc.text(&format!("{}%", p.cpu), list_box_x + COL_CPU - ox, draw_y + 6.0, 12.0, cpu_fg);
+
+                    // Kill button, in content space like the columns. Emitted
+                    // AFTER the row button on purpose: overlapping page
+                    // buttons all see the click and the LAST take_click wins
+                    // the dispatched action (input_handler's collect loop), so
+                    // ✕ beats the row's no-op exactly because it comes later.
+                    if !dim {
+                        sec.pc.button(
+                            "\u{00d7}",
+                            list_box_x + COL_KILL - ox,
+                            draw_y + 3.0,
+                            20.0,
+                            row_h - 6.0,
+                            [0.0, 0.0, 0.0, 0.0],
+                            [0.75, 0.30, 0.30, 0.45],
+                            [0.85, 0.55, 0.55, 1.0],
+                            AppAction::Processes(ProcessesMessage::Kill(p.pid.clone())),
+                        );
+                    }
                 }
             }
             sec.pc.pop_clip_rect();
@@ -199,6 +234,20 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
         ProcessesMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.processes = new.processes;
+            // Fresh list = every pending kill has resolved one way or the
+            // other; rows that survived un-dim (the kill didn't take).
+            state.killing.clear();
+        }
+        ProcessesMessage::Kill(pid) => {
+            // Plain SIGTERM, same privileges as the app. No confirm dialog:
+            // the target is a small ✕ the pointer has to mean. Failure needs
+            // no channel — a survivor un-dims on the next 3s refresh.
+            // Parsed, not passed through: `kill 0` signals the whole process
+            // group (this app included), and negative pids kill groups too.
+            if pid.parse::<u32>().is_ok_and(|n| n > 0) {
+                let _ = std::process::Command::new("kill").arg(&pid).spawn();
+                state.killing.insert(pid);
+            }
         }
         ProcessesMessage::None => {}
     }
@@ -290,6 +339,59 @@ mod tests {
             rss_kb: 1024,
             command: "proc".to_string(),
         }
+    }
+
+    #[test]
+    fn kill_buttons_emitted_after_row_buttons_and_skip_pending() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        state.processes = (1..=3).map(|i| row(&i.to_string())).collect();
+        state.killing.insert("2".to_string());
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let sec_focused = vec![false];
+        let mut ctx = cce_ui::context::UiContext::new();
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+
+        let kills: Vec<usize> = pc
+            .buttons
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, a, _))| matches!(a, AppAction::Processes(ProcessesMessage::Kill(_))))
+            .map(|(i, _)| i)
+            .collect();
+        // One ✕ per row except the pending one (pid 2).
+        assert_eq!(kills.len(), 2, "{:?}", pc.buttons.iter().map(|(_, a, _)| a).collect::<Vec<_>>());
+        // Ordering invariant the dispatch relies on: each ✕ comes after its
+        // row's hover button — last take_click wins, so ✕ must be later.
+        let rows: Vec<usize> = pc
+            .buttons
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, a, _))| matches!(a, AppAction::Processes(ProcessesMessage::None)))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(kills[0] > rows[0]);
+    }
+
+    #[test]
+    fn kill_guards_and_dim_lifecycle() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        // Group-signal and garbage pids are refused outright.
+        update(&mut state, ProcessesMessage::Kill("0".to_string()));
+        update(&mut state, ProcessesMessage::Kill("-1".to_string()));
+        update(&mut state, ProcessesMessage::Kill("abc".to_string()));
+        update(&mut state, ProcessesMessage::Kill(String::new()));
+        assert!(state.killing.is_empty());
+
+        // A real (nonexistent, > pid_max) pid marks the row...
+        update(&mut state, ProcessesMessage::Kill("99999999".to_string()));
+        assert!(state.killing.contains("99999999"));
+
+        // ...and the next refresh clears every pending mark.
+        update(
+            &mut state,
+            ProcessesMessage::Refreshed(ProcessesState { loaded: true, ..Default::default() }),
+        );
+        assert!(state.killing.is_empty());
     }
 
     #[test]
