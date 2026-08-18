@@ -26,8 +26,15 @@ pub struct ScrollRegion {
     pub content_h: f32,
     pub viewport_y: f32,
     pub viewport_h: f32,
+    /// Horizontal scrolling is opt-in per list: it activates only when a page
+    /// declares a content width wider than the box (`set_content_w`). The
+    /// default 0 keeps every existing vertical-only list exactly as it was.
+    pub scroll_x: f32,
+    pub content_w: f32,
     pub dragging: bool,
+    dragging_h: bool,
     drag_offset_y: f32,
+    drag_offset_x: f32,
     pub hovered: bool,
     /// Local stand-in for the legacy global focus flag (`ScrollBox::focus()` on any press
     /// inside the frame): set on a press that hits the region, cleared on one that misses.
@@ -51,8 +58,12 @@ impl ScrollRegion {
             content_h: 0.0,
             viewport_y: 0.0,
             viewport_h: 0.0,
+            scroll_x: 0.0,
+            content_w: 0.0,
             dragging: false,
+            dragging_h: false,
             drag_offset_y: 0.0,
+            drag_offset_x: 0.0,
             hovered: false,
             focused: false,
             draw_frame: true,
@@ -83,8 +94,25 @@ impl ScrollRegion {
         self.scroll_y = val;
     }
 
+    /// Declare how wide the content really is. Wider than the box = the list
+    /// scrolls horizontally (bottom scrollbar, x wheel deltas, arrow keys).
+    pub fn set_content_w(&mut self, w: f32) {
+        self.content_w = w;
+        self.scroll_x = self.scroll_x.clamp(0.0, self.max_scroll_x());
+    }
+
+    /// Whether horizontal scrolling is live (content declared wider than the
+    /// box). Pages use this to reserve bottom room for the h-bar.
+    pub fn h_scroll_active(&self) -> bool {
+        self.content_w > self.w
+    }
+
     fn max_scroll(&self) -> f32 {
         (self.content_h - self.viewport_h).max(0.0)
+    }
+
+    fn max_scroll_x(&self) -> f32 {
+        (self.content_w - self.w).max(0.0)
     }
 
     pub fn hit(&self, px: f32, py: f32) -> bool {
@@ -131,11 +159,60 @@ impl ScrollRegion {
         px >= sb_x - 4.0 && px <= sb_x + sb_w + 4.0 && py >= track_y && py <= track_y + track_h
     }
 
+    /// Bottom scrollbar geometry, mirroring [`Self::scrollbar_geom`] with the
+    /// axes swapped: (track_x, sb_y, track_w, sb_h, thumb_x, thumb_w). The
+    /// track stops short of the vertical bar's strip so the pills never
+    /// overlap in the corner.
+    fn h_scrollbar_geom(&self) -> (f32, f32, f32, f32, f32, f32) {
+        let sb_h = cce_ui::layout::scrollbar_width();
+        let sb_y = self.y + self.h - sb_h - 4.0;
+        let right_reserve = if self.content_h > self.viewport_h { sb_h + 8.0 } else { 0.0 };
+        let track_x = self.x + 4.0;
+        let track_w = self.w - 8.0 - right_reserve;
+        let visible_ratio = self.w / self.content_w.max(1.0);
+        let thumb_w = if track_w <= 20.0 {
+            track_w
+        } else {
+            (track_w * visible_ratio).clamp(20.0, track_w)
+        };
+        let ratio = if self.max_scroll_x() > 0.0 { self.scroll_x / self.max_scroll_x() } else { 0.0 };
+        let thumb_x = track_x + ratio * (track_w - thumb_w);
+        (track_x, sb_y, track_w, sb_h, thumb_x, thumb_w)
+    }
+
+    fn hit_h_scrollbar(&self, px: f32, py: f32) -> bool {
+        if !self.h_scroll_active() {
+            return false;
+        }
+        let (track_x, sb_y, track_w, sb_h, _, _) = self.h_scrollbar_geom();
+        py >= sb_y - 4.0 && py <= sb_y + sb_h + 4.0 && px >= track_x && px <= track_x + track_w
+    }
+
     /// Left press: scrollbar thumb grab or track jump (`ScrollBox::mouse_input`), plus the
     /// press-inside focus / press-outside unfocus bookkeeping. Returns true only when the
     /// scrollbar consumed the press — a press on the rows falls through to them.
     pub fn press(&mut self, px: f32, py: f32) -> bool {
         self.focused = self.hit(px, py);
+        // The bottom bar first: its ±4 slop strip sits inside the box, where
+        // the vertical hit test can never claim it.
+        if self.hit_h_scrollbar(px, py) {
+            self.dragging_h = true;
+            let (track_x, _, track_w, _, thumb_x, thumb_w) = self.h_scrollbar_geom();
+            let click_offset = px - thumb_x;
+            if click_offset >= 0.0 && click_offset <= thumb_w {
+                self.drag_offset_x = click_offset;
+            } else {
+                self.drag_offset_x = thumb_w / 2.0;
+                let target = px - self.drag_offset_x;
+                let ratio = if track_w - thumb_w > 0.0 {
+                    ((target - track_x) / (track_w - thumb_w)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                self.scroll_x = ratio * self.max_scroll_x();
+            }
+            return true;
+        }
         if !self.hit_scrollbar(px, py) {
             self.dragging = false;
             return false;
@@ -160,7 +237,9 @@ impl ScrollRegion {
 
     /// Returns whether a thumb drag was in progress (the caller's redraw signal).
     pub fn release(&mut self) -> bool {
-        std::mem::take(&mut self.dragging)
+        // Bitwise on purpose: both drags must reset even when the first
+        // operand is already true (|| would short-circuit the take).
+        std::mem::take(&mut self.dragging) | std::mem::take(&mut self.dragging_h)
     }
 
     fn drag_move(&mut self, py: f32) -> bool {
@@ -185,6 +264,17 @@ impl ScrollRegion {
             self.drag_move(py);
             return true;
         }
+        if self.dragging_h {
+            let (track_x, _, track_w, _, _, thumb_w) = self.h_scrollbar_geom();
+            let target = px - self.drag_offset_x;
+            let ratio = if track_w - thumb_w > 0.0 {
+                ((target - track_x) / (track_w - thumb_w)).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            self.scroll_x = ratio * self.max_scroll_x();
+            return true;
+        }
         false
     }
 
@@ -192,13 +282,17 @@ impl ScrollRegion {
         if !self.hit(px, py) {
             return false;
         }
-        let dy = match delta {
-            MouseScrollDelta::LineDelta(_, y) => -y * 24.0,
-            MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
+        let (dx, dy) = match delta {
+            MouseScrollDelta::LineDelta(x, y) => (-x * 24.0, -y * 24.0),
+            MouseScrollDelta::PixelDelta(pos) => (-pos.x as f32, -pos.y as f32),
         };
-        let old = self.scroll_y;
+        let old_y = self.scroll_y;
         self.scroll_y = (self.scroll_y + dy).clamp(0.0, self.max_scroll());
-        (self.scroll_y - old).abs() > 0.01
+        // Sideways wheel/trackpad deltas pan an h-scrollable list; a
+        // vertical-only list ignores them (max_scroll_x = 0 clamps to 0).
+        let old_x = self.scroll_x;
+        self.scroll_x = (self.scroll_x + dx).clamp(0.0, self.max_scroll_x());
+        (self.scroll_y - old_y).abs() > 0.01 || (self.scroll_x - old_x).abs() > 0.01
     }
 
     /// Hover/focus-scoped keyboard scrolling (`ScrollBox::keyboard_input` reached the boxes
@@ -216,6 +310,8 @@ impl ScrollRegion {
                 _ => return false,
             }
         } else {
+            let old_x = self.scroll_x;
+            let max_x = self.max_scroll_x();
             match &event.logical_key {
                 Key::Named(NamedKey::ArrowDown) => self.scroll_y = (self.scroll_y + 24.0).clamp(0.0, max),
                 Key::Named(NamedKey::ArrowUp) => self.scroll_y = (self.scroll_y - 24.0).clamp(0.0, max),
@@ -223,7 +319,18 @@ impl ScrollRegion {
                 Key::Named(NamedKey::PageUp) => self.scroll_y = (self.scroll_y - self.viewport_h).clamp(0.0, max),
                 Key::Named(NamedKey::Home) => self.scroll_y = 0.0,
                 Key::Named(NamedKey::End) => self.scroll_y = max,
+                // Only an h-scrollable list claims the horizontal arrows —
+                // elsewhere they keep falling through to other handlers.
+                Key::Named(NamedKey::ArrowRight) if max_x > 0.0 => {
+                    self.scroll_x = (self.scroll_x + 24.0).clamp(0.0, max_x)
+                }
+                Key::Named(NamedKey::ArrowLeft) if max_x > 0.0 => {
+                    self.scroll_x = (self.scroll_x - 24.0).clamp(0.0, max_x)
+                }
                 _ => return false,
+            }
+            if (self.scroll_x - old_x).abs() > 0.01 {
+                return true;
             }
         }
         (self.scroll_y - old).abs() > 0.01
@@ -259,6 +366,12 @@ impl ScrollRegion {
             let all = (true, true, true, true);
             pc.rect_with_radius_corners(cce_ui::color::scrollbar_track_color(), sb_x, track_y, sb_w, track_h, sb_w.min(track_h) * 0.5, all);
             pc.rect_with_radius_corners(cce_ui::color::scrollbar_thumb_color(), sb_x, thumb_y, sb_w, thumb_h, sb_w.min(thumb_h) * 0.5, all);
+        }
+        if self.h_scroll_active() {
+            let (track_x, sb_y, track_w, sb_h, thumb_x, thumb_w) = self.h_scrollbar_geom();
+            let all = (true, true, true, true);
+            pc.rect_with_radius_corners(cce_ui::color::scrollbar_track_color(), track_x, sb_y, track_w, sb_h, sb_h.min(track_w) * 0.5, all);
+            pc.rect_with_radius_corners(cce_ui::color::scrollbar_thumb_color(), thumb_x, sb_y, thumb_w, sb_h, sb_h.min(thumb_w) * 0.5, all);
         }
     }
 }
@@ -328,6 +441,43 @@ mod tests {
         // Press outside: unfocuses.
         assert!(!r.press(500.0, 500.0));
         assert!(!r.focused);
+    }
+
+    #[test]
+    fn horizontal_scroll_is_opt_in_and_clamps() {
+        let mut r = region();
+        r.update_bounds(10, 20.0, 100.0);
+        // No content width declared: x wheel deltas change nothing and the
+        // vertical-only behavior (including the y component) is untouched.
+        assert!(!r.wheel(&MouseScrollDelta::LineDelta(-2.0, 0.0), 50.0, 50.0));
+        assert_eq!(r.scroll_x, 0.0);
+        assert!(!r.h_scroll_active());
+
+        // Content wider than the 200px box: x deltas pan and clamp.
+        r.set_content_w(500.0);
+        assert!(r.h_scroll_active());
+        assert!(r.wheel(&MouseScrollDelta::LineDelta(-2.0, 0.0), 50.0, 50.0));
+        assert_eq!(r.scroll_x, 48.0);
+        r.wheel(&MouseScrollDelta::LineDelta(-100.0, 0.0), 50.0, 50.0);
+        assert_eq!(r.scroll_x, 300.0); // max = 500 - 200
+        r.wheel(&MouseScrollDelta::LineDelta(100.0, 0.0), 50.0, 50.0);
+        assert_eq!(r.scroll_x, 0.0);
+    }
+
+    #[test]
+    fn h_thumb_press_grabs_and_releases() {
+        let mut r = region();
+        r.update_bounds(2, 20.0, 100.0); // no vertical overflow
+        r.set_content_w(500.0);
+        // The bottom strip: y + h - sb_w - 4, thumb starts at track_x.
+        let sb_y = 20.0 + 100.0 - cce_ui::layout::scrollbar_width() - 4.0;
+        assert!(r.press(20.0, sb_y + 1.0));
+        // Drag right: scroll_x follows.
+        assert!(r.cursor_moved(120.0, sb_y + 1.0));
+        assert!(r.scroll_x > 0.0);
+        assert!(r.release());
+        // A rows-area press still falls through (no h-bar hit).
+        assert!(!r.press(50.0, 50.0));
     }
 
     #[test]
