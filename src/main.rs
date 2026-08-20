@@ -44,6 +44,9 @@ struct SystemInterface {
     // scrolls them.
     popover_widgets: Vec<AppWidget>,
     popover_texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
+    /// Popover-layer inset plates (window coords, scroll already applied) —
+    /// the dropdown's grown-trigger surface via the inset_plate hook.
+    popover_control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, [f32; 4])>,
     page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
 
     sidebar_width: f32,
@@ -103,6 +106,9 @@ struct SystemInterface {
     // Section wells: body box + title tab (page coords, pre-scroll) — carved by
     // display_list.
     page_reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
+    /// Control troughs from `PageContent::control_reliefs` (page coords,
+    /// pre-scroll) — each carved as a flush inset plate after the section wells.
+    page_control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, [f32; 4])>,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
@@ -155,6 +161,7 @@ impl cce_ui::engine::Application for SystemInterface {
             texts: Vec::new(),
             popover_widgets: Vec::new(),
             popover_texts: Vec::new(),
+            popover_control_reliefs: Vec::new(),
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
@@ -197,6 +204,7 @@ impl cce_ui::engine::Application for SystemInterface {
             page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
             page_reliefs: Vec::new(),
+            page_control_reliefs: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -399,6 +407,30 @@ impl cce_ui::engine::Application for SystemInterface {
             });
         }
 
+        // Control troughs (Dropdown flush inset chrome, offered by the flat
+        // bridge): carved after the section wells so they shade the fills
+        // beneath, clipped to the page viewport like the wells.
+        if !self.page_control_reliefs.is_empty() {
+            let view = Rect {
+                x: self.sidebar_width,
+                y: self.header_height,
+                width: width - self.sidebar_width,
+                height: (height - self.header_height - self.status_height
+                    - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
+            };
+            let scroll_y = self.scroll_y;
+            pc.clip(view, |pc| {
+                for &(x, y, w, h, radius, depth, color) in &self.page_control_reliefs {
+                    pc.inset_plate(
+                        Rect { x, y: y - scroll_y, width: w, height: h },
+                        (radius, radius, radius, radius),
+                        color,
+                        depth,
+                    );
+                }
+            });
+        }
+
         cce_ui::widget::hover_animation::post_render_check();
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
@@ -410,6 +442,17 @@ impl cce_ui::engine::Application for SystemInterface {
             } else {
                 pc.quad(rect, w.color);
             }
+        }
+        // Popover surfaces claimed through the inset_plate hook (the dropdown's
+        // grown-trigger plate): real relief prims at the popover layer, over
+        // the page and its control troughs.
+        for &(x, y, w, h, radius, depth, color) in &self.popover_control_reliefs {
+            pc.inset_plate(
+                Rect { x, y, width: w, height: h },
+                (radius, radius, radius, radius),
+                color,
+                depth,
+            );
         }
         for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {
             pc.text_with(

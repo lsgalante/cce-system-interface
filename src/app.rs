@@ -135,6 +135,11 @@ pub struct PageContent {
     /// plus the title tab box, carved into the window plate by display_list as
     /// recess prims (page coordinates, pre-scroll).
     pub reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
+    /// Control troughs claimed via `RenderTarget::inset_plate` (the flat-path
+    /// bridge offers a Dropdown's flush inset chrome here) — (x, y, w, h,
+    /// radius, depth, face color), page coordinates, pre-scroll; display_list
+    /// carves them as real inset plates.
+    pub control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, [f32; 4])>,
     pub clip_stack: Vec<[f32; 4]>,
     pub measure_only: bool,
 }
@@ -146,6 +151,7 @@ impl Default for PageContent {
             texts: Vec::new(),
             buttons: Vec::new(),
             reliefs: Vec::new(),
+            control_reliefs: Vec::new(),
             clip_stack: Vec::new(),
             measure_only: true,
         }
@@ -154,7 +160,15 @@ impl Default for PageContent {
 
 impl PageContent {
     pub fn new() -> Self {
-        Self { rects: Vec::new(), texts: Vec::new(), buttons: Vec::new(), reliefs: Vec::new(), clip_stack: Vec::new(), measure_only: false }
+        Self {
+            rects: Vec::new(),
+            texts: Vec::new(),
+            buttons: Vec::new(),
+            reliefs: Vec::new(),
+            control_reliefs: Vec::new(),
+            clip_stack: Vec::new(),
+            measure_only: false,
+        }
     }
 
     fn get_clipped_rect(&self, x: f32, y: f32, w: f32, h: f32) -> Option<(f32, f32, f32, f32)> {
@@ -288,6 +302,15 @@ impl RenderTarget for PageContent {
 
     fn section_relief_style(&self) -> bool {
         cce_ui::layout::control_relief()
+    }
+
+    /// The flat-path bridge offers each Dropdown's flush inset trough here;
+    /// carve it for real (display_list turns these into inset plates).
+    fn inset_plate(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32) {
+        if self.measure_only {
+            return;
+        }
+        self.control_reliefs.push((x, y, w, h, radius, depth, color));
     }
 
     fn section_relief(&mut self, f: &cce_ui::layout::SectionFrame) -> bool {

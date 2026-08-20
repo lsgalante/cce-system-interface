@@ -263,6 +263,7 @@ impl SystemInterface {
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
         self.page_reliefs = pc.reliefs.clone();
+        self.page_control_reliefs = pc.control_reliefs.clone();
 
 
 
@@ -601,6 +602,9 @@ impl SystemInterface {
                 let shifted = bounds.map(|[l, tb, rr, b]| [l, tb - self.scroll_y, rr, b - self.scroll_y]);
                 popover_pc.texts.push((t, size, x, y - self.scroll_y, tc, font, shifted));
             }
+            for (x, y, w, h, r, d, c) in page_pop_pc.control_reliefs {
+                popover_pc.control_reliefs.push((x, y - self.scroll_y, w, h, r, d, c));
+            }
         }
         if cce_ui::widget::context_menu::is_visible() {
             use cce_ui::layout::RenderTarget;
@@ -637,6 +641,7 @@ impl SystemInterface {
             corners: *corners,
         }).collect();
         self.popover_texts = popover_pc.texts;
+        self.popover_control_reliefs = popover_pc.control_reliefs;
 
         self.widgets = widgets;
         self.texts = texts;
