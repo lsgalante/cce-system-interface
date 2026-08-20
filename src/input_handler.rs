@@ -391,6 +391,19 @@ impl SystemInterface {
         let is_pointer_move = matches!(event, Event::PointerMove { .. });
         let mut handled = false;
 
+        // Open-popover priority: a press inside an open menu goes to its owner
+        // BEFORE positional dispatch — the roots iterate in z-ignorant order,
+        // so a closed sibling whose trigger band sits under the overlaying
+        // popover would otherwise claim the point first (the Default Apps
+        // Terminal dropdown's menu covers the Images row's trigger).
+        if let Event::MouseButton { x, y, .. } = event {
+            if let Some(owner) = self.ui_context.popover_owner_at(*x, *y) {
+                if self.ui_context.propagate_event(event, owner) {
+                    return true;
+                }
+            }
+        }
+
         if self.page_scroll_bar.content_h > self.page_scroll_bar.viewport_h {
             let mut sb_event = event.clone();
             if let Event::PointerMove { y, local_y, .. }

@@ -717,6 +717,9 @@ impl SystemInterface {
 }
 
 fn main() {
+    // cce-ui reports fatal event-loop errors through `log`; without a logger
+    // installed they vanish (the cce-terminal connection-death lesson).
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let _guard = rt.enter();
 

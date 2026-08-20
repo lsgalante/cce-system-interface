@@ -2,6 +2,12 @@
 //! Candidates come from the installed `.desktop` entries that claim the
 //! category's MIME types; picks are applied through `xdg-mime default`, one
 //! call per type, so a browser pick covers http/https/text-html at once.
+//!
+//! The Terminal row is the one non-MIME category: terminals have no MIME type,
+//! so candidates come from entries declaring `Categories=TerminalEmulator`,
+//! and the pick is stored as a COMMAND in the shared config.kdl
+//! (`default_terminal`) — which the launcher reads to host `Terminal=true`
+//! entries, and startcce exports as `$TERMINAL` for everything else.
 
 use crate::app::{AppAction, PageContent};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
@@ -9,17 +15,26 @@ use cce_ui::widget::{Dropdown, WidgetHost};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// (label, MIME types) — the first type is the one queried for the current
-/// default; a pick sets every type in the list.
-const CATEGORIES: &[(&str, &[&str])] = &[
-    ("Web Browser", &["x-scheme-handler/http", "x-scheme-handler/https", "text/html"]),
-    ("Mail", &["x-scheme-handler/mailto"]),
-    ("File Manager", &["inode/directory"]),
-    ("Text Editor", &["text/plain"]),
-    ("Images", &["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]),
-    ("Audio", &["audio/mpeg", "audio/flac", "audio/ogg", "audio/x-wav"]),
-    ("Video", &["video/mp4", "video/x-matroska", "video/webm"]),
-    ("PDF", &["application/pdf"]),
+/// How a category resolves candidates, its current default, and a pick.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CategoryKind {
+    /// The first type is the one queried for the current default; a pick sets
+    /// every type in the list via `xdg-mime default`.
+    Mime(&'static [&'static str]),
+    /// The DE's default terminal (see module docs).
+    Terminal,
+}
+
+const CATEGORIES: &[(&str, CategoryKind)] = &[
+    ("Web Browser", CategoryKind::Mime(&["x-scheme-handler/http", "x-scheme-handler/https", "text/html"])),
+    ("Mail", CategoryKind::Mime(&["x-scheme-handler/mailto"])),
+    ("File Manager", CategoryKind::Mime(&["inode/directory"])),
+    ("Terminal", CategoryKind::Terminal),
+    ("Text Editor", CategoryKind::Mime(&["text/plain"])),
+    ("Images", CategoryKind::Mime(&["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"])),
+    ("Audio", CategoryKind::Mime(&["audio/mpeg", "audio/flac", "audio/ogg", "audio/x-wav"])),
+    ("Video", CategoryKind::Mime(&["video/mp4", "video/x-matroska", "video/webm"])),
+    ("PDF", CategoryKind::Mime(&["application/pdf"])),
 ];
 
 const NOT_SET: &str = "— not set —";
@@ -39,9 +54,10 @@ pub struct DefaultAppsInfo(pub Vec<CategoryInfo>);
 #[derive(Debug, Clone)]
 pub struct CategoryEntry {
     pub label: &'static str,
-    pub mimes: &'static [&'static str],
+    pub kind: CategoryKind,
     pub info: CategoryInfo,
-    /// Desktop id per dropdown option (None = the "not set" placeholder row).
+    /// Applied value per dropdown option (desktop id for MIME categories, a
+    /// command for Terminal; None = the "not set" placeholder row).
     pub option_ids: Vec<Option<String>>,
     pub dropdown: cce_ui::widget::Adapted<Dropdown>,
 }
@@ -58,9 +74,9 @@ impl Default for DefaultAppsState {
             loaded: false,
             categories: CATEGORIES
                 .iter()
-                .map(|&(label, mimes)| CategoryEntry {
+                .map(|&(label, kind)| CategoryEntry {
                     label,
-                    mimes,
+                    kind,
                     info: CategoryInfo { candidates: Vec::new(), current: None },
                     option_ids: vec![None],
                     dropdown: Dropdown::new(vec![NOT_SET.to_string()], 0).with_label(label),
@@ -141,16 +157,42 @@ pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage) {
             }
         }
         DefaultAppsMessage::Set(cat_idx, opt_idx) => {
+            log::info!("[default_apps] Set(cat={cat_idx}, opt={opt_idx})");
             let Some(entry) = state.categories.get_mut(cat_idx) else { return };
             let Some(Some(id)) = entry.option_ids.get(opt_idx).cloned() else { return };
-            for mime in entry.mimes {
-                let _ = tokio::process::Command::new("xdg-mime")
-                    .args(["default", &id, mime])
-                    .spawn();
+            log::info!("[default_apps] applying {:?} -> {id}", entry.label);
+            match entry.kind {
+                CategoryKind::Mime(mimes) => {
+                    for mime in mimes {
+                        let _ = tokio::process::Command::new("xdg-mime")
+                            .args(["default", &id, mime])
+                            .spawn();
+                    }
+                }
+                CategoryKind::Terminal => set_default_terminal(&id),
             }
             entry.info.current = Some(id);
             rebuild_entry_options(entry);
         }
+    }
+}
+
+/// Write the terminal pick into the SHARED config.kdl (`default_terminal` at
+/// the top level) — the launcher and startcce read it from there, so the
+/// per-app override file would hide it from both.
+fn set_default_terminal(cmd: &str) {
+    let path = cce_ui::config::get_config_path();
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let Ok(mut doc) = content.parse::<kdl::KdlDocument>() else {
+        log::error!("[default_apps] config.kdl did not parse; terminal pick dropped");
+        return;
+    };
+    if cce_ui::config::update_kdl_in_memory(&mut doc, "default_terminal", cmd, "") {
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            log::error!("[default_apps] config.kdl write failed: {e}");
+        }
+    } else {
+        log::error!("[default_apps] update_kdl_in_memory refused default_terminal");
     }
 }
 
@@ -159,6 +201,10 @@ pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage) {
 struct DesktopApp {
     name: String,
     mimes: Vec<String>,
+    /// `Categories=` entries (the Terminal row keys off `TerminalEmulator`).
+    categories: Vec<String>,
+    /// Basename of `Exec=`'s first token — the command a terminal pick stores.
+    exec_cmd: Option<String>,
     no_display: bool,
 }
 
@@ -187,6 +233,8 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<DesktopApp> {
     let mut in_entry = false;
     let mut name = None;
     let mut mimes = Vec::new();
+    let mut categories = Vec::new();
+    let mut exec_cmd = None;
     let mut app_type = None;
     let mut hidden = false;
     let mut no_display = false;
@@ -208,6 +256,16 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<DesktopApp> {
                 "MimeType" => {
                     mimes = v.split(';').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect();
                 }
+                "Categories" => {
+                    categories = v.split(';').map(str::trim).filter(|c| !c.is_empty()).map(String::from).collect();
+                }
+                "Exec" => {
+                    exec_cmd = v
+                        .split_whitespace()
+                        .next()
+                        .and_then(|t| t.rsplit('/').next())
+                        .map(String::from);
+                }
                 _ => {}
             }
         }
@@ -215,7 +273,7 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<DesktopApp> {
     if hidden || app_type.as_deref() != Some("Application") {
         return None;
     }
-    Some(DesktopApp { name: name?, mimes, no_display })
+    Some(DesktopApp { name: name?, mimes, categories, exec_cmd, no_display })
 }
 
 /// Scan every XDG applications dir with spec ID shadowing: the first dir that
@@ -250,35 +308,79 @@ pub async fn fetch_default_apps() -> DefaultAppsInfo {
     let apps = tokio::task::spawn_blocking(scan_desktop_entries).await.unwrap_or_default();
 
     let mut cats = Vec::with_capacity(CATEGORIES.len());
-    for &(_, mimes) in CATEGORIES {
-        let current = tokio::process::Command::new("xdg-mime")
-            .args(["query", "default", mimes[0]])
-            .output()
-            .await
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .filter(|s| !s.is_empty());
-
-        let mut candidates: Vec<(String, String)> = apps
-            .iter()
-            .filter(|(id, app)| {
-                let claims = app.mimes.iter().any(|m| mimes.contains(&m.as_str()));
-                // NoDisplay apps stay hidden unless they ARE the default.
-                claims && (!app.no_display || current.as_deref() == Some(id.as_str()))
-            })
-            .map(|(id, app)| (id.clone(), app.name.clone()))
-            .collect();
-        candidates.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
-
-        // A current default we didn't scan (odd install) still shows, by id.
-        if let Some(cur) = &current {
-            if !candidates.iter().any(|(id, _)| id == cur) {
-                candidates.push((cur.clone(), cur.trim_end_matches(".desktop").to_string()));
-            }
-        }
-        cats.push(CategoryInfo { candidates, current });
+    for &(_, kind) in CATEGORIES {
+        let info = match kind {
+            CategoryKind::Mime(mimes) => fetch_mime_category(&apps, mimes).await,
+            CategoryKind::Terminal => fetch_terminal_category(&apps),
+        };
+        cats.push(info);
     }
     DefaultAppsInfo(cats)
+}
+
+async fn fetch_mime_category(apps: &HashMap<String, DesktopApp>, mimes: &[&str]) -> CategoryInfo {
+    let current = tokio::process::Command::new("xdg-mime")
+        .args(["query", "default", mimes[0]])
+        .output()
+        .await
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let mut candidates: Vec<(String, String)> = apps
+        .iter()
+        .filter(|(id, app)| {
+            let claims = app.mimes.iter().any(|m| mimes.contains(&m.as_str()));
+            // NoDisplay apps stay hidden unless they ARE the default.
+            claims && (!app.no_display || current.as_deref() == Some(id.as_str()))
+        })
+        .map(|(id, app)| (id.clone(), app.name.clone()))
+        .collect();
+    candidates.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+
+    // A current default we didn't scan (odd install) still shows, by id.
+    if let Some(cur) = &current {
+        if !candidates.iter().any(|(id, _)| id == cur) {
+            candidates.push((cur.clone(), cur.trim_end_matches(".desktop").to_string()));
+        }
+    }
+    CategoryInfo { candidates, current }
+}
+
+/// Candidates are `Categories=TerminalEmulator` entries keyed by COMMAND
+/// (deduped — one terminal often ships several entries); the current value is
+/// config.kdl's `default_terminal`, falling back to the launcher's compiled
+/// foot fallback so the row shows what actually happens today.
+fn fetch_terminal_category(apps: &HashMap<String, DesktopApp>) -> CategoryInfo {
+    let mut by_cmd: HashMap<&str, &str> = HashMap::new();
+    for app in apps.values() {
+        if app.no_display || !app.categories.iter().any(|c| c == "TerminalEmulator") {
+            continue;
+        }
+        if let Some(cmd) = app.exec_cmd.as_deref() {
+            // Prefer the shortest display name for a command (foot ships
+            // "Foot" and "Foot (server)" — the plain one reads best).
+            let name = by_cmd.entry(cmd).or_insert(&app.name);
+            if app.name.len() < name.len() {
+                *name = &app.name;
+            }
+        }
+    }
+    let mut candidates: Vec<(String, String)> =
+        by_cmd.into_iter().map(|(cmd, name)| (cmd.to_string(), name.to_string())).collect();
+    candidates.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+
+    let current = cce_ui::config::get_string("/default_terminal")
+        .filter(|s| !s.is_empty())
+        .or_else(|| Some("foot".to_string()).filter(|_| candidates.iter().any(|(c, _)| c == "foot")));
+
+    // A configured command with no matching entry still shows, as itself.
+    if let Some(cur) = &current {
+        if !candidates.iter().any(|(cmd, _)| cmd == cur) {
+            candidates.push((cur.clone(), cur.clone()));
+        }
+    }
+    CategoryInfo { candidates, current }
 }
 
 impl crate::pages::AppPage for DefaultAppsState {
