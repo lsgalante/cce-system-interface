@@ -11,6 +11,16 @@ pub struct ProcessRow {
     pub command: String,
 }
 
+/// Which column orders the list. Cpu is the default (ps sorts the fetch);
+/// Mem is the toggle — clicking a memory header switches to it, clicking
+/// again switches back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcSort {
+    #[default]
+    Cpu,
+    Mem,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProcessesState {
     pub loaded: bool,
@@ -20,6 +30,9 @@ pub struct ProcessesState {
     /// refresh clears it: a killed process is gone from the new list, and a
     /// survivor (EPERM, ignored TERM) un-dims — an honest "didn't die".
     pub killing: std::collections::HashSet<String>,
+    /// Active sort column. Survives refreshes: Refreshed re-sorts the fresh
+    /// list under this key rather than resetting to the fetch order.
+    pub sort: ProcSort,
 }
 
 impl Default for ProcessesState {
@@ -29,6 +42,7 @@ impl Default for ProcessesState {
             processes: Vec::new(),
             cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
             killing: std::collections::HashSet::new(),
+            sort: ProcSort::Cpu,
         }
     }
 }
@@ -38,7 +52,23 @@ pub enum ProcessesMessage {
     Refreshed(ProcessesState),
     /// The row's ✕ button: SIGTERM this pid.
     Kill(String),
+    /// A column header click. Mem headers toggle (Mem ⇄ back to Cpu); the
+    /// CPU % header always selects Cpu.
+    SortBy(ProcSort),
     None,
+}
+
+/// Order rows under the active key, descending. Stable, so ties keep their
+/// relative fetch order. Cpu re-parses the ps figure — after a Mem spell the
+/// fetch order is long gone from the Vec.
+fn sort_rows(rows: &mut [ProcessRow], sort: ProcSort) {
+    match sort {
+        ProcSort::Cpu => rows.sort_by(|a, b| {
+            let (av, bv) = (a.cpu.parse::<f32>().unwrap_or(0.0), b.cpu.parse::<f32>().unwrap_or(0.0));
+            bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        ProcSort::Mem => rows.sort_by(|a, b| b.rss_kb.cmp(&a.rss_kb)),
+    }
 }
 
 /// Process name from a `ps … cmd` field: basename of argv[0], so cce binaries
@@ -96,6 +126,7 @@ pub async fn fetch_processes_state() -> ProcessesState {
         processes,
         cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
         killing: std::collections::HashSet::new(),
+        sort: ProcSort::Cpu,
     }
 }
 
@@ -151,13 +182,31 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // divider separates it from the rows.
             sec.pc.rect([0.18, 0.18, 0.24, 1.0], list_box_x + 1.0, list_box_y + header_h, list_box_w - 2.0, 1.0); // Divider
 
-            // Header labels pan with the columns, clipped to the box.
+            // Header labels pan with the columns, clipped to the box. The
+            // sortable ones (MEM, MEM %, CPU %) are buttons: the active key
+            // shows brighter with a ▾. Both memory headers toggle the same
+            // Mem sort — one bigger target, no distinction to learn.
+            let active = |k: ProcSort| state.sort == k;
+            let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
+            let mark = |label: &str, on: bool| {
+                if on { format!("{} \u{25bc}", label) } else { label.to_string() }
+            };
             sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, header_h);
             sec.pc.text("PID", list_box_x + COL_PID - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
             sec.pc.text("COMMAND", list_box_x + COL_COMMAND - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
-            sec.pc.text("MEM", list_box_x + COL_RSS - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
-            sec.pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
-            sec.pc.text("CPU %", list_box_x + COL_CPU - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
+            sec.pc.text(&mark("MEM", active(ProcSort::Mem)), list_box_x + COL_RSS - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Mem)));
+            sec.pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Mem)));
+            sec.pc.text(&mark("CPU %", active(ProcSort::Cpu)), list_box_x + COL_CPU - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Cpu)));
+
+            // Invisible header hit targets (transparent, subtle hover), inside
+            // the header clip so they pan and cut with the labels. They share
+            // no rect with the row buttons, so emission order is free here.
+            sec.pc.button("", list_box_x + COL_RSS - ox - 4.0, list_box_y, 52.0, header_h - 2.0,
+                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
+            sec.pc.button("", list_box_x + COL_MEM - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
+                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
+            sec.pc.button("", list_box_x + COL_CPU - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
+                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Cpu)));
             sec.pc.pop_clip_rect();
 
             let row_h = 24.0;
@@ -234,9 +283,20 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
         ProcessesMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.processes = new.processes;
+            // The fetch arrives cpu-ordered; a non-default sort re-applies so
+            // a refresh never silently flips the list back.
+            if state.sort != ProcSort::Cpu {
+                sort_rows(&mut state.processes, state.sort);
+            }
             // Fresh list = every pending kill has resolved one way or the
             // other; rows that survived un-dim (the kill didn't take).
             state.killing.clear();
+        }
+        ProcessesMessage::SortBy(key) => {
+            // Clicking the already-active Mem header toggles back to the Cpu
+            // default; clicking CPU % is always a plain select.
+            state.sort = if state.sort == key { ProcSort::Cpu } else { key };
+            sort_rows(&mut state.processes, state.sort);
         }
         ProcessesMessage::Kill(pid) => {
             // Plain SIGTERM, same privileges as the app. No confirm dialog:
@@ -394,6 +454,81 @@ mod tests {
         assert!(state.killing.is_empty());
     }
 
+    fn sized_row(pid: &str, cpu: &str, rss: u64) -> ProcessRow {
+        ProcessRow {
+            pid: pid.to_string(),
+            cpu: cpu.to_string(),
+            mem_pct: "0.0".to_string(),
+            rss_kb: rss,
+            command: "p".to_string(),
+        }
+    }
+
+    #[test]
+    fn sort_toggles_between_mem_and_cpu() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        // Fetch order = cpu descending; memory order differs deliberately.
+        state.processes = vec![
+            sized_row("a", "9.0", 100),
+            sized_row("b", "5.0", 900),
+            sized_row("c", "1.0", 500),
+        ];
+        let order = |s: &ProcessesState| s.processes.iter().map(|p| p.pid.clone()).collect::<Vec<_>>();
+
+        // Mem header: sort by RSS descending.
+        update(&mut state, ProcessesMessage::SortBy(ProcSort::Mem));
+        assert_eq!(state.sort, ProcSort::Mem);
+        assert_eq!(order(&state), ["b", "c", "a"]);
+
+        // Same header again: back to the cpu default, re-sorted (the fetch
+        // order is gone from the Vec, so this must actually parse and sort).
+        update(&mut state, ProcessesMessage::SortBy(ProcSort::Mem));
+        assert_eq!(state.sort, ProcSort::Cpu);
+        assert_eq!(order(&state), ["a", "b", "c"]);
+
+        // CPU % header while already Cpu: stays Cpu.
+        update(&mut state, ProcessesMessage::SortBy(ProcSort::Cpu));
+        assert_eq!(state.sort, ProcSort::Cpu);
+    }
+
+    #[test]
+    fn refresh_preserves_active_mem_sort() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        update(&mut state, ProcessesMessage::SortBy(ProcSort::Mem));
+
+        let fresh = ProcessesState {
+            loaded: true,
+            processes: vec![sized_row("x", "9.0", 10), sized_row("y", "1.0", 999)],
+            ..Default::default()
+        };
+        update(&mut state, ProcessesMessage::Refreshed(fresh));
+        // The cpu-ordered fetch was re-sorted under the surviving Mem key.
+        assert_eq!(state.sort, ProcSort::Mem);
+        assert_eq!(state.processes[0].pid, "y");
+    }
+
+    #[test]
+    fn header_sort_buttons_emitted() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        state.processes = vec![sized_row("1", "1.0", 1)];
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let sec_focused = vec![false];
+        let mut ctx = cce_ui::context::UiContext::new();
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+        let sorts: Vec<ProcSort> = pc
+            .buttons
+            .iter()
+            .filter_map(|(_, a, _)| match a {
+                AppAction::Processes(ProcessesMessage::SortBy(k)) => Some(*k),
+                _ => None,
+            })
+            .collect();
+        // MEM + MEM % both toggle Mem; CPU % selects Cpu.
+        assert_eq!(sorts, [ProcSort::Mem, ProcSort::Mem, ProcSort::Cpu]);
+        // Active-sort indicator rides the CPU % header by default.
+        assert!(pc.texts.iter().any(|t| t.0.starts_with("CPU %") && t.0.contains('\u{25bc}')));
+    }
+
     #[test]
     fn columns_pan_with_horizontal_scroll() {
         let mut state = ProcessesState { loaded: true, ..Default::default() };
@@ -402,8 +537,9 @@ mod tests {
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
 
+        // Prefix match: the active sort column carries a " ▾" suffix.
         let header_x = |pc: &crate::app::PageContent, s: &str| {
-            pc.texts.iter().find(|t| t.0 == s).map(|t| t.2).unwrap()
+            pc.texts.iter().find(|t| t.0.starts_with(s)).map(|t| t.2).unwrap()
         };
         let pc0 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx);
         let x0 = header_x(&pc0, "MEM %");
