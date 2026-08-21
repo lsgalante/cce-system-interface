@@ -12,6 +12,7 @@ pub mod fonts;
 pub mod accounts;
 pub mod packages;
 pub mod notifications;
+pub mod power;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -22,6 +23,7 @@ pub enum Page {
     DefaultApps,
     Network,
     Notifications,
+    Power,
     Storage,
     System,
     Timers,
@@ -32,7 +34,7 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 14] = [
+    pub const ALL: [Page; 15] = [
         Page::Accounts,
         Page::Audio,
         Page::Bluetooth,
@@ -42,6 +44,7 @@ impl Page {
         Page::Network,
         Page::Notifications,
         Page::Packages,
+        Page::Power,
         Page::Processes,
         Page::Services,
         Page::Storage,
@@ -58,6 +61,7 @@ impl Page {
             Page::DefaultApps => "Default Apps",
             Page::Network => "Network",
             Page::Notifications => "Notifications",
+            Page::Power => "Power",
             Page::Storage => "Storage",
             Page::System => "System",
             Page::Timers => "Timers",

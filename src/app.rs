@@ -2,6 +2,7 @@ use cce_ui::layout::RenderTarget;
 
 use crate::pages::audio;
 use crate::pages::bluetooth;
+use crate::pages::power;
 use crate::pages::default_apps;
 use crate::pages::network;
 use crate::pages::processes;
@@ -20,6 +21,7 @@ pub struct AppState {
     pub current_page: Page,
     pub audio: audio::AudioState,
     pub bluetooth: bluetooth::BluetoothState,
+    pub power: power::PowerState,
     pub browser: browser::BrowserState,
     pub default_apps: default_apps::DefaultAppsState,
     pub network: network::NetworkState,
@@ -40,6 +42,7 @@ impl Default for AppState {
             current_page: Page::ALL[0],
             audio: audio::AudioState::default(),
             bluetooth: bluetooth::BluetoothState::default(),
+            power: power::PowerState::default(),
             browser: browser::BrowserState::default(),
             default_apps: default_apps::DefaultAppsState::default(),
             network: network::NetworkState::default(),
@@ -62,6 +65,7 @@ impl AppState {
             Page::Accounts => &self.accounts,
             Page::Audio => &self.audio,
             Page::Bluetooth => &self.bluetooth,
+            Page::Power => &self.power,
             Page::Browser => &self.browser,
             Page::DefaultApps => &self.default_apps,
             Page::Packages => &self.packages,
@@ -81,6 +85,7 @@ impl AppState {
             Page::Accounts => &mut self.accounts,
             Page::Audio => &mut self.audio,
             Page::Bluetooth => &mut self.bluetooth,
+            Page::Power => &mut self.power,
             Page::Browser => &mut self.browser,
             Page::DefaultApps => &mut self.default_apps,
             Page::Packages => &mut self.packages,
@@ -112,6 +117,7 @@ pub enum AppAction {
     DefaultApps(default_apps::DefaultAppsMessage),
     Network(network::NetworkMessage),
     Bluetooth(bluetooth::BluetoothMessage),
+    Power(power::PowerMessage),
     Processes(processes::ProcessesMessage),
     Services(services::ServicesMessage),
     SystemInfo(system_info::SystemMessage),

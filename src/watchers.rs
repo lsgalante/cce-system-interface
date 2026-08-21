@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, audio, bluetooth, browser, default_apps, network, fonts, processes, services, system_info, storage, packages, accounts, notifications, timers};
+use crate::pages::{Page, audio, bluetooth, browser, default_apps, network, fonts, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
 
 pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
     pub rx_network: Receiver<network::NetworkState>,
     pub rx_bluetooth: Receiver<bluetooth::BluetoothState>,
+    pub rx_power: Receiver<power::PowerFacts>,
     pub rx_processes: Receiver<processes::ProcessesState>,
     pub rx_system: Receiver<system_info::SystemInfo>,
     pub rx_storage: Receiver<storage::StorageInfo>,
@@ -64,6 +65,7 @@ pub fn spawn_all(
     let rx_audio = spawn_bg_active(current_page_shared.clone(), Page::Audio.index() as u8, 3, || audio::fetch_audio_state());
     let rx_network = spawn_bg_active(current_page_shared.clone(), Page::Network.index() as u8, 5, || network::fetch_network_state());
     let rx_bluetooth = spawn_bg_active(current_page_shared.clone(), Page::Bluetooth.index() as u8, 5, || bluetooth::fetch_bluetooth_page_state());
+    let rx_power = spawn_bg_active(current_page_shared.clone(), Page::Power.index() as u8, 5, || power::fetch_power_state());
 
     let rx_system = spawn_bg_active(current_page_shared.clone(), Page::System.index() as u8, 5, || system_info::fetch_system_state());
     let rx_processes = spawn_bg_active(current_page_shared.clone(), Page::Processes.index() as u8, 3, || processes::fetch_processes_state());
@@ -138,6 +140,7 @@ pub fn spawn_all(
             rx_audio,
             rx_network,
             rx_bluetooth,
+            rx_power,
             rx_processes,
             rx_system,
             rx_storage,
