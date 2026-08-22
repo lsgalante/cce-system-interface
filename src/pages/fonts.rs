@@ -33,6 +33,18 @@ pub enum FontsMessage {
     SetTerminalSize(u16),
 }
 
+/// The "Other" entry in each font dropdown — the one selection whose section
+/// also paints a free-text box for a font name the presets don't cover.
+///
+/// Named because the gate now has to be stated in three places (the view, the
+/// dispatch-root report, and the manual registration) and a bare `== 3` drifting
+/// in one of them is exactly the bug this replaced. The boxes used to be
+/// registered by pointer unconditionally: an unpainted box kept its last-drawn
+/// rect, kept hit-testing there, and — because the registration *succeeded* —
+/// never tripped the `unregistered/stale root` warning that catches the same
+/// mistake on every other page.
+const FONT_OTHER: usize = 3;
+
 #[derive(Clone)]
 pub struct FontsState {
     pub typeface_loaded: bool,
@@ -98,18 +110,44 @@ impl Default for FontsState {
 
 impl AppPage for FontsState {
     // Sections: [Preferred Fonts, Borders, Status Interface, Fuzzel, Terminal]
+    // Each section's free-text box is reported only when its menu is on "Other",
+    // mirroring the view below — the boxes are the only conditionally-painted
+    // widgets here, and the groups stay in the view's paint order either way.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
+        let mut borders = vec![self.borders_menu.id()];
+        if self.borders_menu.selected == FONT_OTHER {
+            borders.push(self.borders_box.id());
+        }
+        let mut status = vec![self.status_menu.id()];
+        if self.status_menu.selected == FONT_OTHER {
+            status.push(self.status_box.id());
+        }
+        let mut fuzzel = vec![self.fuzzel_menu.id()];
+        if self.fuzzel_menu.selected == FONT_OTHER {
+            fuzzel.push(self.fuzzel_box.id());
+        }
+        fuzzel.push(self.fuzzel_size_box.id());
+        let mut terminal = vec![self.terminal_menu.id()];
+        if self.terminal_menu.selected == FONT_OTHER {
+            terminal.push(self.terminal_box.id());
+        }
+        terminal.push(self.terminal_size_box.id());
         vec![
             vec![self.sans_box.id(), self.serif_box.id(), self.mono_box.id()],
-            vec![self.borders_menu.id(), self.borders_box.id()],
-            vec![self.status_menu.id(), self.status_box.id()],
-            vec![self.fuzzel_menu.id(), self.fuzzel_box.id(), self.fuzzel_size_box.id()],
-            vec![self.terminal_menu.id(), self.terminal_box.id(), self.terminal_size_box.id()],
+            borders,
+            status,
+            fuzzel,
+            terminal,
         ]
     }
 
     // Not every section widget passes through `render_widget`'s registration side
     // effect (the menus draw custom); the id-rooted router needs them all resolvable.
+    //
+    // The four "Other" boxes carry the same gate as `section_widgets` above and
+    // the view below. Registering one the view did not paint does not merely
+    // waste a slot — it resurrects a widget at its last-drawn rect, ahead of the
+    // live widgets that now occupy that space in the dispatch order.
     fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
         let (id, ptr) = (self.sans_box.id(), self.sans_box.as_ptr_mut());
         ctx.register_widget(id, ptr);
@@ -119,22 +157,30 @@ impl AppPage for FontsState {
         ctx.register_widget(id, ptr);
         let (id, ptr) = (self.borders_menu.id(), self.borders_menu.as_ptr_mut());
         ctx.register_widget(id, ptr);
-        let (id, ptr) = (self.borders_box.id(), self.borders_box.as_ptr_mut());
-        ctx.register_widget(id, ptr);
+        if self.borders_menu.selected == FONT_OTHER {
+            let (id, ptr) = (self.borders_box.id(), self.borders_box.as_ptr_mut());
+            ctx.register_widget(id, ptr);
+        }
         let (id, ptr) = (self.status_menu.id(), self.status_menu.as_ptr_mut());
         ctx.register_widget(id, ptr);
-        let (id, ptr) = (self.status_box.id(), self.status_box.as_ptr_mut());
-        ctx.register_widget(id, ptr);
+        if self.status_menu.selected == FONT_OTHER {
+            let (id, ptr) = (self.status_box.id(), self.status_box.as_ptr_mut());
+            ctx.register_widget(id, ptr);
+        }
         let (id, ptr) = (self.fuzzel_menu.id(), self.fuzzel_menu.as_ptr_mut());
         ctx.register_widget(id, ptr);
-        let (id, ptr) = (self.fuzzel_box.id(), self.fuzzel_box.as_ptr_mut());
-        ctx.register_widget(id, ptr);
+        if self.fuzzel_menu.selected == FONT_OTHER {
+            let (id, ptr) = (self.fuzzel_box.id(), self.fuzzel_box.as_ptr_mut());
+            ctx.register_widget(id, ptr);
+        }
         let (id, ptr) = (self.fuzzel_size_box.id(), self.fuzzel_size_box.as_ptr_mut());
         ctx.register_widget(id, ptr);
         let (id, ptr) = (self.terminal_menu.id(), self.terminal_menu.as_ptr_mut());
         ctx.register_widget(id, ptr);
-        let (id, ptr) = (self.terminal_box.id(), self.terminal_box.as_ptr_mut());
-        ctx.register_widget(id, ptr);
+        if self.terminal_menu.selected == FONT_OTHER {
+            let (id, ptr) = (self.terminal_box.id(), self.terminal_box.as_ptr_mut());
+            ctx.register_widget(id, ptr);
+        }
         let (id, ptr) = (self.terminal_size_box.id(), self.terminal_size_box.as_ptr_mut());
         ctx.register_widget(id, ptr);
     }
@@ -166,7 +212,7 @@ impl AppPage for FontsState {
             let mut stack = sec.vstack(8.0);
             let sec_w = stack.context.cw;
             stack.add_widget(&mut self.borders_menu, sec_w - 28.0, 44.0, ctx);
-            if self.borders_menu.selected == 3 {
+            if self.borders_menu.selected == FONT_OTHER {
                 stack.add_widget(&mut self.borders_box, sec_w - 28.0, 44.0, ctx);
             }
         });
@@ -175,7 +221,7 @@ impl AppPage for FontsState {
             let mut stack = sec.vstack(8.0);
             let sec_w = stack.context.cw;
             stack.add_widget(&mut self.status_menu, sec_w - 28.0, 44.0, ctx);
-            if self.status_menu.selected == 3 {
+            if self.status_menu.selected == FONT_OTHER {
                 stack.add_widget(&mut self.status_box, sec_w - 28.0, 44.0, ctx);
             }
         });
@@ -184,7 +230,7 @@ impl AppPage for FontsState {
             let mut stack = sec.vstack(8.0);
             let sec_w = stack.context.cw;
             stack.add_widget(&mut self.fuzzel_menu, sec_w - 28.0, 44.0, ctx);
-            if self.fuzzel_menu.selected == 3 {
+            if self.fuzzel_menu.selected == FONT_OTHER {
                 stack.add_widget(&mut self.fuzzel_box, sec_w - 28.0, 44.0, ctx);
             }
             stack.add_widget(&mut self.fuzzel_size_box, sec_w - 28.0, 44.0, ctx);
@@ -194,7 +240,7 @@ impl AppPage for FontsState {
             let mut stack = sec.vstack(8.0);
             let sec_w = stack.context.cw;
             stack.add_widget(&mut self.terminal_menu, sec_w - 28.0, 44.0, ctx);
-            if self.terminal_menu.selected == 3 {
+            if self.terminal_menu.selected == FONT_OTHER {
                 stack.add_widget(&mut self.terminal_box, sec_w - 28.0, 44.0, ctx);
             }
             stack.add_widget(&mut self.terminal_size_box, sec_w - 28.0, 44.0, ctx);
@@ -642,5 +688,38 @@ pub fn update(state: &mut FontsState, msg: FontsMessage) {
         FontsMessage::SetTerminalSize(size) => {
             write_terminal_size(size);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn section_widgets_gate_other_boxes() {
+        let mut st = FontsState::default();
+        // Presets selected: the four free-text boxes are not painted, so the
+        // menu is the section's only reported root (plus the size spinbox where
+        // the section has one).
+        let g = st.section_widgets();
+        assert_eq!(g[1].len(), 1, "borders: menu only");
+        assert_eq!(g[2].len(), 1, "status: menu only");
+        assert_eq!(g[3].len(), 2, "fuzzel: menu + size");
+        assert_eq!(g[4].len(), 2, "terminal: menu + size");
+
+        st.borders_menu.selected = FONT_OTHER;
+        st.fuzzel_menu.selected = FONT_OTHER;
+        let g = st.section_widgets();
+        assert_eq!(g[1].len(), 2, "borders: menu + box");
+        assert_eq!(g[2].len(), 1, "status untouched");
+        assert_eq!(g[3].len(), 3, "fuzzel: menu + box + size");
+        assert_eq!(g[4].len(), 2, "terminal untouched");
+    }
+
+    #[test]
+    fn section_group_count_matches_the_view() {
+        // The outer length picks each section's `sec_focused` index, so it has
+        // to track the five `add_section` calls in the view.
+        assert_eq!(FontsState::default().section_widgets().len(), 5);
     }
 }
