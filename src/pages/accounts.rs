@@ -1,5 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, section_kv_row};
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use crate::scroll_region::ScrollRegion;
 use cce_ui::widget::{TextBox, WidgetHost};
 
 /// Secret Service entries are keyed by (service, address) — the same pair
@@ -51,6 +52,12 @@ pub struct AccountsState {
     /// cce-mail actually refreshes with, not the global template.
     pub oauth_client_id_box: cce_ui::widget::Adapted<TextBox>,
     pub oauth_client_secret_box: cce_ui::widget::Adapted<TextBox>,
+    /// The account rows scroll independently of the page. Rows stay plain
+    /// `PageContent` buttons (network's list, not services'), so they dispatch
+    /// through `page_buttons` and this page still needs no dispatch-root
+    /// bookkeeping — the clip rect is what keeps a scrolled-out row from
+    /// drawing, and `renderer.rs` clamps each button to its emission-time clip.
+    pub list: ScrollRegion,
 }
 
 impl AccountsState {
@@ -70,6 +77,7 @@ impl AccountsState {
             tb.is_password = true;
             tb
         };
+        state.list = ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP);
         state
     }
 }
@@ -388,12 +396,21 @@ const ACCENT_BG: [f32; 4] = [0.20, 0.40, 0.65, 0.35];
 const TEXT_BTN: [f32; 4] = [0.90, 0.90, 0.95, 1.0];
 const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 
+/// Gap between account rows, and the inset from the region's own edges.
+const LIST_GAP: f32 = 4.0;
+const LIST_INSET: f32 = 12.0;
+/// Rows shown before the region starts scrolling. The list sits ABOVE the
+/// actions and the edit form, so it cannot fill the page the way services'
+/// does; it grows with the account count up to here and scrolls past it,
+/// rather than reserving a fixed well that is mostly empty on the
+/// one-or-two-account host this page usually runs on.
+const LIST_MAX_ROWS: usize = 8;
+
 pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
-    let row_h = cce_ui::layout::spinbox_height();
     let widget_h = cce_ui::layout::spinbox_height();
     let btn_h = 26.0;
 
@@ -404,13 +421,38 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         }
         let item_w = sec.cw - 2.0 * (sec.padding() + 12.0);
         let rx = sec.left;
-        let mut stack = sec.vstack(8.0);
 
-        // ── Account list: frameless rows, selection tinted, default marked ──
-        if state.accounts.is_empty() {
-            stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else {
+        // ── Account list: a scroll region, selection tinted, default marked ──
+        // Laid out on the section context BEFORE the vstack, the way network's
+        // wifi list is. A VStack derives each row's y from
+        // `max(grid.max_height(), content_y)`, so a region that advances only
+        // `content_y` is invisible to the grid half of that and every following
+        // row lands back on top of the list.
+        if !state.accounts.is_empty() {
+            // Row height comes from the region, not from spinbox_height():
+            // ScrollRegion floors item_height at the list font's line box, and
+            // drawing at a different height than it virtualizes on would drift
+            // the rows out from under their own hit boxes.
+            let item_h = state.list.item_height;
+            let list_x = sec.left + LIST_INSET;
+            let list_y = sec.ay();
+            let list_w = sec.cw - 2.0 * LIST_INSET;
+            let rows_shown = state.accounts.len().min(LIST_MAX_ROWS);
+            let list_h = rows_shown as f32 * (item_h + LIST_GAP) + 8.0;
+
+            // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+            state.list.set_rect(list_x, list_y, list_w, list_h);
+            state.list.update_bounds(state.accounts.len(), list_y, list_h);
+            state.list.push_prims(sec.pc);
+
+            let btn_w = list_w - 2.0 * LIST_INSET;
+            sec.pc.push_clip_rect(list_x, list_y, list_w, list_h);
             for (idx, acc) in state.accounts.iter().enumerate() {
+                // Same predicate the region virtualizes on — a row scrolled out
+                // of the box is not emitted at all.
+                let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) else {
+                    continue;
+                };
                 let label = if acc.is_default {
                     format!("{}   \u{2022} default", acc.email)
                 } else {
@@ -422,20 +464,32 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 } else {
                     ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
                 };
-                stack.add_row(1, 0.0, row_h, |c, _, x, w| {
-                    c.button_left(
-                        &label,
-                        x,
-                        c.ay(),
-                        w,
-                        row_h,
-                        bg,
-                        hover,
-                        TEXT_BTN,
-                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
-                    );
-                });
+                sec.pc.button_left(
+                    &label,
+                    list_x + LIST_INSET,
+                    draw_y,
+                    btn_w,
+                    item_h,
+                    bg,
+                    hover,
+                    TEXT_BTN,
+                    AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
+                );
             }
+            sec.pc.pop_clip_rect();
+            // Reserve the region's height through `spacing`, NOT `content_y +=`:
+            // SectionContext keeps a parallel per-column Grid, and its own
+            // `spacing` recomputes `content_y = grid.max_height()`. A manual
+            // `content_y` bump that leaves the grid untouched is therefore
+            // discarded by the next spacing call, and every following row lands
+            // back on top of the list. (Network's list gets away with the bare
+            // `content_y +=` only because nothing follows it in that section.)
+            sec.spacing(list_h + LIST_GAP);
+        }
+
+        let mut stack = sec.vstack(8.0);
+        if state.accounts.is_empty() {
+            stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
         }
 
         stack.context.spacing(6.0);
@@ -836,6 +890,15 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
     }
 }
 
+impl AccountsState {
+    /// The list is only laid out (and its rect refreshed) when this holds — gate
+    /// the region's input on it so a stale rect can't eat events on the loading
+    /// screen or the empty-state text. Network's `wifi_list_visible` precedent.
+    fn list_visible(&self) -> bool {
+        self.loaded && !self.accounts.is_empty()
+    }
+}
+
 impl crate::pages::AppPage for AccountsState {
     // Sections: [the one well] — the group depends on the mode.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
@@ -907,6 +970,36 @@ impl crate::pages::AppPage for AccountsState {
             }
         }
     }
+
+    // The dissolved list's own input, all gated on the region actually having
+    // been laid out this frame. Row CLICKS are not here: the rows are
+    // PageContent buttons, so their AppAction still travels the page_buttons
+    // path — these hooks only carry the region's hover, drag and scrolling.
+    fn handle_pointer_move(
+        &mut self,
+        lx: f32,
+        ly: f32,
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) -> bool {
+        self.list_visible() && self.list.cursor_moved(lx, ly)
+    }
+
+    fn handle_pointer_down(&mut self, lx: f32, ly: f32, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        self.list_visible() && self.list.press(lx, ly)
+    }
+
+    fn handle_pointer_up(&mut self, _ctx: &mut cce_ui::context::UiContext) -> bool {
+        self.list.release()
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32) -> bool {
+        self.list_visible() && self.list.wheel(delta, lx, ly)
+    }
+
+    fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
+        self.list_visible() && self.list.keyboard(event)
+    }
 }
 
 #[cfg(test)]
@@ -929,6 +1022,57 @@ mod tests {
             );
         }
         assert!(!pc.buttons.is_empty(), "Accounts page should have buttons");
+    }
+
+    #[test]
+    fn list_reserves_its_height_so_later_rows_clear_it() {
+        // The scroll region advances the section by hand. SectionContext keeps a
+        // parallel per-column Grid and its `spacing` recomputes
+        // `content_y = grid.max_height()`, so reserving the height by bumping
+        // `content_y` alone is silently discarded and every following row draws
+        // back on top of the list. Caught live: "Add Account" and the detail
+        // rows were painted over the account rows.
+        let mut state = AccountsState::default_mock();
+        state.loaded = true;
+        state.accounts = (0..12).map(|i| acct(&format!("a{i}@example.org"), false)).collect();
+        let mut layout = AdaptiveGrid::new(260.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+
+        let list_bottom = state.list.y + state.list.h;
+        let add = pc
+            .buttons
+            .iter()
+            .map(|(b, _, _)| b.base())
+            .find(|b| b.label.as_deref() == Some("Add Account"))
+            .expect("Add Account button is painted");
+        assert!(
+            add.y >= list_bottom,
+            "Add Account (y={}) must clear the list (bottom={})",
+            add.y,
+            list_bottom
+        );
+    }
+
+    #[test]
+    fn list_emits_only_the_rows_the_region_virtualizes_on() {
+        // Row buttons are emitted under the same `get_item_draw_y` predicate the
+        // region scrolls by, so a list longer than the cap paints the visible
+        // window rather than all of its rows.
+        let mut state = AccountsState::default_mock();
+        state.loaded = true;
+        state.accounts = (0..40).map(|i| acct(&format!("a{i}@example.org"), false)).collect();
+        let mut layout = AdaptiveGrid::new(260.0, 20.0);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+
+        let rows = pc
+            .buttons
+            .iter()
+            .filter(|(b, _, _)| b.base().label.as_deref().is_some_and(|l| l.starts_with("a")))
+            .count();
+        assert!(
+            rows > 0 && rows <= LIST_MAX_ROWS + 2,
+            "expected at most the visible window of rows, got {rows} of 40"
+        );
     }
 
     fn acct(email: &str, is_oauth: bool) -> AccountInfo {

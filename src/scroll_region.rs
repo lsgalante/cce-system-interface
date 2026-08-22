@@ -44,6 +44,16 @@ pub struct ScrollRegion {
     pub draw_frame: bool,
 }
 
+impl Default for ScrollRegion {
+    /// A region with no geometry yet — `set_rect`/`update_bounds` supply that on
+    /// the first view pass. `new(0.0, ..)` floors `item_height` at the list
+    /// font's line box, so a host that forgets to size its rows still gets a
+    /// legible one rather than a zero-height row that never draws.
+    fn default() -> Self {
+        Self::new(0.0, 4.0)
+    }
+}
+
 impl ScrollRegion {
     pub fn new(item_height: f32, item_gap: f32) -> Self {
         let (_, font_size) = cce_ui::layout::list_font_parsed();
