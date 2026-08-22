@@ -14,7 +14,7 @@
 //! auth prompt reverts the dropdown — honest, with no extra error channel.
 
 use crate::app::{AppAction, PageContent};
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Dropdown, WidgetHost};
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];

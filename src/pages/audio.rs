@@ -504,7 +504,9 @@ mod tests {
             source_sliders: vec![],
         };
         let mut layout = AdaptiveGrid::new(260.0, 20.0);
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
+        // One flag: section_widgets() returns a single group (the output ids
+        // with input appended), so the view draws one section and reads [0].
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
         for (i, (c, x, y, w, h, r, _)) in pc.rects.iter().enumerate() {
             println!("TEST_PC_RECT {}: color={:?}, x={}, y={}, w={}, h={}, r={}", i, c, x, y, w, h, r);
         }

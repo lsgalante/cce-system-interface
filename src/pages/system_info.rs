@@ -486,7 +486,11 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(8);
+    // Seven, matching the add_section calls below and the seven groups
+    // section_widgets reports. The count caps the grid's column count
+    // (`n.min(cols)`), so the stale 8 only bit once the window was wide enough
+    // for eight columns — harmless, but it read as a missing eighth section.
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
 
     // ── 1. System Section ──
     builder.add_section(&mut final_pc, "System", sec_focused.first().copied().unwrap_or(false), |sec| {
