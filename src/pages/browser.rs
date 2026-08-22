@@ -1,7 +1,8 @@
 //! Browser (cce-browser) settings: homepage, search engine, download
-//! directory, history recording. Edits the browser's own app config
-//! (`~/.config/cce/cce-browser/config.kdl`, section "browser") — the
-//! browser reloads it when its window regains focus.
+//! directory, history recording, navigation-bar position. Edits the
+//! browser's own app config (`~/.config/cce/cce-browser/config.kdl`,
+//! section "browser") — the browser reloads it when its window regains
+//! focus.
 
 use std::fs;
 
@@ -20,6 +21,10 @@ pub const SEARCH_ENGINES: [(&str, &str); 4] = [
     ("wikipedia", "Wikipedia"),
 ];
 
+/// config key, menu label — the window edge the browser's floating
+/// navigation bar is anchored to.
+pub const BAR_POSITIONS: [(&str, &str); 2] = [("top", "Top"), ("bottom", "Bottom")];
+
 const DEFAULT_HOMEPAGE: &str = "https://servo.org";
 
 #[derive(Debug, Clone)]
@@ -28,6 +33,7 @@ pub struct BrowserConfig {
     pub search: String,
     pub download_dir: String,
     pub history: bool,
+    pub bar_position: String,
 }
 
 pub struct BrowserState {
@@ -36,8 +42,10 @@ pub struct BrowserState {
     pub search: String,
     pub download_dir: String,
     pub history: bool,
+    pub bar_position: String,
     pub homepage_box: cce_ui::widget::Adapted<TextBox>,
     pub search_menu: cce_ui::widget::Adapted<Dropdown>,
+    pub bar_position_menu: cce_ui::widget::Adapted<Dropdown>,
     pub download_dir_box: cce_ui::widget::Adapted<TextBox>,
     pub history_toggle: cce_ui::widget::Adapted<Toggle>,
 }
@@ -59,12 +67,18 @@ impl Default for BrowserState {
             search: config.search.clone(),
             download_dir: config.download_dir,
             history: config.history,
+            bar_position: config.bar_position.clone(),
             homepage_box,
             search_menu: Dropdown::new(
                 SEARCH_ENGINES.iter().map(|(_, label)| label.to_string()).collect(),
                 search_index(&config.search),
             )
             .with_label("Search Engine"),
+            bar_position_menu: Dropdown::new(
+                BAR_POSITIONS.iter().map(|(_, label)| label.to_string()).collect(),
+                bar_position_index(&config.bar_position),
+            )
+            .with_label("Navigation Bar Position"),
             download_dir_box,
             history_toggle: Toggle::new().with_label("Record History"),
         }
@@ -75,9 +89,14 @@ fn search_index(key: &str) -> usize {
     SEARCH_ENGINES.iter().position(|(k, _)| *k == key).unwrap_or(0)
 }
 
+fn bar_position_index(key: &str) -> usize {
+    BAR_POSITIONS.iter().position(|(k, _)| *k == key).unwrap_or(0)
+}
+
 #[derive(Debug, Clone)]
 pub enum BrowserMessage {
     SetSearch(String),
+    SetBarPosition(String),
     ToggleHistory,
     /// Commit the homepage / download-dir text fields.
     Apply,
@@ -100,6 +119,10 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.search = key.clone();
             write_config_value("search", &key);
         }
+        BrowserMessage::SetBarPosition(key) => {
+            state.bar_position = key.clone();
+            write_config_value("bar-position", &key);
+        }
         BrowserMessage::ToggleHistory => {
             state.history = !state.history;
             write_config_value("history", &state.history.to_string());
@@ -119,6 +142,7 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.loaded = true;
             state.search = new.search;
             state.history = new.history;
+            state.bar_position = new.bar_position;
             // Don't clobber fields mid-edit with watcher refreshes.
             if !state.homepage_box.editing && state.homepage != new.homepage {
                 state.homepage = new.homepage.clone();
@@ -151,6 +175,7 @@ pub fn read_browser_config() -> BrowserConfig {
         search: val["browser"]["search"].as_str().unwrap_or("duckduckgo").to_string(),
         download_dir: val["browser"]["download-dir"].as_str().unwrap_or("").to_string(),
         history: val["browser"]["history"].as_bool().unwrap_or(true),
+        bar_position: val["browser"]["bar-position"].as_str().unwrap_or("top").to_string(),
     }
 }
 
@@ -171,6 +196,7 @@ impl AppPage for BrowserState {
         vec![vec![
             self.homepage_box.id(),
             self.search_menu.id(),
+            self.bar_position_menu.id(),
             self.download_dir_box.id(),
             self.history_toggle.id(),
         ]]
@@ -202,6 +228,10 @@ impl AppPage for BrowserState {
             self.search_menu.selected = search_index(&self.search);
             self.search_menu.set_row_rect(stack.context.left + 14.0, row_w);
             stack.add_widget(&mut self.search_menu, row_w, 44.0, ctx);
+
+            self.bar_position_menu.selected = bar_position_index(&self.bar_position);
+            self.bar_position_menu.set_row_rect(stack.context.left + 14.0, row_w);
+            stack.add_widget(&mut self.bar_position_menu, row_w, 44.0, ctx);
 
             self.download_dir_box.set_row_rect(stack.context.left + 14.0, row_w);
             stack.add_widget(&mut self.download_dir_box, row_w, 44.0, ctx);
@@ -235,6 +265,13 @@ impl AppPage for BrowserState {
                 .map(|(k, _)| k.to_string())
                 .unwrap_or_else(|| "duckduckgo".to_string());
             actions.push(AppAction::Browser(BrowserMessage::SetSearch(key)));
+        }
+        if self.bar_position_menu.take_change() {
+            let key = BAR_POSITIONS
+                .get(self.bar_position_menu.selected)
+                .map(|(k, _)| k.to_string())
+                .unwrap_or_else(|| "top".to_string());
+            actions.push(AppAction::Browser(BrowserMessage::SetBarPosition(key)));
         }
         if self.history_toggle.take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));
