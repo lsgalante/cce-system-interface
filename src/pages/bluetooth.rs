@@ -297,7 +297,16 @@ pub fn update(state: &mut BluetoothState, msg: BluetoothMessage) {
 
 impl crate::pages::AppPage for BluetoothState {
     // Sections: [Bluetooth]
+    // The gate mirrors view()'s branch chain exactly (the d13a901 lesson):
+    // `toggle` is painted only in the innermost `else`, so reporting it from any
+    // earlier branch is a dead root. Unlike a load gate this one does not close
+    // on its own — `!installed` and `!service_active` are steady states, so on a
+    // host without bluez the page's only ctrl-nav target stays dead for the life
+    // of the process and every pointer move over the page drops an event.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
+        if !self.loaded || !self.installed || !self.service_active {
+            return vec![Vec::new()];
+        }
         vec![vec![self.toggle.id()]]
     }
 
@@ -319,5 +328,27 @@ impl crate::pages::AppPage for BluetoothState {
         if self.toggle.take_change() {
             actions.push(crate::app::AppAction::Bluetooth(BluetoothMessage::Toggle));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pages::AppPage;
+
+    #[test]
+    fn section_widgets_mirror_branch_chain() {
+        let mut st = BluetoothState::default();
+        // Each of the three early branches paints a message (and maybe a plain
+        // PageContent button) but never `toggle` — the widget lives only in the
+        // innermost `else`. Unlike a load gate, the middle two are steady
+        // states: a host without bluez sits in one of them forever.
+        assert_eq!(st.section_widgets(), vec![Vec::new()], "not loaded");
+        st.loaded = true;
+        assert_eq!(st.section_widgets(), vec![Vec::new()], "bluez absent");
+        st.installed = true;
+        assert_eq!(st.section_widgets(), vec![Vec::new()], "service stopped");
+        st.service_active = true;
+        assert_eq!(st.section_widgets()[0].len(), 1, "toggle painted");
     }
 }

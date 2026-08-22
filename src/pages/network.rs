@@ -267,7 +267,13 @@ impl NetworkState {
 
 impl crate::pages::AppPage for NetworkState {
     // Sections: [WiFi]
+    // Mirrors the view's load gate (d13a901): `wifi_toggle` is painted only in
+    // the `else` of `if !state.loaded`, so reporting it while the page still
+    // reads "Loading WiFi interfaces..." is a dead root.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
+        if !self.loaded {
+            return vec![Vec::new()];
+        }
         vec![vec![self.wifi_toggle.id()]]
     }
 
@@ -346,5 +352,16 @@ mod tests {
         let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
+    }
+
+    #[test]
+    fn section_widgets_mirror_load_gate() {
+        use crate::pages::AppPage;
+        let mut st = NetworkState::default();
+        // Not loaded: the view paints only "Loading WiFi interfaces...", so
+        // reporting the toggle would be a root nothing registered this frame.
+        assert_eq!(st.section_widgets(), vec![Vec::new()]);
+        st.loaded = true;
+        assert_eq!(st.section_widgets()[0].len(), 1);
     }
 }

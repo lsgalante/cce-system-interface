@@ -385,7 +385,13 @@ fn fetch_terminal_category(apps: &HashMap<String, DesktopApp>) -> CategoryInfo {
 
 impl crate::pages::AppPage for DefaultAppsState {
     // Sections: [Default Apps]
+    // Mirrors the view's load gate (d13a901): the category dropdowns are added
+    // to the stack only in the `else` of `if !state.loaded`, so reporting them
+    // during the application scan is one dead root per category.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
+        if !self.loaded {
+            return vec![Vec::new()];
+        }
         vec![self.categories.iter().map(|c| c.dropdown.id()).collect()]
     }
 
@@ -415,6 +421,17 @@ impl crate::pages::AppPage for DefaultAppsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn section_widgets_mirror_load_gate() {
+        use crate::pages::AppPage;
+        let mut st = DefaultAppsState::default();
+        // Still scanning: the dropdowns are not in the stack yet, so none of
+        // them may be reported as a dispatch root.
+        assert_eq!(st.section_widgets(), vec![Vec::new()]);
+        st.loaded = true;
+        assert_eq!(st.section_widgets()[0].len(), st.categories.len());
+    }
 
     #[test]
     fn parse_desktop_file_basics() {
