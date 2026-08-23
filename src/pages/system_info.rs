@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Label, Dropdown, InfoBox, WidgetHost, Button};
+use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::widget::{Label, WidgetHost, Button};
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryInfo {
@@ -42,10 +42,6 @@ pub struct SystemState {
     // Power-related fields
     pub battery: BatteryInfo,
     pub on_ac: bool,
-    pub cpu_powersave: bool,
-    pub gpu_powersave: bool,
-    pub cpu_gov_menu: cce_ui::widget::Adapted<Dropdown>,
-    pub gpu_gov_menu: cce_ui::widget::Adapted<Dropdown>,
 
     // Native layout tracking and widgets
     pub initialized: bool,
@@ -59,8 +55,6 @@ pub struct SystemState {
     pub battery_label_details: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub battery_label_ac: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
-    pub cpu_info_box: cce_ui::widget::Adapted<cce_ui::widget::InfoBox>,
-    pub gpu_info_box: cce_ui::widget::Adapted<cce_ui::widget::InfoBox>,
 
     pub suspend_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
     pub hibernate_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
@@ -101,16 +95,6 @@ impl Default for SystemState {
 
             battery: BatteryInfo::default(),
             on_ac: true,
-            cpu_powersave: false,
-            gpu_powersave: false,
-            cpu_gov_menu: Dropdown::new(
-                vec!["Performance".to_string(), "Powersave".to_string()],
-                0,
-            ).with_label("CPU Governor"),
-            gpu_gov_menu: Dropdown::new(
-                vec!["Default (80W)".to_string(), "Eco Cap (5W)".to_string()],
-                0,
-            ).with_label("GPU Power Limit"),
 
             initialized: false,
             sender: None,
@@ -123,8 +107,6 @@ impl Default for SystemState {
             battery_label_details: Label::new("").with_font_size(11.0).with_color([135, 135, 153]),
             battery_label_ac: Label::new("").with_font_size(14.0).with_color([212, 212, 212]),
 
-            cpu_info_box: InfoBox::new("CPU Governor", vec![]),
-            gpu_info_box: InfoBox::new("GPU Power Limit", vec![]),
 
             suspend_btn: Button::new(0.0, 0.0, 0.0, 32.0)
                 .with_label("Suspend")
@@ -164,11 +146,6 @@ pub enum SystemMessage {
     PowerOff,
     ForceShutdown,
 
-    // Moved variants
-    SetCpuPerformance,
-    SetCpuPowersave,
-    SetGpuDefault,
-    SetGpuPowersave,
 }
 
 // ── zbus proxies ────────────────────────────────────────────────────
@@ -215,33 +192,6 @@ fn format_duration(secs: i64) -> String {
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
     if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) }
-}
-
-fn spawn_cpu_power(powersave: bool) {
-    let script = if powersave { "cpu-powersave-on" } else { "cpu-powersave-off" };
-    let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(cce_ui::config::data_home().join("cce-settings").join("helpers").join(script));
-    let _ = cce_ui::process::spawn_detached(cmd);
-}
-
-fn spawn_gpu_power(powersave: bool) {
-    let script = if powersave { "gpu-powersave-on" } else { "gpu-powersave-off" };
-    let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(cce_ui::config::data_home().join("cce-settings").join("helpers").join(script));
-    let _ = cce_ui::process::spawn_detached(cmd);
-}
-
-fn current_cpu_governor() -> String {
-    std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
-        .unwrap_or_default().trim().to_string()
-}
-
-async fn current_gpu_power_cap() -> bool {
-    tokio::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=power.limit", "--format=csv,noheader,nounits"])
-        .output().await.ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<f32>().ok())
-        .map(|w| w <= 10.0).unwrap_or(false)
 }
 
 async fn fetch_upower() -> (BatteryInfo, bool) {
@@ -360,8 +310,6 @@ pub struct SystemInfo {
     pub gpu_strings: Vec<String>,
     pub battery: BatteryInfo,
     pub on_ac: bool,
-    pub cpu_powersave: bool,
-    pub gpu_powersave: bool,
 }
 
 pub async fn fetch_system_state() -> SystemInfo {
@@ -454,8 +402,6 @@ pub async fn fetch_system_state() -> SystemInfo {
     }).collect();
 
     let (battery, on_ac) = fetch_upower().await;
-    let cpu_powersave = current_cpu_governor() == "powersave";
-    let gpu_powersave = current_gpu_power_cap().await;
 
     SystemInfo {
         hostname,
@@ -468,8 +414,6 @@ pub async fn fetch_system_state() -> SystemInfo {
         gpu_strings,
         battery,
         on_ac,
-        cpu_powersave,
-        gpu_powersave,
     }
 }
 
@@ -483,14 +427,14 @@ const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, _ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     // Seven, matching the add_section calls below and the seven groups
     // section_widgets reports. The count caps the grid's column count
     // (`n.min(cols)`), so the stale 8 only bit once the window was wide enough
     // for eight columns — harmless, but it read as a missing eighth section.
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
 
     // ── 1. System Section ──
     builder.add_section(&mut final_pc, "System", sec_focused.first().copied().unwrap_or(false), |sec| {
@@ -561,83 +505,11 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     });
 
     // ── 5. CPU Governor Section ──
-    builder.add_section(&mut final_pc, "CPU Governor", sec_focused.get(4).copied().unwrap_or(false), |sec_gov| {
-        let rx = sec_gov.left;
-        if !state.loaded {
-            sec_gov.text("Loading CPU governor...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else {
-            sec_gov.widget(&mut state.cpu_gov_menu, 12.0, sec_gov.cw - 24.0, 26.0, ctx);
-
-            let (info_title, info_lines) = if state.cpu_powersave {
-                (
-                    "CPU Governor: Powersave",
-                    vec![
-                        "• Active: powersave".to_string(),
-                        "• Governor set to powersave — lower power, slower burst".to_string(),
-                    ],
-                )
-            } else {
-                (
-                    "CPU Governor: Performance",
-                    vec![
-                        "• Active: performance".to_string(),
-                        "• Governor set to performance".to_string(),
-                    ],
-                )
-            };
-
-            let mut info_box = InfoBox::new(info_title, info_lines);
-            let info_h = 80.0;
-            let info_y = sec_gov.ay();
-            render_widget(sec_gov.pc, &mut info_box, rx + 12.0, info_y, sec_gov.cw - 24.0, info_h, ctx);
-            // Advance the section cursor past the hand-placed box.
-            sec_gov.content_y = sec_gov.content_y.max(info_y + info_h);
-            for h in &mut sec_gov.grid.col_heights {
-                *h = h.max(sec_gov.content_y);
-            }
-        }
-    });
 
     // ── 6. GPU Power Section ──
-    builder.add_section(&mut final_pc, "GPU Power", sec_focused.get(5).copied().unwrap_or(false), |sec_gpow| {
-        let rx = sec_gpow.left;
-        if !state.loaded {
-            sec_gpow.text("Loading GPU power status...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else {
-            sec_gpow.widget(&mut state.gpu_gov_menu, 12.0, sec_gpow.cw - 24.0, 26.0, ctx);
 
-            let (info_title, info_lines) = if state.gpu_powersave {
-                (
-                    "GPU Power Limit: Eco Cap",
-                    vec![
-                        "• Mode: 5W Cap".to_string(),
-                        "• NVIDIA power limit capped at 5W — minimal draw".to_string(),
-                    ],
-                )
-            } else {
-                (
-                    "GPU Power Limit: Default",
-                    vec![
-                        "• Mode: 80W Default".to_string(),
-                        "• NVIDIA running at default power limit".to_string(),
-                    ],
-                )
-            };
-
-            let mut info_box = InfoBox::new(info_title, info_lines);
-            let info_h = 80.0;
-            let info_y = sec_gpow.ay();
-            render_widget(sec_gpow.pc, &mut info_box, rx + 12.0, info_y, sec_gpow.cw - 24.0, info_h, ctx);
-            // Advance the section cursor past the hand-placed box.
-            sec_gpow.content_y = sec_gpow.content_y.max(info_y + info_h);
-            for h in &mut sec_gpow.grid.col_heights {
-                *h = h.max(sec_gpow.content_y);
-            }
-        }
-    });
-
-    // ── 7. Battery Section ──
-    builder.add_section(&mut final_pc, "Battery", sec_focused.get(6).copied().unwrap_or(false), |sec_bat| {
+    // ── 5. Battery Section ──
+    builder.add_section(&mut final_pc, "Battery", sec_focused.get(4).copied().unwrap_or(false), |sec_bat| {
         if !state.loaded {
             sec_bat.text("Loading battery status...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
@@ -697,10 +569,6 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
             state.battery = new.battery;
             state.on_ac = new.on_ac;
-            state.cpu_powersave = new.cpu_powersave;
-            state.gpu_powersave = new.gpu_powersave;
-            state.cpu_gov_menu.selected = if new.cpu_powersave { 1 } else { 0 };
-            state.gpu_gov_menu.selected = if new.gpu_powersave { 1 } else { 0 };
 
             if state.loaded {
                 state.hostname_label.set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
@@ -714,46 +582,6 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
                 state.cpu_usage_label.set_text(&cpu_usage_text);
                 state.cpu_temp_label.set_text(&cpu_temp_text);
 
-                // Update info boxes
-                let (cpu_title, cpu_lines) = if state.cpu_powersave {
-                    (
-                        "CPU Governor: Powersave",
-                        vec![
-                            "• Active: powersave".to_string(),
-                            "• Governor set to powersave — lower power, slower burst".to_string(),
-                        ],
-                    )
-                } else {
-                    (
-                        "CPU Governor: Performance",
-                        vec![
-                            "• Active: performance".to_string(),
-                            "• Governor set to performance".to_string(),
-                        ],
-                    )
-                };
-                state.cpu_info_box.title = cpu_title.to_string();
-                state.cpu_info_box.lines = cpu_lines;
-
-                let (gpu_title, gpu_lines) = if state.gpu_powersave {
-                    (
-                        "GPU Power Limit: Eco Cap",
-                        vec![
-                            "• Mode: 5W Cap".to_string(),
-                            "• NVIDIA power limit capped at 5W — minimal draw".to_string(),
-                        ],
-                    )
-                } else {
-                    (
-                        "GPU Power Limit: Default",
-                        vec![
-                            "• Mode: 80W Default".to_string(),
-                            "• NVIDIA running at default power limit".to_string(),
-                        ],
-                    )
-                };
-                state.gpu_info_box.title = gpu_title.to_string();
-                state.gpu_info_box.lines = gpu_lines;
 
                 // Update battery labels
                 let bat = &state.battery;
@@ -797,52 +625,21 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
         SystemMessage::PowerOff => spawn_systemctl("poweroff"),
         SystemMessage::ForceShutdown => spawn_systemctl_force("poweroff"),
 
-        SystemMessage::SetCpuPerformance => {
-            state.cpu_powersave = false;
-            state.cpu_gov_menu.selected = 0;
-            spawn_cpu_power(false);
-        }
-        SystemMessage::SetCpuPowersave => {
-            state.cpu_powersave = true;
-            state.cpu_gov_menu.selected = 1;
-            spawn_cpu_power(true);
-        }
-        SystemMessage::SetGpuDefault => {
-            state.gpu_powersave = false;
-            state.gpu_gov_menu.selected = 0;
-            spawn_gpu_power(false);
-        }
-        SystemMessage::SetGpuPowersave => {
-            state.gpu_powersave = true;
-            state.gpu_gov_menu.selected = 1;
-            spawn_gpu_power(true);
-        }
     }
 }
 
 
 
 impl crate::pages::AppPage for SystemState {
-    // Sections: [System, System Actions, CPU, GPU, CPU Governor, GPU Power, Battery]
+    // Sections: [System, System Actions, CPU, GPU, Battery]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
             Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            vec![self.cpu_gov_menu.id()],
-            vec![self.gpu_gov_menu.id()],
             Vec::new(),
         ]
-    }
-
-    // The governor menus draw custom (no `render_widget` registration side effect);
-    // the id-rooted router needs them resolvable.
-    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        let (id, ptr) = (self.cpu_gov_menu.id(), self.cpu_gov_menu.as_ptr_mut());
-        ctx.register_widget(id, ptr);
-        let (id, ptr) = (self.gpu_gov_menu.id(), self.gpu_gov_menu.as_ptr_mut());
-        ctx.register_widget(id, ptr);
     }
 
     fn view(
@@ -864,21 +661,7 @@ impl crate::pages::AppPage for SystemState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
-        if self.cpu_gov_menu.take_change() {
-            if self.cpu_gov_menu.selected == 0 {
-                actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetCpuPerformance));
-            } else {
-                actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetCpuPowersave));
-            }
-        }
-        if self.gpu_gov_menu.take_change() {
-            if self.gpu_gov_menu.selected == 0 {
-                actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetGpuDefault));
-            } else {
-                actions.push(crate::app::AppAction::SystemInfo(SystemMessage::SetGpuPowersave));
-            }
-        }
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {
     }
 }
 

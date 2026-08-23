@@ -44,6 +44,17 @@ pub struct PowerFacts {
     pub charge_limit: Option<u32>,
     /// intel_pstate no_turbo, inverted to "turbo enabled".
     pub turbo: Option<bool>,
+    /// scaling_available_governors, and cpu0's active one. Moved here from the
+    /// System page, which drove it through an unversioned pkexec helper script
+    /// whose path had not survived two renames of this app.
+    pub governors: Vec<String>,
+    pub governor: String,
+    /// NVIDIA power limit in watts: (current, default, minimum). None whenever
+    /// nvidia-smi cannot reach a driver — including a host where the module is
+    /// simply not loaded — which is what gates the dropdown away.
+    pub gpu_limit_w: Option<u32>,
+    pub gpu_default_w: Option<u32>,
+    pub gpu_min_w: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,8 +65,12 @@ pub struct PowerState {
     pub dd_epp: cce_ui::widget::Adapted<Dropdown>,
     pub dd_limit: cce_ui::widget::Adapted<Dropdown>,
     pub dd_turbo: cce_ui::widget::Adapted<Dropdown>,
+    pub dd_governor: cce_ui::widget::Adapted<Dropdown>,
+    pub dd_gpu: cce_ui::widget::Adapted<Dropdown>,
     /// Sysfs value per charge-limit dropdown row (options are display text).
     pub limit_values: Vec<u32>,
+    /// Watts per GPU-limit dropdown row (options are display text).
+    pub gpu_values: Vec<u32>,
 }
 
 impl Default for PowerState {
@@ -68,7 +83,10 @@ impl Default for PowerState {
             dd_limit: Dropdown::new(vec!["—".to_string()], 0).with_label("Battery Charge Limit"),
             dd_turbo: Dropdown::new(vec!["Enabled".to_string(), "Disabled".to_string()], 0)
                 .with_label("CPU Turbo Boost"),
+            dd_governor: Dropdown::new(vec!["—".to_string()], 0).with_label("CPU Governor"),
+            dd_gpu: Dropdown::new(vec!["—".to_string()], 0).with_label("GPU Power Limit"),
             limit_values: Vec::new(),
+            gpu_values: Vec::new(),
         }
     }
 }
@@ -81,6 +99,8 @@ pub enum PowerMessage {
     SetEpp(usize),
     SetLimit(usize),
     SetTurbo(usize),
+    SetGovernor(usize),
+    SetGpuLimit(usize),
 }
 
 /// Sysfs tokens travel into a `pkexec sh -c` line, so only the shapes sysfs
@@ -91,10 +111,12 @@ fn sysfs_token_ok(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-/// Root sysfs write via pkexec, the app's standard privileged-action path.
-/// Detached: the polkit prompt runs in its own process, the UI never blocks,
-/// and the watcher's next read reports what actually happened.
-fn write_sysfs(cmd: String) {
+/// Root action via pkexec, the app's standard privileged path. Detached: the
+/// polkit prompt runs in its own process, the UI never blocks, and the
+/// watcher's next read reports what actually happened. Most callers echo into
+/// sysfs; the GPU limit shells out to nvidia-smi, which is why this is not
+/// named for sysfs.
+fn run_privileged(cmd: String) {
     let _ = std::process::Command::new("pkexec")
         .args(["sh", "-c", &cmd])
         .spawn();
@@ -169,6 +191,32 @@ pub async fn fetch_power_state() -> PowerFacts {
 
     f.turbo = read_trim("/sys/devices/system/cpu/intel_pstate/no_turbo").map(|s| s == "0");
 
+    if let Some(govs) = read_trim("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors") {
+        f.governors = govs.split_whitespace().map(String::from).collect();
+        f.governor = read_trim("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").unwrap_or_default();
+    }
+
+    // One nvidia-smi call for all three watt figures; any failure (no driver,
+    // module not loaded, no card) leaves them None and hides the dropdown.
+    if let Ok(out) = tokio::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=power.limit,power.default_limit,power.min_limit", "--format=csv,noheader,nounits"])
+        .output()
+        .await
+    {
+        if out.status.success() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            if let Some(row) = text.lines().next() {
+                let w: Vec<Option<u32>> = row
+                    .split(',')
+                    .map(|c| c.trim().parse::<f32>().ok().map(|v| v.round() as u32))
+                    .collect();
+                f.gpu_limit_w = w.first().copied().flatten();
+                f.gpu_default_w = w.get(1).copied().flatten();
+                f.gpu_min_w = w.get(2).copied().flatten();
+            }
+        }
+    }
+
     f
 }
 
@@ -207,6 +255,33 @@ fn rebuild_options(state: &mut PowerState) {
             .and_then(|cur| values.iter().position(|v| *v == cur))
             .unwrap_or(0);
         state.limit_values = values;
+    }
+    if !state.dd_governor.open {
+        state.dd_governor.options = f.governors.iter().map(|g| pretty(g)).collect();
+        state.dd_governor.selected =
+            f.governors.iter().position(|g| *g == f.governor).unwrap_or(0);
+    }
+    if !state.dd_gpu.open {
+        // Default and minimum, plus the current draw when it is neither — the
+        // charge-limit rule: an off-list value gets its own row rather than
+        // silently matching the wrong one.
+        let mut vals: Vec<u32> = Vec::new();
+        if let Some(d) = f.gpu_default_w { vals.push(d); }
+        if let Some(m) = f.gpu_min_w { if !vals.contains(&m) { vals.push(m); } }
+        if let Some(c) = f.gpu_limit_w { if !vals.contains(&c) { vals.push(c); } }
+        state.dd_gpu.options = vals
+            .iter()
+            .map(|w| {
+                if Some(*w) == f.gpu_default_w { format!("{} W  (default)", w) }
+                else if Some(*w) == f.gpu_min_w { format!("{} W  (minimum)", w) }
+                else { format!("{} W", w) }
+            })
+            .collect();
+        state.dd_gpu.selected = f
+            .gpu_limit_w
+            .and_then(|c| vals.iter().position(|v| *v == c))
+            .unwrap_or(0);
+        state.gpu_values = vals;
     }
     if !state.dd_turbo.open {
         state.dd_turbo.selected = if f.turbo.unwrap_or(true) { 0 } else { 1 };
@@ -266,6 +341,10 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             state.dd_epp.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(&mut state.dd_epp, sec_w - 28.0, 44.0, ctx);
         }
+        if !state.facts.governors.is_empty() {
+            state.dd_governor.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut state.dd_governor, sec_w - 28.0, 44.0, ctx);
+        }
         if state.facts.charge_limit.is_some() {
             state.dd_limit.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(&mut state.dd_limit, sec_w - 28.0, 44.0, ctx);
@@ -273,6 +352,10 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         if state.facts.turbo.is_some() {
             state.dd_turbo.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(&mut state.dd_turbo, sec_w - 28.0, 44.0, ctx);
+        }
+        if !state.gpu_values.is_empty() {
+            state.dd_gpu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut state.dd_gpu, sec_w - 28.0, 44.0, ctx);
         }
     });
 
@@ -291,7 +374,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
         PowerMessage::SetProfile(idx) => {
             if let Some(p) = state.facts.profiles.get(idx) {
                 if sysfs_token_ok(p) {
-                    write_sysfs(format!("echo {} > /sys/firmware/acpi/platform_profile", p));
+                    run_privileged(format!("echo {} > /sys/firmware/acpi/platform_profile", p));
                     state.facts.profile = p.clone();
                 }
             }
@@ -301,7 +384,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                 if sysfs_token_ok(p) {
                     // Every core: EPP is per-cpu and a partial write would
                     // leave the package split across preferences.
-                    write_sysfs(format!(
+                    run_privileged(format!(
                         "for f in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do echo {} > \"$f\"; done",
                         p
                     ));
@@ -312,7 +395,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
         PowerMessage::SetLimit(idx) => {
             if let Some(v) = state.limit_values.get(idx).copied() {
                 if (1..=100).contains(&v) {
-                    write_sysfs(format!(
+                    run_privileged(format!(
                         "for f in /sys/class/power_supply/BAT*/charge_control_end_threshold; do echo {} > \"$f\"; done",
                         v
                     ));
@@ -320,9 +403,34 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                 }
             }
         }
+        PowerMessage::SetGovernor(idx) => {
+            if let Some(g) = state.facts.governors.get(idx) {
+                if sysfs_token_ok(g) {
+                    // Every core, like EPP: a partial write leaves the package
+                    // split across governors.
+                    run_privileged(format!(
+                        "for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo {} > \"$f\"; done",
+                        g
+                    ));
+                    state.facts.governor = g.clone();
+                }
+            }
+        }
+        PowerMessage::SetGpuLimit(idx) => {
+            if let Some(w) = state.gpu_values.get(idx).copied() {
+                // Bounded by what nvidia-smi itself reported, so the number
+                // reaching the shell line cannot be arbitrary.
+                let within = state.facts.gpu_min_w.is_none_or(|m| w >= m)
+                    && state.facts.gpu_default_w.is_none_or(|d| w <= d.max(w));
+                if within {
+                    run_privileged(format!("nvidia-smi -pl {}", w));
+                    state.facts.gpu_limit_w = Some(w);
+                }
+            }
+        }
         PowerMessage::SetTurbo(idx) => {
             let no_turbo = if idx == 1 { 1 } else { 0 };
-            write_sysfs(format!(
+            run_privileged(format!(
                 "echo {} > /sys/devices/system/cpu/intel_pstate/no_turbo",
                 no_turbo
             ));
@@ -346,11 +454,17 @@ impl crate::pages::AppPage for PowerState {
         if !self.facts.epps.is_empty() {
             ids.push(self.dd_epp.id());
         }
+        if !self.facts.governors.is_empty() {
+            ids.push(self.dd_governor.id());
+        }
         if self.facts.charge_limit.is_some() {
             ids.push(self.dd_limit.id());
         }
         if self.facts.turbo.is_some() {
             ids.push(self.dd_turbo.id());
+        }
+        if !self.gpu_values.is_empty() {
+            ids.push(self.dd_gpu.id());
         }
         vec![ids]
     }
@@ -382,6 +496,12 @@ impl crate::pages::AppPage for PowerState {
         if self.dd_turbo.take_change() {
             actions.push(AppAction::Power(PowerMessage::SetTurbo(self.dd_turbo.selected)));
         }
+        if self.dd_governor.take_change() {
+            actions.push(AppAction::Power(PowerMessage::SetGovernor(self.dd_governor.selected)));
+        }
+        if self.dd_gpu.take_change() {
+            actions.push(AppAction::Power(PowerMessage::SetGpuLimit(self.dd_gpu.selected)));
+        }
     }
 }
 
@@ -404,6 +524,11 @@ mod tests {
             epp: "balance_power".to_string(),
             charge_limit: Some(80),
             turbo: Some(true),
+            governors: vec!["performance".into(), "powersave".into()],
+            governor: "powersave".to_string(),
+            gpu_limit_w: Some(80),
+            gpu_default_w: Some(80),
+            gpu_min_w: Some(5),
         }
     }
 
@@ -468,11 +593,38 @@ mod tests {
         assert_eq!(st.section_widgets(), vec![Vec::new()]);
         st.loaded = true;
         st.facts = facts();
-        // All four interfaces present: all four dropdowns reported.
-        assert_eq!(st.section_widgets()[0].len(), 4);
+        rebuild_options(&mut st);
+        // Every interface present: profile, epp, governor, limit, turbo, gpu.
+        assert_eq!(st.section_widgets()[0].len(), 6);
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
+        assert_eq!(st.section_widgets()[0].len(), 4);
+        // No cpufreq governors and no NVIDIA driver: both drop out too. The
+        // GPU gate is gpu_values, which rebuild_options derives from the facts
+        // — the same predicate the view paints on.
+        st.facts.governors.clear();
+        st.facts.gpu_limit_w = None;
+        st.facts.gpu_default_w = None;
+        st.facts.gpu_min_w = None;
+        rebuild_options(&mut st);
         assert_eq!(st.section_widgets()[0].len(), 2);
+    }
+
+    #[test]
+    fn gpu_rows_are_default_min_and_an_off_list_current() {
+        let mut st = PowerState::default();
+        st.loaded = true;
+        st.facts = facts();
+        // Current == default: two rows, no duplicate.
+        rebuild_options(&mut st);
+        assert_eq!(st.gpu_values, vec![80, 5]);
+        assert_eq!(st.dd_gpu.selected, 0);
+        // A current limit that is neither default nor minimum earns its own
+        // row rather than silently selecting the wrong one.
+        st.facts.gpu_limit_w = Some(60);
+        rebuild_options(&mut st);
+        assert_eq!(st.gpu_values, vec![80, 5, 60]);
+        assert_eq!(st.dd_gpu.selected, 2);
     }
 }
