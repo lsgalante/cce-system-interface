@@ -2,18 +2,6 @@ use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Label, WidgetHost, Button};
 
-#[derive(Debug, Clone, Default)]
-pub struct BatteryInfo {
-    pub percentage: f32,
-    pub state: String,
-    pub energy: f64,
-    pub energy_full: f64,
-    pub energy_rate: f64,
-    pub time_to_empty: i64,
-    pub time_to_full: i64,
-    pub vendor: String,
-    pub model: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct NotificationsConfig {
@@ -40,8 +28,6 @@ pub struct SystemState {
     pub cpu_temp_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
     // Power-related fields
-    pub battery: BatteryInfo,
-    pub on_ac: bool,
 
     // Native layout tracking and widgets
     pub initialized: bool,
@@ -49,11 +35,6 @@ pub struct SystemState {
     pub hostname_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub uptime_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
-    pub battery_label_pct: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub battery_label_state: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub battery_label_time: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub battery_label_details: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub battery_label_ac: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
 
     pub suspend_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
@@ -93,19 +74,12 @@ impl Default for SystemState {
             cpu_usage_label: Label::new("CPU Usage"),
             cpu_temp_label: Label::new("CPU Temp"),
 
-            battery: BatteryInfo::default(),
-            on_ac: true,
 
             initialized: false,
             sender: None,
             hostname_label: Label::new(""),
             uptime_label: Label::new(""),
 
-            battery_label_pct: Label::new("").with_font_size(24.0).with_color([92, 143, 97]),
-            battery_label_state: Label::new("").with_font_size(12.0).with_color([135, 135, 153]),
-            battery_label_time: Label::new("").with_font_size(12.0).with_color([135, 135, 153]),
-            battery_label_details: Label::new("").with_font_size(11.0).with_color([135, 135, 153]),
-            battery_label_ac: Label::new("").with_font_size(14.0).with_color([212, 212, 212]),
 
 
             suspend_btn: Button::new(0.0, 0.0, 0.0, 32.0)
@@ -148,83 +122,9 @@ pub enum SystemMessage {
 
 }
 
-// ── zbus proxies ────────────────────────────────────────────────────
-
-#[zbus::proxy(
-    interface = "org.freedesktop.UPower.Device",
-    default_service = "org.freedesktop.UPower",
-    default_path = "/org/freedesktop/UPower/devices/battery_BAT0"
-)]
-trait UpowerBattery {
-    #[zbus(property)]
-    fn percentage(&self) -> zbus::Result<f64>;
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<u32>;
-    #[zbus(property)]
-    fn energy(&self) -> zbus::Result<f64>;
-    #[zbus(property)]
-    fn energy_full(&self) -> zbus::Result<f64>;
-    #[zbus(property)]
-    fn energy_rate(&self) -> zbus::Result<f64>;
-    #[zbus(property)]
-    fn time_to_empty(&self) -> zbus::Result<i64>;
-    #[zbus(property)]
-    fn time_to_full(&self) -> zbus::Result<i64>;
-    #[zbus(property)]
-    fn vendor(&self) -> zbus::Result<String>;
-    #[zbus(property)]
-    fn model(&self) -> zbus::Result<String>;
-}
-
-#[zbus::proxy(
-    interface = "org.freedesktop.UPower",
-    default_service = "org.freedesktop.UPower",
-    default_path = "/org/freedesktop/UPower"
-)]
-trait UpowerDaemon {
-    #[zbus(property, name = "OnBattery")]
-    fn on_battery(&self) -> zbus::Result<bool>;
-}
-
 // ── Helpers ─────────────────────────────────────────────────────────
 
-fn format_duration(secs: i64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) }
-}
 
-async fn fetch_upower() -> (BatteryInfo, bool) {
-    let conn = match zbus::Connection::system().await {
-        Ok(c) => c,
-        Err(_) => return (BatteryInfo::default(), true),
-    };
-
-    let battery = match UpowerBatteryProxy::new(&conn).await {
-        Ok(proxy) => BatteryInfo {
-            percentage: proxy.percentage().await.unwrap_or(0.0) as f32,
-            state: {
-                let s = proxy.state().await.unwrap_or(0);
-                match s { 1 => "charging", 2 => "discharging", 4 => "fully-charged", _ => "unknown" }.into()
-            },
-            energy: proxy.energy().await.unwrap_or(0.0),
-            energy_full: proxy.energy_full().await.unwrap_or(0.0),
-            energy_rate: proxy.energy_rate().await.unwrap_or(0.0),
-            time_to_empty: proxy.time_to_empty().await.unwrap_or(0),
-            time_to_full: proxy.time_to_full().await.unwrap_or(0),
-            vendor: proxy.vendor().await.unwrap_or_default(),
-            model: proxy.model().await.unwrap_or_default(),
-        },
-        Err(_) => BatteryInfo::default(),
-    };
-
-    let on_ac = match UpowerDaemonProxy::new(&conn).await {
-        Ok(proxy) => !proxy.on_battery().await.unwrap_or(false),
-        Err(_) => true,
-    };
-
-    (battery, on_ac)
-}
 
 fn read_cpu_temp() -> Option<f32> {
     if let Ok(entries) = std::fs::read_dir("/sys/class/hwmon") {
@@ -308,8 +208,6 @@ pub struct SystemInfo {
     pub cpu_usage: f32,
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
-    pub battery: BatteryInfo,
-    pub on_ac: bool,
 }
 
 pub async fn fetch_system_state() -> SystemInfo {
@@ -401,7 +299,6 @@ pub async fn fetch_system_state() -> SystemInfo {
         format!("GPU  {}{}", gpu_name, temp_str)
     }).collect();
 
-    let (battery, on_ac) = fetch_upower().await;
 
     SystemInfo {
         hostname,
@@ -412,16 +309,11 @@ pub async fn fetch_system_state() -> SystemInfo {
         cpu_cores,
         gpus,
         gpu_strings,
-        battery,
-        on_ac,
     }
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-const RED: [f32; 4] = [1.0, 0.33, 0.33, 1.0];
-const ORANGE: [f32; 4] = [1.0, 0.73, 0.20, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
@@ -508,45 +400,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
     // ── 6. GPU Power Section ──
 
-    // ── 5. Battery Section ──
-    builder.add_section(&mut final_pc, "Battery", sec_focused.get(4).copied().unwrap_or(false), |sec_bat| {
-        if !state.loaded {
-            sec_bat.text("Loading battery status...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else {
-            let bat = &state.battery;
-            let bat_icon = match bat.state.as_str() {
-                "charging" => "+",
-                "fully-charged" => "=",
-                _ => "",
-            };
-
-            let pct_color = if bat.percentage < 20.0 { RED }
-                else if bat.percentage < 50.0 { ORANGE }
-                else { ACCENT };
-
-            let pct_str = format!("{} {:.0}%", bat_icon, bat.percentage);
-            sec_bat.text(&pct_str, 12.0, 0.0, 24.0, pct_color);
-
-            let state_str = format!("{}  •  {:.1}W  •  {:.1}/{:.1} Wh",
-                bat.state, bat.energy_rate, bat.energy, bat.energy_full);
-            sec_bat.text(&state_str, 12.0, 0.0, 12.0, TEXT_DIM);
-
-            let time_str = if bat.time_to_empty > 0 {
-                format!("Time remaining: {}", format_duration(bat.time_to_empty))
-            } else if bat.time_to_full > 0 {
-                format!("Time to full: {}", format_duration(bat.time_to_full))
-            } else { String::new() };
-            if !time_str.is_empty() {
-                sec_bat.text(&time_str, 12.0, 0.0, 12.0, TEXT_DIM);
-            }
-
-            let detail_str = format!("{}  {}", bat.vendor, bat.model);
-            sec_bat.text(&detail_str, 12.0, 0.0, 11.0, TEXT_DIM);
-
-            let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
-            sec_bat.text(ac_str, 12.0, 0.0, 14.0, TEXT_FG);
-        }
-    });
 
 
 
@@ -567,9 +420,6 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
             state.gpus = new.gpus;
             state.gpu_strings = new.gpu_strings.clone();
 
-            state.battery = new.battery;
-            state.on_ac = new.on_ac;
-
             if state.loaded {
                 state.hostname_label.set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
                 state.uptime_label.set_text(&format!("Uptime: {}", state.uptime));
@@ -583,38 +433,6 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
                 state.cpu_temp_label.set_text(&cpu_temp_text);
 
 
-                // Update battery labels
-                let bat = &state.battery;
-                let bat_icon = match bat.state.as_str() {
-                    "charging" => "+",
-                    "fully-charged" => "=",
-                    _ => "",
-                };
-
-                let pct_color = if bat.percentage < 20.0 { [255, 84, 84] }
-                    else if bat.percentage < 50.0 { [255, 186, 51] }
-                    else { [92, 143, 97] };
-
-                let pct_str = format!("{} {:.0}%", bat_icon, bat.percentage);
-                state.battery_label_pct.set_text(&pct_str);
-                state.battery_label_pct.set_color(pct_color);
-
-                let state_str = format!("{}  •  {:.1}W  •  {:.1}/{:.1} Wh",
-                    bat.state, bat.energy_rate, bat.energy, bat.energy_full);
-                state.battery_label_state.set_text(&state_str);
-
-                let time_str = if bat.time_to_empty > 0 {
-                    format!("Time remaining: {}", format_duration(bat.time_to_empty))
-                } else if bat.time_to_full > 0 {
-                    format!("Time to full: {}", format_duration(bat.time_to_full))
-                } else { String::new() };
-                state.battery_label_time.set_text(&time_str);
-
-                let detail_str = format!("{}  {}", bat.vendor, bat.model);
-                state.battery_label_details.set_text(&detail_str);
-
-                let ac_str = if state.on_ac { "On AC Power" } else { "On Battery" };
-                state.battery_label_ac.set_text(ac_str);
 
                 state.hostname_label.mark_dirty(ctx);
             }

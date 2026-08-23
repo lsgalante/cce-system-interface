@@ -40,6 +40,13 @@ pub struct PowerFacts {
     /// EPP choices in sysfs spelling, and cpu0's current value.
     pub epps: Vec<String>,
     pub epp: String,
+    /// energy_now / energy_full in µWh — the Wh readout, and what the
+    /// time-remaining estimate divides by power_now.
+    pub energy_now_uwh: Option<f64>,
+    pub energy_full_uwh: Option<f64>,
+    /// manufacturer + model_name, the pack's own identification.
+    pub vendor: String,
+    pub model: String,
     /// charge_control_end_threshold, when the battery has one.
     pub charge_limit: Option<u32>,
     /// intel_pstate no_turbo, inverted to "turbo enabled".
@@ -138,6 +145,30 @@ fn pretty(token: &str) -> String {
         .join(" ")
 }
 
+/// Seconds of runtime left while discharging, or to full while charging, from
+/// energy over draw. sysfs has no time field — UPower computes exactly this,
+/// and reading it here is what lets the Power page stay all-sysfs rather than
+/// taking a D-Bus dependency for one line.
+fn battery_seconds(f: &PowerFacts) -> Option<i64> {
+    let now = f.energy_now_uwh?;
+    let full = f.energy_full_uwh?;
+    let draw = f.power_w? as f64 * 1e6;
+    if draw <= 0.0 {
+        return None;
+    }
+    let remaining_uwh = match f.status.as_str() {
+        "Discharging" => now,
+        "Charging" => (full - now).max(0.0),
+        _ => return None,
+    };
+    Some(((remaining_uwh / draw) * 3600.0).round() as i64)
+}
+
+fn humanize_secs(secs: i64) -> String {
+    let (h, m) = (secs / 3600, (secs % 3600) / 60);
+    if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) }
+}
+
 fn read_trim(path: &str) -> Option<String> {
     std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
@@ -172,6 +203,10 @@ pub async fn fetch_power_state() -> PowerFacts {
             }
         }
         f.power_w = b("power_now").and_then(|s| s.parse::<f64>().ok()).map(|uw| (uw / 1e6) as f32);
+        f.energy_now_uwh = b("energy_now").and_then(|s| s.parse().ok());
+        f.energy_full_uwh = full;
+        f.vendor = b("manufacturer").unwrap_or_default();
+        f.model = b("model_name").unwrap_or_default();
         f.charge_limit = b("charge_control_end_threshold").and_then(|s| s.parse().ok());
     }
     f.ac_online = read_trim("/sys/class/power_supply/AC/online").map(|s| s == "1");
@@ -317,6 +352,24 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             }
             sec.text("Battery", 13.0, 0.0, 13.0, TEXT_FG);
             sec.text(&line, 12.0, 0.0, 12.0, status_color);
+
+            // Folded in from the System page's battery section, which showed
+            // the same pack in a second place until 2026-08-23.
+            let mut detail = String::new();
+            if let (Some(now), Some(full)) = (f.energy_now_uwh, f.energy_full_uwh) {
+                detail.push_str(&format!("{:.1} / {:.1} Wh", now / 1e6, full / 1e6));
+            }
+            if let Some(secs) = battery_seconds(f) {
+                if !detail.is_empty() {
+                    detail.push_str("  ·  ");
+                }
+                let what = if f.status == "Charging" { "to full" } else { "remaining" };
+                detail.push_str(&format!("{} {}", humanize_secs(secs), what));
+            }
+            if !detail.is_empty() {
+                sec.text(&detail, 12.0, 0.0, 12.0, TEXT_DIM);
+            }
+
             if let Some(h) = f.health_pct {
                 sec.text(
                     &format!("Health: {}% of design capacity", h),
@@ -325,6 +378,10 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
                     12.0,
                     if h >= 80 { TEXT_DIM } else { WARN },
                 );
+            }
+            let pack = format!("{} {}", f.vendor, f.model);
+            if !pack.trim().is_empty() {
+                sec.text(pack.trim(), 11.0, 0.0, 11.0, TEXT_DIM);
             }
         } else {
             sec.text("No battery detected", 12.0, 0.0, 12.0, TEXT_DIM);
@@ -518,6 +575,10 @@ mod tests {
             health_pct: Some(83),
             power_w: Some(7.2),
             ac_online: Some(false),
+            energy_now_uwh: Some(44_900_000.0),
+            energy_full_uwh: Some(74_900_000.0),
+            vendor: "SMP".to_string(),
+            model: "5B11M90061".to_string(),
             profiles: vec!["low-power".into(), "balanced".into(), "performance".into()],
             profile: "balanced".to_string(),
             epps: vec!["default".into(), "performance".into(), "balance_power".into(), "power".into()],
@@ -577,6 +638,35 @@ mod tests {
         assert!(!sysfs_token_ok("a b"));
         assert!(!sysfs_token_ok("x;reboot"));
         assert!(!sysfs_token_ok("$(rm)"));
+    }
+
+    #[test]
+    fn battery_time_is_energy_over_draw_and_follows_direction() {
+        // sysfs has no time field — this replaces what UPower used to compute
+        // for the System page's battery section.
+        let mut f = facts();
+        f.status = "Discharging".to_string();
+        f.power_w = Some(50.0);
+        // 44.9 Wh left at 50 W ≈ 53.9 min.
+        assert_eq!(humanize_secs(battery_seconds(&f).unwrap()), "53m");
+
+        // Charging counts the GAP to full, not what is already in the pack.
+        f.status = "Charging".to_string();
+        // (74.9 - 44.9) = 30 Wh at 50 W = 36 min.
+        assert_eq!(humanize_secs(battery_seconds(&f).unwrap()), "36m");
+
+        // Idle on AC, or no draw at all, has no meaningful estimate.
+        f.status = "Full".to_string();
+        assert_eq!(battery_seconds(&f), None);
+        f.status = "Discharging".to_string();
+        f.power_w = Some(0.0);
+        assert_eq!(battery_seconds(&f), None);
+    }
+
+    #[test]
+    fn humanize_secs_splits_hours() {
+        assert_eq!(humanize_secs(54 * 60), "54m");
+        assert_eq!(humanize_secs(3 * 3600 + 7 * 60), "3h 7m");
     }
 
     #[test]
