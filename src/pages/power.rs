@@ -56,6 +56,19 @@ pub struct PowerFacts {
     /// whose path had not survived two renames of this app.
     pub governors: Vec<String>,
     pub governor: String,
+    /// Intel GPU render-clock ceiling in MHz: (current, hardware max RP0,
+    /// hardware min RPn). This is the iGPU — on a hybrid laptop it is the GPU
+    /// actually drawing power when the discrete one is asleep or driverless.
+    pub igpu_mhz: Option<u32>,
+    pub igpu_max_mhz: Option<u32>,
+    pub igpu_min_mhz: Option<u32>,
+    /// PCIe Active State Power Management: the policy list the kernel offers,
+    /// and the one in brackets.
+    pub aspm_policies: Vec<String>,
+    pub aspm: String,
+    /// snd_hda_intel power_save: seconds of idle before the audio codec
+    /// suspends, 0 meaning never.
+    pub hda_idle_secs: Option<u32>,
     /// NVIDIA power limit in watts: (current, default, minimum). None whenever
     /// nvidia-smi cannot reach a driver — including a host where the module is
     /// simply not loaded — which is what gates the dropdown away.
@@ -74,10 +87,16 @@ pub struct PowerState {
     pub dd_turbo: cce_ui::widget::Adapted<Dropdown>,
     pub dd_governor: cce_ui::widget::Adapted<Dropdown>,
     pub dd_gpu: cce_ui::widget::Adapted<Dropdown>,
+    pub dd_igpu: cce_ui::widget::Adapted<Dropdown>,
+    pub dd_aspm: cce_ui::widget::Adapted<Dropdown>,
+    pub dd_audio: cce_ui::widget::Adapted<Dropdown>,
     /// Sysfs value per charge-limit dropdown row (options are display text).
     pub limit_values: Vec<u32>,
     /// Watts per GPU-limit dropdown row (options are display text).
     pub gpu_values: Vec<u32>,
+    /// MHz per iGPU-clock row, and idle seconds per audio row.
+    pub igpu_values: Vec<u32>,
+    pub audio_values: Vec<u32>,
 }
 
 impl Default for PowerState {
@@ -92,8 +111,13 @@ impl Default for PowerState {
                 .with_label("CPU Turbo Boost"),
             dd_governor: Dropdown::new(vec!["—".to_string()], 0).with_label("CPU Governor"),
             dd_gpu: Dropdown::new(vec!["—".to_string()], 0).with_label("GPU Power Limit"),
+            dd_igpu: Dropdown::new(vec!["—".to_string()], 0).with_label("Integrated GPU Max Clock"),
+            dd_aspm: Dropdown::new(vec!["—".to_string()], 0).with_label("PCIe Power Management"),
+            dd_audio: Dropdown::new(vec!["—".to_string()], 0).with_label("Audio Codec Idle"),
             limit_values: Vec::new(),
             gpu_values: Vec::new(),
+            igpu_values: Vec::new(),
+            audio_values: Vec::new(),
         }
     }
 }
@@ -108,6 +132,9 @@ pub enum PowerMessage {
     SetTurbo(usize),
     SetGovernor(usize),
     SetGpuLimit(usize),
+    SetIgpuClock(usize),
+    SetAspm(usize),
+    SetAudioIdle(usize),
 }
 
 /// Sysfs tokens travel into a `pkexec sh -c` line, so only the shapes sysfs
@@ -173,6 +200,21 @@ fn read_trim(path: &str) -> Option<String> {
     std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
 
+/// The first /sys/class/drm/card* exposing `gt_max_freq_mhz` (i915/xe).
+fn drm_card_with_freq() -> Option<std::path::PathBuf> {
+    let rd = std::fs::read_dir("/sys/class/drm").ok()?;
+    let mut cards: Vec<_> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("card"))
+                && p.join("gt_max_freq_mhz").exists()
+        })
+        .collect();
+    cards.sort();
+    cards.into_iter().next()
+}
+
 /// The first battery under /sys/class/power_supply, by convention BAT*.
 fn battery_dir() -> Option<std::path::PathBuf> {
     let rd = std::fs::read_dir("/sys/class/power_supply").ok()?;
@@ -225,6 +267,32 @@ pub async fn fetch_power_state() -> PowerFacts {
     }
 
     f.turbo = read_trim("/sys/devices/system/cpu/intel_pstate/no_turbo").map(|s| s == "0");
+
+    // The first DRM card exposing the i915/xe clock knobs. Globbed rather than
+    // fixed at card0: the render node's number depends on probe order, and on a
+    // hybrid machine the Intel one is not necessarily first.
+    if let Some(card) = drm_card_with_freq() {
+        let g = |name: &str| read_trim(&format!("{}/{}", card.display(), name))
+            .and_then(|s| s.parse::<u32>().ok());
+        f.igpu_mhz = g("gt_max_freq_mhz");
+        f.igpu_max_mhz = g("gt_RP0_freq_mhz");
+        f.igpu_min_mhz = g("gt_RPn_freq_mhz");
+    }
+
+    if let Some(pol) = read_trim("/sys/module/pcie_aspm/parameters/policy") {
+        // "[default] performance powersave powersupersave" — brackets mark the
+        // active one, and the list is whatever this kernel was built with.
+        for tok in pol.split_whitespace() {
+            let bare = tok.trim_start_matches('[').trim_end_matches(']');
+            if tok.starts_with('[') {
+                f.aspm = bare.to_string();
+            }
+            f.aspm_policies.push(bare.to_string());
+        }
+    }
+
+    f.hda_idle_secs =
+        read_trim("/sys/module/snd_hda_intel/parameters/power_save").and_then(|s| s.parse().ok());
 
     if let Some(govs) = read_trim("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors") {
         f.governors = govs.split_whitespace().map(String::from).collect();
@@ -318,6 +386,59 @@ fn rebuild_options(state: &mut PowerState) {
             .unwrap_or(0);
         state.gpu_values = vals;
     }
+    if !state.dd_igpu.open {
+        // Ceiling, midpoint and floor, all from the hardware's own RP0/RPn —
+        // no invented numbers, and a current cap that is none of them keeps its
+        // own row (the charge-limit rule).
+        let mut vals: Vec<u32> = Vec::new();
+        if let (Some(hi), Some(lo)) = (f.igpu_max_mhz, f.igpu_min_mhz) {
+            vals.push(hi);
+            let mid = ((hi + lo) / 2 / 100) * 100;
+            if mid > lo && mid < hi {
+                vals.push(mid);
+            }
+            vals.push(lo);
+            if let Some(cur) = f.igpu_mhz {
+                if !vals.contains(&cur) {
+                    vals.push(cur);
+                }
+            }
+        }
+        state.dd_igpu.options = vals
+            .iter()
+            .map(|m| {
+                if Some(*m) == f.igpu_max_mhz { format!("{} MHz  (full)", m) }
+                else if Some(*m) == f.igpu_min_mhz { format!("{} MHz  (minimum)", m) }
+                else { format!("{} MHz", m) }
+            })
+            .collect();
+        state.dd_igpu.selected =
+            f.igpu_mhz.and_then(|c| vals.iter().position(|v| *v == c)).unwrap_or(0);
+        state.igpu_values = vals;
+    }
+    if !state.dd_aspm.open {
+        state.dd_aspm.options = f.aspm_policies.iter().map(|p| pretty(p)).collect();
+        state.dd_aspm.selected =
+            f.aspm_policies.iter().position(|p| *p == f.aspm).unwrap_or(0);
+    }
+    if !state.dd_audio.open {
+        // 0 disables suspend entirely; the rest are idle timeouts. The current
+        // value earns a row if the kernel came up with something else.
+        let mut vals: Vec<u32> = vec![0, 1, 10];
+        if let Some(cur) = f.hda_idle_secs {
+            if !vals.contains(&cur) {
+                vals.push(cur);
+            }
+        }
+        vals.sort_unstable();
+        state.dd_audio.options = vals
+            .iter()
+            .map(|v| if *v == 0 { "Never suspend".to_string() } else { format!("After {} s idle", v) })
+            .collect();
+        state.dd_audio.selected =
+            f.hda_idle_secs.and_then(|c| vals.iter().position(|v| *v == c)).unwrap_or(0);
+        state.audio_values = vals;
+    }
     if !state.dd_turbo.open {
         state.dd_turbo.selected = if f.turbo.unwrap_or(true) { 0 } else { 1 };
     }
@@ -410,6 +531,18 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             state.dd_turbo.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(&mut state.dd_turbo, sec_w - 28.0, 44.0, ctx);
         }
+        if !state.igpu_values.is_empty() {
+            state.dd_igpu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut state.dd_igpu, sec_w - 28.0, 44.0, ctx);
+        }
+        if !state.facts.aspm_policies.is_empty() {
+            state.dd_aspm.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut state.dd_aspm, sec_w - 28.0, 44.0, ctx);
+        }
+        if state.facts.hda_idle_secs.is_some() {
+            state.dd_audio.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(&mut state.dd_audio, sec_w - 28.0, 44.0, ctx);
+        }
         if !state.gpu_values.is_empty() {
             state.dd_gpu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(&mut state.dd_gpu, sec_w - 28.0, 44.0, ctx);
@@ -473,6 +606,44 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                 }
             }
         }
+        PowerMessage::SetIgpuClock(idx) => {
+            if let Some(m) = state.igpu_values.get(idx).copied() {
+                // Bounded by the hardware's own reported range, so the number
+                // reaching the shell line can only be one the GPU accepts.
+                let within = state.facts.igpu_min_mhz.is_none_or(|lo| m >= lo)
+                    && state.facts.igpu_max_mhz.is_none_or(|hi| m <= hi);
+                if within {
+                    // Every card exposing the knob, like the per-cpu writes.
+                    run_privileged(format!(
+                        "for f in /sys/class/drm/card*/gt_max_freq_mhz; do echo {} > \"$f\"; done",
+                        m
+                    ));
+                    state.facts.igpu_mhz = Some(m);
+                }
+            }
+        }
+        PowerMessage::SetAspm(idx) => {
+            if let Some(p) = state.facts.aspm_policies.get(idx) {
+                if sysfs_token_ok(p) {
+                    run_privileged(format!(
+                        "echo {} > /sys/module/pcie_aspm/parameters/policy",
+                        p
+                    ));
+                    state.facts.aspm = p.clone();
+                }
+            }
+        }
+        PowerMessage::SetAudioIdle(idx) => {
+            if let Some(v) = state.audio_values.get(idx).copied() {
+                if v <= 3600 {
+                    run_privileged(format!(
+                        "echo {} > /sys/module/snd_hda_intel/parameters/power_save",
+                        v
+                    ));
+                    state.facts.hda_idle_secs = Some(v);
+                }
+            }
+        }
         PowerMessage::SetGpuLimit(idx) => {
             if let Some(w) = state.gpu_values.get(idx).copied() {
                 // Bounded by what nvidia-smi itself reported, so the number
@@ -520,6 +691,15 @@ impl crate::pages::AppPage for PowerState {
         if self.facts.turbo.is_some() {
             ids.push(self.dd_turbo.id());
         }
+        if !self.igpu_values.is_empty() {
+            ids.push(self.dd_igpu.id());
+        }
+        if !self.facts.aspm_policies.is_empty() {
+            ids.push(self.dd_aspm.id());
+        }
+        if self.facts.hda_idle_secs.is_some() {
+            ids.push(self.dd_audio.id());
+        }
         if !self.gpu_values.is_empty() {
             ids.push(self.dd_gpu.id());
         }
@@ -559,6 +739,15 @@ impl crate::pages::AppPage for PowerState {
         if self.dd_gpu.take_change() {
             actions.push(AppAction::Power(PowerMessage::SetGpuLimit(self.dd_gpu.selected)));
         }
+        if self.dd_igpu.take_change() {
+            actions.push(AppAction::Power(PowerMessage::SetIgpuClock(self.dd_igpu.selected)));
+        }
+        if self.dd_aspm.take_change() {
+            actions.push(AppAction::Power(PowerMessage::SetAspm(self.dd_aspm.selected)));
+        }
+        if self.dd_audio.take_change() {
+            actions.push(AppAction::Power(PowerMessage::SetAudioIdle(self.dd_audio.selected)));
+        }
     }
 }
 
@@ -590,6 +779,12 @@ mod tests {
             gpu_limit_w: Some(80),
             gpu_default_w: Some(80),
             gpu_min_w: Some(5),
+            igpu_mhz: Some(1500),
+            igpu_max_mhz: Some(1500),
+            igpu_min_mhz: Some(100),
+            aspm_policies: vec!["default".into(), "performance".into(), "powersave".into()],
+            aspm: "default".to_string(),
+            hda_idle_secs: Some(10),
         }
     }
 
@@ -684,12 +879,13 @@ mod tests {
         st.loaded = true;
         st.facts = facts();
         rebuild_options(&mut st);
-        // Every interface present: profile, epp, governor, limit, turbo, gpu.
-        assert_eq!(st.section_widgets()[0].len(), 6);
+        // Every interface present: profile, epp, governor, limit, turbo, igpu,
+        // aspm, audio, gpu.
+        assert_eq!(st.section_widgets()[0].len(), 9);
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
-        assert_eq!(st.section_widgets()[0].len(), 4);
+        assert_eq!(st.section_widgets()[0].len(), 7);
         // No cpufreq governors and no NVIDIA driver: both drop out too. The
         // GPU gate is gpu_values, which rebuild_options derives from the facts
         // — the same predicate the view paints on.
@@ -698,7 +894,43 @@ mod tests {
         st.facts.gpu_default_w = None;
         st.facts.gpu_min_w = None;
         rebuild_options(&mut st);
+        assert_eq!(st.section_widgets()[0].len(), 5);
+        // A desktop with no Intel render clocks, an ASPM-less kernel and no
+        // snd_hda_intel is down to profile and epp.
+        st.facts.igpu_max_mhz = None;
+        st.facts.igpu_min_mhz = None;
+        st.facts.aspm_policies.clear();
+        st.facts.hda_idle_secs = None;
+        rebuild_options(&mut st);
         assert_eq!(st.section_widgets()[0].len(), 2);
+    }
+
+    #[test]
+    fn igpu_rows_come_from_the_hardware_range() {
+        let mut st = PowerState::default();
+        st.loaded = true;
+        st.facts = facts();
+        rebuild_options(&mut st);
+        // RP0, the rounded midpoint, RPn — no invented numbers.
+        assert_eq!(st.igpu_values, vec![1500, 800, 100]);
+        assert_eq!(st.dd_igpu.selected, 0);
+        // A cap that is none of the three earns its own row.
+        st.facts.igpu_mhz = Some(1200);
+        rebuild_options(&mut st);
+        assert_eq!(st.igpu_values, vec![1500, 800, 100, 1200]);
+        assert_eq!(st.dd_igpu.selected, 3);
+    }
+
+    #[test]
+    fn aspm_current_is_the_bracketed_policy() {
+        // fetch strips the brackets; the selection must land on the active one.
+        let mut st = PowerState::default();
+        st.loaded = true;
+        st.facts = facts();
+        st.facts.aspm = "powersave".to_string();
+        rebuild_options(&mut st);
+        assert_eq!(st.dd_aspm.selected, 2);
+        assert_eq!(st.dd_aspm.options[2], "Powersave");
     }
 
     #[test]
