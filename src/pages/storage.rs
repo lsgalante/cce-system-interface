@@ -71,43 +71,52 @@ pub enum StorageMessage {
     BackupFinished(Result<(String, String), String>),
 }
 
+/// Where the privileged helper records the last backup's outcome. Passed to
+/// the script as an argument rather than hardcoded on both sides: the script
+/// runs as root under pkexec, which scrubs the environment, so it cannot
+/// resolve this itself — and when both sides did hardcode it they drifted
+/// apart across the app's renames (the script wrote
+/// `~/.config/clear-system-interface/`, this read `cce-settings/`, and neither
+/// path existed).
 fn status_path() -> String {
     cce_ui::config::cce_config_dir()
-        .join("cce-settings")
         .join("backup_status.txt")
         .to_string_lossy()
         .into_owned()
 }
 
-pub fn read_backup_status() -> (String, String, Option<String>) {
-    let path_str = status_path();
-    let content = fs::read_to_string(path_str).unwrap_or_default();
-    
+/// Parse the status file the privileged helper writes. Split out from the read
+/// so the format — the one contract shared across the pkexec boundary — can be
+/// tested against the exact bytes `scripts/backup-system.sh` emits.
+///
+/// `splitn(2, '=')` and not `split('=').nth(1)`: an error message is free text
+/// and may well contain an `=`, which the latter silently truncated.
+fn parse_backup_status(content: &str) -> (String, String, Option<String>) {
     let mut last_backup = "Never".to_string();
     let mut size = "0 B".to_string();
     let mut err_msg = None;
-    
+
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("last_backup_time") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                last_backup = val.trim().to_string();
-            }
-        } else if trimmed.starts_with("backup_size") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                size = val.trim().to_string();
-            }
-        } else if trimmed.starts_with("error_message") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                let v = val.trim().to_string();
-                if !v.is_empty() {
-                    err_msg = Some(v);
+        let Some((key, val)) = trimmed.split_once('=') else { continue };
+        let val = val.trim().to_string();
+        match key.trim() {
+            "last_backup_time" => last_backup = val,
+            "backup_size" => size = val,
+            "error_message" => {
+                if !val.is_empty() {
+                    err_msg = Some(val);
                 }
             }
+            _ => {}
         }
     }
-    
+
     (last_backup, size, err_msg)
+}
+
+pub fn read_backup_status() -> (String, String, Option<String>) {
+    parse_backup_status(&fs::read_to_string(status_path()).unwrap_or_default())
 }
 
 pub async fn fetch_storage_state() -> StorageInfo {
@@ -139,9 +148,24 @@ pub async fn fetch_storage_state() -> StorageInfo {
 }
 
 pub async fn run_backup() -> Result<(String, String), String> {
-    // Run the backup system helper script via pkexec (graphical auth prompt)
+    // The helper ships in this crate's scripts/ dir and `ccebuild install` puts
+    // it in ~/.local/bin — it is NOT under ~/.local/share/<app>/helpers/, where
+    // it sat unversioned while this call pointed at a third spelling of the
+    // app's name and every backup silently failed.
+    // `$CCE_PREFIX/bin`, else `~/.local/bin` — ccebuild's own BINDIR, which is
+    // where it installs every crate's scripts/. An absolute path because
+    // pkexec does not document PATH lookup for a bare program name, and the
+    // auth dialog shows the user the full path it is about to run as root.
+    let helper = std::env::var("CCE_PREFIX")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local")
+        })
+        .join("bin")
+        .join("backup-system.sh");
     let output = tokio::process::Command::new("pkexec")
-        .arg(cce_ui::config::data_home().join("cce-settings").join("helpers").join("backup-system.sh"))
+        .arg(helper)
+        .arg(status_path())
         .output()
         .await
         .map_err(|e| format!("Failed to run backup script: {}", e))?;
@@ -384,5 +408,47 @@ impl crate::pages::AppPage for StorageState {
         if self.backup_button.take_click() && !self.backup_in_progress {
             actions.push(AppAction::Storage(StorageMessage::StartBackup));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Byte-for-byte what `scripts/backup-system.sh` writes on a failed run
+    /// (its `write_status` heredoc). This pins the one contract that crosses
+    /// the pkexec boundary — the two sides previously drifted onto different
+    /// paths AND different spellings without anything noticing.
+    #[test]
+    fn parses_the_helpers_failure_status() {
+        let written = "last_backup_time = Never\nbackup_size = 0 B\nerror_message = No external drive mounted at /mnt/usb or /run/media/lsgalante/*\n";
+        let (time, size, err) = parse_backup_status(written);
+        assert_eq!(time, "Never");
+        assert_eq!(size, "0 B");
+        assert_eq!(err.as_deref(), Some("No external drive mounted at /mnt/usb or /run/media/lsgalante/*"));
+    }
+
+    #[test]
+    fn parses_the_helpers_success_status() {
+        // A success run writes an EMPTY error_message; that must read as None,
+        // not as Some(""), or the page reports a failure after a good backup.
+        let written = "last_backup_time = 2026-08-23 11:04:12\nbackup_size = 41G\nerror_message = \n";
+        let (time, size, err) = parse_backup_status(written);
+        assert_eq!(time, "2026-08-23 11:04:12");
+        assert_eq!(size, "41G");
+        assert_eq!(err, None);
+    }
+
+    #[test]
+    fn an_error_message_may_contain_an_equals_sign() {
+        // `split('=').nth(1)` truncated at the second '='; free text can hold one.
+        let (_, _, err) = parse_backup_status("error_message = tar: bad option --foo=bar\n");
+        assert_eq!(err.as_deref(), Some("tar: bad option --foo=bar"));
+    }
+
+    #[test]
+    fn a_missing_status_file_reads_as_never() {
+        let (time, size, err) = parse_backup_status("");
+        assert_eq!((time.as_str(), size.as_str(), err), ("Never", "0 B", None));
     }
 }
