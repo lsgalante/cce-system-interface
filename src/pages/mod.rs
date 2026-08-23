@@ -8,7 +8,6 @@ pub mod system_info;
 pub mod timers;
 pub mod processes;
 pub mod services;
-pub mod fonts;
 pub mod accounts;
 pub mod packages;
 pub mod notifications;
@@ -29,18 +28,16 @@ pub enum Page {
     Timers,
     Processes,
     Services,
-    Fonts,
     Packages,
 }
 
 impl Page {
-    pub const ALL: [Page; 15] = [
+    pub const ALL: [Page; 14] = [
         Page::Accounts,
         Page::Audio,
         Page::Bluetooth,
         Page::Browser,
         Page::DefaultApps,
-        Page::Fonts,
         Page::Network,
         Page::Notifications,
         Page::Packages,
@@ -67,7 +64,6 @@ impl Page {
             Page::Timers => "Timers",
             Page::Processes => "Processes",
             Page::Services => "Services",
-            Page::Fonts => "Fonts",
             Page::Packages => "Packages",
         }
     }

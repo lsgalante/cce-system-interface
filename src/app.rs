@@ -10,7 +10,6 @@ use crate::pages::services;
 use crate::pages::system_info;
 use crate::pages::timers;
 use crate::pages::storage;
-use crate::pages::fonts;
 use crate::pages::accounts;
 use crate::pages::packages;
 use crate::pages::notifications;
@@ -30,7 +29,6 @@ pub struct AppState {
     pub system_info: system_info::SystemState,
     pub timers: timers::TimersState,
     pub storage: storage::StorageState,
-    pub fonts: fonts::FontsState,
     pub accounts: accounts::AccountsState,
     pub packages: packages::PackagesState,
     pub notifications: notifications::NotificationsState,
@@ -51,7 +49,6 @@ impl Default for AppState {
             system_info: system_info::SystemState::default(),
             timers: timers::TimersState::default(),
             storage: storage::StorageState::default(),
-            fonts: fonts::FontsState::default(),
             accounts: accounts::AccountsState::default_mock(),
             packages: packages::PackagesState::default(),
             notifications: notifications::NotificationsState::default(),
@@ -75,7 +72,6 @@ impl AppState {
             Page::Storage => &self.storage,
             Page::System => &self.system_info,
             Page::Timers => &self.timers,
-            Page::Fonts => &self.fonts,
             Page::Notifications => &self.notifications,
         }
     }
@@ -95,7 +91,6 @@ impl AppState {
             Page::Storage => &mut self.storage,
             Page::System => &mut self.system_info,
             Page::Timers => &mut self.timers,
-            Page::Fonts => &mut self.fonts,
             Page::Notifications => &mut self.notifications,
         }
     }
@@ -123,7 +118,6 @@ pub enum AppAction {
     SystemInfo(system_info::SystemMessage),
     Timers(timers::TimersMessage),
     Storage(storage::StorageMessage),
-    Fonts(fonts::FontsMessage),
     Accounts(accounts::AccountsMessage),
     Packages(packages::PackagesMessage),
     Notifications(notifications::NotificationsMessage),

@@ -68,7 +68,6 @@ struct SystemInterface {
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_default_apps: std::sync::mpsc::Receiver<pages::default_apps::DefaultAppsInfo>,
     rx_timers: std::sync::mpsc::Receiver<Vec<pages::timers::TimerInfo>>,
-    rx_fonts: std::sync::mpsc::Receiver<pages::fonts::FontsState>,
     rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
@@ -130,10 +129,7 @@ impl cce_ui::engine::Application for SystemInterface {
 
     fn new(_qh: &wayland_client::QueueHandle<cce_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
         cce_ui::scale::set_scale_factor(1.0);
-        let app = AppState {
-            fonts: pages::fonts::read_typeface_config(),
-            ..Default::default()
-        };
+        let app = AppState::default();
 
         // ── Background refresh channels ──
         let initial_page_idx = INITIAL_PAGE_INDEX.load(std::sync::atomic::Ordering::SeqCst);
@@ -142,7 +138,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let (watchers, tx_backup, rx_backup, tx_update, rx_update) =
             cce_settings::watchers::spawn_all(current_page_shared.clone());
 
-        let (sans_family, serif_family, monospace_family, _, _, _, _) = pages::fonts::read_preferred_fonts();
+        let (sans_family, serif_family, monospace_family, _) = cce_ui::layout::read_preferred_fonts();
 
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let page_dropdown = cce_ui::widget::input::Dropdown::new(pages_names, initial_page_idx)
@@ -181,7 +177,6 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_notifications: watchers.rx_notifications,
             rx_browser: watchers.rx_browser,
             rx_services: watchers.rx_services,
-            rx_fonts: watchers.rx_fonts,
             rx_accounts: watchers.rx_accounts,
             tx_backup,
             rx_backup,
@@ -598,15 +593,6 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
-        while let Ok(s) = self.rx_fonts.try_recv() {
-            self.sans_serif_family = s.sans_serif.clone();
-            self.serif_family = s.serif.clone();
-            self.monospace_family = s.monospace.clone();
-            fonts::update(&mut self.app.fonts, fonts::FontsMessage::TypefaceRefreshed(s));
-            if self.app.current_page == Page::Fonts {
-                self.needs_rebuild = true;
-            }
-        }
         while let Ok(s) = self.rx_default_apps.try_recv() {
             pages::default_apps::update(&mut self.app.default_apps, pages::default_apps::DefaultAppsMessage::Refreshed(s));
             if self.app.current_page == Page::DefaultApps {
@@ -674,12 +660,6 @@ impl SystemInterface {
             },
 
 
-            AppAction::Fonts(m) => {
-                fonts::update(&mut self.app.fonts, m.clone());
-                self.sans_serif_family = self.app.fonts.sans_serif.clone();
-                self.serif_family = self.app.fonts.serif.clone();
-                self.monospace_family = self.app.fonts.monospace.clone();
-            }
             AppAction::Accounts(m) => match m {
                 pages::accounts::AccountsMessage::GoogleLoginInit => {
                     // One listener at a time: port 36137 is fixed, so a second

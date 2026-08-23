@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, audio, bluetooth, browser, default_apps, network, fonts, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
+use crate::pages::{Page, audio, bluetooth, browser, default_apps, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
 
 pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
@@ -16,7 +16,6 @@ pub struct Watchers {
     pub rx_services: Receiver<Vec<services::ServiceInfo>>,
     pub rx_default_apps: Receiver<default_apps::DefaultAppsInfo>,
     pub rx_timers: Receiver<Vec<timers::TimerInfo>>,
-    pub rx_fonts: Receiver<fonts::FontsState>,
     pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
     pub rx_packages: Receiver<packages::PackagesState>,
 }
@@ -125,7 +124,6 @@ pub fn spawn_all(
         rx
     };
 
-    let rx_fonts = spawn_bg_active(current_page_shared.clone(), Page::Fonts.index() as u8, 30, || fonts::fetch_typeface_state());
     let rx_services = spawn_bg_active(current_page_shared.clone(), Page::Services.index() as u8, 3, || services::fetch_services());
     let rx_default_apps = spawn_bg_active(current_page_shared.clone(), Page::DefaultApps.index() as u8, 10, || default_apps::fetch_default_apps());
     let rx_timers = spawn_bg_active(current_page_shared.clone(), Page::Timers.index() as u8, 5, || timers::fetch_timers());
@@ -149,7 +147,6 @@ pub fn spawn_all(
             rx_services,
             rx_default_apps,
             rx_timers,
-            rx_fonts,
             rx_accounts,
             rx_packages,
         },
