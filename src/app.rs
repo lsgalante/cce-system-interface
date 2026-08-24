@@ -124,6 +124,20 @@ pub enum AppAction {
 }
 
 
+/// A control carve bridged out of a widget's `paint` for the flat path: the
+/// two relief idioms the toolkit's controls draw for themselves, which the
+/// legacy `all_quads` stream cannot carry. The page collects them and
+/// `display_list` re-emits them as real prims into the window plate.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ControlCarve {
+    /// `PaintCtx::inset_plate` — a flush inset face over a boundary seam
+    /// (Dropdown). `color` fills the face; transparent leaves the plate below.
+    Plate { color: [f32; 4] },
+    /// `PaintCtx::recess` / `recess_tinted` — a sunken well (TextBox).
+    /// `tint` is the focus accent on the rim while the box is being edited.
+    Well { tint: Option<[f32; 3]> },
+}
+
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
@@ -135,11 +149,12 @@ pub struct PageContent {
     /// plus the title tab box, carved into the window plate by display_list as
     /// recess prims (page coordinates, pre-scroll).
     pub reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
-    /// Control troughs claimed via `RenderTarget::inset_plate` (the flat-path
-    /// bridge offers a Dropdown's flush inset chrome here) — (x, y, w, h,
-    /// radius, depth, face color), page coordinates, pre-scroll; display_list
-    /// carves them as real inset plates.
-    pub control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, [f32; 4])>,
+    /// Control carves claimed via the flat-path relief hooks
+    /// (`RenderTarget::inset_plate` for a Dropdown's flush inset chrome,
+    /// `RenderTarget::recess` for a TextBox's well) — (x, y, w, h, radius,
+    /// depth, carve), page coordinates, pre-scroll; display_list re-emits them
+    /// as real relief prims.
+    pub control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, ControlCarve)>,
     pub clip_stack: Vec<[f32; 4]>,
     pub measure_only: bool,
 }
@@ -310,7 +325,18 @@ impl RenderTarget for PageContent {
         if self.measure_only {
             return;
         }
-        self.control_reliefs.push((x, y, w, h, radius, depth, color));
+        self.control_reliefs.push((x, y, w, h, radius, depth, ControlCarve::Plate { color }));
+    }
+
+    /// The same bridge for a TextBox's well — a DIFFERENT carve, not the same
+    /// one at another rect: a trough is a seam about the boundary with the face
+    /// level, a well drops the whole interior. Collapsing them would give the
+    /// settings app text fields no other relief host has.
+    fn recess(&mut self, x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, tint: Option<[f32; 3]>) {
+        if self.measure_only {
+            return;
+        }
+        self.control_reliefs.push((x, y, w, h, radius, depth, ControlCarve::Well { tint }));
     }
 
     fn section_relief(&mut self, f: &cce_ui::layout::SectionFrame) -> bool {
