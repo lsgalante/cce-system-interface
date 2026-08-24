@@ -1,5 +1,6 @@
 //! Browser (cce-browser) settings: homepage, search engine, download
-//! directory, history recording, navigation-bar position. Edits the
+//! directory, history recording, navigation-bar position, page color
+//! scheme. Edits the
 //! browser's own app config (`~/.config/cce/cce-browser/config.kdl`,
 //! section "browser") — the browser reloads it when its window regains
 //! focus.
@@ -25,6 +26,10 @@ pub const SEARCH_ENGINES: [(&str, &str); 4] = [
 /// navigation bar is anchored to.
 pub const BAR_POSITIONS: [(&str, &str); 2] = [("top", "Top"), ("bottom", "Bottom")];
 
+/// config key, menu label — reported to pages as `prefers-color-scheme`,
+/// so sites that ship a dark stylesheet use it.
+pub const COLOR_SCHEMES: [(&str, &str); 2] = [("dark", "Dark"), ("light", "Light")];
+
 const DEFAULT_HOMEPAGE: &str = "https://servo.org";
 
 #[derive(Debug, Clone)]
@@ -34,6 +39,7 @@ pub struct BrowserConfig {
     pub download_dir: String,
     pub history: bool,
     pub bar_position: String,
+    pub color_scheme: String,
 }
 
 pub struct BrowserState {
@@ -43,9 +49,11 @@ pub struct BrowserState {
     pub download_dir: String,
     pub history: bool,
     pub bar_position: String,
+    pub color_scheme: String,
     pub homepage_box: cce_ui::widget::Adapted<TextBox>,
     pub search_menu: cce_ui::widget::Adapted<Dropdown>,
     pub bar_position_menu: cce_ui::widget::Adapted<Dropdown>,
+    pub color_scheme_menu: cce_ui::widget::Adapted<Dropdown>,
     pub download_dir_box: cce_ui::widget::Adapted<TextBox>,
     pub history_toggle: cce_ui::widget::Adapted<Toggle>,
 }
@@ -68,6 +76,7 @@ impl Default for BrowserState {
             download_dir: config.download_dir,
             history: config.history,
             bar_position: config.bar_position.clone(),
+            color_scheme: config.color_scheme.clone(),
             homepage_box,
             search_menu: Dropdown::new(
                 SEARCH_ENGINES.iter().map(|(_, label)| label.to_string()).collect(),
@@ -79,6 +88,11 @@ impl Default for BrowserState {
                 bar_position_index(&config.bar_position),
             )
             .with_label("Navigation Bar Position"),
+            color_scheme_menu: Dropdown::new(
+                COLOR_SCHEMES.iter().map(|(_, label)| label.to_string()).collect(),
+                color_scheme_index(&config.color_scheme),
+            )
+            .with_label("Page Color Scheme"),
             download_dir_box,
             history_toggle: Toggle::new().with_label("Record History"),
         }
@@ -93,10 +107,15 @@ fn bar_position_index(key: &str) -> usize {
     BAR_POSITIONS.iter().position(|(k, _)| *k == key).unwrap_or(0)
 }
 
+fn color_scheme_index(key: &str) -> usize {
+    COLOR_SCHEMES.iter().position(|(k, _)| *k == key).unwrap_or(0)
+}
+
 #[derive(Debug, Clone)]
 pub enum BrowserMessage {
     SetSearch(String),
     SetBarPosition(String),
+    SetColorScheme(String),
     ToggleHistory,
     /// Commit the homepage / download-dir text fields.
     Apply,
@@ -123,6 +142,10 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.bar_position = key.clone();
             write_config_value("bar-position", &key);
         }
+        BrowserMessage::SetColorScheme(key) => {
+            state.color_scheme = key.clone();
+            write_config_value("color-scheme", &key);
+        }
         BrowserMessage::ToggleHistory => {
             state.history = !state.history;
             write_config_value("history", &state.history.to_string());
@@ -143,6 +166,7 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.search = new.search;
             state.history = new.history;
             state.bar_position = new.bar_position;
+            state.color_scheme = new.color_scheme;
             // Don't clobber fields mid-edit with watcher refreshes.
             if !state.homepage_box.editing && state.homepage != new.homepage {
                 state.homepage = new.homepage.clone();
@@ -176,6 +200,7 @@ pub fn read_browser_config() -> BrowserConfig {
         download_dir: val["browser"]["download-dir"].as_str().unwrap_or("").to_string(),
         history: val["browser"]["history"].as_bool().unwrap_or(true),
         bar_position: val["browser"]["bar-position"].as_str().unwrap_or("top").to_string(),
+        color_scheme: val["browser"]["color-scheme"].as_str().unwrap_or("dark").to_string(),
     }
 }
 
@@ -197,6 +222,7 @@ impl AppPage for BrowserState {
             self.homepage_box.id(),
             self.search_menu.id(),
             self.bar_position_menu.id(),
+            self.color_scheme_menu.id(),
             self.download_dir_box.id(),
             self.history_toggle.id(),
         ]]
@@ -232,6 +258,10 @@ impl AppPage for BrowserState {
             self.bar_position_menu.selected = bar_position_index(&self.bar_position);
             self.bar_position_menu.set_row_rect(stack.context.left + 14.0, row_w);
             stack.add_widget(&mut self.bar_position_menu, row_w, 44.0, ctx);
+
+            self.color_scheme_menu.selected = color_scheme_index(&self.color_scheme);
+            self.color_scheme_menu.set_row_rect(stack.context.left + 14.0, row_w);
+            stack.add_widget(&mut self.color_scheme_menu, row_w, 44.0, ctx);
 
             self.download_dir_box.set_row_rect(stack.context.left + 14.0, row_w);
             stack.add_widget(&mut self.download_dir_box, row_w, 44.0, ctx);
@@ -272,6 +302,13 @@ impl AppPage for BrowserState {
                 .map(|(k, _)| k.to_string())
                 .unwrap_or_else(|| "top".to_string());
             actions.push(AppAction::Browser(BrowserMessage::SetBarPosition(key)));
+        }
+        if self.color_scheme_menu.take_change() {
+            let key = COLOR_SCHEMES
+                .get(self.color_scheme_menu.selected)
+                .map(|(k, _)| k.to_string())
+                .unwrap_or_else(|| "dark".to_string());
+            actions.push(AppAction::Browser(BrowserMessage::SetColorScheme(key)));
         }
         if self.history_toggle.take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));
