@@ -46,7 +46,7 @@ struct SystemInterface {
     popover_texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
     /// Popover-layer inset plates (window coords, scroll already applied) —
     /// the dropdown's grown-trigger surface via the inset_plate hook.
-    popover_control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, ControlCarve)>,
+    popover_control_reliefs: Vec<ControlCarve>,
     page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
 
     sidebar_width: f32,
@@ -108,7 +108,7 @@ struct SystemInterface {
     page_reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
     /// Control troughs from `PageContent::control_reliefs` (page coords,
     /// pre-scroll) — each carved as a flush inset plate after the section wells.
-    page_control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, ControlCarve)>,
+    page_control_reliefs: Vec<ControlCarve>,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
@@ -417,13 +417,15 @@ impl cce_ui::engine::Application for SystemInterface {
             };
             let scroll_y = self.scroll_y;
             pc.clip(view, |pc| {
-                for &(x, y, w, h, radius, depth, carve) in &self.page_control_reliefs {
-                    let rect = Rect { x, y: y - scroll_y, width: w, height: h };
-                    let radii = (radius, radius, radius, radius);
-                    match carve {
-                        ControlCarve::Plate { color } => pc.inset_plate(rect, radii, color, depth),
-                        ControlCarve::Well { tint: Some(t) } => pc.recess_tinted(rect, radii, depth, t),
-                        ControlCarve::Well { tint: None } => pc.recess(rect, radii, depth),
+                for &carve in &self.page_control_reliefs {
+                    match carve.shifted_y(-scroll_y) {
+                        ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
+                            Rect { x, y, width: w, height: h },
+                            (radius, radius, radius, radius),
+                            color,
+                            depth,
+                        ),
+                        ControlCarve::Step(c) => pc.carve(&c),
                     }
                 }
             });
@@ -444,13 +446,15 @@ impl cce_ui::engine::Application for SystemInterface {
         // Popover surfaces claimed through the inset_plate hook (the dropdown's
         // grown-trigger plate): real relief prims at the popover layer, over
         // the page and its control troughs.
-        for &(x, y, w, h, radius, depth, carve) in &self.popover_control_reliefs {
-            let rect = Rect { x, y, width: w, height: h };
-            let radii = (radius, radius, radius, radius);
+        for &carve in &self.popover_control_reliefs {
             match carve {
-                ControlCarve::Plate { color } => pc.inset_plate(rect, radii, color, depth),
-                ControlCarve::Well { tint: Some(t) } => pc.recess_tinted(rect, radii, depth, t),
-                ControlCarve::Well { tint: None } => pc.recess(rect, radii, depth),
+                ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
+                    Rect { x, y, width: w, height: h },
+                    (radius, radius, radius, radius),
+                    color,
+                    depth,
+                ),
+                ControlCarve::Step(c) => pc.carve(&c),
             }
         }
         for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {

@@ -124,18 +124,33 @@ pub enum AppAction {
 }
 
 
-/// A control carve bridged out of a widget's `paint` for the flat path: the
-/// two relief idioms the toolkit's controls draw for themselves, which the
-/// legacy `all_quads` stream cannot carry. The page collects them and
-/// `display_list` re-emits them as real prims into the window plate.
+/// A control carve bridged out of a widget's `paint` for the flat path — the
+/// relief prims the toolkit's controls draw for themselves and the legacy
+/// `all_quads` stream cannot carry. The page collects them and `display_list`
+/// re-emits them as real prims into the window plate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ControlCarve {
     /// `PaintCtx::inset_plate` — a flush inset face over a boundary seam
-    /// (Dropdown). `color` fills the face; transparent leaves the plate below.
-    Plate { color: [f32; 4] },
-    /// `PaintCtx::recess` / `recess_tinted` — a sunken well (TextBox).
-    /// `tint` is the focus accent on the rim while the box is being edited.
-    Well { tint: Option<[f32; 3]> },
+    /// (Dropdown, Button). `color` fills the face; transparent leaves the
+    /// plate below.
+    Plate { x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, color: [f32; 4] },
+    /// A step carve straight from the toolkit (TextBox well, Toggle rocker
+    /// halves and glider) — it already carries its own rect, per-corner radii,
+    /// depth and wall mask, so nothing here re-derives them.
+    Step(cce_ui::layout::ReliefCarve),
+}
+
+impl ControlCarve {
+    /// This carve shifted vertically — the page-scroll adjustment the popover
+    /// collector applies when it lifts page carves to the popover layer.
+    pub fn shifted_y(self, dy: f32) -> Self {
+        match self {
+            Self::Plate { x, y, w, h, radius, depth, color } => {
+                Self::Plate { x, y: y + dy, w, h, radius, depth, color }
+            }
+            Self::Step(c) => Self::Step(c.shifted_y(dy)),
+        }
+    }
 }
 
 pub struct PageContent {
@@ -154,7 +169,7 @@ pub struct PageContent {
     /// `RenderTarget::recess` for a TextBox's well) — (x, y, w, h, radius,
     /// depth, carve), page coordinates, pre-scroll; display_list re-emits them
     /// as real relief prims.
-    pub control_reliefs: Vec<(f32, f32, f32, f32, f32, f32, ControlCarve)>,
+    pub control_reliefs: Vec<ControlCarve>,
     pub clip_stack: Vec<[f32; 4]>,
     pub measure_only: bool,
 }
@@ -325,18 +340,18 @@ impl RenderTarget for PageContent {
         if self.measure_only {
             return;
         }
-        self.control_reliefs.push((x, y, w, h, radius, depth, ControlCarve::Plate { color }));
+        self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color });
     }
 
-    /// The same bridge for a TextBox's well — a DIFFERENT carve, not the same
-    /// one at another rect: a trough is a seam about the boundary with the face
-    /// level, a well drops the whole interior. Collapsing them would give the
-    /// settings app text fields no other relief host has.
-    fn recess(&mut self, x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, tint: Option<[f32; 3]>) {
+    /// The same bridge for the step carves — a DIFFERENT shape, not an inset
+    /// plate at another rect: a trough is a seam about the boundary with the
+    /// face left level, a well drops the whole interior, a boss raises it.
+    /// Collapsing them would give this app controls no other relief host has.
+    fn relief_carve(&mut self, carve: &cce_ui::layout::ReliefCarve) {
         if self.measure_only {
             return;
         }
-        self.control_reliefs.push((x, y, w, h, radius, depth, ControlCarve::Well { tint }));
+        self.control_reliefs.push(ControlCarve::Step(*carve));
     }
 
     fn section_relief(&mut self, f: &cce_ui::layout::SectionFrame) -> bool {

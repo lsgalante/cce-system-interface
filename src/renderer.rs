@@ -1,5 +1,5 @@
 use crate::{SystemInterface, AppWidget, make_text_buffer_with_font};
-use cce_settings::app::PageContent;
+use cce_settings::app::{ControlCarve, PageContent};
 use cce_settings::pages::Page;
 use cce_ui::widget::WidgetHost;
 
@@ -264,6 +264,35 @@ impl SystemInterface {
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
         self.page_reliefs = pc.reliefs.clone();
         self.page_control_reliefs = pc.control_reliefs.clone();
+        // Buttons never reach the toolkit's flat-path bridge here: this app
+        // collects them into `pc.buttons` and draws them itself, so
+        // `render_widget` — where a Dropdown's and a TextBox's carves are
+        // offered — never sees one. Ask each button for the inset face its own
+        // `paint` draws (`Button::inset_face`, the same source the drawn one
+        // reads) and carve it with the rest. Page coords, pre-scroll, like
+        // everything else in this list.
+        if cce_ui::layout::control_relief() {
+            for (btn, _, _) in &pc.buttons {
+                let base = btn.base();
+                let rect = cce_ui::scene::layout::Rect {
+                    x: base.x,
+                    y: base.y,
+                    width: base.w,
+                    height: base.h,
+                };
+                if let Some((face, radius, depth, color)) = btn.inset_face(rect) {
+                    self.page_control_reliefs.push(ControlCarve::Plate {
+                        x: face.x,
+                        y: face.y,
+                        w: face.width,
+                        h: face.height,
+                        radius,
+                        depth,
+                        color,
+                    });
+                }
+            }
+        }
 
 
 
@@ -602,8 +631,8 @@ impl SystemInterface {
                 let shifted = bounds.map(|[l, tb, rr, b]| [l, tb - self.scroll_y, rr, b - self.scroll_y]);
                 popover_pc.texts.push((t, size, x, y - self.scroll_y, tc, font, shifted));
             }
-            for (x, y, w, h, r, d, c) in page_pop_pc.control_reliefs {
-                popover_pc.control_reliefs.push((x, y - self.scroll_y, w, h, r, d, c));
+            for carve in page_pop_pc.control_reliefs {
+                popover_pc.control_reliefs.push(carve.shifted_y(-self.scroll_y));
             }
         }
         if cce_ui::widget::context_menu::is_visible() {
