@@ -26,9 +26,12 @@ pub const SEARCH_ENGINES: [(&str, &str); 4] = [
 /// navigation bar is anchored to.
 pub const BAR_POSITIONS: [(&str, &str); 2] = [("top", "Top"), ("bottom", "Bottom")];
 
-/// config key, menu label — reported to pages as `prefers-color-scheme`,
-/// so sites that ship a dark stylesheet use it.
-pub const COLOR_SCHEMES: [(&str, &str); 2] = [("dark", "Dark"), ("light", "Light")];
+/// config key, menu label — the first two are reported to pages as
+/// `prefers-color-scheme`, so sites that ship a dark stylesheet use it.
+/// "Force Dark" additionally inverts the page, for sites that ship no dark
+/// theme; it fights their palette, so it is a deliberate last resort.
+pub const COLOR_SCHEMES: [(&str, &str); 3] =
+    [("dark", "Dark"), ("light", "Light"), ("force-dark", "Force Dark")];
 
 const DEFAULT_HOMEPAGE: &str = "https://servo.org";
 
