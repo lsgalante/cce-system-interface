@@ -105,6 +105,7 @@ impl SystemInterface {
         let mut widgets = Vec::new();
         let mut texts = Vec::new();
         let mut page_buttons = Vec::new();
+        let mut page_button_images: Vec<(u32, f32, f32, f32, f32, f32)> = Vec::new();
 
         cce_ui::widget::hover_animation::reset_frame_registration();
         self.ui_context.clear_popovers();
@@ -504,6 +505,28 @@ impl SystemInterface {
                 radius: cce_ui::layout::button_corner_radius() * s,
                 corners: (true, true, true, true),
             });
+            // An icon face replaces the label entirely (as it does in
+            // `Button::paint`). The rect comes from the button's own
+            // `icon_rect` so the glyph lands where the paint path would put
+            // it; display_list draws these under the page clip, which is what
+            // cuts a half-scrolled row's icon at the list edge.
+            let has_icon = if let Some((image, irect, alpha)) =
+                btn.icon_rect(cce_ui::scene::layout::Rect {
+                    x: base.x,
+                    y: base.y - scroll_offset_y,
+                    width: base.w,
+                    height: base.h,
+                })
+            {
+                page_button_images.push((image, irect.x, irect.y, irect.width, irect.height, alpha));
+                true
+            } else {
+                false
+            };
+
+            // The label is skipped for an icon face, but NOT the dispatch clone
+            // below it: an icon button still has to be clickable.
+            if !has_icon {
             let label = base.label.as_deref().unwrap_or("");
             let label_size = 12.0;
              let buf = make_text_buffer_with_font(
@@ -564,6 +587,7 @@ impl SystemInterface {
                 btn.widget_font(),
                 button_bounds,
             ));
+            }
             let mut btn_clone = btn.clone();
             {
                 // The dispatch clone hit-tests at the CLAMPED rect, so clicks in
@@ -675,6 +699,7 @@ impl SystemInterface {
         self.widgets = widgets;
         self.texts = texts;
         self.page_buttons = page_buttons;
+        self.page_button_images = page_button_images;
 
         // The id-rooted router (`propagate_event(event, WidgetId)`) resolves roots
         // through the registry, and `clear_hierarchy` above wiped it. The view pass

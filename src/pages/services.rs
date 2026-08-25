@@ -154,10 +154,23 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                 if let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) {
                     let is_active = service.active_state == "active" || service.sub_state == "running";
 
-                    // Control buttons: Start, Stop, Restart on the right
+                    // Control buttons: Start, Stop, Restart on the right. With
+                    // icon faces all three are the same square, and the extra
+                    // room "Restart" needed goes back to the description.
+                    //
+                    // Sized on whether the icon set is actually THERE:
+                    // `button_icon` falls back to the labels when it isn't, and
+                    // a 24px button doesn't clip a label so much as replace it
+                    // — the text centers, so both ends cut and "Restart" reads
+                    // "sta". `upload_icon` caches per (name, px), so asking
+                    // every row costs one hash lookup.
+                    let icons_ok = cce_ui::upload_icon("play", 32).is_some();
                     let is_small = sec_w < 350.0;
-                    let btn_w = if is_small { 24.0 } else { 46.0 };
-                    let r_btn_w = if is_small { 24.0 } else { 54.0 };
+                    let (btn_w, r_btn_w) = match (icons_ok, is_small) {
+                        (true, _) => (24.0, 24.0),
+                        (false, true) => (24.0, 24.0),
+                        (false, false) => (46.0, 54.0),
+                    };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
                     let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
 
@@ -199,12 +212,24 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
                     let disabled_txt = [0.40, 0.40, 0.45, 1.0];
 
-                    let start_lbl = if is_small { "▶" } else { "Start" };
-                    let stop_lbl = if is_small { "■" } else { "Stop" };
-                    let restart_lbl = if is_small { "⟳" } else { "Restart" };
+                    // Icon faces (cce-icons `play`/`stop`/`refresh`); the words
+                    // ride along as the fallback `button_icon` falls back to
+                    // when the icon set is missing. A control that can't act
+                    // dims its glyph rather than graying it — an image carries
+                    // no color to gray.
+                    let dim = 0.35;
+                    // Fallback labels only — an icon face never draws them.
+                    // Without the icons a narrow row is back to needing the
+                    // one-glyph words it used before.
+                    let (start_lbl, stop_lbl, restart_lbl) = if icons_ok || !is_small {
+                        ("Start", "Stop", "Restart")
+                    } else {
+                        ("\u{25b6}", "\u{25a0}", "\u{27f3}")
+                    };
 
                     // Start button
-                    sec.pc.button(
+                    sec.pc.button_icon(
+                        "play",
                         start_lbl,
                         start_x,
                         btn_y,
@@ -213,11 +238,13 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         if !is_active { [0.16, 0.35, 0.18, 0.4] } else { [0.12, 0.12, 0.16, 0.1] },
                         [0.22, 0.45, 0.25, 0.6],
                         if !is_active { active_txt } else { disabled_txt },
+                        if !is_active { 1.0 } else { dim },
                         crate::app::AppAction::Services(ServicesMessage::Start(service.name.clone(), service.is_system)),
                     );
 
                     // Stop button
-                    sec.pc.button(
+                    sec.pc.button_icon(
+                        "stop",
                         stop_lbl,
                         stop_x,
                         btn_y,
@@ -226,11 +253,13 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         if is_active { [0.55, 0.16, 0.16, 0.3] } else { [0.12, 0.12, 0.16, 0.1] },
                         [0.70, 0.22, 0.22, 0.5],
                         if is_active { active_txt } else { disabled_txt },
+                        if is_active { 1.0 } else { dim },
                         crate::app::AppAction::Services(ServicesMessage::Stop(service.name.clone(), service.is_system)),
                     );
 
                     // Restart button
-                    sec.pc.button(
+                    sec.pc.button_icon(
+                        "refresh",
                         restart_lbl,
                         restart_x,
                         btn_y,
@@ -239,6 +268,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         [0.15, 0.28, 0.45, 0.3],
                         [0.20, 0.38, 0.58, 0.5],
                         active_txt,
+                        1.0,
                         crate::app::AppAction::Services(ServicesMessage::Restart(service.name.clone(), service.is_system)),
                     );
                 }

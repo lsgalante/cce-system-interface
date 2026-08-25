@@ -109,6 +109,11 @@ struct SystemInterface {
     /// Control troughs from `PageContent::control_reliefs` (page coords,
     /// pre-scroll) — each carved as a flush inset plate after the section wells.
     page_control_reliefs: Vec<ControlCarve>,
+    /// Icon faces for the page's buttons — `(image, x, y, w, h, alpha)`, page
+    /// coords already scroll-shifted by the renderer. A flat host draws no
+    /// images at all otherwise: `all_quads` carries quads and the text list
+    /// carries labels, and an icon is neither.
+    page_button_images: Vec<(u32, f32, f32, f32, f32, f32)>,
     // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
@@ -202,6 +207,7 @@ impl cce_ui::engine::Application for SystemInterface {
             content_h: 0.0,
             page_reliefs: Vec::new(),
             page_control_reliefs: Vec::new(),
+            page_button_images: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -427,6 +433,24 @@ impl cce_ui::engine::Application for SystemInterface {
                         ),
                         ControlCarve::Step(c) => pc.carve(&c),
                     }
+                }
+            });
+        }
+
+        // Button icon faces, over the page's quads and its carves — clipped to
+        // the page viewport, which is what cuts a half-scrolled list row's icon
+        // at the list edge (an image has no geometry to trim, only a clip).
+        if !self.page_button_images.is_empty() {
+            let view = Rect {
+                x: self.sidebar_width,
+                y: self.header_height,
+                width: width - self.sidebar_width,
+                height: (height - self.header_height - self.status_height
+                    - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
+            };
+            pc.clip(view, |pc| {
+                for &(image, x, y, w, h, alpha) in &self.page_button_images {
+                    pc.image(image, Rect { x, y, width: w, height: h }, alpha);
                 }
             });
         }

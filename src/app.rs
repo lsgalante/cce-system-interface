@@ -269,6 +269,32 @@ impl PageContent {
         self.buttons.push((btn, action, clip));
     }
 
+    /// A button whose face is a bundled cce-icons glyph instead of a label.
+    ///
+    /// `label` stays as the FALLBACK: `upload_icon` returns `None` when the
+    /// icon set is missing or unparsable, and a control that silently loses
+    /// its face has no affordance left at all — so the button degrades to the
+    /// word rather than to an empty box. `alpha` dims the glyph for a disabled
+    /// control, which is the only state lever an icon has (images carry no
+    /// color).
+    pub fn button_icon(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32,
+                       bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
+                       alpha: f32, action: AppAction) {
+        if self.measure_only { return; }
+        let mut btn = cce_ui::widget::Button::new(x, y, w, h)
+            .with_label(label)
+            .with_bg(bg)
+            .with_hover_bg(hover_bg)
+            .with_label_color(label_color);
+        // 32px on the longer side: the toolkit caches the upload per (name, px),
+        // so every row's Start button shares one texture.
+        if let Some((id, iw, ih)) = cce_ui::upload_icon(icon, 32) {
+            btn = btn.with_icon(id, iw as f32, ih as f32).with_icon_alpha(alpha);
+        }
+        let clip = self.clip_stack.last().copied();
+        self.buttons.push((btn, action, clip));
+    }
+
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                        bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                        action: AppAction) {
