@@ -188,12 +188,20 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     // column actually has (the item insets its labels by 8px).
                     let text_max_w = item_w - 16.0;
                     let max_chars = ((text_max_w / 6.0) as usize).max(10);
-                    let desc = if service.description.is_empty() { "No description" } else { &service.description };
-                    let desc_truncated = if desc.len() > max_chars {
-                        format!("{}...", &desc[..max_chars.saturating_sub(3)])
-                    } else {
-                        desc.to_string()
-                    };
+                    // `failed` was the status dot's third state and has nowhere
+                    // else to show: a failed unit offers the same play button a
+                    // cleanly stopped one does, so without this the row gives no
+                    // sign it died. It leads the line, and it goes in BEFORE the
+                    // truncation so a long description can't be what pushes the
+                    // marker off the end.
+                    let failed = service.active_state == "failed" || service.sub_state == "failed";
+                    // Char-boundary safe: the byte slice this replaced would
+                    // panic whenever the cut landed inside a multi-byte
+                    // character, and unit descriptions are free text.
+                    let desc_truncated = cce_ui::widget::display::truncate_tail(
+                        &description_line(failed, &service.description),
+                        max_chars,
+                    );
 
                     // Render InteractiveListItem background and text labels
                     // Rows dispatch as extra roots (the dissolved list is no parent).
@@ -293,6 +301,22 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
 const STARTING: (&str, &str) = ("activating", "starting");
 const STOPPING: (&str, &str) = ("deactivating", "stopping");
 const RESTARTING: (&str, &str) = ("activating", "restarting");
+
+/// The row's second line: the unit description, led by `failed` when it is.
+///
+/// `failed` was the status dot's third state and has nowhere else to show — a
+/// failed unit offers the same play button a cleanly stopped one does, so
+/// without this the row gives no sign it died. The marker LEADS, and is
+/// composed before the caller truncates, so a long description can never be
+/// what pushes it off the end.
+pub fn description_line(failed: bool, description: &str) -> String {
+    match (failed, description.is_empty()) {
+        (true, true) => "failed".to_string(),
+        (true, false) => format!("failed \u{2014} {description}"),
+        (false, true) => "No description".to_string(),
+        (false, false) => description.to_string(),
+    }
+}
 
 /// Whether the row's single transport button offers Stop (`true`) or Start
 /// (`false`) — which is also which icon it wears.
@@ -505,7 +529,7 @@ impl crate::pages::AppPage for ServicesState {
 
 #[cfg(test)]
 mod tests {
-    use super::{transport_running, RESTARTING, STARTING, STOPPING};
+    use super::{description_line, transport_running, RESTARTING, STARTING, STOPPING};
 
     #[test]
     fn settled_states_pick_the_opposite_action() {
@@ -528,5 +552,20 @@ mod tests {
         // Restart keeps the unit running throughout, so the transport button
         // must not flicker to Start while it cycles.
         assert!(transport_running(RESTARTING.0, RESTARTING.1), "Restart must keep showing Stop");
+    }
+
+    #[test]
+    fn the_failed_marker_leads_and_survives_truncation() {
+        assert_eq!(description_line(false, "Bluetooth service"), "Bluetooth service");
+        assert_eq!(description_line(false, ""), "No description");
+        assert_eq!(description_line(true, ""), "failed");
+        assert!(description_line(true, "Bluetooth service").starts_with("failed"));
+
+        // The row truncates whatever this returns, so the marker is only
+        // guaranteed visible while it stays at the FRONT.
+        let long = description_line(true, &"x".repeat(500));
+        let shown = cce_ui::widget::display::truncate_tail(&long, 20);
+        assert!(shown.starts_with("failed"), "got {shown:?}");
+        assert!(shown.chars().count() <= 20);
     }
 }
