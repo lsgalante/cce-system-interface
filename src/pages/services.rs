@@ -1,7 +1,7 @@
 use crate::app::{PageContent, SectionContextExt};
 use crate::scroll_region::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use cce_ui::widget::{TextBox, StatusDot, DotStatus, InteractiveListItem, WidgetHost};
+use cce_ui::widget::{TextBox, InteractiveListItem, WidgetHost};
 
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {
@@ -152,11 +152,11 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
             for (idx, service) in filtered_services.iter().enumerate() {
                 if let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) {
-                    let is_active = service.active_state == "active" || service.sub_state == "running";
-
-                    // Control buttons: Start, Stop, Restart on the right. With
-                    // icon faces all three are the same square, and the extra
-                    // room "Restart" needed goes back to the description.
+                    // Transport + Restart, on the LEFT where the status dot
+                    // used to be: the dot was reporting what the transport icon
+                    // already says (play = stopped, stop = running), so the
+                    // controls take the column it was using and the name/
+                    // description run from there to the scrollbar gutter.
                     //
                     // Sized on whether the icon set is actually THERE:
                     // `button_icon` falls back to the labels when it isn't, and
@@ -172,16 +172,21 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         (false, false) => (46.0, 54.0),
                     };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
-                    let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
 
-                    let restart_x = right_edge - r_btn_w;
-                    let toggle_x = restart_x - btn_gap - btn_w;
+                    let toggle_x = list_box_x + 10.0;
+                    let restart_x = toggle_x + btn_w + btn_gap;
+                    // The row's text starts after the controls and still ends
+                    // short of the scrollbar gutter, exactly where it did when
+                    // the controls were on the right.
+                    let item_x = restart_x + r_btn_w + 10.0;
+                    let item_w = (list_box_x + list_box_w - 20.0) - item_x;
 
                     let btn_y = draw_y + (item_h - 22.0) / 2.0;
                     let btn_h = 22.0;
 
-                    // Service Description (Truncate dynamically based on remaining space before Start button)
-                    let text_max_w = (toggle_x - 8.0) - (list_box_x + 32.0);
+                    // Service description, truncated to the room the row's text
+                    // column actually has (the item insets its labels by 8px).
+                    let text_max_w = item_w - 16.0;
                     let max_chars = ((text_max_w / 6.0) as usize).max(10);
                     let desc = if service.description.is_empty() { "No description" } else { &service.description };
                     let desc_truncated = if desc.len() > max_chars {
@@ -195,20 +200,16 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     let item_btn = &mut state.items[idx];
                     item_btn.title = service.name.clone();
                     item_btn.subtitle = Some(desc_truncated);
-                    render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
-
-                    // Render StatusDot
-                    let status_dot_state = if service.active_state == "failed" {
-                        DotStatus::Error
-                    } else if is_active {
-                        DotStatus::Active
-                    } else {
-                        DotStatus::Inactive
-                    };
-                    let mut dot = StatusDot::new(status_dot_state);
-                    render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
+                    render_widget(sec.pc, item_btn, item_x, draw_y, item_w, item_h, ctx);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
+                    // No per-action tints: both controls wear the DE's themed
+                    // button face, and what they DO is carried by the icon.
+                    // (The toolkit picks these itself for a `Button` with no
+                    // override; this host paints buttons from its own collected
+                    // colours, so it has to ask for them.)
+                    let face = cce_ui::colors::button_background_color();
+                    let face_hover = cce_ui::colors::button_hover_color();
 
                     // ONE transport button, showing the action it will take:
                     // play on a stopped service, stop on a running one. The two
@@ -242,8 +243,8 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         btn_y,
                         btn_w,
                         btn_h,
-                        if running { [0.55, 0.16, 0.16, 0.3] } else { [0.16, 0.35, 0.18, 0.4] },
-                        if running { [0.70, 0.22, 0.22, 0.5] } else { [0.22, 0.45, 0.25, 0.6] },
+                        face,
+                        face_hover,
                         active_txt,
                         1.0,
                         crate::app::AppAction::Services(if running {
@@ -261,8 +262,8 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         btn_y,
                         r_btn_w,
                         btn_h,
-                        [0.15, 0.28, 0.45, 0.3],
-                        [0.20, 0.38, 0.58, 0.5],
+                        face,
+                        face_hover,
                         active_txt,
                         1.0,
                         crate::app::AppAction::Services(ServicesMessage::Restart(service.name.clone(), service.is_system)),
