@@ -175,14 +175,13 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
 
                     let restart_x = right_edge - r_btn_w;
-                    let stop_x = restart_x - btn_gap - btn_w;
-                    let start_x = stop_x - btn_gap - btn_w;
+                    let toggle_x = restart_x - btn_gap - btn_w;
 
                     let btn_y = draw_y + (item_h - 22.0) / 2.0;
                     let btn_h = 22.0;
 
                     // Service Description (Truncate dynamically based on remaining space before Start button)
-                    let text_max_w = (start_x - 8.0) - (list_box_x + 32.0);
+                    let text_max_w = (toggle_x - 8.0) - (list_box_x + 32.0);
                     let max_chars = ((text_max_w / 6.0) as usize).max(10);
                     let desc = if service.description.is_empty() { "No description" } else { &service.description };
                     let desc_truncated = if desc.len() > max_chars {
@@ -210,14 +209,22 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];
-                    let disabled_txt = [0.40, 0.40, 0.45, 1.0];
 
-                    // Icon faces (cce-icons `play`/`stop`/`refresh`); the words
-                    // ride along as the fallback `button_icon` falls back to
-                    // when the icon set is missing. A control that can't act
-                    // dims its glyph rather than graying it — an image carries
-                    // no color to gray.
-                    let dim = 0.35;
+                    // ONE transport button, showing the action it will take:
+                    // play on a stopped service, stop on a running one. The two
+                    // dimmed half-buttons this replaced were never both live —
+                    // exactly one of them did anything on any given row.
+                    //
+                    // `running` is NOT the `is_active` the status dot reads.
+                    // `update` sets a transitional state the instant the button
+                    // is clicked (activating/starting, deactivating/stopping),
+                    // and counting those as the state they are heading for is
+                    // what flips this icon under the pointer instead of leaving
+                    // it stale until the next refresh lands. The dot keeps
+                    // reporting the confirmed state: the button says what it
+                    // will do, the dot says what is true.
+                    let running = transport_running(&service.active_state, &service.sub_state);
+
                     // Fallback labels only — an icon face never draws them.
                     // Without the icons a narrow row is back to needing the
                     // one-glyph words it used before.
@@ -227,34 +234,23 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         ("\u{25b6}", "\u{25a0}", "\u{27f3}")
                     };
 
-                    // Start button
+                    // Start/Stop, collapsed
                     sec.pc.button_icon(
-                        "play",
-                        start_lbl,
-                        start_x,
+                        if running { "stop" } else { "play" },
+                        if running { stop_lbl } else { start_lbl },
+                        toggle_x,
                         btn_y,
                         btn_w,
                         btn_h,
-                        if !is_active { [0.16, 0.35, 0.18, 0.4] } else { [0.12, 0.12, 0.16, 0.1] },
-                        [0.22, 0.45, 0.25, 0.6],
-                        if !is_active { active_txt } else { disabled_txt },
-                        if !is_active { 1.0 } else { dim },
-                        crate::app::AppAction::Services(ServicesMessage::Start(service.name.clone(), service.is_system)),
-                    );
-
-                    // Stop button
-                    sec.pc.button_icon(
-                        "stop",
-                        stop_lbl,
-                        stop_x,
-                        btn_y,
-                        btn_w,
-                        btn_h,
-                        if is_active { [0.55, 0.16, 0.16, 0.3] } else { [0.12, 0.12, 0.16, 0.1] },
-                        [0.70, 0.22, 0.22, 0.5],
-                        if is_active { active_txt } else { disabled_txt },
-                        if is_active { 1.0 } else { dim },
-                        crate::app::AppAction::Services(ServicesMessage::Stop(service.name.clone(), service.is_system)),
+                        if running { [0.55, 0.16, 0.16, 0.3] } else { [0.16, 0.35, 0.18, 0.4] },
+                        if running { [0.70, 0.22, 0.22, 0.5] } else { [0.22, 0.45, 0.25, 0.6] },
+                        active_txt,
+                        1.0,
+                        crate::app::AppAction::Services(if running {
+                            ServicesMessage::Stop(service.name.clone(), service.is_system)
+                        } else {
+                            ServicesMessage::Start(service.name.clone(), service.is_system)
+                        }),
                     );
 
                     // Restart button
@@ -288,6 +284,33 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
     final_pc
 }
 
+/// The optimistic states [`update`] writes the instant a transport button is
+/// clicked, before systemd has said anything back. Named because
+/// [`transport_running`] has to agree with them: the whole point of writing
+/// them is that the button's icon flips under the pointer instead of staying
+/// stale until the next refresh lands.
+const STARTING: (&str, &str) = ("activating", "starting");
+const STOPPING: (&str, &str) = ("deactivating", "stopping");
+const RESTARTING: (&str, &str) = ("activating", "restarting");
+
+/// Whether the row's single transport button offers Stop (`true`) or Start
+/// (`false`) — which is also which icon it wears.
+///
+/// A transitional state counts as the state it is heading FOR, not the one it
+/// is leaving. That is what makes the click feel like a toggle: `update` marks
+/// the unit `activating` the moment Start is pressed, and this reads that as
+/// running, so the icon becomes Stop immediately.
+///
+/// This is deliberately NOT the `is_active` the status dot reads. The dot
+/// reports what is confirmed true; the button reports what it will do.
+pub fn transport_running(active_state: &str, sub_state: &str) -> bool {
+    match active_state {
+        "active" | "activating" | "reloading" => true,
+        "deactivating" => false,
+        _ => sub_state == "running",
+    }
+}
+
 pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
     match msg {
         ServicesMessage::Refreshed(new_services) => {
@@ -302,22 +325,22 @@ pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
         }
         ServicesMessage::Start(name, is_system) => {
             if let Some(srv) = state.services.iter_mut().find(|s| s.name == name && s.is_system == is_system) {
-                srv.active_state = "activating".to_string();
-                srv.sub_state = "starting".to_string();
+                srv.active_state = STARTING.0.to_string();
+                srv.sub_state = STARTING.1.to_string();
             }
             service_action(&name, "start", is_system);
         }
         ServicesMessage::Stop(name, is_system) => {
             if let Some(srv) = state.services.iter_mut().find(|s| s.name == name && s.is_system == is_system) {
-                srv.active_state = "deactivating".to_string();
-                srv.sub_state = "stopping".to_string();
+                srv.active_state = STOPPING.0.to_string();
+                srv.sub_state = STOPPING.1.to_string();
             }
             service_action(&name, "stop", is_system);
         }
         ServicesMessage::Restart(name, is_system) => {
             if let Some(srv) = state.services.iter_mut().find(|s| s.name == name && s.is_system == is_system) {
-                srv.active_state = "activating".to_string();
-                srv.sub_state = "restarting".to_string();
+                srv.active_state = RESTARTING.0.to_string();
+                srv.sub_state = RESTARTING.1.to_string();
             }
             service_action(&name, "restart", is_system);
         }
@@ -476,5 +499,33 @@ impl crate::pages::AppPage for ServicesState {
 
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
         self.loaded && self.list.keyboard(event)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{transport_running, RESTARTING, STARTING, STOPPING};
+
+    #[test]
+    fn settled_states_pick_the_opposite_action() {
+        assert!(transport_running("active", "running"));
+        assert!(!transport_running("inactive", "dead"));
+        assert!(!transport_running("failed", "failed"));
+        // sub_state alone is enough — some units report it without
+        // active_state catching up.
+        assert!(transport_running("something-else", "running"));
+    }
+
+    #[test]
+    fn a_click_flips_the_icon_before_any_refresh() {
+        // The exact states `update` writes optimistically. If these two ever
+        // disagree, the button stops feeling like a toggle: the icon would sit
+        // on the old action until systemd's next list lands, and a second
+        // click would re-send the action already in flight.
+        assert!(transport_running(STARTING.0, STARTING.1), "Start must show Stop immediately");
+        assert!(!transport_running(STOPPING.0, STOPPING.1), "Stop must show Start immediately");
+        // Restart keeps the unit running throughout, so the transport button
+        // must not flicker to Start while it cycles.
+        assert!(transport_running(RESTARTING.0, RESTARTING.1), "Restart must keep showing Stop");
     }
 }
