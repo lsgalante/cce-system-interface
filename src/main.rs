@@ -290,8 +290,15 @@ impl cce_ui::engine::Application for SystemInterface {
             if plate[3] > 0.001 {
                 plate[3] = cce_ui::color::root_plate_opacity();
             }
-            let r = 12.0f32;
-            pc.plate(Rect { x: 0.0, y: 0.0, width, height }, (r, r, r, r), plate, cce_ui::layout::bevel_width());
+            // PlateSpec (cce-ui RFC 7b): the hardcoded r=12 detached this
+            // plate's corners from the compositor's silhouette clip.
+            pc.plate_spec(&cce_ui::scene::paint::PlateSpec {
+                rect: Rect { x: 0.0, y: 0.0, width, height },
+                color: plate,
+                blur: false,
+                window_corners: (true, true, true, true),
+                depth: cce_ui::layout::bevel_width(),
+            });
             let sb_h = self.status_height;
             let depth = cce_ui::layout::bar_wall_width().min(sb_h * 0.6);
             pc.recess_edges(
