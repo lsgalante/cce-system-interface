@@ -288,7 +288,7 @@ impl cce_ui::engine::Application for SystemInterface {
         {
             let mut plate = cce_ui::color::to_linear([0x0a as f32 / 255.0, 0x1a as f32 / 255.0, 0x0e as f32 / 255.0, 1.0]);
             if plate[3] > 0.001 {
-                plate[3] = cce_ui::color::active_backplate_opacity();
+                plate[3] = cce_ui::color::root_plate_opacity();
             }
             let r = 12.0f32;
             pc.plate(Rect { x: 0.0, y: 0.0, width, height }, (r, r, r, r), plate, cce_ui::layout::bevel_width());
