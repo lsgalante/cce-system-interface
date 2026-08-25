@@ -506,9 +506,44 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         // the only clue.
         let login_bg = if state.oauth_listener_running { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
         let narrow = item_w < 520.0;
-        stack.add_row(1, 8.0, btn_h, |c, _, x, w| {
-            c.button("Add Account", x, c.ay(), w, btn_h, add_bg.0, add_bg.1, TEXT_BTN,
+
+        // Add, Edit, Delete in one row of squares. Edit and Delete used to live
+        // down in the selected-account zone; they belong next to Add because
+        // all three act on the account LIST, while everything below the divider
+        // is about one account's fields.
+        //
+        // Icon faces, so each is a square the height of a button rather than a
+        // share of the section width — the row is drawn as one full-width cell
+        // with the buttons placed inside it, since equal columns would stretch
+        // a 26px glyph across a third of the section.
+        //
+        // Edit and Delete need a selection, so they appear only with one. They
+        // are OMITTED rather than dimmed: an icon's only disabled state is
+        // opacity, and a faint square that still takes the click reads as a
+        // control that ignored you. `narrow` still governs the fallback width —
+        // without an icon set these go back to being word buttons.
+        let sel = state.selected_idx.filter(|&i| i < state.accounts.len());
+        let icons_ok = cce_ui::upload_icon("plus", 32).is_some();
+        let (sq, bgap) = if icons_ok { (btn_h, 8.0) } else if narrow { (86.0, 6.0) } else { (110.0, 8.0) };
+        stack.add_row(1, 8.0, btn_h, |c, _, x, _w| {
+            // ONE y for the whole row. `c.ay()` reads the section's running
+            // content_y, and each button emitted advances it past its own
+            // bottom — normally right, because `add_row` resets content_y
+            // between COLUMNS. Three buttons inside a single column get no such
+            // reset, so re-reading `ay()` per button walked them diagonally
+            // down the page, one button-height at a time.
+            let y = c.ay();
+            c.button_icon("plus", "Add Account", x, y, sq, btn_h,
+                add_bg.0, add_bg.1, TEXT_BTN, 1.0,
                 AppAction::Accounts(AccountsMessage::AddAccountStart));
+            if let Some(i) = sel {
+                c.button_icon("pencil", "Edit", x + sq + bgap, y, sq, btn_h,
+                    BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN, 1.0,
+                    AppAction::Accounts(AccountsMessage::EditAccountStart(i)));
+                c.button_icon("trash", "Delete", x + 2.0 * (sq + bgap), y, sq, btn_h,
+                    BTN_DANGER.0, BTN_DANGER.1, TEXT_DANGER, 1.0,
+                    AppAction::Accounts(AccountsMessage::DeleteAccount(i)));
+            }
         });
 
         section_divider(stack.context);
@@ -594,11 +629,13 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
                 stack.context.spacing(6.0);
 
-                // Per-account actions, compact; Delete quiet-red, at the end.
-                // The row is sized to what is actually there — a fixed count
-                // left ragged gaps whenever an account was default or password.
+                // What is left of the per-account actions once Edit and Delete
+                // moved up beside Add. The row is sized to what is actually
+                // there — a fixed count left ragged gaps whenever an account
+                // was default or password — and with only these two left it can
+                // now be EMPTY, for a default password account, so it is
+                // skipped rather than drawn as a bare gap.
                 let mut actions: Vec<(&str, ([f32; 4], [f32; 4]), [f32; 4], AccountsMessage)> = Vec::new();
-                actions.push(("Edit", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::EditAccountStart(selected_idx)));
                 if !acc.is_default {
                     actions.push(("Make Default", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::MakeDefault(selected_idx)));
                 }
@@ -606,12 +643,13 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     let relogin = if narrow { "Re-login" } else { "Re-login (Browser)" };
                     actions.push((relogin, login_bg, TEXT_BTN, AccountsMessage::GoogleLoginInit));
                 }
-                actions.push(("Delete", BTN_DANGER, TEXT_DANGER, AccountsMessage::DeleteAccount(selected_idx)));
-                stack.add_row(actions.len(), 8.0, btn_h, |c, i, x, w| {
-                    if let Some((label, colors, text_col, action)) = actions.get(i).cloned() {
-                        c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
-                    }
-                });
+                if !actions.is_empty() {
+                    stack.add_row(actions.len(), 8.0, btn_h, |c, i, x, w| {
+                        if let Some((label, colors, text_col, action)) = actions.get(i).cloned() {
+                            c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
+                        }
+                    });
+                }
             }
         } else {
             stack.context.text("Select an account to view details, or add one.", 12.0, 0.0, 12.0, TEXT_DIM);

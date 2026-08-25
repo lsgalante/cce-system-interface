@@ -443,6 +443,10 @@ pub fn section_divider(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>)
 pub trait SectionContextExt {
     fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
     fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
+    /// [`PageContent::button_icon`] inside a section — `label` is the fallback
+    /// for a missing icon set, `alpha` dims the glyph.
+    #[allow(clippy::too_many_arguments)]
+    fn button_icon(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], alpha: f32, action: AppAction);
 }
 
 impl<'a> SectionContextExt for cce_ui::layout::SectionContext<'a, PageContent> {
@@ -456,6 +460,14 @@ impl<'a> SectionContextExt for cce_ui::layout::SectionContext<'a, PageContent> {
     
     fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
         self.pc.button_left(label, x, y, w, h, bg, hover_bg, label_color, action);
+        self.content_y = self.content_y.max(y + h);
+        for height in &mut self.grid.col_heights {
+            *height = height.max(self.content_y);
+        }
+    }
+
+    fn button_icon(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], alpha: f32, action: AppAction) {
+        self.pc.button_icon(icon, label, x, y, w, h, bg, hover_bg, label_color, alpha, action);
         self.content_y = self.content_y.max(y + h);
         for height in &mut self.grid.col_heights {
             *height = height.max(self.content_y);
