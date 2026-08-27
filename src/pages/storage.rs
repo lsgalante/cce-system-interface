@@ -148,23 +148,26 @@ pub async fn fetch_storage_state() -> StorageInfo {
 }
 
 pub async fn run_backup() -> Result<(String, String), String> {
-    // The helper ships in this crate's scripts/ dir and `ccebuild install` puts
-    // it in ~/.local/bin — it is NOT under ~/.local/share/<app>/helpers/, where
-    // it sat unversioned while this call pointed at a third spelling of the
-    // app's name and every backup silently failed.
+    // Runs the SAME helper the nightly restic-backup.timer runs, so this
+    // button means "run tonight's backup now" rather than a second, different
+    // backup. It used to invoke backup-system.sh under pkexec, which archived
+    // only the root btrfs subvolume — /home has its own st_dev, so
+    // `tar --one-file-system` stopped there and none of the user's data was in
+    // it — and then wrote its result into the same status file, so the page
+    // reported an OS-only tarball as if it were the nightly job.
+    //
+    // No pkexec: restic backs up the user's own files as the user, so the
+    // privilege prompt bought nothing and made unattended runs impossible.
     // `$CCE_PREFIX/bin`, else `~/.local/bin` — ccebuild's own BINDIR, which is
-    // where it installs every crate's scripts/. An absolute path because
-    // pkexec does not document PATH lookup for a bare program name, and the
-    // auth dialog shows the user the full path it is about to run as root.
+    // where it installs every crate's scripts/.
     let helper = std::env::var("CCE_PREFIX")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
             std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local")
         })
         .join("bin")
-        .join("backup-system.sh");
-    let output = tokio::process::Command::new("pkexec")
-        .arg(helper)
+        .join("restic-backup.sh");
+    let output = tokio::process::Command::new(helper)
         .arg(status_path())
         .output()
         .await
