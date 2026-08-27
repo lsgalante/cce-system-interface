@@ -1,0 +1,15 @@
+[Unit]
+Description=Nightly restic backup of the home directory
+Documentation=file:%h/.local/bin/restic-backup.sh
+# No network-online dependency on the user bus; the script fails cleanly and
+# the timer's Persistent=true retries after the next boot/resume.
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/restic-backup.sh %h/.config/cce/backup_status.txt
+# The first snapshot of a ~500G home over the network can run for many hours.
+TimeoutStartSec=infinity
+# Stay out of the way of interactive work.
+Nice=10
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle

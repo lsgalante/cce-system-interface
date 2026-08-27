@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly restic backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+# Catch up after the machine was off or asleep at 02:30.
+Persistent=true
+# Avoid every machine (and every wake) hammering the backend at once.
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
