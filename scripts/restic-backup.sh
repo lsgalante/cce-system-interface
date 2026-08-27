@@ -13,7 +13,9 @@
 #
 # Credentials live in ~/.config/restic/env (mode 600, NOT versioned): the
 # repository URL, the backend's keys, and RESTIC_PASSWORD_FILE. Nothing secret
-# belongs in this file.
+# belongs in this file. That env file may also set RESTIC_OPTS with backend
+# tuning (`-o s3.region=auto` for Cloudflare R2, say) — kept generic here so a
+# backend quirk never needs a code change.
 
 set -eu
 
@@ -55,13 +57,17 @@ fail() {
 [ -n "${RESTIC_PASSWORD_FILE:-}${RESTIC_PASSWORD:-}" ] || \
     fail "Neither RESTIC_PASSWORD_FILE nor RESTIC_PASSWORD set in $ENV_FILE"
 
-restic snapshots --no-lock >/dev/null 2>&1 || \
+# Deliberately unquoted: RESTIC_OPTS carries multiple whitespace-separated
+# flags and must word-split.
+# shellcheck disable=SC2086
+restic ${RESTIC_OPTS:-} snapshots --no-lock >/dev/null 2>&1 || \
     fail "Cannot reach or unlock the restic repository ($RESTIC_REPOSITORY)"
 
 # --exclude-caches honours CACHEDIR.TAG, which cargo writes into every target/
 # dir — that alone drops the ~432k build-artifact files. The explicit excludes
 # cover the churny paths that carry no tag.
-restic backup "$HOME" \
+# shellcheck disable=SC2086
+restic ${RESTIC_OPTS:-} backup "$HOME" \
     --tag nightly \
     --exclude-caches \
     --exclude "$HOME/.cache" \
@@ -78,11 +84,13 @@ restic backup "$HOME" \
 
 # Retention. Runs after a successful backup only, so a failed night never
 # prunes anything.
-restic forget --tag nightly \
+# shellcheck disable=SC2086
+restic ${RESTIC_OPTS:-} forget --tag nightly \
     --keep-daily 7 --keep-weekly 4 --keep-monthly 12 \
     --prune >/dev/null 2>&1 || echo "Warning: forget/prune failed" >&2
 
-SIZE_STR=$(restic stats --mode raw-data 2>/dev/null \
+# shellcheck disable=SC2086
+SIZE_STR=$(restic ${RESTIC_OPTS:-} stats --mode raw-data 2>/dev/null \
     | sed -n 's/.*Total Size: *//p' | head -1)
 [ -n "$SIZE_STR" ] || SIZE_STR="unknown"
 
