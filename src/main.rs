@@ -68,7 +68,7 @@ struct SystemInterface {
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_default_apps: std::sync::mpsc::Receiver<pages::default_apps::DefaultAppsInfo>,
     rx_timers: std::sync::mpsc::Receiver<Vec<pages::timers::TimerInfo>>,
-    rx_accounts: std::sync::mpsc::Receiver<Vec<pages::accounts::AccountInfo>>,
+    rx_accounts: std::sync::mpsc::Receiver<pages::accounts::AccountsSnapshot>,
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
     rx_packages: std::sync::mpsc::Receiver<pages::packages::PackagesState>,

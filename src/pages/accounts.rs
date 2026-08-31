@@ -31,6 +31,48 @@ pub struct AccountInfo {
     pub client_secret: Option<String>,
 }
 
+/// Where an account's password actually lives — the fact the page could not
+/// show when the 2026-08-29 keyring migration stranded every entry in the
+/// retired KeePassXC vault: accounts.json looked perfectly healthy while
+/// cce-mail ran cache-only for two days. Probed off the main thread by
+/// [`fetch_accounts`]; never derived in the render path, where a wedged
+/// Secret Service would freeze the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyringStatus {
+    /// The Secret Service answered with a password for this address.
+    InKeyring,
+    /// No keyring entry, but accounts.json still holds a plaintext password
+    /// (the pre-migration fallback; cce-mail adopts it on its next start).
+    OnDiskPlaintext,
+    /// Nowhere: the keyring has no entry and the file field is blank.
+    /// Mail cannot sign in — the stranded-vault failure mode.
+    Missing,
+}
+
+/// The status for one account given whether the keyring answered. `None`
+/// for accounts the question does not apply to (OAuth signs in with
+/// refreshed tokens; the mock account never touches the keyring).
+pub fn status_from(acc: &AccountInfo, keyring_has_entry: bool) -> Option<KeyringStatus> {
+    if acc.is_oauth || acc.password == "mock_password" || acc.email == "lsgalante@cce-ui.org" {
+        return None;
+    }
+    Some(if keyring_has_entry {
+        KeyringStatus::InKeyring
+    } else if !acc.password.is_empty() {
+        KeyringStatus::OnDiskPlaintext
+    } else {
+        KeyringStatus::Missing
+    })
+}
+
+/// What the accounts watcher delivers: the file contents plus, for each
+/// password account, where its credential actually lives.
+#[derive(Debug, Clone)]
+pub struct AccountsSnapshot {
+    pub accounts: Vec<AccountInfo>,
+    pub keyring: Vec<(String, KeyringStatus)>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AccountsState {
     pub loaded: bool,
@@ -52,6 +94,9 @@ pub struct AccountsState {
     /// cce-mail actually refreshes with, not the global template.
     pub oauth_client_id_box: cce_ui::widget::Adapted<TextBox>,
     pub oauth_client_secret_box: cce_ui::widget::Adapted<TextBox>,
+    /// Per-address keyring status from the last snapshot, plus optimistic
+    /// updates from Save/Delete (the 3s watcher pass corrects them).
+    pub keyring: std::collections::HashMap<String, KeyringStatus>,
     /// The account rows scroll independently of the page. Rows stay plain
     /// `PageContent` buttons (network's list, not services'), so they dispatch
     /// through `page_buttons` and this page still needs no dispatch-root
@@ -84,7 +129,7 @@ impl AccountsState {
 
 #[derive(Debug, Clone)]
 pub enum AccountsMessage {
-    Refreshed(Vec<AccountInfo>),
+    Refreshed(AccountsSnapshot),
     SelectAccount(usize),
     AddAccountStart,
     AddAccountCancel,
@@ -163,8 +208,25 @@ pub fn save_accounts(accounts: &[AccountInfo]) {
     }
 }
 
-pub async fn fetch_accounts() -> Vec<AccountInfo> {
-    load_accounts()
+pub async fn fetch_accounts() -> AccountsSnapshot {
+    let accounts = load_accounts();
+    // Secret Service lookups are synchronous DBus; keep them off the async
+    // workers (a wedged provider used to block for 12s at a time).
+    let probe = accounts.clone();
+    let keyring = tokio::task::spawn_blocking(move || {
+        probe
+            .iter()
+            .filter_map(|acc| {
+                let has_entry = keyring::Entry::new(KEYRING_SERVICE, &acc.email)
+                    .and_then(|e| e.get_password())
+                    .is_ok();
+                status_from(acc, has_entry).map(|s| (acc.email.clone(), s))
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default();
+    AccountsSnapshot { accounts, keyring }
 }
 
 const GOOGLE_CLIENT_ID: &str = "REDACTED.apps.googleusercontent.com";
@@ -453,11 +515,15 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) else {
                     continue;
                 };
-                let label = if acc.is_default {
+                let mut label = if acc.is_default {
                     format!("{}   \u{2022} default", acc.email)
                 } else {
                     acc.email.clone()
                 };
+                // The stranded-vault tell, visible without selecting the row.
+                if state.keyring.get(&acc.email) == Some(&KeyringStatus::Missing) {
+                    label.push_str("   \u{2022} no password");
+                }
                 let is_selected = state.selected_idx == Some(idx) && !state.adding_new;
                 let (bg, hover) = if is_selected {
                     (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
@@ -624,6 +690,21 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 section_kv_row(stack.context, "Email", &acc.email, TEXT_BTN);
                 let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password" };
                 section_kv_row(stack.context, "Authentication", auth_type, TEXT_BTN);
+                // Where the password actually lives — the row that would have
+                // shown the 08-29 vault stranding at a glance. Only password
+                // accounts carry it; the probe skips OAuth and mock.
+                if let Some(status) = state.keyring.get(&acc.email) {
+                    let (text, color) = match status {
+                        KeyringStatus::InKeyring => ("in keyring", TEXT_BTN),
+                        KeyringStatus::OnDiskPlaintext => {
+                            ("on disk (plaintext) \u{2014} migrates to keyring", [0.90, 0.75, 0.40, 1.0])
+                        }
+                        KeyringStatus::Missing => {
+                            ("MISSING \u{2014} mail cannot sign in; Edit to set it", TEXT_DANGER)
+                        }
+                    };
+                    section_kv_row(stack.context, "Password", text, color);
+                }
                 section_kv_row(stack.context, "IMAP", &acc.imap, TEXT_BTN);
                 section_kv_row(stack.context, "SMTP", &acc.smtp, TEXT_BTN);
 
@@ -685,9 +766,10 @@ fn fill_box(tb: &mut cce_ui::widget::Adapted<TextBox>, value: &str) {
 
 pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
     match msg {
-        AccountsMessage::Refreshed(accs) => {
+        AccountsMessage::Refreshed(snap) => {
             state.loaded = true;
-            state.accounts = accs;
+            state.accounts = snap.accounts;
+            state.keyring = snap.keyring.into_iter().collect();
             // An account deleted out from under an open edit form leaves it
             // editing nothing; close it rather than render a blank zone.
             if let Some(ref e) = state.editing_email {
@@ -772,6 +854,11 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             save_accounts(&state.accounts);
             state.adding_new = false;
             state.selected_idx = state.accounts.iter().position(|a| a.email == email);
+            // Optimistic: the watcher's next probe confirms it.
+            state.keyring.insert(
+                email,
+                if in_keyring { KeyringStatus::InKeyring } else { KeyringStatus::OnDiskPlaintext },
+            );
             state.status_msg = Some(if in_keyring {
                 "Account saved (password in keyring)".to_string()
             } else {
@@ -781,6 +868,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         AccountsMessage::DeleteAccount(idx) => {
             if idx < state.accounts.len() {
                 let deleted = state.accounts.remove(idx);
+                state.keyring.remove(&deleted.email);
                 if deleted.is_default && !state.accounts.is_empty() {
                     state.accounts[0].is_default = true;
                 }
@@ -899,6 +987,9 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                     if entry.set_password(&password).is_ok() {
                         stored = String::new();
                         msg = "Account updated (password in keyring)".to_string();
+                        state.keyring.insert(email.clone(), KeyringStatus::InKeyring);
+                    } else {
+                        state.keyring.insert(email.clone(), KeyringStatus::OnDiskPlaintext);
                     }
                 }
                 state.accounts[idx].password = stored;
@@ -1129,6 +1220,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn keyring_status_maps_every_account_kind() {
+        let pw = acct("pw@example.org", false);
+        // The probe's answer decides between the two clean states.
+        assert_eq!(status_from(&pw, true), Some(KeyringStatus::InKeyring));
+        assert_eq!(status_from(&pw, false), Some(KeyringStatus::Missing));
+        // A plaintext file field is the pre-migration fallback, not missing.
+        let mut on_disk = acct("file@example.org", false);
+        on_disk.password = "hunter2".to_string();
+        assert_eq!(status_from(&on_disk, false), Some(KeyringStatus::OnDiskPlaintext));
+        // ...unless the keyring also has it, which reads as migrated.
+        assert_eq!(status_from(&on_disk, true), Some(KeyringStatus::InKeyring));
+        // OAuth and the mock account get no indicator at all.
+        assert_eq!(status_from(&acct("oauth@example.org", true), false), None);
+        let mut mock = acct("lsgalante@cce-ui.org", false);
+        mock.password = "mock_password".to_string();
+        assert_eq!(status_from(&mock, false), None);
+    }
+
     /// These assertions deliberately stop short of EditAccountSave's success
     /// path: it calls save_accounts, which writes the real accounts.json under
     /// XDG_CONFIG_HOME. Only the early-return paths are exercised here.
@@ -1174,7 +1284,7 @@ mod tests {
 
         update(
             &mut state,
-            AccountsMessage::Refreshed(vec![acct("second@example.org", false), acct("first@example.org", false)]),
+            AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("second@example.org", false), acct("first@example.org", false)], keyring: Vec::new() }),
         );
         assert_eq!(state.editing_email.as_deref(), Some("second@example.org"), "the refresh keeps the form open");
 
@@ -1190,7 +1300,7 @@ mod tests {
         state.accounts = vec![acct("gone@example.org", false)];
         update(&mut state, AccountsMessage::EditAccountStart(0));
 
-        update(&mut state, AccountsMessage::Refreshed(vec![acct("other@example.org", false)]));
+        update(&mut state, AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("other@example.org", false)], keyring: Vec::new() }));
 
         assert!(state.editing_email.is_none());
         assert!(state.password_box.placeholder.is_none(), "the placeholder does not leak into the add form");

@@ -16,7 +16,7 @@ pub struct Watchers {
     pub rx_services: Receiver<Vec<services::ServiceInfo>>,
     pub rx_default_apps: Receiver<default_apps::DefaultAppsInfo>,
     pub rx_timers: Receiver<Vec<timers::TimerInfo>>,
-    pub rx_accounts: Receiver<Vec<accounts::AccountInfo>>,
+    pub rx_accounts: Receiver<accounts::AccountsSnapshot>,
     pub rx_packages: Receiver<packages::PackagesState>,
 }
 
