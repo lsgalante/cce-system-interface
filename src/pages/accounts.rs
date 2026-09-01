@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, section_kv_row};
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
-use crate::scroll_region::ScrollRegion;
+use cce_ui::widget::ScrollRegion;
 use cce_ui::widget::{TextBox, WidgetHost};
 
 /// Secret Service entries are keyed by (service, address) — the same pair

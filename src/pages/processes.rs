@@ -1,5 +1,5 @@
 use crate::app::{AppAction, PageContent};
-use crate::scroll_region::ScrollRegion;
+use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
 
 #[derive(Debug, Clone)]

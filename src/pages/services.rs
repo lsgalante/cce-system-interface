@@ -1,5 +1,5 @@
 use crate::app::{PageContent, SectionContextExt};
-use crate::scroll_region::ScrollRegion;
+use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{TextBox, InteractiveListItem, WidgetHost};
 
