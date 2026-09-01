@@ -157,12 +157,15 @@ impl SystemInterface {
         } else {
             logical_sh - self.header_height - self.status_height
         };
-        // The page scrollbar (the only geometry the dissolved Page subtree ever emitted):
-        // placed exactly as Page::layout did, updated with LAST frame's content height —
-        // the legacy window pass also ran before this frame's content was measured.
-        let sb_w = cce_ui::layout::scrollbar_width();
+        // The page scrollbar, on the designer parameter-pane geometry: the DE
+        // width widened (the bar rides over page content and reads too slim at
+        // stock width), stood off the window's right edge by the configured
+        // inset instead of hugging it. Updated with LAST frame's content
+        // height — the legacy window pass also ran before this frame's content
+        // was measured.
+        let sb_w = cce_ui::layout::scrollbar_width() * 1.6;
         self.page_scroll_bar.set_rect(
-            self.sidebar_width + (logical_sw - self.sidebar_width) - sb_w - 2.0,
+            logical_sw - sb_w - cce_ui::layout::scrollbar_inset(),
             self.header_height + 4.0,
             sb_w,
             switcher_h - 8.0,
@@ -187,7 +190,12 @@ impl SystemInterface {
             let mut rounded: Vec<RectTuple> = Vec::new();
             let mut wtexts: Vec<TextTuple> = Vec::new();
 
-            collect_window_child(&self.page_scroll_bar, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
+            // The page scrollbar is NOT collected here: baked into the rebuilt
+            // layout, its thumb froze for every wheel tick the scroll fast path
+            // absorbed (the fast path shifts cached geometry without a rebuild,
+            // so the bar only moved once scrolling stopped and something else
+            // rebuilt). display_list emits it fresh each frame instead — under
+            // the window plate while sunk, over the page content while raised.
 
             // The status bar has no background of its own anymore: the beveled window
             // plate shows through and display_list carves its recess (data-editor's

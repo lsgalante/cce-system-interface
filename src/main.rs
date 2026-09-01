@@ -283,6 +283,32 @@ impl cce_ui::engine::Application for SystemInterface {
         use cce_ui::scene::layout::Rect;
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
 
+        // The page scrollbar straddles the window plate (the designer
+        // parameter-pane treatment) and is emitted fresh EVERY frame — never
+        // baked into the rebuilt layout, so the thumb tracks the wheel fast
+        // path's scrolls, which shift cached geometry without a rebuild and
+        // used to leave the bar frozen until scrolling stopped. Sync first:
+        // a thumb drag drives the page, anything else drives the thumb.
+        if self.page_scroll_bar.dragging {
+            self.scroll_y = self.page_scroll_bar.scroll_y;
+        } else {
+            self.page_scroll_bar.scroll_y = self.scroll_y;
+        }
+        let page_bar = {
+            use cce_ui::widget::WidgetHost;
+            let (bx, by, bw, bh) = self.page_scroll_bar.rect();
+            self.page_scroll_bar
+                .layer_quads(Rect { x: bx, y: by, width: bw, height: bh })
+        };
+        // Sunk layer: under the translucent window plate, so idle the bar
+        // reads as sunk INTO the window rather than gone, and the plate
+        // occludes it from input. Track and thumb are pills (the designer look).
+        if !self.page_scroll_bar.raised() {
+            for &(r, c) in &page_bar {
+                pc.rounded_rect(r, r.width.min(r.height) * 0.5, (true, true, true, true), c);
+            }
+        }
+
         // One glass slab (data-editor's idiom): the beveled window plate, with the
         // status bar carved into it as a step — everything else paints on top.
         {
@@ -462,6 +488,14 @@ impl cce_ui::engine::Application for SystemInterface {
             });
         }
 
+        // The page scrollbar's raised layer: over the page content while a
+        // scroll or drag holds it up (popovers still stack above it).
+        if self.page_scroll_bar.raised() {
+            for &(r, c) in &page_bar {
+                pc.rounded_rect(r, r.width.min(r.height) * 0.5, (true, true, true, true), c);
+            }
+        }
+
         cce_ui::widget::hover_animation::post_render_check();
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
@@ -558,6 +592,13 @@ impl SystemInterface {
     fn tick_internal(&mut self, dt: f32) -> bool {
         let mut needs_redraw = false;
         if hover_animation::tick(dt) {
+            needs_redraw = true;
+        }
+        // Raise/sink upkeep for the page scrollbar: true while the post-scroll
+        // hold runs (keeps frames coming so the sink actually renders) and on
+        // the raised flip itself. A redraw re-emits the bar at its new depth —
+        // no layout rebuild needed, display_list draws it fresh each frame.
+        if self.page_scroll_bar.tick_activity(dt) {
             needs_redraw = true;
         }
         if self.ui_context.tick(dt) {

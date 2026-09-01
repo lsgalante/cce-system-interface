@@ -327,6 +327,11 @@ impl SystemInterface {
                     btn.base_mut().y -= actual_dy;
                 }
                 self.last_scroll_y = self.scroll_y;
+                // The fast path skips the rebuild, so feed the scrollbar here:
+                // sync the thumb and raise the bar from behind the window plate
+                // (display_list emits it fresh each frame from this state).
+                self.page_scroll_bar.scroll_y = self.scroll_y;
+                self.page_scroll_bar.on_scroll();
                 return true;
             }
         }
@@ -660,6 +665,9 @@ impl SystemInterface {
                     _ => {}
                 }
                 if (self.scroll_y - old_scroll).abs() > 0.01 {
+                    // Keyboard scrolling raises the bar like the wheel does.
+                    self.page_scroll_bar.scroll_y = self.scroll_y;
+                    self.page_scroll_bar.on_scroll();
                     self.needs_rebuild = true;
                     key_handled = true;
                 }
