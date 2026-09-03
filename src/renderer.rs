@@ -273,35 +273,7 @@ impl SystemInterface {
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
         self.page_reliefs = pc.reliefs.clone();
         self.page_control_reliefs = pc.control_reliefs.clone();
-        // Buttons never reach the toolkit's flat-path bridge here: this app
-        // collects them into `pc.buttons` and draws them itself, so
-        // `render_widget` — where a Dropdown's and a TextBox's carves are
-        // offered — never sees one. Ask each button for the inset face its own
-        // `paint` draws (`Button::inset_face`, the same source the drawn one
-        // reads) and carve it with the rest. Page coords, pre-scroll, like
-        // everything else in this list.
-        if cce_ui::layout::control_relief() {
-            for (btn, _, _) in &pc.buttons {
-                let base = btn.base();
-                let rect = cce_ui::scene::layout::Rect {
-                    x: base.x,
-                    y: base.y,
-                    width: base.w,
-                    height: base.h,
-                };
-                if let Some((face, radius, depth, color)) = btn.inset_face(rect) {
-                    self.page_control_reliefs.push(ControlCarve::Plate {
-                        x: face.x,
-                        y: face.y,
-                        w: face.width,
-                        h: face.height,
-                        radius,
-                        depth,
-                        color,
-                    });
-                }
-            }
-        }
+        self.page_control_relief_marks.clear();
 
 
 
@@ -361,7 +333,12 @@ impl SystemInterface {
 
         let scroll_offset_y = self.scroll_y;
 
+        // Where each page rect landed in `widgets` (culled rects collapse onto
+        // the next survivor), so a carve's mark — "the rect I was claimed
+        // before" — survives the cull. One extra entry for "after the last".
+        let mut rect_widget_index: Vec<usize> = Vec::with_capacity(pc.rects.len() + 1);
         for (c, x, y, w, h, r, corners) in pc.rects.iter() {
+            rect_widget_index.push(widgets.len());
             let wx = *x * s;
             let mut wy = (*y - scroll_offset_y) * s;
             let ww = *w * s;
@@ -387,6 +364,10 @@ impl SystemInterface {
                 radius: *r * s,
                 corners: *corners,
             });
+        }
+        rect_widget_index.push(widgets.len());
+        for &mark in &pc.control_relief_marks {
+            self.page_control_relief_marks.push(rect_widget_index[mark.min(rect_widget_index.len() - 1)]);
         }
         for (t, size, x, y, tc, font_opt, bounds) in pc.texts.iter() {
             let shifted_bounds = bounds.map(|[bl, bt, br, bb]| {
@@ -513,6 +494,29 @@ impl SystemInterface {
                 radius: cce_ui::layout::button_corner_radius() * s,
                 corners: (true, true, true, true),
             });
+            // Buttons never reach the toolkit's flat-path bridge here: this
+            // app collects them into `pc.buttons` and draws them itself, so
+            // `render_widget` — where a widget's carves are offered — never
+            // sees one. Ask each button for the inset face its own `paint`
+            // draws (`Button::inset_face`, the same source the drawn one
+            // reads) and carve it right after the button's quad, where its
+            // paint puts it — the mark is "before the next widget". Page
+            // coords, pre-scroll, like everything else in this list.
+            if cce_ui::layout::control_relief() {
+                let rect = cce_ui::scene::layout::Rect { x: base.x, y: base.y, width: base.w, height: base.h };
+                if let Some((face, radius, depth, color)) = btn.inset_face(rect) {
+                    self.page_control_reliefs.push(ControlCarve::Plate {
+                        x: face.x,
+                        y: face.y,
+                        w: face.width,
+                        h: face.height,
+                        radius,
+                        depth,
+                        color,
+                    });
+                    self.page_control_relief_marks.push(widgets.len());
+                }
+            }
             // An icon face replaces the label entirely (as it does in
             // `Button::paint`). The rect comes from the button's own
             // `icon_rect` so the glyph lands where the paint path would put

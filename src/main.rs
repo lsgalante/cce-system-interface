@@ -110,6 +110,9 @@ struct SystemInterface {
     // Section wells: body box + title tab (page coords, pre-scroll) — carved by
     // display_list.
     page_reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
+    /// Per page carve, the index into `widgets` it precedes — see
+    /// `popover_control_relief_marks`; the page layer interleaves the same way.
+    page_control_relief_marks: Vec<usize>,
     /// Control troughs from `PageContent::control_reliefs` (page coords,
     /// pre-scroll) — each carved as a flush inset plate after the section wells.
     page_control_reliefs: Vec<ControlCarve>,
@@ -131,6 +134,20 @@ struct SystemInterface {
     search_query: String,
     search_box: cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>,
 
+}
+
+/// One collected control carve as the real relief prim it stands for.
+fn emit_control_carve(pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCarve) {
+    use cce_ui::scene::layout::Rect;
+    match carve {
+        ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
+            Rect { x, y, width: w, height: h },
+            (radius, radius, radius, radius),
+            color,
+            depth,
+        ),
+        ControlCarve::Step(c) => pc.carve(&c),
+    }
 }
 
 impl cce_ui::engine::Application for SystemInterface {
@@ -216,6 +233,7 @@ impl cce_ui::engine::Application for SystemInterface {
             content_h: 0.0,
             page_reliefs: Vec::new(),
             page_control_reliefs: Vec::new(),
+            page_control_relief_marks: Vec::new(),
             page_button_images: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
@@ -344,26 +362,45 @@ impl cce_ui::engine::Application for SystemInterface {
             );
         }
 
-        for w in &self.widgets {
-            let color = if w.hovering { w.hover_color } else { w.color };
-            let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
-            if w.radius > 0.1 {
-                pc.rounded_rect(rect, w.radius, w.corners, color);
-            } else {
-                pc.quad(rect, color);
+        // The page's rects and the control carves the flat bridge offered
+        // (a Dropdown's inset plate, a TextBox's well, a Toggle's steps, the
+        // buttons' faces), replayed in the widgets' OWN order — each carve
+        // just before the rect it was claimed ahead of, so a TextBox's
+        // selection highlight and caret land on its well instead of under
+        // its walls. Carves clip to the page viewport like the wells; the
+        // rects were already clamped to it when collected.
+        {
+            let view = self.page_view(width, height);
+            let scroll_y = self.scroll_y;
+            let mut carves = self
+                .page_control_reliefs
+                .iter()
+                .copied()
+                .zip(self.page_control_relief_marks.iter().copied())
+                .peekable();
+            let mut emit_pending = |pc: &mut cce_ui::scene::paint::PaintCtx, upto: usize| {
+                while carves.peek().map_or(false, |&(_, mark)| mark <= upto) {
+                    let (carve, _) = carves.next().unwrap();
+                    pc.clip(view, |pc| emit_control_carve(pc, carve.shifted_y(-scroll_y)));
+                }
+            };
+            for (i, w) in self.widgets.iter().enumerate() {
+                emit_pending(&mut pc, i);
+                let color = if w.hovering { w.hover_color } else { w.color };
+                let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
+                if w.radius > 0.1 {
+                    pc.rounded_rect(rect, w.radius, w.corners, color);
+                } else {
+                    pc.quad(rect, color);
+                }
             }
+            emit_pending(&mut pc, usize::MAX);
         }
         // The section wells, carved after the page's flat quads so the walls shade
         // the fills they cross (the designer relief order), clipped to the page
         // viewport so a scrolled-off well can't shade the status bar or search row.
         if !self.page_reliefs.is_empty() {
-            let view = Rect {
-                x: self.sidebar_width,
-                y: self.header_height,
-                width: width - self.sidebar_width,
-                height: (height - self.header_height - self.status_height
-                    - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
-            };
+            let view = self.page_view(width, height);
             let r = 20.0f32;
             let scroll_y = self.scroll_y;
             pc.clip(view, |pc| {
@@ -452,44 +489,11 @@ impl cce_ui::engine::Application for SystemInterface {
             });
         }
 
-        // Control troughs (Dropdown flush inset chrome, offered by the flat
-        // bridge): carved after the section wells so they shade the fills
-        // beneath, clipped to the page viewport like the wells.
-        if !self.page_control_reliefs.is_empty() {
-            let view = Rect {
-                x: self.sidebar_width,
-                y: self.header_height,
-                width: width - self.sidebar_width,
-                height: (height - self.header_height - self.status_height
-                    - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
-            };
-            let scroll_y = self.scroll_y;
-            pc.clip(view, |pc| {
-                for &carve in &self.page_control_reliefs {
-                    match carve.shifted_y(-scroll_y) {
-                        ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
-                            Rect { x, y, width: w, height: h },
-                            (radius, radius, radius, radius),
-                            color,
-                            depth,
-                        ),
-                        ControlCarve::Step(c) => pc.carve(&c),
-                    }
-                }
-            });
-        }
-
         // Button icon faces, over the page's quads and its carves — clipped to
         // the page viewport, which is what cuts a half-scrolled list row's icon
         // at the list edge (an image has no geometry to trim, only a clip).
         if !self.page_button_images.is_empty() {
-            let view = Rect {
-                x: self.sidebar_width,
-                y: self.header_height,
-                width: width - self.sidebar_width,
-                height: (height - self.header_height - self.status_height
-                    - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
-            };
+            let view = self.page_view(width, height);
             pc.clip(view, |pc| {
                 for &(image, x, y, w, h, alpha) in &self.page_button_images {
                     pc.image(image, Rect { x, y, width: w, height: h }, alpha);
@@ -515,15 +519,6 @@ impl cce_ui::engine::Application for SystemInterface {
         // so the hovered-row highlight a Dropdown draws after its plate lands
         // on top of the frosted face instead of underneath it.
         {
-            let emit_carve = |pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCarve| match carve {
-                ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
-                    Rect { x, y, width: w, height: h },
-                    (radius, radius, radius, radius),
-                    color,
-                    depth,
-                ),
-                ControlCarve::Step(c) => pc.carve(&c),
-            };
             let mut carves = self
                 .popover_control_reliefs
                 .iter()
@@ -533,7 +528,7 @@ impl cce_ui::engine::Application for SystemInterface {
             for (i, w) in self.popover_widgets.iter().enumerate() {
                 while carves.peek().map_or(false, |&(_, mark)| mark <= i) {
                     let (carve, _) = carves.next().unwrap();
-                    emit_carve(&mut pc, carve);
+                    emit_control_carve(&mut pc, carve);
                 }
                 let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
                 if w.radius > 0.1 {
@@ -543,7 +538,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 }
             }
             for (carve, _) in carves {
-                emit_carve(&mut pc, carve);
+                emit_control_carve(&mut pc, carve);
             }
         }
         for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {
@@ -612,6 +607,19 @@ impl cce_ui::engine::Application for SystemInterface {
 }
 
 impl SystemInterface {
+    /// The page viewport in window coords: everything under the header and
+    /// above the status bar (and the search row while it is open).
+    fn page_view(&self, width: f32, height: f32) -> cce_ui::scene::layout::Rect {
+        use cce_ui::scene::layout::Rect;
+        Rect {
+            x: self.sidebar_width,
+            y: self.header_height,
+            width: width - self.sidebar_width,
+            height: (height - self.header_height - self.status_height
+                - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
+        }
+    }
+
 
     fn tick_internal(&mut self, dt: f32) -> bool {
         let mut needs_redraw = false;
