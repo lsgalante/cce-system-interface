@@ -170,6 +170,12 @@ pub struct PageContent {
     /// depth, carve), page coordinates, pre-scroll; display_list re-emits them
     /// as real relief prims.
     pub control_reliefs: Vec<ControlCarve>,
+    /// Per carve, `rects.len()` at the moment it was claimed — the carve's
+    /// place in the widget's own emission order. A Dropdown draws its
+    /// hovered-row highlight AFTER the inset plate it claims for the menu
+    /// face; replaying every rect and then every carve put the frosted plate
+    /// over the highlight. The popover layer interleaves on these marks.
+    pub control_relief_marks: Vec<usize>,
     pub clip_stack: Vec<[f32; 4]>,
     pub measure_only: bool,
 }
@@ -182,6 +188,7 @@ impl Default for PageContent {
             buttons: Vec::new(),
             reliefs: Vec::new(),
             control_reliefs: Vec::new(),
+            control_relief_marks: Vec::new(),
             clip_stack: Vec::new(),
             measure_only: true,
         }
@@ -196,6 +203,7 @@ impl PageContent {
             buttons: Vec::new(),
             reliefs: Vec::new(),
             control_reliefs: Vec::new(),
+            control_relief_marks: Vec::new(),
             clip_stack: Vec::new(),
             measure_only: false,
         }
@@ -366,6 +374,7 @@ impl RenderTarget for PageContent {
         if self.measure_only {
             return;
         }
+        self.control_relief_marks.push(self.rects.len());
         self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color });
     }
 
@@ -377,6 +386,7 @@ impl RenderTarget for PageContent {
         if self.measure_only {
             return;
         }
+        self.control_relief_marks.push(self.rects.len());
         self.control_reliefs.push(ControlCarve::Step(*carve));
     }
 

@@ -656,6 +656,9 @@ impl SystemInterface {
                     }
                 }
             }
+            // The chrome popover's rects are already in place: the page
+            // carves' marks shift past them so the interleave stays true.
+            let rect_base = popover_pc.rects.len();
             for (c, x, y, w, h, r, corners) in page_pop_pc.rects {
                 popover_pc.rects.push((c, x, y - self.scroll_y, w, h, r, corners));
             }
@@ -663,8 +666,9 @@ impl SystemInterface {
                 let shifted = bounds.map(|[l, tb, rr, b]| [l, tb - self.scroll_y, rr, b - self.scroll_y]);
                 popover_pc.texts.push((t, size, x, y - self.scroll_y, tc, font, shifted));
             }
-            for carve in page_pop_pc.control_reliefs {
+            for (carve, mark) in page_pop_pc.control_reliefs.into_iter().zip(page_pop_pc.control_relief_marks) {
                 popover_pc.control_reliefs.push(carve.shifted_y(-self.scroll_y));
+                popover_pc.control_relief_marks.push(rect_base + mark);
             }
         }
         if cce_ui::widget::context_menu::is_visible() {
@@ -703,6 +707,7 @@ impl SystemInterface {
         }).collect();
         self.popover_texts = popover_pc.texts;
         self.popover_control_reliefs = popover_pc.control_reliefs;
+        self.popover_control_relief_marks = popover_pc.control_relief_marks;
 
         self.widgets = widgets;
         self.texts = texts;

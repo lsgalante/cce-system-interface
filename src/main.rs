@@ -47,6 +47,10 @@ struct SystemInterface {
     /// Popover-layer inset plates (window coords, scroll already applied) —
     /// the dropdown's grown-trigger surface via the inset_plate hook.
     popover_control_reliefs: Vec<ControlCarve>,
+    /// Per popover carve, the index into `popover_widgets` it precedes
+    /// (`PageContent::control_relief_marks`) — display_list slots each carve
+    /// back between the rects the widget drew before and after it.
+    popover_control_relief_marks: Vec<usize>,
     page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
 
     sidebar_width: f32,
@@ -168,6 +172,7 @@ impl cce_ui::engine::Application for SystemInterface {
             popover_widgets: Vec::new(),
             popover_texts: Vec::new(),
             popover_control_reliefs: Vec::new(),
+            popover_control_relief_marks: Vec::new(),
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
@@ -504,19 +509,13 @@ impl cce_ui::engine::Application for SystemInterface {
         if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
             pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
         }
-        for w in &self.popover_widgets {
-            let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
-            if w.radius > 0.1 {
-                pc.rounded_rect(rect, w.radius, w.corners, w.color);
-            } else {
-                pc.quad(rect, w.color);
-            }
-        }
-        // Popover surfaces claimed through the inset_plate hook (the dropdown's
-        // grown-trigger plate): real relief prims at the popover layer, over
-        // the page and its control troughs.
-        for &carve in &self.popover_control_reliefs {
-            match carve {
+        // Popover rects and the surfaces claimed through the inset_plate hook
+        // (the dropdown's menu plate), replayed in the widget's OWN order:
+        // each carve goes out just before the rect it was claimed ahead of,
+        // so the hovered-row highlight a Dropdown draws after its plate lands
+        // on top of the frosted face instead of underneath it.
+        {
+            let emit_carve = |pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCarve| match carve {
                 ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
                     Rect { x, y, width: w, height: h },
                     (radius, radius, radius, radius),
@@ -524,6 +523,27 @@ impl cce_ui::engine::Application for SystemInterface {
                     depth,
                 ),
                 ControlCarve::Step(c) => pc.carve(&c),
+            };
+            let mut carves = self
+                .popover_control_reliefs
+                .iter()
+                .copied()
+                .zip(self.popover_control_relief_marks.iter().copied())
+                .peekable();
+            for (i, w) in self.popover_widgets.iter().enumerate() {
+                while carves.peek().map_or(false, |&(_, mark)| mark <= i) {
+                    let (carve, _) = carves.next().unwrap();
+                    emit_carve(&mut pc, carve);
+                }
+                let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
+                if w.radius > 0.1 {
+                    pc.rounded_rect(rect, w.radius, w.corners, w.color);
+                } else {
+                    pc.quad(rect, w.color);
+                }
+            }
+            for (carve, _) in carves {
+                emit_carve(&mut pc, carve);
             }
         }
         for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {
