@@ -148,7 +148,11 @@ impl cce_ui::engine::Application for SystemInterface {
         let pages_names = Page::ALL.iter().map(|p| p.label().to_string()).collect::<Vec<_>>();
         let page_dropdown = cce_ui::widget::input::Dropdown::new(pages_names, initial_page_idx)
             .with_open_upward(true)
-            .with_auto_width(true);
+            .with_auto_width(true)
+            // The open menu is the page list alone, sat where the trigger was:
+            // the current page already reads blue in the list, so the trigger
+            // band repeating its title under the rows was noise.
+            .with_menu_replaces_trigger(true);
         let sidebar_width = 0.0f32;
 
         let mut app_state = app;
