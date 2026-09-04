@@ -525,6 +525,10 @@ impl crate::pages::AppPage for ServicesState {
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
         self.loaded && self.list.keyboard(event)
     }
+
+    fn tick(&mut self, dt: f32) -> bool {
+        self.list.tick(dt)
+    }
 }
 
 #[cfg(test)]

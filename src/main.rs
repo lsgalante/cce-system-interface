@@ -84,7 +84,12 @@ struct SystemInterface {
     width: u32,
     height: u32,
     needs_rebuild: bool,
+    /// The page's DRAWN offset — `page_scroll_motion` glides it (wheel) or
+    /// coasts it (trackpad flick) by shifting the cached geometry in place;
+    /// direct writes (thumb drag, keyboard, search jump, clamp) are adopted
+    /// by the motion on its next step.
     scroll_y: f32,
+    page_scroll_motion: cce_ui::widget::ScrollMotion,
     max_scroll_y: f32,
     scrollable_widgets_start_idx: usize,
     scrollable_text_items_start_idx: usize,
@@ -221,6 +226,7 @@ impl cce_ui::engine::Application for SystemInterface {
             height: 680,
             needs_rebuild: true,
             scroll_y: 0.0,
+            page_scroll_motion: cce_ui::widget::ScrollMotion::new(),
             max_scroll_y: 0.0,
             scrollable_widgets_start_idx: 0,
             scrollable_text_items_start_idx: 0,
@@ -633,12 +639,38 @@ impl SystemInterface {
         if self.page_scroll_bar.tick_activity(dt) {
             needs_redraw = true;
         }
+        // The page's own wheel glide / flick coast: shifts the cached
+        // geometry like the wheel fast path, no rebuild.
+        if self.tick_page_scroll(dt) {
+            needs_redraw = true;
+        }
+        // The current page's inner lists (their glide/coast lives in the
+        // region's tick): a moved list re-lays the page out.
+        if self.app.get_current_page_mut().tick(dt) {
+            needs_redraw = true;
+            self.needs_rebuild = true;
+        }
         if self.ui_context.tick(dt) {
             needs_redraw = true;
             self.needs_rebuild = true;
         }
 
         needs_redraw
+    }
+
+    /// Advance the page's wheel glide / flick coast; true while the offset is
+    /// moving, so the frame loop keeps drawing until it settles.
+    fn tick_page_scroll(&mut self, dt: f32) -> bool {
+        use cce_ui::widget::Bounds;
+        self.page_scroll_motion.reconcile(0.0, self.scroll_y);
+        if !self.page_scroll_motion.is_animating() {
+            return false;
+        }
+        let moved = self.page_scroll_motion.tick(dt, Bounds::max(0.0), Bounds::max(self.max_scroll_y));
+        if moved {
+            self.shift_page_to(self.page_scroll_motion.y.pos());
+        }
+        moved || self.page_scroll_motion.is_animating()
     }
 
     fn poll_background_updates(&mut self) {

@@ -838,6 +838,10 @@ impl crate::pages::AppPage for PackagesState {
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
         self.loaded && self.active_list().keyboard(event)
     }
+
+    fn tick(&mut self, dt: f32) -> bool {
+        self.installed_list.tick(dt) | self.updates_list.tick(dt)
+    }
 }
 
 #[cfg(test)]

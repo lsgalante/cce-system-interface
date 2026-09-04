@@ -1129,6 +1129,10 @@ impl crate::pages::AppPage for AccountsState {
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
         self.list_visible() && self.list.keyboard(event)
     }
+
+    fn tick(&mut self, dt: f32) -> bool {
+        self.list.tick(dt)
+    }
 }
 
 #[cfg(test)]

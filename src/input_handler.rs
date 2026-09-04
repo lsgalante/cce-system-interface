@@ -304,38 +304,48 @@ impl SystemInterface {
                 return true;
             }
 
-            let scroll_speed = 24.0;
-            let dy = match delta {
-                cce_ui::widget::MouseScrollDelta::LineDelta(_, y) => -y * scroll_speed,
-                cce_ui::widget::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
-            };
-            let old_scroll = self.scroll_y;
-            self.scroll_y = (self.scroll_y + dy).max(0.0).min(self.max_scroll_y);
-            if (self.scroll_y - old_scroll).abs() > 0.01 {
-                let actual_dy = self.scroll_y - old_scroll;
-                for w in &mut self.widgets[self.scrollable_widgets_start_idx..] {
-                    w.y -= actual_dy;
-                }
-                for (_, _, _, ty, _, _, bounds) in &mut self.texts[self.scrollable_text_items_start_idx..] {
-                    *ty -= actual_dy;
-                    if let Some(ref mut b) = bounds {
-                        b[1] -= actual_dy;
-                        b[3] -= actual_dy;
-                    }
-                }
-                for (btn, _) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
-                    btn.base_mut().y -= actual_dy;
-                }
-                self.last_scroll_y = self.scroll_y;
-                // The fast path skips the rebuild, so feed the scrollbar here:
-                // sync the thumb and raise the bar from behind the window plate
-                // (display_list emits it fresh each frame from this state).
-                self.page_scroll_bar.scroll_y = self.scroll_y;
+            // The whole-page scroll: a wheel notch moves the motion's target
+            // and `tick_page_scroll` glides the page there; a trackpad finger
+            // moves it now. Either way the bar raises in the same frame.
+            use cce_ui::widget::{Bounds, LINE_PX};
+            self.page_scroll_motion.reconcile(0.0, self.scroll_y);
+            let moved = self.page_scroll_motion.apply(delta, (LINE_PX, LINE_PX), Bounds::max(0.0), Bounds::max(self.max_scroll_y));
+            if moved {
+                self.shift_page_to(self.page_scroll_motion.y.pos());
                 self.page_scroll_bar.on_scroll();
                 return true;
             }
         }
         false
+    }
+
+    /// Move the page to `new_scroll_y` WITHOUT a rebuild — the wheel fast
+    /// path: the cached widget/text/button geometry shifts in place by the
+    /// delta from the current drawn offset, and the scrollbar thumb follows
+    /// (display_list emits the bar fresh each frame from this state). False
+    /// when the offset did not actually change.
+    pub(crate) fn shift_page_to(&mut self, new_scroll_y: f32) -> bool {
+        let actual_dy = new_scroll_y - self.scroll_y;
+        if actual_dy.abs() <= 0.01 {
+            return false;
+        }
+        self.scroll_y = new_scroll_y;
+        for w in &mut self.widgets[self.scrollable_widgets_start_idx..] {
+            w.y -= actual_dy;
+        }
+        for (_, _, _, ty, _, _, bounds) in &mut self.texts[self.scrollable_text_items_start_idx..] {
+            *ty -= actual_dy;
+            if let Some(ref mut b) = bounds {
+                b[1] -= actual_dy;
+                b[3] -= actual_dy;
+            }
+        }
+        for (btn, _) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
+            btn.base_mut().y -= actual_dy;
+        }
+        self.last_scroll_y = self.scroll_y;
+        self.page_scroll_bar.scroll_y = self.scroll_y;
+        true
     }
 
     /// The current page's event-dispatch roots (Phase 6w — SectionContainer dissolved):
@@ -655,18 +665,24 @@ impl SystemInterface {
                     && self.cursor_y <= ry + rh
             };
             if over_page {
-                use cce_ui::widget::{Key, NamedKey};
-                let old_scroll = self.scroll_y;
-                match &event.logical_key {
-                    Key::Named(NamedKey::ArrowDown) => self.scroll_y = (self.scroll_y + 24.0).min(self.max_scroll_y),
-                    Key::Named(NamedKey::ArrowUp) => self.scroll_y = (self.scroll_y - 24.0).max(0.0),
-                    Key::Named(NamedKey::Home) => self.scroll_y = 0.0,
-                    Key::Named(NamedKey::End) => self.scroll_y = self.max_scroll_y,
-                    _ => {}
-                }
-                if (self.scroll_y - old_scroll).abs() > 0.01 {
+                use cce_ui::widget::{Bounds, Key, NamedKey, LINE_PX};
+                // Arrow steps ride the same glide as wheel notches (a held
+                // key accumulates into one motion); Home/End glide to the
+                // absolute target. `tick_page_scroll` carries the page there.
+                let s = cce_ui::widget::scroll_motion::scroll_settings();
+                let b = Bounds::max(self.max_scroll_y);
+                self.page_scroll_motion.reconcile(0.0, self.scroll_y);
+                let moved = match &event.logical_key {
+                    Key::Named(NamedKey::ArrowDown) => self.page_scroll_motion.y.wheel(LINE_PX, b, &s),
+                    Key::Named(NamedKey::ArrowUp) => self.page_scroll_motion.y.wheel(-LINE_PX, b, &s),
+                    Key::Named(NamedKey::Home) => self.page_scroll_motion.y.scroll_to(0.0, b, &s),
+                    Key::Named(NamedKey::End) => self.page_scroll_motion.y.scroll_to(self.max_scroll_y, b, &s),
+                    _ => false,
+                };
+                if moved {
+                    // With smoothing off the axis jumped: land the page now.
+                    self.shift_page_to(self.page_scroll_motion.y.pos());
                     // Keyboard scrolling raises the bar like the wheel does.
-                    self.page_scroll_bar.scroll_y = self.scroll_y;
                     self.page_scroll_bar.on_scroll();
                     self.needs_rebuild = true;
                     key_handled = true;

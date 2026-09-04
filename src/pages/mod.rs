@@ -142,6 +142,15 @@ pub trait AppPage {
     fn handle_key_input(&mut self, _event: &cce_ui::widget::KeyEvent) -> bool {
         false
     }
+
+    /// Per-frame upkeep for the dissolved inner lists. A `ScrollRegion`'s
+    /// wheel only moves its target; its `tick` is what glides (wheel) or
+    /// coasts (trackpad flick) the drawn offset there — a page hosting one
+    /// must pump it here or the list freezes after the first notch. True =
+    /// the page's geometry changed (the host re-lays it out).
+    fn tick(&mut self, _dt: f32) -> bool {
+        false
+    }
 }
 
 
