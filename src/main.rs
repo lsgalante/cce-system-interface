@@ -126,7 +126,7 @@ struct SystemInterface {
     /// images at all otherwise: `all_quads` carries quads and the text list
     /// carries labels, and an icon is neither.
     page_button_images: Vec<(u32, f32, f32, f32, f32, f32)>,
-    // Root Backplate + StatusBar DISSOLVED (Phase 6s): the window plate and the status
+    // root plate container + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
     serif_family: String,

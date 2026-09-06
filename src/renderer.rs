@@ -7,7 +7,7 @@ type RectTuple = ([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool));
 type TextTuple = (String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>);
 
 /// One child's contribution to the dissolved root's window assembly, replicating the
-/// legacy `render_widget(root Backplate)` aggregate exactly: plain quads are skipped
+/// legacy `render_widget(root plate container)` aggregate exactly: plain quads are skipped
 /// when they are a rounded child's own bg (the rounded pass carries it), clipped to
 /// the window, and corner-resolved against the root's rounded rect (a quad flush with
 /// a window corner picks up the plate radius there); rounded quads are clipped;
@@ -132,9 +132,9 @@ impl SystemInterface {
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
         self.page_dropdown.selected = page_idx;
 
-        // Root Backplate DISSOLVED (Phase 6s): top-level widgets stay parentless
+        // root plate container DISSOLVED (Phase 6s): top-level widgets stay parentless
         // (render_widget registers them); the window plate, the root aggregate's
-        // emission order, and the StatusBar's Backplate-coupled theming are all
+        // emission order, and the StatusBar's root plate container-coupled theming are all
         // replicated by hand below.
 
         // Position sidebar and switcher below the titlebar
@@ -149,7 +149,7 @@ impl SystemInterface {
         let dropdown_x = logical_sw - dropdown_w - dropdown_gap;
         let dropdown_y = logical_sh - self.status_height + dropdown_gap;
         // The dropdown sits flush against the window's rounded bottom-right corner; with the
-        // root Backplate dissolved, hand it the plate frame for its concentric-corner cut.
+        // root plate container dissolved, hand it the plate frame for its concentric-corner cut.
         self.page_dropdown.set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
         let switcher_h = if self.search_open {
@@ -175,12 +175,12 @@ impl SystemInterface {
         }
         self.page_scroll_bar.update(self.scroll_y, self.content_h, switcher_h);
 
-        // Assemble the window exactly as the legacy `render_widget(root Backplate)`
+        // Assemble the window exactly as the legacy `render_widget(root plate container)`
         // aggregate did: every child plain quad (clipped to the window, with the root's
         // corner resolution against its rounded rect), then the translucent window
         // plate, then every child rounded quad, then the root-clamped text — in the old
         // child order [switcher, statusbar, dropdown, search box]. The StatusBar widget
-        // is dissolved outright: its theming was Backplate-parent-coupled (statusbar
+        // is dissolved outright: its theming was root plate container-parent-coupled (statusbar
         // theme color falling back to STATUS_BG, bottom corners rounded at the root's
         // radius, statusbar text color/font), replicated here as tuples.
         let plate_radius = 12.0f32;
