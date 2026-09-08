@@ -1,7 +1,8 @@
 //! XDG default applications: curated categories over `~/.config/mimeapps.list`.
 //! Candidates come from the installed `.desktop` entries that claim the
-//! category's MIME types; picks are applied through `xdg-mime default`, one
-//! call per type, so a browser pick covers http/https/text-html at once.
+//! category's MIME types; picks are applied through ONE `xdg-mime default`
+//! call naming every type, so a browser pick covers http/https/text-html at
+//! once (and atomically — parallel calls clobber each other's writes).
 //!
 //! The Terminal row is the one non-MIME category: terminals have no MIME type,
 //! so candidates come from entries declaring `Categories=TerminalEmulator`,
@@ -163,11 +164,31 @@ pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage) {
             log::info!("[default_apps] applying {:?} -> {id}", entry.label);
             match entry.kind {
                 CategoryKind::Mime(mimes) => {
-                    for mime in mimes {
-                        let _ = tokio::process::Command::new("xdg-mime")
-                            .args(["default", &id, mime])
-                            .spawn();
-                    }
+                    // ONE xdg-mime invocation for every type. Parallel
+                    // invocations race on the shared `mimeapps.list.new`
+                    // temp file and drop each other's writes: a browser pick
+                    // left text/html unset (falling through to whatever
+                    // mimeinfo.cache lists first), so Chrome's
+                    // `xdg-settings check default-web-browser` said "no"
+                    // while this page — reading only the first type — said
+                    // Chrome.
+                    let id = id.clone();
+                    tokio::spawn(async move {
+                        let out = tokio::process::Command::new("xdg-mime")
+                            .arg("default")
+                            .arg(&id)
+                            .args(mimes)
+                            .output()
+                            .await;
+                        match out {
+                            Ok(o) if o.status.success() => {}
+                            Ok(o) => log::error!(
+                                "[default_apps] xdg-mime default {id} failed: {}",
+                                String::from_utf8_lossy(&o.stderr).trim()
+                            ),
+                            Err(e) => log::error!("[default_apps] xdg-mime spawn failed: {e}"),
+                        }
+                    });
                 }
                 CategoryKind::Terminal => set_default_terminal(&id),
             }
@@ -318,14 +339,30 @@ pub async fn fetch_default_apps() -> DefaultAppsInfo {
     DefaultAppsInfo(cats)
 }
 
-async fn fetch_mime_category(apps: &HashMap<String, DesktopApp>, mimes: &[&str]) -> CategoryInfo {
-    let current = tokio::process::Command::new("xdg-mime")
-        .args(["query", "default", mimes[0]])
+async fn query_default(mime: &str) -> Option<String> {
+    tokio::process::Command::new("xdg-mime")
+        .args(["query", "default", mime])
         .output()
         .await
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+}
+
+async fn fetch_mime_category(apps: &HashMap<String, DesktopApp>, mimes: &[&str]) -> CategoryInfo {
+    // The category's default is only real if EVERY type agrees — a partial
+    // set (one type lost to the write race above, or set by hand) shows as
+    // "not set" so re-picking repairs it, instead of reporting an app the
+    // other types don't actually resolve to.
+    let mut current = query_default(mimes[0]).await;
+    for mime in &mimes[1..] {
+        if current.is_none() {
+            break;
+        }
+        if query_default(mime).await != current {
+            current = None;
+        }
+    }
 
     let mut candidates: Vec<(String, String)> = apps
         .iter()
