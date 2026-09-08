@@ -325,10 +325,11 @@ async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
     // Mail scopes: these accounts feed cce-mail's IMAP/SMTP (XOAUTH2 needs
     // https://mail.google.com/). The old request asked for cloud-platform/
     // cclog/aicode scopes — tokens Gmail rejects with AUTHENTICATIONFAILED.
-    // tasks + calendar.readonly feed cce-list-sync and cce-calendar-sync,
-    // which read the tokens this flow stores in accounts.json.
+    // tasks, calendar.readonly and calendar.events feed cce-list-sync and
+    // cce-calendar-sync, which read the tokens this flow stores in
+    // accounts.json (events is the write half of the calendar mirror).
     let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fmail.google.com%2F+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Ftasks+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fmail.google.com%2F+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Ftasks+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
         client_config.client_id,
         challenge
     );
