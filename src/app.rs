@@ -133,7 +133,7 @@ pub enum ControlCarve {
     /// `PaintCtx::inset_plate` — a flush inset face over a boundary seam
     /// (Dropdown, Button). `color` fills the face; transparent leaves the
     /// plate below.
-    Plate { x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, color: [f32; 4] },
+    Plate { x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, color: [f32; 4], tint: Option<[f32; 3]> },
     /// A step carve straight from the toolkit (TextBox well, Toggle rocker
     /// halves and glider) — it already carries its own rect, per-corner radii,
     /// depth and wall mask, so nothing here re-derives them.
@@ -145,8 +145,8 @@ impl ControlCarve {
     /// collector applies when it lifts page carves to the popover layer.
     pub fn shifted_y(self, dy: f32) -> Self {
         match self {
-            Self::Plate { x, y, w, h, radius, depth, color } => {
-                Self::Plate { x, y: y + dy, w, h, radius, depth, color }
+            Self::Plate { x, y, w, h, radius, depth, color, tint } => {
+                Self::Plate { x, y: y + dy, w, h, radius, depth, color, tint }
             }
             Self::Step(c) => Self::Step(c.shifted_y(dy)),
         }
@@ -375,7 +375,7 @@ impl RenderTarget for PageContent {
             return;
         }
         self.control_relief_marks.push(self.rects.len());
-        self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color });
+        self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color, tint: None });
     }
 
     /// The same bridge for the step carves — a DIFFERENT shape, not an inset

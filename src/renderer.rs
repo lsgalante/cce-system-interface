@@ -504,15 +504,16 @@ impl SystemInterface {
             // coords, pre-scroll, like everything else in this list.
             if cce_ui::layout::control_relief() {
                 let rect = cce_ui::scene::layout::Rect { x: base.x, y: base.y, width: base.w, height: base.h };
-                if let Some((face, radius, depth, color)) = btn.inset_face(rect) {
+                if let Some(plate) = btn.plate(rect) {
                     self.page_control_reliefs.push(ControlCarve::Plate {
-                        x: face.x,
-                        y: face.y,
-                        w: face.width,
-                        h: face.height,
-                        radius,
-                        depth,
-                        color,
+                        x: plate.rect.x,
+                        y: plate.rect.y,
+                        w: plate.rect.width,
+                        h: plate.rect.height,
+                        radius: plate.radii.0,
+                        depth: plate.depth,
+                        color: plate.face,
+                        tint: plate.tint,
                     });
                     self.page_control_relief_marks.push(widgets.len());
                 }

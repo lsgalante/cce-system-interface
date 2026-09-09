@@ -145,12 +145,21 @@ struct SystemInterface {
 fn emit_control_carve(pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCarve) {
     use cce_ui::scene::layout::Rect;
     match carve {
-        ControlCarve::Plate { x, y, w, h, radius, depth, color } => pc.inset_plate(
-            Rect { x, y, width: w, height: h },
-            (radius, radius, radius, radius),
-            color,
-            depth,
-        ),
+        ControlCarve::Plate { x, y, w, h, radius, depth, color, tint } => match tint {
+            Some(t) => pc.inset_plate_tinted(
+                Rect { x, y, width: w, height: h },
+                (radius, radius, radius, radius),
+                color,
+                depth,
+                t,
+            ),
+            None => pc.inset_plate(
+                Rect { x, y, width: w, height: h },
+                (radius, radius, radius, radius),
+                color,
+                depth,
+            ),
+        },
         ControlCarve::Step(c) => pc.carve(&c),
     }
 }
