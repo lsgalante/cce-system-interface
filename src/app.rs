@@ -377,6 +377,9 @@ impl RenderTarget for PageContent {
         self.control_relief_marks.push(self.rects.len());
         self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color, tint: None });
     }
+    fn inset_plate_tinted(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, tint: [f32; 3]) {
+        self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color, tint: Some(tint) });
+    }
 
     /// The same bridge for the step carves — a DIFFERENT shape, not an inset
     /// plate at another rect: a trough is a seam about the boundary with the

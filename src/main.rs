@@ -619,6 +619,11 @@ impl cce_ui::engine::Application for SystemInterface {
         true
     }
 
+    /// The geometry is cached until the next rebuild — a moved focus ring needs one.
+    fn focus_stepped(&mut self) {
+        self.needs_rebuild = true;
+    }
+
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         if self.handle_key_input_internal(event) {
             *needs_rebuild = true;
