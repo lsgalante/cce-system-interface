@@ -604,6 +604,12 @@ impl cce_ui::engine::Application for SystemInterface {
         }
     }
 
+    /// Tab walks the page's plates and wells (cce-ui's navigation in plate
+    /// terms); the section chords in input.kdl keep their own walk.
+    fn plate_navigation(&self) -> bool {
+        true
+    }
+
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         if self.handle_key_input_internal(event) {
             *needs_rebuild = true;
