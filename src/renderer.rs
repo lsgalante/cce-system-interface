@@ -504,7 +504,18 @@ impl SystemInterface {
             // coords, pre-scroll, like everything else in this list.
             if cce_ui::layout::control_relief() {
                 let rect = cce_ui::scene::layout::Rect { x: base.x, y: base.y, width: base.w, height: base.h };
-                if let Some(plate) = btn.plate(rect) {
+                if let Some(mut plate) = btn.plate(rect) {
+                    // This pass's clone of the button a Tab step focused (its
+                    // registered rect, window coords, matches `refocus_rect`;
+                    // the view-pass tail hands it the focus): light its rim
+                    // now, since the carve is collected here, before that.
+                    let near = |a: f32, b: f32| (a - b).abs() < 0.5;
+                    let refocused = self
+                        .refocus_rect
+                        .is_some_and(|(fx, fy, fw, fh)| near(wx, fx) && near(wy, fy) && near(ww, fw) && near(wh, fh));
+                    if refocused {
+                        plate.tint = Some(cce_ui::widget::ControlPlate::focus_tint());
+                    }
                     self.page_control_reliefs.push(ControlCarve::Plate {
                         x: plate.rect.x,
                         y: plate.rect.y,
@@ -737,6 +748,23 @@ impl SystemInterface {
             for (btn, _) in self.page_buttons.iter_mut() {
                 let (id, ptr) = (btn.id(), btn.as_ptr_mut());
                 self.ui_context.register_widget(id, ptr);
+            }
+        }
+        // A Tab step's focus, handed to the fresh clone at the same rect (the
+        // page buttons above are per-rebuild allocations; see `focus_stepped`).
+        if let Some((fx, fy, fw, fh)) = self.refocus_rect.take() {
+            let near = |a: f32, b: f32| (a - b).abs() < 0.5;
+            let heir = self.ui_context.tree.iter_registered().find_map(|(id, ptr)| {
+                if ptr.is_null() {
+                    return None;
+                }
+                let w = unsafe { &*ptr };
+                let (x, y, ww, hh) = w.rect();
+                (w.focus_role() != cce_ui::widget::FocusRole::None && near(x, fx) && near(y, fy) && near(ww, fw) && near(hh, fh))
+                    .then_some(id)
+            });
+            if let Some(id) = heir {
+                self.ui_context.set_focused_id(id);
             }
         }
         self.needs_rebuild = false;

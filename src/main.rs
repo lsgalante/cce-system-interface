@@ -105,6 +105,11 @@ struct SystemInterface {
     // `section_widgets()` ids are not registered and every event to them is dropped with
     // a router warning. `dispatch_page_event` suppresses dispatch across that gap.
     laid_out_page: Option<Page>,
+    /// The rect of the widget a Tab step focused, carried across the rebuild
+    /// the step triggers: the page's buttons are per-rebuild clones, so the
+    /// focused id dies with the view pass and the clone at the same rect takes
+    /// the focus back (see `focus_stepped` / the view pass tail).
+    refocus_rect: Option<(f32, f32, f32, f32)>,
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
     // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
@@ -243,6 +248,7 @@ impl cce_ui::engine::Application for SystemInterface {
             last_scroll_y: 0.0,
             focused_section: None,
             laid_out_page: None,
+            refocus_rect: None,
             page_dropdown,
             page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
@@ -619,8 +625,15 @@ impl cce_ui::engine::Application for SystemInterface {
         true
     }
 
-    /// The geometry is cached until the next rebuild — a moved focus ring needs one.
+    /// The geometry is cached until the next rebuild — a moved focus ring needs
+    /// one — and that rebuild clones the page's buttons, so remember where the
+    /// focus went and hand it to the clone at that rect after the view pass.
     fn focus_stepped(&mut self) {
+        self.refocus_rect = self
+            .ui_context
+            .focused_widget
+            .and_then(|id| self.ui_context.tree.get_ptr(id))
+            .map(|ptr| unsafe { (*ptr).rect() });
         self.needs_rebuild = true;
     }
 
