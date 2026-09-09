@@ -95,6 +95,17 @@ impl SystemInterface {
             let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() % 100000;
             eprintln!("[hover] t={} rebuild", t);
         }
+        // Keyboard focus on a per-rebuild button clone dies with the registry
+        // wipe below — on EVERY rebuild, not just the one a Tab step triggers
+        // (the page polls and re-lays-out on its own). Remember where the
+        // focused widget sat: this pass lights the clone at that rect as it
+        // collects its plate, and the pass's tail hands it the focus. A
+        // persistent widget resolves to itself.
+        self.refocus_rect = self
+            .ui_context
+            .focused_widget
+            .and_then(|id| self.ui_context.tree.get_ptr(id))
+            .map(|ptr| unsafe { (*ptr).rect() });
         // SectionContainer dissolved (Phase 6w): no per-rebuild section clones to
         // relink — the page's widgets dispatch directly (registration happens in
         // render_widget during the view pass below).
