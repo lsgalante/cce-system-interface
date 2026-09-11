@@ -297,6 +297,13 @@ impl cce_ui::engine::Application for SystemInterface {
         self.needs_rebuild = true;
     }
 
+    /// `poll_background_updates` drains sixteen std channels fed by the
+    /// page workers; the runner cannot see them, so it may not sleep past
+    /// this between ticks.
+    fn idle_poll_interval(&self) -> Option<std::time::Duration> {
+        Some(std::time::Duration::from_millis(250))
+    }
+
     fn tick(&mut self, dt: f32, needs_rebuild: &mut bool) {
         if self.needs_rebuild {
             self.rebuild_layout(self.width as f32, self.height as f32);
