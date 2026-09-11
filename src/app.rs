@@ -134,8 +134,8 @@ pub enum ControlCarve {
     /// (Dropdown, Button). `color` fills the face; transparent leaves the
     /// plate below.
     Plate { x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, color: [f32; 4], tint: Option<[f32; 3]> },
-    /// A step carve straight from the toolkit (TextBox well, Toggle rocker
-    /// halves and glider) — it already carries its own rect, per-corner radii,
+    /// A step carve straight from the toolkit (TextBox well, a Toggle's well
+    /// and glider) — it already carries its own rect, per-corner radii,
     /// depth and wall mask, so nothing here re-derives them.
     Step(cce_ui::layout::ReliefCarve),
 }
