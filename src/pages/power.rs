@@ -216,7 +216,7 @@ fn drm_card_with_freq() -> Option<std::path::PathBuf> {
 }
 
 /// The first battery under /sys/class/power_supply, by convention BAT*.
-fn battery_dir() -> Option<std::path::PathBuf> {
+pub(crate) fn battery_dir() -> Option<std::path::PathBuf> {
     let rd = std::fs::read_dir("/sys/class/power_supply").ok()?;
     let mut bats: Vec<_> = rd
         .flatten()

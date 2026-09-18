@@ -1,6 +1,8 @@
 use crate::app::{AppAction, PageContent};
+use crate::power_meter::{self, Meter, Mode};
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct ProcessRow {
@@ -9,7 +11,32 @@ pub struct ProcessRow {
     pub mem_pct: String,
     pub rss_kb: u64,
     pub command: String,
+    /// Estimated draw from [`power_meter`]; None until the meter has two
+    /// samples of this pid, or when nothing on the host reports watts.
+    pub watts: Option<f32>,
+    /// Context switches per second over the last interval — the honest
+    /// signal for a process that burns power while looking idle.
+    pub wakeups: Option<f32>,
 }
+
+/// The whole-machine side of the estimate, for the line above the list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PowerSummary {
+    pub mode: Mode,
+    pub total_w: Option<f32>,
+    pub floor_w: Option<f32>,
+    pub attributed_w: f32,
+}
+
+impl Default for PowerSummary {
+    fn default() -> Self {
+        Self { mode: Mode::Warming, total_w: None, floor_w: None, attributed_w: 0.0 }
+    }
+}
+
+/// One meter for the page's lifetime: attribution is a delta between
+/// consecutive fetches, so the previous snapshot has to outlive the fetch.
+static METER: Mutex<Option<Meter>> = Mutex::new(None);
 
 /// Which column orders the list. Cpu is the default (ps sorts the fetch);
 /// Mem is the toggle — clicking a memory header switches to it, clicking
@@ -19,6 +46,8 @@ pub enum ProcSort {
     #[default]
     Cpu,
     Mem,
+    Power,
+    Wakeups,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +62,7 @@ pub struct ProcessesState {
     /// Active sort column. Survives refreshes: Refreshed re-sorts the fresh
     /// list under this key rather than resetting to the fetch order.
     pub sort: ProcSort,
+    pub power: PowerSummary,
 }
 
 impl Default for ProcessesState {
@@ -43,6 +73,7 @@ impl Default for ProcessesState {
             cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
             killing: std::collections::HashSet::new(),
             sort: ProcSort::Cpu,
+            power: PowerSummary::default(),
         }
     }
 }
@@ -68,7 +99,70 @@ fn sort_rows(rows: &mut [ProcessRow], sort: ProcSort) {
             bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
         }),
         ProcSort::Mem => rows.sort_by(|a, b| b.rss_kb.cmp(&a.rss_kb)),
+        // Unknowns sink below every known figure, however small.
+        ProcSort::Power => rows.sort_by(|a, b| {
+            b.watts.unwrap_or(-1.0).partial_cmp(&a.watts.unwrap_or(-1.0)).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        ProcSort::Wakeups => rows.sort_by(|a, b| {
+            b.wakeups.unwrap_or(-1.0).partial_cmp(&a.wakeups.unwrap_or(-1.0)).unwrap_or(std::cmp::Ordering::Equal)
+        }),
     }
+}
+
+/// Watts to one decimal; a dash below 0.05 W, so hundreds of idle rows do
+/// not read as fake precision, and for rows the meter has no figure for.
+pub fn format_watts(w: Option<f32>) -> String {
+    match w {
+        Some(w) if w >= 0.05 => format!("{:.1}", w),
+        _ => "\u{2014}".to_string(),
+    }
+}
+
+pub fn format_wakeups(w: Option<f32>) -> String {
+    match w {
+        Some(w) if w >= 0.5 => format!("{:.0}", w),
+        _ => "\u{2014}".to_string(),
+    }
+}
+
+/// The line above the list: what was measured, what is baseline, what the
+/// column adds up to — and, when the column is dashes, why.
+pub fn summary_line(p: &PowerSummary) -> String {
+    let how = match p.mode {
+        Mode::Warming => return "Measuring power\u{2026}".to_string(),
+        Mode::Unavailable => {
+            return "Per-process power needs the battery discharging or readable RAPL counters  \u{00b7}  wakeups only"
+                .to_string()
+        }
+        Mode::Battery => "estimated from battery draw",
+        Mode::Rapl => "RAPL",
+    };
+    let mut parts = Vec::new();
+    if let Some(t) = p.total_w {
+        parts.push(format!("{:.1} W total", t));
+    }
+    if let Some(f) = p.floor_w {
+        parts.push(format!("{:.1} W baseline", f));
+    }
+    parts.push(format!("{:.1} W attributed to processes ({})", p.attributed_w, how));
+    parts.join("  \u{00b7}  ")
+}
+
+/// nvidia-smi's draw figure, asked for only while the card is awake: the
+/// query itself would wake a suspended card, costing watts to report a zero.
+async fn dgpu_draw_w() -> Option<f64> {
+    if !power_meter::dgpu_awake() {
+        return None;
+    }
+    let out = tokio::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=power.draw", "--format=csv,noheader,nounits"])
+        .output()
+        .await
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout).lines().next()?.trim().parse().ok()
 }
 
 /// Process name from a `ps … cmd` field: basename of argv[0], so cce binaries
@@ -98,6 +192,18 @@ pub fn format_rss(kb: u64) -> String {
 }
 
 pub async fn fetch_processes_state() -> ProcessesState {
+    let dgpu_w = dgpu_draw_w().await;
+    let attribution = tokio::task::spawn_blocking(move || {
+        let snap = power_meter::sample(dgpu_w);
+        METER.lock().unwrap().get_or_insert_with(Meter::new).tick(snap)
+    })
+    .await
+    .ok();
+    let power = attribution
+        .as_ref()
+        .map(|a| PowerSummary { mode: a.mode, total_w: a.total_w, floor_w: a.floor_w, attributed_w: a.attributed_w })
+        .unwrap_or_default();
+
     let processes = {
         let mut list = Vec::new();
         if let Some(o) = tokio::process::Command::new("ps")
@@ -108,12 +214,18 @@ pub async fn fetch_processes_state() -> ProcessesState {
             for line in text.lines().skip(1) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 5 {
+                    let pp = parts[0]
+                        .parse::<u32>()
+                        .ok()
+                        .and_then(|pid| attribution.as_ref().and_then(|a| a.per_pid.get(&pid)).copied());
                     list.push(ProcessRow {
                         pid: parts[0].to_string(),
                         cpu: parts[1].to_string(),
                         mem_pct: parts[2].to_string(),
                         rss_kb: parts[3].parse().unwrap_or(0),
                         command: command_display(&parts[4..].join(" ")),
+                        watts: pp.and_then(|p| p.watts),
+                        wakeups: pp.map(|p| p.wakeups_per_s),
                     });
                 }
             }
@@ -127,6 +239,7 @@ pub async fn fetch_processes_state() -> ProcessesState {
         cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
         killing: std::collections::HashSet::new(),
         sort: ProcSort::Cpu,
+        power,
     }
 }
 
@@ -148,8 +261,11 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // between the list and the well's walls on all four sides.
             let inset = 12.0;
             let list_box_x = rx + inset;
-            let list_box_y = sec.well_top() + inset;
             let list_box_w = sec.cw - 2.0 * inset;
+            // Power summary line above the list; the list starts below it.
+            let summary_h = 18.0;
+            sec.pc.text(&summary_line(&state.power), list_box_x, sec.well_top() + inset + 2.0, 11.0, TEXT_DIM);
+            let list_box_y = sec.well_top() + inset + summary_h;
             // Fill the page: the well's bottom wall lands at the page bottom,
             // the list keeps its even inset inside the well.
             let list_box_h = ((cy + ch) - inset - list_box_y).max(120.0);
@@ -161,11 +277,13 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // subtracts scroll_x. CONTENT_W > box width = the h-bar appears.
             const COL_PID: f32 = 12.0;
             const COL_COMMAND: f32 = 80.0;
-            const COL_RSS: f32 = 420.0;
-            const COL_MEM: f32 = 510.0;
-            const COL_CPU: f32 = 580.0;
-            const COL_KILL: f32 = 624.0;
-            const CONTENT_W: f32 = 650.0;
+            const COL_RSS: f32 = 400.0;
+            const COL_MEM: f32 = 480.0;
+            const COL_CPU: f32 = 545.0;
+            const COL_WATTS: f32 = 605.0;
+            const COL_WAKE: f32 = 655.0;
+            const COL_KILL: f32 = 720.0;
+            const CONTENT_W: f32 = 745.0;
 
             let header_h = 22.0;
             state.cpu_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
@@ -197,6 +315,8 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             sec.pc.text(&mark("MEM", active(ProcSort::Mem)), list_box_x + COL_RSS - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Mem)));
             sec.pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Mem)));
             sec.pc.text(&mark("CPU %", active(ProcSort::Cpu)), list_box_x + COL_CPU - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Cpu)));
+            sec.pc.text(&mark("W", active(ProcSort::Power)), list_box_x + COL_WATTS - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Power)));
+            sec.pc.text(&mark("WAKE/s", active(ProcSort::Wakeups)), list_box_x + COL_WAKE - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Wakeups)));
 
             // Invisible header hit targets (transparent, subtle hover), inside
             // the header clip so they pan and cut with the labels. They share
@@ -207,6 +327,10 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
             sec.pc.button("", list_box_x + COL_CPU - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
                 [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Cpu)));
+            sec.pc.button("", list_box_x + COL_WATTS - ox - 4.0, list_box_y, 48.0, header_h - 2.0,
+                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Power)));
+            sec.pc.button("", list_box_x + COL_WAKE - ox - 4.0, list_box_y, 62.0, header_h - 2.0,
+                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Wakeups)));
             sec.pc.pop_clip_rect();
 
             let row_h = 24.0;
@@ -236,12 +360,15 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     let fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.80, 0.80, 0.85, 1.0] };
                     let mem_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.62, 0.72, 0.88, 1.0] };
                     let cpu_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.56, 0.83, 0.56, 1.0] };
+                    let watt_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.90, 0.75, 0.45, 1.0] };
 
                     sec.pc.text(&p.pid, list_box_x + COL_PID - ox, draw_y + 6.0, 12.0, fg);
                     sec.pc.text(&p.command, list_box_x + COL_COMMAND - ox, draw_y + 6.0, 12.0, fg);
                     sec.pc.text(&format_rss(p.rss_kb), list_box_x + COL_RSS - ox, draw_y + 6.0, 12.0, mem_fg);
                     sec.pc.text(&format!("{}%", p.mem_pct), list_box_x + COL_MEM - ox, draw_y + 6.0, 12.0, mem_fg);
                     sec.pc.text(&format!("{}%", p.cpu), list_box_x + COL_CPU - ox, draw_y + 6.0, 12.0, cpu_fg);
+                    sec.pc.text(&format_watts(p.watts), list_box_x + COL_WATTS - ox, draw_y + 6.0, 12.0, watt_fg);
+                    sec.pc.text(&format_wakeups(p.wakeups), list_box_x + COL_WAKE - ox, draw_y + 6.0, 12.0, fg);
 
                     // Kill button, in content space like the columns. Emitted
                     // AFTER the row button on purpose: overlapping page
@@ -283,6 +410,7 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
         ProcessesMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.processes = new.processes;
+            state.power = new.power;
             // The fetch arrives cpu-ordered; a non-default sort re-applies so
             // a refresh never silently flips the list back.
             if state.sort != ProcSort::Cpu {
@@ -293,8 +421,8 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
             state.killing.clear();
         }
         ProcessesMessage::SortBy(key) => {
-            // Clicking the already-active Mem header toggles back to the Cpu
-            // default; clicking CPU % is always a plain select.
+            // Clicking the already-active header (Mem, Power, Wakeups)
+            // toggles back to the Cpu default; CPU % is always a plain select.
             state.sort = if state.sort == key { ProcSort::Cpu } else { key };
             sort_rows(&mut state.processes, state.sort);
         }
@@ -402,6 +530,8 @@ mod tests {
             mem_pct: "2.0".to_string(),
             rss_kb: 1024,
             command: "proc".to_string(),
+            watts: None,
+            wakeups: None,
         }
     }
 
@@ -465,6 +595,8 @@ mod tests {
             mem_pct: "0.0".to_string(),
             rss_kb: rss,
             command: "p".to_string(),
+            watts: None,
+            wakeups: None,
         }
     }
 
@@ -527,8 +659,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        // MEM + MEM % both toggle Mem; CPU % selects Cpu.
-        assert_eq!(sorts, [ProcSort::Mem, ProcSort::Mem, ProcSort::Cpu]);
+        // MEM + MEM % both toggle Mem; CPU % selects Cpu; then W and WAKE/s.
+        assert_eq!(sorts, [ProcSort::Mem, ProcSort::Mem, ProcSort::Cpu, ProcSort::Power, ProcSort::Wakeups]);
         // Active-sort indicator rides the CPU % header by default.
         assert!(pc.texts.iter().any(|t| t.0.starts_with("CPU %") && t.0.contains('\u{25bc}')));
     }
@@ -554,5 +686,68 @@ mod tests {
         let pc1 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx);
         assert_eq!(header_x(&pc1, "MEM %"), x0 - 40.0);
         assert_eq!(header_x(&pc1, "CPU %"), header_x(&pc0, "CPU %") - 40.0);
+    }
+
+    #[test]
+    fn power_sort_puts_unknowns_last_and_toggles_back() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        let mut a = sized_row("a", "9.0", 1);
+        let mut b = sized_row("b", "5.0", 1);
+        let c = sized_row("c", "1.0", 1);
+        a.watts = Some(0.2);
+        b.watts = Some(1.5);
+        state.processes = vec![a, b, c];
+        let order = |s: &ProcessesState| s.processes.iter().map(|p| p.pid.clone()).collect::<Vec<_>>();
+        update(&mut state, ProcessesMessage::SortBy(ProcSort::Power));
+        assert_eq!(order(&state), ["b", "a", "c"]);
+        update(&mut state, ProcessesMessage::SortBy(ProcSort::Power));
+        assert_eq!(state.sort, ProcSort::Cpu);
+        assert_eq!(order(&state), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn watts_and_wakeups_format_with_dashes_for_noise() {
+        assert_eq!(format_watts(None), "\u{2014}");
+        assert_eq!(format_watts(Some(0.04)), "\u{2014}");
+        assert_eq!(format_watts(Some(0.05)), "0.1");
+        assert_eq!(format_watts(Some(2.345)), "2.3");
+        assert_eq!(format_wakeups(None), "\u{2014}");
+        assert_eq!(format_wakeups(Some(0.2)), "\u{2014}");
+        assert_eq!(format_wakeups(Some(12.6)), "13");
+    }
+
+    #[test]
+    fn summary_line_states_mode_and_reason() {
+        let p = PowerSummary { mode: Mode::Battery, total_w: Some(16.0), floor_w: Some(10.0), attributed_w: 6.0 };
+        assert_eq!(
+            summary_line(&p),
+            "16.0 W total  \u{00b7}  10.0 W baseline  \u{00b7}  6.0 W attributed to processes (estimated from battery draw)"
+        );
+        assert!(summary_line(&PowerSummary::default()).starts_with("Measuring"));
+        let u = PowerSummary { mode: Mode::Unavailable, ..Default::default() };
+        assert!(summary_line(&u).contains("wakeups only"));
+    }
+
+    #[test]
+    fn refresh_carries_the_power_summary_and_rows_show_watts() {
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        let mut r = sized_row("7", "1.0", 1);
+        r.watts = Some(1.26);
+        r.wakeups = Some(40.0);
+        let fresh = ProcessesState {
+            loaded: true,
+            processes: vec![r],
+            power: PowerSummary { mode: Mode::Battery, total_w: Some(20.0), floor_w: Some(15.0), attributed_w: 1.26 },
+            ..Default::default()
+        };
+        update(&mut state, ProcessesMessage::Refreshed(fresh));
+        assert_eq!(state.power.mode, Mode::Battery);
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut ctx = cce_ui::context::UiContext::new();
+        let pc = view(&mut state, 10.0, 20.0, 900.0, 600.0, false, &[false], &mut layout, &mut ctx);
+        let all: Vec<&str> = pc.texts.iter().map(|t| t.0.as_str()).collect();
+        assert!(pc.texts.iter().any(|t| t.0 == "1.3"), "{all:?}");
+        assert!(pc.texts.iter().any(|t| t.0 == "40"));
+        assert!(pc.texts.iter().any(|t| t.0.starts_with("20.0 W total")));
     }
 }
