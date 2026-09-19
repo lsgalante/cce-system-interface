@@ -10,6 +10,32 @@ pub struct NotificationsConfig {
     pub duration: i32,
 }
 
+/// The root-owned half of the desktop's install: `/usr/bin` binaries, system
+/// units and `/etc/pam.d` stacks. `ccebuild install` never touches these —
+/// they need root — so they drift silently, and have: the greeter fix for the
+/// suspend/resume hang sat built but undeployed for weeks because deploying it
+/// meant remembering to run one command in a terminal.
+///
+/// The plan is read with `install-system --dry-run`, which compares as the
+/// normal user (every target is world-readable) and prints one `name -> dest`
+/// line per pending change. Applying re-plans and runs the whole batch under a
+/// single pkexec, authenticated by the session's polkit agent
+/// (`cce-authenticator`) like every other privileged action in this desktop.
+#[derive(Clone, Default)]
+pub struct SysFiles {
+    /// Whether a scan has completed; until then the section says so rather
+    /// than claiming everything is up to date.
+    pub scanned: bool,
+    /// One `name -> dest` line per pending change. Empty after a scan means
+    /// the system artifacts match the build.
+    pub pending: Vec<String>,
+    /// A scan or an install is in flight. Also gates the button, so a second
+    /// click cannot start a second pkexec.
+    pub busy: bool,
+    /// Outcome of the last install attempt, shown until the next one.
+    pub result: Option<Result<(), String>>,
+}
+
 #[derive(Clone)]
 pub struct SystemState {
     pub hostname: String,
@@ -32,6 +58,7 @@ pub struct SystemState {
     // Native layout tracking and widgets
     pub initialized: bool,
     pub sender: Option<calloop::channel::Sender<AppAction>>,
+    pub sysfiles: SysFiles,
     pub hostname_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub uptime_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
 
@@ -77,6 +104,7 @@ impl Default for SystemState {
 
             initialized: false,
             sender: None,
+            sysfiles: SysFiles::default(),
             hostname_label: Label::new(""),
             uptime_label: Label::new(""),
 
@@ -120,6 +148,12 @@ pub enum SystemMessage {
     PowerOff,
     ForceShutdown,
 
+    /// Read the pending root-owned changes (`install-system --dry-run`).
+    ScanSystemFiles,
+    SystemFilesScanned(Vec<String>),
+    /// Apply them, authenticating through the polkit agent.
+    InstallSystemFiles,
+    SystemFilesInstalled(Result<(), String>),
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -182,6 +216,47 @@ async fn read_nvidia_gpu_temp() -> Option<f32> {
         .output().await.ok()?;
     let val_str = String::from_utf8_lossy(&out.stdout);
     val_str.trim().parse::<f32>().ok()
+}
+
+/// The installed `ccebuild`, by absolute path. An app launched from the menu
+/// gets systemd's environment rather than the session's, so `~/.local/bin` is
+/// not reliably on PATH — the same trap the desktop-menu script avoids by
+/// spelling out `$HOME/.local/bin/ccectl`. Falls back to the bare name so a
+/// PATH that does have it still works.
+fn ccebuild_path() -> std::path::PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        let p = std::path::Path::new(&home).join(".local/bin/ccebuild");
+        if p.is_file() {
+            return p;
+        }
+    }
+    std::path::PathBuf::from("ccebuild")
+}
+
+/// The `  name -> dest` lines of a dry run: one per root-owned file that
+/// differs from the build. Anything else the script prints (the `==>` banners,
+/// the queued root commands) is not a pending change and is dropped.
+fn parse_pending(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .filter(|l| l.starts_with("  ") && l.contains(" -> "))
+        .map(|l| l.trim().to_string())
+        .collect()
+}
+
+/// Run one `ccebuild install-system` variant off the UI thread and post the
+/// result back through the page's sender. Both calls shell out rather than
+/// reimplementing the compare, so the plan has exactly one author — the same
+/// reason the apply re-plans instead of trusting what the scan printed.
+fn spawn_sysfiles<F>(sender: Option<calloop::channel::Sender<AppAction>>, args: &'static [&'static str], done: F)
+where
+    F: FnOnce(std::io::Result<std::process::Output>) -> SystemMessage + Send + 'static,
+{
+    let Some(tx) = sender else { return };
+    std::thread::spawn(move || {
+        let out = std::process::Command::new(ccebuild_path()).args(args).output();
+        let _ = tx.send(AppAction::SystemInfo(done(out)));
+    });
 }
 
 fn spawn_systemctl(action: &str) {
@@ -326,7 +401,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     // section_widgets reports. The count caps the grid's column count
     // (`n.min(cols)`), so the stale 8 only bit once the window was wide enough
     // for eight columns — harmless, but it read as a missing eighth section.
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(5);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
 
     // ── 1. System Section ──
     builder.add_section(&mut final_pc, "System", sec_focused.first().copied().unwrap_or(false), |sec| {
@@ -396,7 +471,84 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         }
     });
 
-    // ── 5. CPU Governor Section ──
+    // ── 5. System Files Section ──
+    // The root-owned half of the install, which `ccebuild install` cannot
+    // touch. It lives here rather than on the desktop menu so the pending
+    // changes can be READ before they are authorized: this batch can rewrite
+    // /etc/pam.d, and a flat menu button would be one misclick from replacing
+    // the greeter out of a half-built tree.
+    builder.add_section(&mut final_pc, "System Files", sec_focused.get(4).copied().unwrap_or(false), |sec| {
+        let sf = &state.sysfiles;
+        let mut stack = sec.vstack(6.0);
+
+        let (status, color) = if sf.busy {
+            ("Checking…".to_string(), TEXT_DIM)
+        } else if !sf.scanned {
+            ("Not checked yet".to_string(), TEXT_DIM)
+        } else if sf.pending.is_empty() {
+            ("Up to date with the build".to_string(), TEXT_DIM)
+        } else {
+            (
+                format!(
+                    "{} file{} differ{} from the build",
+                    sf.pending.len(),
+                    if sf.pending.len() == 1 { "" } else { "s" },
+                    if sf.pending.len() == 1 { "s" } else { "" },
+                ),
+                TEXT_FG,
+            )
+        };
+        stack.add_row(1, 0.0, 16.0, |c, _, x, _| {
+            let y = c.ay();
+            c.pc.text(&status, x, y + 4.0, 12.0, color);
+        });
+
+        // Name the files. "2 files differ" is not enough to authorize a root
+        // install on — which one is the greeter matters.
+        for line in sf.pending.iter().take(8) {
+            let line = line.clone();
+            stack.add_row(1, 0.0, 14.0, move |c, _, x, _| {
+                let y = c.ay();
+                c.pc.text(&line, x + 8.0, y + 3.0, 11.0, TEXT_DIM);
+            });
+        }
+
+        if let Some(ref res) = sf.result {
+            let (msg, col) = match res {
+                Ok(()) => ("Installed — takes effect at next login".to_string(), TEXT_DIM),
+                Err(e) => (format!("Failed: {}", e), DANGER_BG),
+            };
+            stack.add_row(1, 0.0, 16.0, move |c, _, x, _| {
+                let y = c.ay();
+                c.pc.text(&msg, x, y + 4.0, 11.0, col);
+            });
+        }
+
+        let btn_h = 32.0;
+        let has_work = sf.scanned && !sf.pending.is_empty();
+        let busy = sf.busy;
+        stack.add_row(2, 8.0, btn_h, move |c, i, x, w| {
+            match i {
+                0 => {
+                    c.button("Check", x, c.ay(), w, btn_h,
+                        SAFE_BG, BTN_HOVER, WHITE,
+                        AppAction::SystemInfo(SystemMessage::ScanSystemFiles));
+                }
+                1 => {
+                    // Only offered when there is something to install. The
+                    // apply re-plans anyway, so a stale-enabled button would
+                    // be a no-op rather than a hazard — but it would also put
+                    // up a root prompt for nothing.
+                    if has_work && !busy {
+                        c.button("Install (root)", x, c.ay(), w, btn_h,
+                            DANGER_BG, BTN_HOVER, WHITE,
+                            AppAction::SystemInfo(SystemMessage::InstallSystemFiles));
+                    }
+                }
+                _ => {}
+            }
+        });
+    });
 
     // ── 6. GPU Power Section ──
 
@@ -436,6 +588,14 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
                 state.hostname_label.mark_dirty(ctx);
             }
+
+            // First refresh doubles as the first system-files scan, so the
+            // section has an answer without the user pressing Check. Guarded
+            // on both flags because Refreshed repeats on a timer and each scan
+            // is a process spawn.
+            if !state.sysfiles.scanned && !state.sysfiles.busy {
+                update(state, SystemMessage::ScanSystemFiles, ctx);
+            }
         }
         SystemMessage::Suspend => spawn_systemctl("suspend"),
         SystemMessage::Hibernate => spawn_systemctl("hibernate"),
@@ -443,15 +603,69 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
         SystemMessage::PowerOff => spawn_systemctl("poweroff"),
         SystemMessage::ForceShutdown => spawn_systemctl_force("poweroff"),
 
+        SystemMessage::ScanSystemFiles => {
+            state.sysfiles.busy = true;
+            spawn_sysfiles(state.sender.clone(), &["install-system", "--dry-run"], |out| {
+                let pending = match out {
+                    Ok(o) => parse_pending(&String::from_utf8_lossy(&o.stdout)),
+                    // A scan that could not run reports nothing pending, and
+                    // `scanned` still flips — the section then says "up to
+                    // date", which is wrong but harmless, where a spinner that
+                    // never resolves would be a hang. The install button is the
+                    // real check: it re-plans and would find the work.
+                    Err(_) => Vec::new(),
+                };
+                SystemMessage::SystemFilesScanned(pending)
+            });
+        }
+        SystemMessage::SystemFilesScanned(pending) => {
+            state.sysfiles.pending = pending;
+            state.sysfiles.scanned = true;
+            state.sysfiles.busy = false;
+        }
+        SystemMessage::InstallSystemFiles => {
+            state.sysfiles.busy = true;
+            state.sysfiles.result = None;
+            // --pkexec explicitly rather than letting the auto path decide:
+            // this process has no TTY, so auto would pick pkexec anyway, but
+            // saying so keeps the GUI's behaviour independent of how the
+            // script guesses.
+            spawn_sysfiles(state.sender.clone(), &["install-system", "--pkexec"], |out| {
+                let res = match out {
+                    Ok(o) if o.status.success() => Ok(()),
+                    // A cancelled or failed polkit prompt exits non-zero with
+                    // its reason on stderr; surface that rather than a code.
+                    Ok(o) => {
+                        let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                        Err(if err.is_empty() { format!("exited {}", o.status) } else { err })
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
+                SystemMessage::SystemFilesInstalled(res)
+            });
+        }
+        SystemMessage::SystemFilesInstalled(res) => {
+            let ok = res.is_ok();
+            state.sysfiles.result = Some(res);
+            state.sysfiles.busy = false;
+            if ok {
+                // Re-scan rather than assuming the list is now empty: the
+                // apply re-plans, so what it actually did is only knowable by
+                // asking again.
+                state.sysfiles.scanned = false;
+                update(state, SystemMessage::ScanSystemFiles, ctx);
+            }
+        }
     }
 }
 
 
 
 impl crate::pages::AppPage for SystemState {
-    // Sections: [System, System Actions, CPU, GPU, Battery]
+    // Sections: [System, System Actions, CPU, GPU, System Files, Battery]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -490,6 +704,29 @@ impl crate::pages::AppPage for SystemState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The dry run prints pending changes, banners and the queued root
+    /// commands down one stream; only the indented `name -> dest` lines are
+    /// changes. Getting this wrong in the lenient direction would list
+    /// `install -m 644 ... -> ...` as a pending file, and in the strict
+    /// direction would hide a pending PAM stack — which is the one thing the
+    /// section exists to show before a root install is authorized.
+    #[test]
+    fn parse_pending_takes_only_the_change_lines() {
+        let out = "  cce-display-manager -> /usr/bin/cce-display-manager\n                   \x20 cce-lock -> /etc/pam.d/cce-lock\n                   ==> dry run; would run as root:\n                   \n                   cp -a /usr/bin/cce-display-manager /usr/bin/cce-display-manager.bak-2026-09-19 \n                   install -m 644 /src/cce-lock /etc/pam.d/cce-lock \n";
+        assert_eq!(
+            parse_pending(out),
+            vec![
+                "cce-display-manager -> /usr/bin/cce-display-manager".to_string(),
+                "cce-lock -> /etc/pam.d/cce-lock".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_pending_is_empty_when_nothing_differs() {
+        assert!(parse_pending("==> system artifacts already up to date\n").is_empty());
+    }
 
     #[test]
     fn test_view_layout_grid() {
