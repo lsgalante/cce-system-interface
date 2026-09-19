@@ -259,6 +259,16 @@ where
     });
 }
 
+/// Width a label needs on a button plate: the measured text plus the plate's
+/// own 8px inset each side, and a little air. Feeds `add_row_for`, so a row of
+/// buttons is divided by what is written on them rather than into equal
+/// slices — "Reboot" and "Hibernate" are not the same size and a row that
+/// pretends otherwise clips one and pads the other.
+fn button_need(label: &str) -> f32 {
+    let (family, size) = cce_ui::layout::control_label_font_parsed();
+    cce_ui::widget::display::measure_text_width(label, &family, size) + 24.0
+}
+
 fn spawn_systemctl(action: &str) {
     let mut cmd = std::process::Command::new("systemctl");
     cmd.arg(action);
@@ -418,7 +428,9 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let mut stack = sec.vstack(8.0);
         let act_btn_h = 32.0;
 
-        stack.add_row(4, 8.0, act_btn_h, |ctx, i, x, w| {
+        const ACTIONS: [&str; 4] = ["Suspend", "Hibernate", "Reboot", "Power Off"];
+        let needs: Vec<f32> = ACTIONS.iter().map(|l| button_need(l)).collect();
+        stack.add_row_for(&needs, 8.0, act_btn_h, |ctx, i, x, w| {
             match i {
                 0 => {
                     ctx.button("Suspend", x, ctx.ay(), w, act_btn_h,
@@ -527,7 +539,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let btn_h = 32.0;
         let has_work = sf.scanned && !sf.pending.is_empty();
         let busy = sf.busy;
-        stack.add_row(2, 8.0, btn_h, move |c, i, x, w| {
+        let needs = [button_need("Check"), button_need("Install (root)")];
+        stack.add_row_for(&needs, 8.0, btn_h, move |c, i, x, w| {
             match i {
                 0 => {
                     c.button("Check", x, c.ay(), w, btn_h,
