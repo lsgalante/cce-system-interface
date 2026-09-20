@@ -229,9 +229,6 @@ pub async fn fetch_accounts() -> AccountsSnapshot {
     AccountsSnapshot { accounts, keyring }
 }
 
-const GOOGLE_CLIENT_ID: &str = "REDACTED.apps.googleusercontent.com";
-const GOOGLE_CLIENT_SECRET: &str = "GOCSPX-REDACTED";
-
 fn generate_pkce() -> (String, String) {
     use ring::rand::SecureRandom;
     use base64::Engine;
@@ -272,28 +269,22 @@ fn write_google_client_config(p: &std::path::Path, config: &GoogleClientConfig) 
     Ok(())
 }
 
+/// The Google OAuth client this desktop uses. There is no built-in default:
+/// the ID and secret used to be compiled in as constants, which put a live
+/// client secret into a public repository. They now come only from
+/// google_client.json, written by the Accounts page when the user pastes
+/// their own client's values. An empty config means "not set up yet"; the
+/// page shows the boxes to fill in.
 pub fn load_google_client_config() -> GoogleClientConfig {
     let p = cce_ui::config::cce_config_dir().join("google_client.json");
-    let default_config = GoogleClientConfig {
-        client_id: GOOGLE_CLIENT_ID.to_string(),
-        client_secret: GOOGLE_CLIENT_SECRET.to_string(),
-    };
-    if p.exists() {
-        if let Ok(content) = std::fs::read_to_string(&p) {
-            if let Ok(config) = serde_json::from_str::<GoogleClientConfig>(&content) {
-                // If it is the old dummy client ID, or if it is the new client ID but the secret is empty, overwrite/migrate it
-                if config.client_id == "REDACTED.apps.googleusercontent.com"
-                    || (config.client_id == GOOGLE_CLIENT_ID && config.client_secret.is_empty())
-                {
-                    let _ = write_google_client_config(&p, &default_config);
-                    return default_config;
-                }
-                return config;
-            }
+    if let Ok(content) = std::fs::read_to_string(&p) {
+        if let Ok(config) = serde_json::from_str::<GoogleClientConfig>(&content) {
+            return config;
         }
     }
-    let _ = write_google_client_config(&p, &default_config);
-    default_config
+    let empty = GoogleClientConfig { client_id: String::new(), client_secret: String::new() };
+    let _ = write_google_client_config(&p, &empty);
+    empty
 }
 
 /// How long the loopback listener waits for the browser redirect before giving
