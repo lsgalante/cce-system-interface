@@ -375,8 +375,7 @@ impl cce_ui::engine::Application for SystemInterface {
             // plate's corners from the compositor's silhouette clip.
             pc.plate_spec(&cce_ui::scene::paint::PlateSpec {
                 rect: Rect { x: 0.0, y: 0.0, width, height },
-                color: plate,
-                blur: false,
+                material: cce_ui::scene::Material::opaque(plate),
                 window_corners: (true, true, true, true),
                 depth: cce_ui::layout::bevel_width(),
             });
