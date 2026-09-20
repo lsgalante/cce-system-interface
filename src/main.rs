@@ -154,14 +154,14 @@ fn emit_control_carve(pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCar
             Some(t) => pc.inset_plate_tinted(
                 Rect { x, y, width: w, height: h },
                 (radius, radius, radius, radius),
-                color,
+                cce_ui::scene::Material::face(color).as_ref(),
                 depth,
                 t,
             ),
             None => pc.inset_plate(
                 Rect { x, y, width: w, height: h },
                 (radius, radius, radius, radius),
-                color,
+                cce_ui::scene::Material::face(color).as_ref(),
                 depth,
             ),
         },

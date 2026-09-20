@@ -534,7 +534,7 @@ impl SystemInterface {
                         h: plate.rect.height,
                         radius: plate.radii.0,
                         depth: plate.depth,
-                        color: plate.face,
+                        color: plate.face_fill(),
                         tint: plate.tint,
                     });
                     self.page_control_relief_marks.push(widgets.len());
