@@ -1,4 +1,6 @@
-//! Power: battery facts plus the host's real battery-life levers, all sysfs.
+//! Power: battery facts plus the host's real battery-life levers, all sysfs,
+//! kept as two plans — one for when the machine is plugged in, one for when
+//! it runs on battery.
 //!
 //! Every control is discovered from the interfaces this machine actually
 //! exposes (missing ones render as absent, not as dead widgets):
@@ -8,14 +10,24 @@
 //!   charge at 80% is the classic battery-longevity lever
 //! - `/sys/devices/system/cpu/intel_pstate/no_turbo` — turbo boost
 //!
-//! Reads are plain file reads; writes go through `pkexec sh -c` like every
-//! other privileged action in this app (bluetooth, storage, packages). The
-//! UI is optimistic and the 5s watcher re-reads the truth, so a dismissed
-//! auth prompt reverts the dropdown — honest, with no extra error channel.
+//! The page is three sections: the battery itself (facts and the charge
+//! limit, which is a charging policy and so not per source), then one column
+//! of levers per power source. The column for the source that is active right
+//! now shows the LIVE sysfs values and a pick there applies immediately; the
+//! other column shows what is planned for that source, with a "Not set" row
+//! meaning "leave it alone". Both are remembered in the plan
+//! (`crate::power_plan`, `/etc/cce/power.kdl`) through `cce-power-apply`
+//! under pkexec — the one-prompt path every privileged action in this app
+//! takes — and the same helper re-applies the plan from udev when the charger
+//! comes or goes. The UI is optimistic and the 5s watcher re-reads the truth,
+//! so a dismissed auth prompt reverts the dropdown — honest, with no extra
+//! error channel.
 
 use crate::app::{AppAction, PageContent};
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
-use cce_ui::widget::{Dropdown, WidgetHost};
+use crate::power_plan::{self, Lever, PowerPlan, Source};
+use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
+use cce_ui::widget::{Adapted, Dropdown, WidgetHost};
+use std::path::{Path, PathBuf};
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
@@ -34,6 +46,12 @@ pub struct PowerFacts {
     /// Instantaneous draw in watts, meaningful while discharging.
     pub power_w: Option<f32>,
     pub ac_online: Option<bool>,
+    /// Which plan is in force right now, from the Mains supply.
+    pub source: Source,
+    /// The per-source plan on disk, and whether the root side that applies
+    /// it on plug/unplug (helper + udev rule) is installed.
+    pub plan: PowerPlan,
+    pub automation: bool,
     /// platform_profile choices in sysfs spelling, and the active one.
     pub profiles: Vec<String>,
     pub profile: String,
@@ -77,26 +95,44 @@ pub struct PowerFacts {
     pub gpu_min_w: Option<u32>,
 }
 
+/// One power source's column of lever dropdowns.
+#[derive(Debug, Clone)]
+pub struct LeverColumn {
+    pub source: Source,
+    /// One dropdown per [`Lever::ALL`] entry, in that order.
+    pub dds: Vec<Adapted<Dropdown>>,
+    /// The plan value behind each row of each dropdown (options are display
+    /// text). Empty string is the "Not set" row; an empty Vec means the
+    /// interface is absent on this host and the dropdown is not painted.
+    pub rows: Vec<Vec<String>>,
+}
+
+impl LeverColumn {
+    fn new(source: Source) -> Self {
+        Self {
+            source,
+            dds: Lever::ALL
+                .iter()
+                .map(|l| Dropdown::new(vec!["—".to_string()], 0).with_label(l.label()))
+                .collect(),
+            rows: vec![Vec::new(); Lever::ALL.len()],
+        }
+    }
+}
+
+fn lever_index(lever: Lever) -> usize {
+    Lever::ALL.iter().position(|l| *l == lever).unwrap()
+}
+
 #[derive(Debug, Clone)]
 pub struct PowerState {
     pub loaded: bool,
     pub facts: PowerFacts,
-    pub dd_profile: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_epp: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_limit: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_turbo: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_governor: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_gpu: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_igpu: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_aspm: cce_ui::widget::Adapted<Dropdown>,
-    pub dd_audio: cce_ui::widget::Adapted<Dropdown>,
+    pub dd_limit: Adapted<Dropdown>,
     /// Sysfs value per charge-limit dropdown row (options are display text).
     pub limit_values: Vec<u32>,
-    /// Watts per GPU-limit dropdown row (options are display text).
-    pub gpu_values: Vec<u32>,
-    /// MHz per iGPU-clock row, and idle seconds per audio row.
-    pub igpu_values: Vec<u32>,
-    pub audio_values: Vec<u32>,
+    pub ac: LeverColumn,
+    pub battery: LeverColumn,
 }
 
 impl Default for PowerState {
@@ -104,56 +140,59 @@ impl Default for PowerState {
         Self {
             loaded: false,
             facts: PowerFacts::default(),
-            dd_profile: Dropdown::new(vec!["—".to_string()], 0).with_label("Power Profile"),
-            dd_epp: Dropdown::new(vec!["—".to_string()], 0).with_label("CPU Energy Preference"),
             dd_limit: Dropdown::new(vec!["—".to_string()], 0).with_label("Battery Charge Limit"),
-            dd_turbo: Dropdown::new(vec!["Enabled".to_string(), "Disabled".to_string()], 0)
-                .with_label("CPU Turbo Boost"),
-            dd_governor: Dropdown::new(vec!["—".to_string()], 0).with_label("CPU Governor"),
-            dd_gpu: Dropdown::new(vec!["—".to_string()], 0).with_label("GPU Power Limit"),
-            dd_igpu: Dropdown::new(vec!["—".to_string()], 0).with_label("Integrated GPU Max Clock"),
-            dd_aspm: Dropdown::new(vec!["—".to_string()], 0).with_label("PCIe Power Management"),
-            dd_audio: Dropdown::new(vec!["—".to_string()], 0).with_label("Audio Codec Idle"),
             limit_values: Vec::new(),
-            gpu_values: Vec::new(),
-            igpu_values: Vec::new(),
-            audio_values: Vec::new(),
+            ac: LeverColumn::new(Source::Ac),
+            battery: LeverColumn::new(Source::Battery),
         }
     }
+}
+
+impl PowerState {
+    pub fn column_mut(&mut self, source: Source) -> &mut LeverColumn {
+        match source {
+            Source::Ac => &mut self.ac,
+            Source::Battery => &mut self.battery,
+        }
+    }
+}
+
+/// Which lever columns the page shows. A host with no battery has one power
+/// source, so the battery column would be a plan for a state it never enters.
+fn columns_shown(f: &PowerFacts) -> Vec<Source> {
+    if f.battery_present { vec![Source::Ac, Source::Battery] } else { vec![Source::Ac] }
 }
 
 #[derive(Debug, Clone)]
 pub enum PowerMessage {
     Refreshed(PowerFacts),
-    /// Dropdown picks, by option index.
-    SetProfile(usize),
-    SetEpp(usize),
+    /// Charge-limit pick, by option index.
     SetLimit(usize),
-    SetTurbo(usize),
-    SetGovernor(usize),
-    SetGpuLimit(usize),
-    SetIgpuClock(usize),
-    SetAspm(usize),
-    SetAudioIdle(usize),
-}
-
-/// Sysfs tokens travel into a `pkexec sh -c` line, so only the shapes sysfs
-/// itself produces are allowed through — anything else is dropped, not
-/// escaped. (The lists come from sysfs reads, but the guard makes the write
-/// path safe by construction rather than by data-flow argument.)
-fn sysfs_token_ok(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    /// A lever pick in one source's column, by option index.
+    Set { source: Source, lever: Lever, idx: usize },
 }
 
 /// Root action via pkexec, the app's standard privileged path. Detached: the
 /// polkit prompt runs in its own process, the UI never blocks, and the
-/// watcher's next read reports what actually happened. Most callers echo into
-/// sysfs; the GPU limit shells out to nvidia-smi, which is why this is not
-/// named for sysfs.
+/// watcher's next read reports what actually happened.
 fn run_privileged(cmd: String) {
     let _ = std::process::Command::new("pkexec")
         .args(["sh", "-c", &cmd])
         .spawn();
+}
+
+/// The helper that records and applies the plan: the system copy when
+/// `ccebuild install-system` has put it there, else the one installed beside
+/// this binary (`~/.local/bin`) — which pkexec will still run as root after
+/// the prompt, so the plan works before the root side is installed; only the
+/// automatic switching waits on it.
+fn helper_path() -> Option<PathBuf> {
+    let sys = Path::new(power_plan::HELPER_SYSTEM_PATH);
+    if sys.exists() {
+        return Some(sys.to_path_buf());
+    }
+    let beside = std::env::current_exe().ok()?.parent()?.join("cce-power-apply");
+    beside.exists().then_some(beside)
 }
 
 /// Display form of a sysfs token: `balance_power` → "Balance Power".
@@ -252,6 +291,14 @@ pub async fn fetch_power_state() -> PowerFacts {
         f.charge_limit = b("charge_control_end_threshold").and_then(|s| s.parse().ok());
     }
     f.ac_online = read_trim("/sys/class/power_supply/AC/online").map(|s| s == "1");
+    f.source = power_plan::current_source();
+    // An unreadable plan shows as empty here; the applier is the side that
+    // refuses to act on it, and logs why.
+    f.plan = PowerPlan::load().unwrap_or_else(|e| {
+        log::warn!("[power] {}", e);
+        PowerPlan::default()
+    });
+    f.automation = power_plan::automation_installed();
 
     if let Some(choices) = read_trim("/sys/firmware/acpi/platform_profile_choices") {
         f.profiles = choices.split_whitespace().map(String::from).collect();
@@ -323,20 +370,150 @@ pub async fn fetch_power_state() -> PowerFacts {
     f
 }
 
-/// Rebuild every dropdown's options/selection from fresh facts. Skipped per
-/// dropdown while it is open (the default_apps rule: never yank an open menu
-/// out from under the pointer — the next refresh normalizes it).
+// ── Lever rows ──────────────────────────────────────────────────────────
+
+/// The choices this host offers for a lever, as (plan value, display text)
+/// in menu order. Empty means the interface is absent and the dropdown is
+/// not painted. Numeric levers get the hardware's own figures — ceiling,
+/// midpoint, floor for the iGPU; default and minimum for the dGPU — never
+/// invented numbers.
+fn choices(lever: Lever, f: &PowerFacts) -> Vec<(String, String)> {
+    let tokens = |list: &[String]| list.iter().map(|t| (t.clone(), pretty(t))).collect::<Vec<_>>();
+    match lever {
+        Lever::Profile => tokens(&f.profiles),
+        Lever::Epp => tokens(&f.epps),
+        Lever::Governor => tokens(&f.governors),
+        Lever::Aspm => tokens(&f.aspm_policies),
+        Lever::Turbo => {
+            if f.turbo.is_some() {
+                vec![("on".to_string(), "Enabled".to_string()), ("off".to_string(), "Disabled".to_string())]
+            } else {
+                Vec::new()
+            }
+        }
+        Lever::IgpuMaxMhz => {
+            let mut out = Vec::new();
+            if let (Some(hi), Some(lo)) = (f.igpu_max_mhz, f.igpu_min_mhz) {
+                out.push((hi.to_string(), format!("{} MHz  (full)", hi)));
+                let mid = ((hi + lo) / 2 / 100) * 100;
+                if mid > lo && mid < hi {
+                    out.push((mid.to_string(), format!("{} MHz", mid)));
+                }
+                out.push((lo.to_string(), format!("{} MHz  (minimum)", lo)));
+            }
+            out
+        }
+        Lever::AudioIdleSecs => {
+            if f.hda_idle_secs.is_some() {
+                [0u32, 1, 10].iter().map(|v| (v.to_string(), display_of(Lever::AudioIdleSecs, &v.to_string()))).collect()
+            } else {
+                Vec::new()
+            }
+        }
+        Lever::GpuLimitW => {
+            let mut out: Vec<(String, String)> = Vec::new();
+            if let Some(d) = f.gpu_default_w {
+                out.push((d.to_string(), format!("{} W  (default)", d)));
+            }
+            if let Some(m) = f.gpu_min_w {
+                if Some(m) != f.gpu_default_w {
+                    out.push((m.to_string(), format!("{} W  (minimum)", m)));
+                }
+            }
+            out
+        }
+    }
+}
+
+/// What sysfs says right now, in plan-value spelling.
+fn live(lever: Lever, f: &PowerFacts) -> Option<String> {
+    let nonempty = |s: &String| if s.is_empty() { None } else { Some(s.clone()) };
+    match lever {
+        Lever::Profile => nonempty(&f.profile),
+        Lever::Epp => nonempty(&f.epp),
+        Lever::Governor => nonempty(&f.governor),
+        Lever::Aspm => nonempty(&f.aspm),
+        Lever::Turbo => f.turbo.map(|t| if t { "on" } else { "off" }.to_string()),
+        Lever::IgpuMaxMhz => f.igpu_mhz.map(|v| v.to_string()),
+        Lever::AudioIdleSecs => f.hda_idle_secs.map(|v| v.to_string()),
+        Lever::GpuLimitW => f.gpu_limit_w.map(|v| v.to_string()),
+    }
+}
+
+/// Display text for a value that is not one of the host's listed choices
+/// (the charge-limit rule: an off-list value gets its own row rather than
+/// silently matching the wrong one).
+fn display_of(lever: Lever, value: &str) -> String {
+    match lever {
+        Lever::Turbo => if value == "on" { "Enabled" } else { "Disabled" }.to_string(),
+        Lever::IgpuMaxMhz => format!("{} MHz", value),
+        Lever::AudioIdleSecs => {
+            if value == "0" { "Never suspend".to_string() } else { format!("After {} s idle", value) }
+        }
+        Lever::GpuLimitW => format!("{} W", value),
+        _ => pretty(value),
+    }
+}
+
+/// Reflect a value the user just applied into the live facts, so the next
+/// watcher read (which will say the same thing) does not rebuild the menus.
+fn set_live(lever: Lever, value: &str, f: &mut PowerFacts) {
+    match lever {
+        Lever::Profile => f.profile = value.to_string(),
+        Lever::Epp => f.epp = value.to_string(),
+        Lever::Governor => f.governor = value.to_string(),
+        Lever::Aspm => f.aspm = value.to_string(),
+        Lever::Turbo => f.turbo = Some(value == "on"),
+        Lever::IgpuMaxMhz => f.igpu_mhz = value.parse().ok(),
+        Lever::AudioIdleSecs => f.hda_idle_secs = value.parse().ok(),
+        Lever::GpuLimitW => f.gpu_limit_w = value.parse().ok(),
+    }
+}
+
+/// Rebuild one column's dropdowns. The active source's column shows the live
+/// value; the other shows the plan, behind a leading "Not set" row. Either
+/// way a shown value missing from the host's list gets appended as its own
+/// row. Skipped per dropdown while it is open (the default_apps rule: never
+/// yank an open menu out from under the pointer — the next refresh
+/// normalizes it).
+fn fill_column(col: &mut LeverColumn, f: &PowerFacts, active: bool) {
+    for (i, lever) in Lever::ALL.iter().enumerate() {
+        if col.dds[i].open {
+            continue;
+        }
+        let mut rows = choices(*lever, f);
+        if rows.is_empty() {
+            col.rows[i].clear();
+            col.dds[i].options = vec!["—".to_string()];
+            col.dds[i].selected = 0;
+            continue;
+        }
+        let shown: Option<String> =
+            if active { live(*lever, f) } else { f.plan.get(col.source, *lever).map(str::to_string) };
+        if let Some(s) = &shown {
+            if !rows.iter().any(|(v, _)| v == s) {
+                rows.push((s.clone(), display_of(*lever, s)));
+            }
+        }
+        let mut values = Vec::with_capacity(rows.len() + 1);
+        let mut options = Vec::with_capacity(rows.len() + 1);
+        if !active {
+            values.push(String::new());
+            options.push("Not set".to_string());
+        }
+        for (v, d) in rows {
+            values.push(v);
+            options.push(d);
+        }
+        col.dds[i].selected = shown.and_then(|s| values.iter().position(|v| *v == s)).unwrap_or(0);
+        col.dds[i].options = options;
+        col.rows[i] = values;
+    }
+}
+
+/// Rebuild every dropdown's options/selection from fresh facts.
 fn rebuild_options(state: &mut PowerState) {
     let f = &state.facts;
-    if !state.dd_profile.open {
-        state.dd_profile.options = f.profiles.iter().map(|p| pretty(p)).collect();
-        state.dd_profile.selected =
-            f.profiles.iter().position(|p| *p == f.profile).unwrap_or(0);
-    }
-    if !state.dd_epp.open {
-        state.dd_epp.options = f.epps.iter().map(|p| pretty(p)).collect();
-        state.dd_epp.selected = f.epps.iter().position(|p| *p == f.epp).unwrap_or(0);
-    }
     if !state.dd_limit.open {
         let mut values = vec![100u32, 80, 60];
         if let Some(cur) = f.charge_limit {
@@ -359,105 +536,32 @@ fn rebuild_options(state: &mut PowerState) {
             .unwrap_or(0);
         state.limit_values = values;
     }
-    if !state.dd_governor.open {
-        state.dd_governor.options = f.governors.iter().map(|g| pretty(g)).collect();
-        state.dd_governor.selected =
-            f.governors.iter().position(|g| *g == f.governor).unwrap_or(0);
-    }
-    if !state.dd_gpu.open {
-        // Default and minimum, plus the current draw when it is neither — the
-        // charge-limit rule: an off-list value gets its own row rather than
-        // silently matching the wrong one.
-        let mut vals: Vec<u32> = Vec::new();
-        if let Some(d) = f.gpu_default_w { vals.push(d); }
-        if let Some(m) = f.gpu_min_w { if !vals.contains(&m) { vals.push(m); } }
-        if let Some(c) = f.gpu_limit_w { if !vals.contains(&c) { vals.push(c); } }
-        state.dd_gpu.options = vals
-            .iter()
-            .map(|w| {
-                if Some(*w) == f.gpu_default_w { format!("{} W  (default)", w) }
-                else if Some(*w) == f.gpu_min_w { format!("{} W  (minimum)", w) }
-                else { format!("{} W", w) }
-            })
-            .collect();
-        state.dd_gpu.selected = f
-            .gpu_limit_w
-            .and_then(|c| vals.iter().position(|v| *v == c))
-            .unwrap_or(0);
-        state.gpu_values = vals;
-    }
-    if !state.dd_igpu.open {
-        // Ceiling, midpoint and floor, all from the hardware's own RP0/RPn —
-        // no invented numbers, and a current cap that is none of them keeps its
-        // own row (the charge-limit rule).
-        let mut vals: Vec<u32> = Vec::new();
-        if let (Some(hi), Some(lo)) = (f.igpu_max_mhz, f.igpu_min_mhz) {
-            vals.push(hi);
-            let mid = ((hi + lo) / 2 / 100) * 100;
-            if mid > lo && mid < hi {
-                vals.push(mid);
-            }
-            vals.push(lo);
-            if let Some(cur) = f.igpu_mhz {
-                if !vals.contains(&cur) {
-                    vals.push(cur);
-                }
-            }
-        }
-        state.dd_igpu.options = vals
-            .iter()
-            .map(|m| {
-                if Some(*m) == f.igpu_max_mhz { format!("{} MHz  (full)", m) }
-                else if Some(*m) == f.igpu_min_mhz { format!("{} MHz  (minimum)", m) }
-                else { format!("{} MHz", m) }
-            })
-            .collect();
-        state.dd_igpu.selected =
-            f.igpu_mhz.and_then(|c| vals.iter().position(|v| *v == c)).unwrap_or(0);
-        state.igpu_values = vals;
-    }
-    if !state.dd_aspm.open {
-        state.dd_aspm.options = f.aspm_policies.iter().map(|p| pretty(p)).collect();
-        state.dd_aspm.selected =
-            f.aspm_policies.iter().position(|p| *p == f.aspm).unwrap_or(0);
-    }
-    if !state.dd_audio.open {
-        // 0 disables suspend entirely; the rest are idle timeouts. The current
-        // value earns a row if the kernel came up with something else.
-        let mut vals: Vec<u32> = vec![0, 1, 10];
-        if let Some(cur) = f.hda_idle_secs {
-            if !vals.contains(&cur) {
-                vals.push(cur);
-            }
-        }
-        vals.sort_unstable();
-        state.dd_audio.options = vals
-            .iter()
-            .map(|v| if *v == 0 { "Never suspend".to_string() } else { format!("After {} s idle", v) })
-            .collect();
-        state.dd_audio.selected =
-            f.hda_idle_secs.and_then(|c| vals.iter().position(|v| *v == c)).unwrap_or(0);
-        state.audio_values = vals;
-    }
-    if !state.dd_turbo.open {
-        state.dd_turbo.selected = if f.turbo.unwrap_or(true) { 0 } else { 1 };
-    }
+    let active = f.source;
+    fill_column(&mut state.ac, f, active == Source::Ac);
+    fill_column(&mut state.battery, f, active == Source::Battery);
 }
 
 pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
+    let focused = |i: usize| sec_focused.get(i).copied().unwrap_or(false);
 
-    builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
-        let sec_w = sec.cw;
-        if !state.loaded {
+    if !state.loaded {
+        let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
+        builder.add_section_spanned(&mut final_pc, "", 1, focused(0), |sec| {
             sec.text("Reading power interfaces...", 12.0, 0.0, 12.0, TEXT_DIM);
-            return;
-        }
-        let f = &state.facts;
+        });
+        return final_pc;
+    }
 
-        // ── Battery facts ──
+    let PowerState { facts, dd_limit, ac, battery, .. } = state;
+    let sources = columns_shown(facts);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1 + sources.len());
+
+    // ── Battery: facts, the charge limit, and whether switching is wired up ──
+    builder.add_section(&mut final_pc, "Battery", focused(0), |sec| {
+        let sec_w = sec.cw;
+        let f = &*facts;
         if f.battery_present {
             let status_color = match f.status.as_str() {
                 "Charging" | "Full" => GOOD,
@@ -471,7 +575,6 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             if let Some(true) = f.ac_online {
                 line.push_str("  ·  on AC");
             }
-            sec.text("Battery", 13.0, 0.0, 13.0, TEXT_FG);
             sec.text(&line, 12.0, 0.0, 12.0, status_color);
 
             // Folded in from the System page's battery section, which showed
@@ -507,47 +610,57 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         } else {
             sec.text("No battery detected", 12.0, 0.0, 12.0, TEXT_DIM);
         }
-        sec.spacing(10.0);
 
-        // ── Levers, one dropdown per interface the host exposes ──
-        let mut stack = sec.vstack(8.0);
-        if !state.facts.profiles.is_empty() {
-            state.dd_profile.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_profile, sec_w - 28.0, 44.0, ctx);
+        if f.charge_limit.is_some() {
+            sec.spacing(10.0);
+            let mut stack = sec.vstack(8.0);
+            dd_limit.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+            stack.add_widget(dd_limit, sec_w - 28.0, 44.0, ctx);
         }
-        if !state.facts.epps.is_empty() {
-            state.dd_epp.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_epp, sec_w - 28.0, 44.0, ctx);
-        }
-        if !state.facts.governors.is_empty() {
-            state.dd_governor.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_governor, sec_w - 28.0, 44.0, ctx);
-        }
-        if state.facts.charge_limit.is_some() {
-            state.dd_limit.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_limit, sec_w - 28.0, 44.0, ctx);
-        }
-        if state.facts.turbo.is_some() {
-            state.dd_turbo.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_turbo, sec_w - 28.0, 44.0, ctx);
-        }
-        if !state.igpu_values.is_empty() {
-            state.dd_igpu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_igpu, sec_w - 28.0, 44.0, ctx);
-        }
-        if !state.facts.aspm_policies.is_empty() {
-            state.dd_aspm.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_aspm, sec_w - 28.0, 44.0, ctx);
-        }
-        if state.facts.hda_idle_secs.is_some() {
-            state.dd_audio.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_audio, sec_w - 28.0, 44.0, ctx);
-        }
-        if !state.gpu_values.is_empty() {
-            state.dd_gpu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut state.dd_gpu, sec_w - 28.0, 44.0, ctx);
+
+        if f.battery_present {
+            sec.spacing(10.0);
+            if f.automation {
+                sec.text("Switches automatically on plug and unplug.", 12.0, 0.0, 11.0, TEXT_DIM);
+            } else {
+                sec.text("Automatic switching is not installed:", 12.0, 0.0, 11.0, WARN);
+                sec.text("System › System Files installs it.", 12.0, 0.0, 11.0, WARN);
+            }
         }
     });
+
+    // ── One column of levers per power source ──
+    for (k, source) in sources.iter().enumerate() {
+        let source = *source;
+        let active = source == facts.source;
+        let label = if facts.battery_present { source.label() } else { "Settings" };
+        let col: &mut LeverColumn = match source {
+            Source::Ac => &mut *ac,
+            Source::Battery => &mut *battery,
+        };
+        let f = &*facts;
+        builder.add_section(&mut final_pc, label, focused(1 + k), |sec| {
+            let sec_w = sec.cw;
+            if f.battery_present {
+                if active {
+                    sec.text("Active now — picks apply immediately.", 12.0, 0.0, 11.0, GOOD);
+                } else {
+                    let when = if source == Source::Battery { "unplugged" } else { "plugged in" };
+                    sec.text(&format!("Applied when {}.", when), 12.0, 0.0, 11.0, TEXT_DIM);
+                    sec.text("Not set leaves a lever alone.", 12.0, 0.0, 11.0, TEXT_DIM);
+                }
+                sec.spacing(6.0);
+            }
+            let mut stack = sec.vstack(8.0);
+            for i in 0..Lever::ALL.len() {
+                if col.rows[i].is_empty() {
+                    continue;
+                }
+                col.dds[i].set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
+                stack.add_widget(&mut col.dds[i], sec_w - 28.0, 44.0, ctx);
+            }
+        });
+    }
 
     final_pc
 }
@@ -561,27 +674,6 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                 rebuild_options(state);
             }
         }
-        PowerMessage::SetProfile(idx) => {
-            if let Some(p) = state.facts.profiles.get(idx) {
-                if sysfs_token_ok(p) {
-                    run_privileged(format!("echo {} > /sys/firmware/acpi/platform_profile", p));
-                    state.facts.profile = p.clone();
-                }
-            }
-        }
-        PowerMessage::SetEpp(idx) => {
-            if let Some(p) = state.facts.epps.get(idx) {
-                if sysfs_token_ok(p) {
-                    // Every core: EPP is per-cpu and a partial write would
-                    // leave the package split across preferences.
-                    run_privileged(format!(
-                        "for f in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do echo {} > \"$f\"; done",
-                        p
-                    ));
-                    state.facts.epp = p.clone();
-                }
-            }
-        }
         PowerMessage::SetLimit(idx) => {
             if let Some(v) = state.limit_values.get(idx).copied() {
                 if (1..=100).contains(&v) {
@@ -593,117 +685,65 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                 }
             }
         }
-        PowerMessage::SetGovernor(idx) => {
-            if let Some(g) = state.facts.governors.get(idx) {
-                if sysfs_token_ok(g) {
-                    // Every core, like EPP: a partial write leaves the package
-                    // split across governors.
-                    run_privileged(format!(
-                        "for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo {} > \"$f\"; done",
-                        g
-                    ));
-                    state.facts.governor = g.clone();
+        PowerMessage::Set { source, lever, idx } => {
+            let i = lever_index(lever);
+            let Some(value) = state.column_mut(source).rows.get(i).and_then(|r| r.get(idx)).cloned() else {
+                return;
+            };
+            let value: Option<&str> = if value.is_empty() { None } else { Some(value.as_str()) };
+            // The row values come from sysfs reads and the plan, but the guard
+            // makes the argv safe by construction rather than by data flow.
+            if value.is_some_and(|v| !lever.value_ok(v)) {
+                return;
+            }
+            let Some(helper) = helper_path() else {
+                log::error!("[power] cce-power-apply not found at {} or beside this binary", power_plan::HELPER_SYSTEM_PATH);
+                return;
+            };
+            // Detached, like run_privileged: the helper records the pick and,
+            // when this is the live source, applies it; the watcher's next
+            // read reports what actually happened.
+            let _ = std::process::Command::new("pkexec")
+                .arg(&helper)
+                .arg("set")
+                .arg(source.key())
+                .arg(lever.key())
+                .arg(value.unwrap_or("unset"))
+                .spawn();
+            // Optimistic mirror of what the helper will make true.
+            let _ = state.facts.plan.put(source, lever, value);
+            if source == state.facts.source {
+                if let Some(v) = value {
+                    set_live(lever, v, &mut state.facts);
                 }
             }
-        }
-        PowerMessage::SetIgpuClock(idx) => {
-            if let Some(m) = state.igpu_values.get(idx).copied() {
-                // Bounded by the hardware's own reported range, so the number
-                // reaching the shell line can only be one the GPU accepts.
-                let within = state.facts.igpu_min_mhz.is_none_or(|lo| m >= lo)
-                    && state.facts.igpu_max_mhz.is_none_or(|hi| m <= hi);
-                if within {
-                    // Every card exposing the knob, like the per-cpu writes.
-                    run_privileged(format!(
-                        "for f in /sys/class/drm/card*/gt_max_freq_mhz; do echo {} > \"$f\"; done",
-                        m
-                    ));
-                    state.facts.igpu_mhz = Some(m);
-                }
-            }
-        }
-        PowerMessage::SetAspm(idx) => {
-            if let Some(p) = state.facts.aspm_policies.get(idx) {
-                if sysfs_token_ok(p) {
-                    run_privileged(format!(
-                        "echo {} > /sys/module/pcie_aspm/parameters/policy",
-                        p
-                    ));
-                    state.facts.aspm = p.clone();
-                }
-            }
-        }
-        PowerMessage::SetAudioIdle(idx) => {
-            if let Some(v) = state.audio_values.get(idx).copied() {
-                if v <= 3600 {
-                    run_privileged(format!(
-                        "echo {} > /sys/module/snd_hda_intel/parameters/power_save",
-                        v
-                    ));
-                    state.facts.hda_idle_secs = Some(v);
-                }
-            }
-        }
-        PowerMessage::SetGpuLimit(idx) => {
-            if let Some(w) = state.gpu_values.get(idx).copied() {
-                // Bounded by what nvidia-smi itself reported, so the number
-                // reaching the shell line cannot be arbitrary.
-                let within = state.facts.gpu_min_w.is_none_or(|m| w >= m)
-                    && state.facts.gpu_default_w.is_none_or(|d| w <= d.max(w));
-                if within {
-                    run_privileged(format!("nvidia-smi -pl {}", w));
-                    state.facts.gpu_limit_w = Some(w);
-                }
-            }
-        }
-        PowerMessage::SetTurbo(idx) => {
-            let no_turbo = if idx == 1 { 1 } else { 0 };
-            run_privileged(format!(
-                "echo {} > /sys/devices/system/cpu/intel_pstate/no_turbo",
-                no_turbo
-            ));
-            state.facts.turbo = Some(no_turbo == 0);
         }
     }
 }
 
 impl crate::pages::AppPage for PowerState {
-    // Sections: [Power] — ids mirror the view's load gate AND its
-    // per-interface presence gates (the d13a901 lesson: never report a
-    // widget the view didn't paint).
+    // Sections: [Battery, <one per shown source>] — ids mirror the view's
+    // load gate AND its per-interface presence gates (the d13a901 lesson:
+    // never report a widget the view didn't paint).
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         if !self.loaded {
             return vec![Vec::new()];
         }
-        let mut ids = Vec::new();
-        if !self.facts.profiles.is_empty() {
-            ids.push(self.dd_profile.id());
-        }
-        if !self.facts.epps.is_empty() {
-            ids.push(self.dd_epp.id());
-        }
-        if !self.facts.governors.is_empty() {
-            ids.push(self.dd_governor.id());
-        }
+        let mut out = Vec::new();
+        let mut first = Vec::new();
         if self.facts.charge_limit.is_some() {
-            ids.push(self.dd_limit.id());
+            first.push(self.dd_limit.id());
         }
-        if self.facts.turbo.is_some() {
-            ids.push(self.dd_turbo.id());
+        out.push(first);
+        for source in columns_shown(&self.facts) {
+            let col = self.column_mut(source);
+            let ids = (0..Lever::ALL.len())
+                .filter(|i| !col.rows[*i].is_empty())
+                .map(|i| col.dds[i].id())
+                .collect();
+            out.push(ids);
         }
-        if !self.igpu_values.is_empty() {
-            ids.push(self.dd_igpu.id());
-        }
-        if !self.facts.aspm_policies.is_empty() {
-            ids.push(self.dd_aspm.id());
-        }
-        if self.facts.hda_idle_secs.is_some() {
-            ids.push(self.dd_audio.id());
-        }
-        if !self.gpu_values.is_empty() {
-            ids.push(self.dd_gpu.id());
-        }
-        vec![ids]
+        out
     }
 
     fn view(
@@ -721,32 +761,19 @@ impl crate::pages::AppPage for PowerState {
     }
 
     fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
-        if self.dd_profile.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetProfile(self.dd_profile.selected)));
-        }
-        if self.dd_epp.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetEpp(self.dd_epp.selected)));
-        }
         if self.dd_limit.take_change() {
             actions.push(AppAction::Power(PowerMessage::SetLimit(self.dd_limit.selected)));
         }
-        if self.dd_turbo.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetTurbo(self.dd_turbo.selected)));
-        }
-        if self.dd_governor.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetGovernor(self.dd_governor.selected)));
-        }
-        if self.dd_gpu.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetGpuLimit(self.dd_gpu.selected)));
-        }
-        if self.dd_igpu.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetIgpuClock(self.dd_igpu.selected)));
-        }
-        if self.dd_aspm.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetAspm(self.dd_aspm.selected)));
-        }
-        if self.dd_audio.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetAudioIdle(self.dd_audio.selected)));
+        for col in [&mut self.ac, &mut self.battery] {
+            for (i, lever) in Lever::ALL.iter().enumerate() {
+                if col.dds[i].take_change() {
+                    actions.push(AppAction::Power(PowerMessage::Set {
+                        source: col.source,
+                        lever: *lever,
+                        idx: col.dds[i].selected,
+                    }));
+                }
+            }
         }
     }
 }
@@ -757,6 +784,9 @@ mod tests {
     use crate::pages::AppPage;
 
     fn facts() -> PowerFacts {
+        let mut plan = PowerPlan::default();
+        plan.put(Source::Ac, Lever::Profile, Some("performance")).unwrap();
+        plan.put(Source::Battery, Lever::Profile, Some("low-power")).unwrap();
         PowerFacts {
             battery_present: true,
             status: "Discharging".to_string(),
@@ -764,6 +794,9 @@ mod tests {
             health_pct: Some(83),
             power_w: Some(7.2),
             ac_online: Some(false),
+            source: Source::Battery,
+            plan,
+            automation: true,
             energy_now_uwh: Some(44_900_000.0),
             energy_full_uwh: Some(74_900_000.0),
             vendor: "SMP".to_string(),
@@ -788,19 +821,53 @@ mod tests {
         }
     }
 
-    #[test]
-    fn options_rebuild_maps_current_values() {
+    fn loaded() -> PowerState {
         let mut st = PowerState::default();
         st.loaded = true;
         st.facts = facts();
         rebuild_options(&mut st);
-        assert_eq!(st.dd_profile.options, ["Low Power", "Balanced", "Performance"]);
-        assert_eq!(st.dd_profile.selected, 1);
-        assert_eq!(st.dd_epp.selected, 2); // balance_power
+        st
+    }
+
+    const PROFILE: usize = 0;
+    const TURBO: usize = 3;
+    const IGPU: usize = 4;
+    const AUDIO: usize = 6;
+
+    #[test]
+    fn active_column_shows_live_values_without_a_not_set_row() {
+        let st = loaded();
+        // On battery: the battery column is the live one. The plan says
+        // low-power for it, but sysfs says balanced, and sysfs is what shows.
+        assert_eq!(st.battery.dds[PROFILE].options, ["Low Power", "Balanced", "Performance"]);
+        assert_eq!(st.battery.dds[PROFILE].selected, 1);
+        assert_eq!(st.battery.rows[PROFILE], ["low-power", "balanced", "performance"]);
+        assert_eq!(st.battery.dds[TURBO].selected, 0); // enabled
+        assert_eq!(st.battery.rows[TURBO], ["on", "off"]);
+    }
+
+    #[test]
+    fn inactive_column_shows_the_plan_behind_not_set() {
+        let mut st = loaded();
+        assert_eq!(st.ac.dds[PROFILE].options, ["Not set", "Low Power", "Balanced", "Performance"]);
+        assert_eq!(st.ac.dds[PROFILE].selected, 3); // planned: performance
+        assert_eq!(st.ac.rows[PROFILE][0], ""); // the unset row
+        // Nothing planned for AC turbo → Not set.
+        assert_eq!(st.ac.dds[TURBO].selected, 0);
+        // Plugging in swaps which column is live.
+        st.facts.source = Source::Ac;
+        rebuild_options(&mut st);
+        assert_eq!(st.ac.dds[PROFILE].options, ["Low Power", "Balanced", "Performance"]);
+        assert_eq!(st.ac.dds[PROFILE].selected, 1);
+        assert_eq!(st.battery.dds[PROFILE].options.len(), 4);
+        assert_eq!(st.battery.dds[PROFILE].selected, 1); // planned: low-power, after Not set
+    }
+
+    #[test]
+    fn charge_limit_rows_map_current_and_off_list_values() {
+        let mut st = loaded();
         assert_eq!(st.dd_limit.selected, 1); // 80
         assert_eq!(st.limit_values, [100, 80, 60]);
-        assert_eq!(st.dd_turbo.selected, 0); // enabled
-
         // An off-list threshold gets its own row instead of a wrong match.
         st.facts.charge_limit = Some(75);
         rebuild_options(&mut st);
@@ -811,28 +878,15 @@ mod tests {
 
     #[test]
     fn open_dropdown_is_left_alone_on_refresh() {
-        let mut st = PowerState::default();
-        st.loaded = true;
-        st.facts = facts();
-        rebuild_options(&mut st);
-        st.dd_profile.open = true;
-        st.dd_profile.selected = 2;
+        let mut st = loaded();
+        st.battery.dds[PROFILE].open = true;
+        st.battery.dds[PROFILE].selected = 2;
         let mut newer = facts();
         newer.profile = "low-power".to_string();
         st.facts = newer;
         rebuild_options(&mut st);
         // Open menu untouched; the others refreshed.
-        assert_eq!(st.dd_profile.selected, 2);
-    }
-
-    #[test]
-    fn sysfs_token_guard() {
-        assert!(sysfs_token_ok("balance_power"));
-        assert!(sysfs_token_ok("low-power"));
-        assert!(!sysfs_token_ok(""));
-        assert!(!sysfs_token_ok("a b"));
-        assert!(!sysfs_token_ok("x;reboot"));
-        assert!(!sysfs_token_ok("$(rm)"));
+        assert_eq!(st.battery.dds[PROFILE].selected, 2);
     }
 
     #[test]
@@ -874,79 +928,114 @@ mod tests {
     #[test]
     fn section_widgets_mirror_presence_gates() {
         let mut st = PowerState::default();
-        // Not loaded: nothing reported (the view paints only the loading line).
+        // Not loaded: one section, nothing reported (the view paints only the
+        // loading line).
         assert_eq!(st.section_widgets(), vec![Vec::new()]);
         st.loaded = true;
         st.facts = facts();
         rebuild_options(&mut st);
-        // Every interface present: profile, epp, governor, limit, turbo, igpu,
-        // aspm, audio, gpu.
-        assert_eq!(st.section_widgets()[0].len(), 9);
+        let counts = |st: &mut PowerState| st.section_widgets().iter().map(Vec::len).collect::<Vec<_>>();
+        // Every interface present: the charge limit, then all eight levers in
+        // each of the two source columns.
+        assert_eq!(counts(&mut st), [1, 8, 8]);
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
-        assert_eq!(st.section_widgets()[0].len(), 7);
-        // No cpufreq governors and no NVIDIA driver: both drop out too. The
-        // GPU gate is gpu_values, which rebuild_options derives from the facts
-        // — the same predicate the view paints on.
+        rebuild_options(&mut st);
+        assert_eq!(counts(&mut st), [0, 7, 7]);
+        // No cpufreq governors and no NVIDIA driver: both drop out too.
         st.facts.governors.clear();
         st.facts.gpu_limit_w = None;
         st.facts.gpu_default_w = None;
         st.facts.gpu_min_w = None;
         rebuild_options(&mut st);
-        assert_eq!(st.section_widgets()[0].len(), 5);
-        // A desktop with no Intel render clocks, an ASPM-less kernel and no
-        // snd_hda_intel is down to profile and epp.
+        assert_eq!(counts(&mut st), [0, 5, 5]);
+        // No Intel render clocks, an ASPM-less kernel and no snd_hda_intel is
+        // down to profile and epp.
         st.facts.igpu_max_mhz = None;
         st.facts.igpu_min_mhz = None;
         st.facts.aspm_policies.clear();
         st.facts.hda_idle_secs = None;
         rebuild_options(&mut st);
-        assert_eq!(st.section_widgets()[0].len(), 2);
+        assert_eq!(counts(&mut st), [0, 2, 2]);
+        // A desktop: no battery, so only one source column exists.
+        st.facts.battery_present = false;
+        rebuild_options(&mut st);
+        assert_eq!(counts(&mut st), [0, 2]);
     }
 
     #[test]
     fn igpu_rows_come_from_the_hardware_range() {
-        let mut st = PowerState::default();
-        st.loaded = true;
-        st.facts = facts();
-        rebuild_options(&mut st);
-        // RP0, the rounded midpoint, RPn — no invented numbers.
-        assert_eq!(st.igpu_values, vec![1500, 800, 100]);
-        assert_eq!(st.dd_igpu.selected, 0);
-        // A cap that is none of the three earns its own row.
+        let mut st = loaded();
+        // RP0, the rounded midpoint, RPn — no invented numbers; the live column
+        // has no Not set row.
+        assert_eq!(st.battery.rows[IGPU], ["1500", "800", "100"]);
+        assert_eq!(st.battery.dds[IGPU].selected, 0);
+        // A live cap that is none of the three earns its own row.
         st.facts.igpu_mhz = Some(1200);
         rebuild_options(&mut st);
-        assert_eq!(st.igpu_values, vec![1500, 800, 100, 1200]);
-        assert_eq!(st.dd_igpu.selected, 3);
+        assert_eq!(st.battery.rows[IGPU], ["1500", "800", "100", "1200"]);
+        assert_eq!(st.battery.dds[IGPU].selected, 3);
+        assert_eq!(st.battery.dds[IGPU].options[3], "1200 MHz");
+        // And so does a planned value in the other column.
+        st.facts.plan.put(Source::Ac, Lever::IgpuMaxMhz, Some("1300")).unwrap();
+        rebuild_options(&mut st);
+        assert_eq!(st.ac.rows[IGPU], ["", "1500", "800", "100", "1300"]);
+        assert_eq!(st.ac.dds[IGPU].selected, 4);
+    }
+
+    #[test]
+    fn audio_rows_are_the_three_timeouts_plus_an_off_list_current() {
+        let mut st = loaded();
+        assert_eq!(st.battery.rows[AUDIO], ["0", "1", "10"]);
+        assert_eq!(st.battery.dds[AUDIO].options[0], "Never suspend");
+        assert_eq!(st.battery.dds[AUDIO].selected, 2);
+        st.facts.hda_idle_secs = Some(30);
+        rebuild_options(&mut st);
+        assert_eq!(st.battery.rows[AUDIO], ["0", "1", "10", "30"]);
+        assert_eq!(st.battery.dds[AUDIO].options[3], "After 30 s idle");
     }
 
     #[test]
     fn aspm_current_is_the_bracketed_policy() {
         // fetch strips the brackets; the selection must land on the active one.
-        let mut st = PowerState::default();
-        st.loaded = true;
-        st.facts = facts();
+        let mut st = loaded();
         st.facts.aspm = "powersave".to_string();
         rebuild_options(&mut st);
-        assert_eq!(st.dd_aspm.selected, 2);
-        assert_eq!(st.dd_aspm.options[2], "Powersave");
+        let i = lever_index(Lever::Aspm);
+        assert_eq!(st.battery.dds[i].selected, 2);
+        assert_eq!(st.battery.dds[i].options[2], "Powersave");
     }
 
     #[test]
     fn gpu_rows_are_default_min_and_an_off_list_current() {
-        let mut st = PowerState::default();
-        st.loaded = true;
-        st.facts = facts();
+        let mut st = loaded();
+        let i = lever_index(Lever::GpuLimitW);
         // Current == default: two rows, no duplicate.
-        rebuild_options(&mut st);
-        assert_eq!(st.gpu_values, vec![80, 5]);
-        assert_eq!(st.dd_gpu.selected, 0);
+        assert_eq!(st.battery.rows[i], ["80", "5"]);
+        assert_eq!(st.battery.dds[i].selected, 0);
         // A current limit that is neither default nor minimum earns its own
         // row rather than silently selecting the wrong one.
         st.facts.gpu_limit_w = Some(60);
         rebuild_options(&mut st);
-        assert_eq!(st.gpu_values, vec![80, 5, 60]);
-        assert_eq!(st.dd_gpu.selected, 2);
+        assert_eq!(st.battery.rows[i], ["80", "5", "60"]);
+        assert_eq!(st.battery.dds[i].selected, 2);
     }
+
+    #[test]
+    fn set_live_mirrors_each_lever() {
+        let mut f = facts();
+        set_live(Lever::Profile, "performance", &mut f);
+        set_live(Lever::Turbo, "off", &mut f);
+        set_live(Lever::IgpuMaxMhz, "800", &mut f);
+        set_live(Lever::GpuLimitW, "40", &mut f);
+        assert_eq!(f.profile, "performance");
+        assert_eq!(f.turbo, Some(false));
+        assert_eq!(f.igpu_mhz, Some(800));
+        assert_eq!(f.gpu_limit_w, Some(40));
+        // Round trip: what set_live wrote is what live() reads back.
+        assert_eq!(live(Lever::Turbo, &f).as_deref(), Some("off"));
+        assert_eq!(live(Lever::GpuLimitW, &f).as_deref(), Some("40"));
+    }
+
 }

@@ -1,0 +1,17 @@
+[Unit]
+Description=Apply the cce Power page's plan for the current power source
+Documentation=file:/etc/cce/power.kdl
+# Started by udev (udev/90-cce-power-apply.rules) when the Mains supply is
+# added at boot or flips online/offline, and re-run by the Power page's
+# helper on each change — so it needs no `systemctl enable` to do its job.
+# The [Install] below is what classifies it as a root-owned unit for
+# `ccebuild install-system`; enabling it merely adds a plain boot-time run.
+# Nothing planned yet means nothing to do.
+ConditionPathExists=/etc/cce/power.kdl
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cce-power-apply apply
+
+[Install]
+WantedBy=multi-user.target

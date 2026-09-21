@@ -1,0 +1,7 @@
+# Apply the cce Power page's per-source plan (/etc/cce/power.kdl) when the
+# AC adapter appears at boot (coldplug add) or changes state. The kernel
+# emits a change event for the Mains supply on plug and unplug, and on
+# resume when the state differs from before suspend. Through systemd rather
+# than a direct RUN so nvidia-smi's few seconds never block udev.
+# Installed to /etc/udev/rules.d by `ccebuild install-system`.
+SUBSYSTEM=="power_supply", ACTION=="add|change", ENV{POWER_SUPPLY_TYPE}=="Mains", RUN+="/usr/bin/systemctl --no-block start cce-power-apply.service"
