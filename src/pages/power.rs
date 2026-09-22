@@ -29,7 +29,7 @@
 //! honest, with no extra error channel.
 
 use crate::app::{AppAction, PageContent};
-use crate::power_plan::{self, Lever, Mode, PowerPlan, Source};
+use crate::power_plan::{self, Automation, Lever, Mode, PowerPlan, Source};
 use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
 use cce_ui::widget::{Adapted, Dropdown, WidgetHost};
 use std::path::{Path, PathBuf};
@@ -53,10 +53,10 @@ pub struct PowerFacts {
     pub ac_online: Option<bool>,
     /// Which plan is in force right now, from the Mains supply.
     pub source: Source,
-    /// The per-source plan on disk, and whether the root side that applies
-    /// it on plug/unplug (helper + udev rule) is installed.
+    /// The plan on disk, and the state of the root side that applies it on
+    /// plug/unplug (helper + udev rule).
     pub plan: PowerPlan,
-    pub automation: bool,
+    pub automation: Automation,
     /// platform_profile choices in sysfs spelling, and the active one.
     pub profiles: Vec<String>,
     pub profile: String,
@@ -205,17 +205,27 @@ fn run_privileged(cmd: String) {
 }
 
 /// The helper that records and applies the plan: the system copy when
-/// `ccebuild install-system` has put it there, else the one installed beside
-/// this binary (`~/.local/bin`) — which pkexec will still run as root after
-/// the prompt, so the plan works before the root side is installed; only the
-/// automatic switching waits on it.
+/// `ccebuild install-system` has put a current one there, else the one
+/// installed beside this binary (`~/.local/bin`) — which pkexec will still
+/// run as root after the prompt, so the plan works before the root side is
+/// installed; only the automatic switching waits on it.
+///
+/// The system copy has to speak the current CLI to be preferred. A stale
+/// one there is worse than none: it takes the pkexec prompt, reads the mode
+/// name as an adapter state and exits 2, so every pick costs an
+/// authentication and changes nothing. Falling through to the local copy
+/// keeps the page working; the Battery section is where the user is told
+/// the root side is behind.
 fn helper_path() -> Option<PathBuf> {
     let sys = Path::new(power_plan::HELPER_SYSTEM_PATH);
-    if sys.exists() {
+    if sys.exists() && power_plan::helper_speaks_modes(sys) {
         return Some(sys.to_path_buf());
     }
     let beside = std::env::current_exe().ok()?.parent()?.join("cce-power-apply");
-    beside.exists().then_some(beside)
+    if beside.exists() {
+        return Some(beside);
+    }
+    sys.exists().then(|| sys.to_path_buf())
 }
 
 /// Display form of a sysfs token: `balance_power` → "Balance Power".
@@ -321,7 +331,7 @@ pub async fn fetch_power_state() -> PowerFacts {
         log::warn!("[power] {}", e);
         PowerPlan::default()
     });
-    f.automation = power_plan::automation_installed();
+    f.automation = power_plan::automation_status();
 
     if let Some(choices) = read_trim("/sys/firmware/acpi/platform_profile_choices") {
         f.profiles = choices.split_whitespace().map(String::from).collect();
@@ -673,11 +683,19 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
 
         if f.battery_present {
             sec.spacing(10.0);
-            if f.automation {
-                sec.text("Switches automatically on plug and unplug.", 12.0, 0.0, 11.0, TEXT_DIM);
-            } else {
-                sec.text("Automatic switching is not installed:", 12.0, 0.0, 11.0, WARN);
-                sec.text("System › System Files installs it.", 12.0, 0.0, 11.0, WARN);
+            match f.automation {
+                Automation::Ready => {
+                    sec.text("Switches automatically on plug and unplug.", 12.0, 0.0, 11.0, TEXT_DIM);
+                }
+                Automation::Missing => {
+                    sec.text("Automatic switching is not installed:", 12.0, 0.0, 11.0, WARN);
+                    sec.text("System › System Files installs it.", 12.0, 0.0, 11.0, WARN);
+                }
+                Automation::Stale => {
+                    sec.text("Automatic switching is out of date and", 12.0, 0.0, 11.0, WARN);
+                    sec.text("applies nothing on plug or unplug.", 12.0, 0.0, 11.0, WARN);
+                    sec.text("Run: ccebuild install-system", 12.0, 0.0, 11.0, WARN);
+                }
             }
         }
     });
@@ -929,7 +947,7 @@ mod tests {
             ac_online: Some(false),
             source: Source::Battery,
             plan,
-            automation: true,
+            automation: Automation::Ready,
             energy_now_uwh: Some(44_900_000.0),
             energy_full_uwh: Some(74_900_000.0),
             vendor: "SMP".to_string(),
@@ -1231,6 +1249,27 @@ mod tests {
         // And the loading gate paints its one line.
         let mut empty = PowerState::default();
         paint(&mut empty, 1);
+    }
+
+    #[test]
+    fn a_stale_root_helper_is_named_on_the_page() {
+        let mut ctx = cce_ui::context::UiContext::new();
+        let mut lines = |st: &mut PowerState| -> Vec<String> {
+            let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+            let sec_focused = vec![false; 3];
+            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+            pc.texts.iter().map(|t| t.0.clone()).collect()
+        };
+        let mut st = loaded();
+        assert!(lines(&mut st).iter().any(|l| l.contains("Switches automatically")));
+        // A helper too old to read a plan with modes applies nothing on plug
+        // or unplug, and the page says so rather than claiming it switches.
+        st.facts.automation = Automation::Stale;
+        let out = lines(&mut st);
+        assert!(out.iter().any(|l| l.contains("out of date")), "{out:?}");
+        assert!(out.iter().any(|l| l.contains("ccebuild install-system")), "{out:?}");
+        st.facts.automation = Automation::Missing;
+        assert!(lines(&mut st).iter().any(|l| l.contains("not installed")));
     }
 
     #[test]

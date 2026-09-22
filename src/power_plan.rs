@@ -435,11 +435,52 @@ pub fn current_source() -> Source {
     source_from_supplies(pairs.iter().map(|(k, o)| (k.as_str(), *o)))
 }
 
-/// Whether the root-side pieces are in place: the helper at its system path
-/// and the udev rule that starts it. Without both, the page's plan is only
-/// applied when the page itself changes a lever.
-pub fn automation_installed() -> bool {
-    Path::new(HELPER_SYSTEM_PATH).exists() && Path::new(UDEV_RULE_PATH).exists()
+/// The state of the root side that applies a mode on plug and unplug.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Automation {
+    /// No helper at the system path, or no udev rule to start it. The plan
+    /// is only applied when the page itself changes a lever.
+    #[default]
+    Missing,
+    /// Both installed, but the helper predates modes: it cannot parse a
+    /// plan with `mode` blocks, so it applies nothing on plug or unplug —
+    /// and it rejects the page's own `set`/`assign` calls too.
+    Stale,
+    Ready,
+}
+
+/// Whether a helper binary speaks the current, mode-shaped CLI.
+///
+/// Asked by running it with no arguments, which prints its usage and exits
+/// 2 without touching anything. Deliberately NOT a string search inside the
+/// file: a hit would prove freshness but a miss proves nothing (link-time
+/// constant merging eats literals), and a false "stale" is the worse error.
+///
+/// This exists because a stale `/usr/bin/cce-power-apply` fails in the one
+/// way nothing reports: it takes the pkexec prompt, reads the mode name as
+/// an adapter state, and exits 2 — so a pick costs the user an
+/// authentication and changes nothing.
+pub fn helper_speaks_modes(path: &Path) -> bool {
+    std::process::Command::new(path)
+        .output()
+        .is_ok_and(|out| usage_speaks_modes(&String::from_utf8_lossy(&out.stderr)))
+}
+
+/// The usage text of a helper that knows about modes names `apply-mode`;
+/// the pre-modes one lists only `apply`, `set` and `show`.
+fn usage_speaks_modes(usage: &str) -> bool {
+    usage.contains("apply-mode")
+}
+
+/// Whether the root-side pieces are in place — the helper at its system
+/// path, the udev rule that starts it, and a helper new enough to read the
+/// plan this app writes.
+pub fn automation_status() -> Automation {
+    let helper = Path::new(HELPER_SYSTEM_PATH);
+    if !helper.exists() || !Path::new(UDEV_RULE_PATH).exists() {
+        return Automation::Missing;
+    }
+    if helper_speaks_modes(helper) { Automation::Ready } else { Automation::Stale }
 }
 
 // ── Applying (root) ─────────────────────────────────────────────────────
@@ -698,6 +739,21 @@ mod tests {
         // A desktop with no Mains device has nothing to unplug.
         assert_eq!(source_from_supplies([("Battery", false)]), Source::Ac);
         assert_eq!(source_from_supplies([]), Source::Ac);
+    }
+
+    #[test]
+    fn the_usage_probe_tells_a_mode_helper_from_a_pre_modes_one() {
+        // What this binary prints today.
+        assert!(usage_speaks_modes(
+            "usage: cce-power-apply apply [ac|battery]\n       cce-power-apply apply-mode <mode>\n"
+        ));
+        // What the pre-modes one printed — the copy that silently rejects
+        // every pick the page makes.
+        assert!(!usage_speaks_modes(
+            "usage: cce-power-apply apply [ac|battery]\n       cce-power-apply set <ac|battery> <lever> <value|unset>\n       cce-power-apply show\n"
+        ));
+        // A helper that cannot be run at all is not a helper that speaks.
+        assert!(!helper_speaks_modes(Path::new("/nonexistent/cce-power-apply")));
     }
 
     #[test]
