@@ -1,12 +1,13 @@
-//! The per-power-source plan: which levers to set when the machine is
-//! plugged in and which when it runs on battery.
+//! Power modes and the adapter states they are assigned to: a named set of
+//! levers per mode, and a small table saying which mode runs when the
+//! machine is plugged in and which when it runs on battery.
 //!
 //! Shared between the two sides of the feature, which is the point of the
-//! module: the Power page edits the plan and shows it, and `cce-power-apply`
-//! (this crate's helper binary) applies it as root — from udev when the
-//! Mains supply flips, at boot, and on demand when the page changes a lever
-//! for the source that is active right now. One parser, one apply path, one
-//! value guard, so the two sides cannot drift.
+//! module: the Power page edits the modes and the assignment, and
+//! `cce-power-apply` (this crate's helper binary) applies them as root —
+//! from udev when the Mains supply flips, at boot, and on demand when the
+//! page changes a lever of the mode that is running right now. One parser,
+//! one apply path, one value guard, so the two sides cannot drift.
 //!
 //! The plan lives at [`PLAN_PATH`], root-owned, because the applier runs as
 //! root outside any session: it has no `$HOME` to look in, and a root daemon
@@ -15,18 +16,26 @@
 //! same one-prompt path every lever change in this app already takes.
 //!
 //! ```kdl
-//! ac {
+//! mode "performance" {
 //!     profile "performance"
 //!     turbo "on"
 //! }
-//! battery {
+//! mode "power-saver" {
 //!     profile "low-power"
 //!     igpu_max_mhz 800
 //! }
+//! assign {
+//!     ac "performance"
+//!     battery "power-saver"
+//! }
 //! ```
 //!
-//! A lever absent from a block is left alone when that source becomes
-//! active — "not set" means "don't touch", never "reset to a default".
+//! A lever absent from a mode is left alone when that mode becomes active —
+//! "not set" means "don't touch", never "reset to a default". The older
+//! per-source form of this file (top-level `ac` / `battery` blocks of
+//! levers, before modes existed) still parses: each block becomes the mode
+//! that source is assigned to by default, which is exactly the behavior it
+//! had.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -38,7 +47,8 @@ pub const PLAN_PATH: &str = "/etc/cce/power.kdl";
 pub const HELPER_SYSTEM_PATH: &str = "/usr/bin/cce-power-apply";
 pub const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/90-cce-power-apply.rules";
 
-/// Defaults to `Ac`: a host with no Mains supply has nothing to unplug.
+/// A power-adapter state. Defaults to `Ac`: a host with no Mains supply has
+/// nothing to unplug.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum Source {
     #[default]
@@ -49,7 +59,7 @@ pub enum Source {
 impl Source {
     pub const ALL: [Source; 2] = [Source::Ac, Source::Battery];
 
-    /// The block name in the plan file, and the CLI spelling.
+    /// The key in the `assign` block, and the CLI spelling.
     pub fn key(self) -> &'static str {
         match self {
             Source::Ac => "ac",
@@ -58,11 +68,7 @@ impl Source {
     }
 
     pub fn parse(s: &str) -> Option<Source> {
-        match s {
-            "ac" => Some(Source::Ac),
-            "battery" => Some(Source::Battery),
-            _ => None,
-        }
+        Source::ALL.into_iter().find(|v| v.key() == s)
     }
 
     pub fn label(self) -> &'static str {
@@ -71,11 +77,58 @@ impl Source {
             Source::Battery => "On Battery",
         }
     }
+
+    /// The mode a source runs when the plan says nothing about it. These are
+    /// also what the pre-modes file format migrates onto, so an old plan
+    /// keeps behaving exactly as it did.
+    pub fn default_mode(self) -> Mode {
+        match self {
+            Source::Ac => Mode::Performance,
+            Source::Battery => Mode::PowerSaver,
+        }
+    }
 }
 
-/// The levers that make sense per source. The battery charge limit is
-/// deliberately not one: it is a charging policy, not something to flip on
-/// unplug.
+/// A named set of lever values. The set is fixed rather than user-extensible:
+/// the page picks a mode from a dropdown, and there is deliberately no
+/// naming UI to keep a mode's identity stable across the plan file, the
+/// helper's CLI and the assignment table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub enum Mode {
+    Performance,
+    #[default]
+    Balanced,
+    PowerSaver,
+}
+
+impl Mode {
+    pub const ALL: [Mode; 3] = [Mode::Performance, Mode::Balanced, Mode::PowerSaver];
+
+    /// The name in the plan file, and the CLI spelling.
+    pub fn key(self) -> &'static str {
+        match self {
+            Mode::Performance => "performance",
+            Mode::Balanced => "balanced",
+            Mode::PowerSaver => "power-saver",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Mode> {
+        Mode::ALL.into_iter().find(|m| m.key() == s)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Mode::Performance => "Performance",
+            Mode::Balanced => "Balanced",
+            Mode::PowerSaver => "Power Saver",
+        }
+    }
+}
+
+/// The levers that make sense per mode. The battery charge limit is
+/// deliberately not one: it is a charging policy, not something to flip when
+/// the mode changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Lever {
     Profile,
@@ -87,7 +140,6 @@ pub enum Lever {
     AudioIdleSecs,
     GpuLimitW,
 }
-
 impl Lever {
     pub const ALL: [Lever; 8] = [
         Lever::Profile,
@@ -156,98 +208,163 @@ pub fn sysfs_token_ok(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// The levers of every mode, plus which mode each adapter state runs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PowerPlan {
-    pub ac: BTreeMap<Lever, String>,
-    pub battery: BTreeMap<Lever, String>,
+    modes: BTreeMap<Mode, BTreeMap<Lever, String>>,
+    assign: BTreeMap<Source, Mode>,
 }
 
 impl PowerPlan {
-    pub fn set(&self, source: Source) -> &BTreeMap<Lever, String> {
-        match source {
-            Source::Ac => &self.ac,
-            Source::Battery => &self.battery,
-        }
+    /// One mode's levers. Absent and empty are the same thing to every
+    /// caller, so a mode nothing has been set on reads as an empty set.
+    pub fn levers(&self, mode: Mode) -> impl Iterator<Item = (Lever, &str)> {
+        self.modes
+            .get(&mode)
+            .into_iter()
+            .flat_map(|m| m.iter().map(|(l, v)| (*l, v.as_str())))
     }
 
-    pub fn set_mut(&mut self, source: Source) -> &mut BTreeMap<Lever, String> {
-        match source {
-            Source::Ac => &mut self.ac,
-            Source::Battery => &mut self.battery,
-        }
+    pub fn get(&self, mode: Mode, lever: Lever) -> Option<&str> {
+        self.modes.get(&mode)?.get(&lever).map(String::as_str)
     }
 
-    pub fn get(&self, source: Source, lever: Lever) -> Option<&str> {
-        self.set(source).get(&lever).map(String::as_str)
-    }
-
-    /// Record a value, or clear it with `None`. Rejects a malformed value
-    /// rather than storing it.
-    pub fn put(&mut self, source: Source, lever: Lever, value: Option<&str>) -> Result<(), String> {
+    /// Record a value on a mode, or clear it with `None`. Rejects a
+    /// malformed value rather than storing it.
+    pub fn put(&mut self, mode: Mode, lever: Lever, value: Option<&str>) -> Result<(), String> {
         match value {
             None => {
-                self.set_mut(source).remove(&lever);
+                if let Some(set) = self.modes.get_mut(&mode) {
+                    set.remove(&lever);
+                }
             }
             Some(v) if lever.value_ok(v) => {
-                self.set_mut(source).insert(lever, v.to_string());
+                self.modes.entry(mode).or_default().insert(lever, v.to_string());
             }
             Some(v) => return Err(format!("{:?} is not a valid value for {}", v, lever.key())),
         }
         Ok(())
     }
 
+    /// The mode an adapter state runs; unassigned falls back to the source's
+    /// own default rather than to "do nothing", so a fresh plan still has a
+    /// mode to edit and apply.
+    pub fn assigned(&self, source: Source) -> Mode {
+        self.assign.get(&source).copied().unwrap_or_else(|| source.default_mode())
+    }
+
+    pub fn assign(&mut self, source: Source, mode: Mode) {
+        self.assign.insert(source, mode);
+    }
+
+    /// No lever set on any mode. The assignment alone is not content: it
+    /// changes nothing until some mode has a lever in it.
     pub fn is_empty(&self) -> bool {
-        self.ac.is_empty() && self.battery.is_empty()
+        self.modes.values().all(BTreeMap::is_empty)
     }
 
     pub fn parse(text: &str) -> Result<PowerPlan, String> {
         let doc: kdl::KdlDocument = text.parse().map_err(|e: kdl::KdlError| e.to_string())?;
         let mut plan = PowerPlan::default();
-        for source in Source::ALL {
-            let Some(block) = doc.get(source.key()) else { continue };
-            let Some(children) = block.children() else { continue };
-            for node in children.nodes() {
-                let name = node.name().value();
-                let Some(lever) = Lever::parse(name) else {
-                    return Err(format!("unknown lever {:?} under {}", name, source.key()));
-                };
-                let value = match node.get(0).map(|e| e.value()) {
-                    Some(v) if v.as_string().is_some() => v.as_string().unwrap().to_string(),
-                    Some(v) if v.as_i64().is_some() => v.as_i64().unwrap().to_string(),
-                    _ => return Err(format!("{}.{} needs one string or integer value", source.key(), name)),
-                };
-                plan.put(source, lever, Some(&value))?;
+        for node in doc.nodes() {
+            let name = node.name().value();
+            match name {
+                "mode" => {
+                    let key = node
+                        .get(0)
+                        .and_then(|e| e.value().as_string())
+                        .ok_or_else(|| "mode needs a name, e.g. mode \"balanced\"".to_string())?;
+                    let mode = Mode::parse(key).ok_or_else(|| format!("unknown mode {:?}", key))?;
+                    plan.read_levers(node, mode, key)?;
+                }
+                "assign" => {
+                    let Some(children) = node.children() else { continue };
+                    for child in children.nodes() {
+                        let sname = child.name().value();
+                        let source = Source::parse(sname)
+                            .ok_or_else(|| format!("unknown power source {:?} under assign", sname))?;
+                        let key = child
+                            .get(0)
+                            .and_then(|e| e.value().as_string())
+                            .ok_or_else(|| format!("assign.{} needs a mode name", sname))?;
+                        let mode = Mode::parse(key)
+                            .ok_or_else(|| format!("unknown mode {:?} assigned to {}", key, sname))?;
+                        plan.assign(source, mode);
+                    }
+                }
+                // The pre-modes file: a bare block of levers per adapter
+                // state. Each becomes that state's default mode, which is
+                // what it was already doing.
+                _ => match Source::parse(name) {
+                    Some(source) => {
+                        let mode = source.default_mode();
+                        plan.read_levers(node, mode, name)?;
+                        plan.assign(source, mode);
+                    }
+                    None => return Err(format!("unknown block {:?}", name)),
+                },
             }
         }
         Ok(plan)
     }
 
+    /// The lever children of one block, into `mode`. `what` names the block
+    /// in errors, since the same reader serves both file formats.
+    fn read_levers(&mut self, node: &kdl::KdlNode, mode: Mode, what: &str) -> Result<(), String> {
+        let Some(children) = node.children() else { return Ok(()) };
+        for child in children.nodes() {
+            let name = child.name().value();
+            let Some(lever) = Lever::parse(name) else {
+                return Err(format!("unknown lever {:?} under {}", name, what));
+            };
+            let value = match child.get(0).map(|e| e.value()) {
+                Some(v) if v.as_string().is_some() => v.as_string().unwrap().to_string(),
+                Some(v) if v.as_i64().is_some() => v.as_i64().unwrap().to_string(),
+                _ => return Err(format!("{}.{} needs one string or integer value", what, name)),
+            };
+            self.put(mode, lever, Some(&value))?;
+        }
+        Ok(())
+    }
+
     pub fn to_kdl(&self) -> String {
         let mut doc = kdl::KdlDocument::new();
-        for source in Source::ALL {
-            let mut block = kdl::KdlNode::new(source.key());
+        for mode in Mode::ALL {
+            let mut block = kdl::KdlNode::new("mode");
+            block.push(kdl::KdlEntry::new(mode.key()));
             let children = block.ensure_children();
-            for (lever, value) in self.set(source) {
+            for (lever, value) in self.levers(mode) {
                 let mut node = kdl::KdlNode::new(lever.key());
                 if lever.is_numeric() {
                     // Validated on the way in, so this parse cannot fail;
                     // fall back to the string form rather than panicking.
                     match value.parse::<i64>() {
                         Ok(n) => node.push(kdl::KdlEntry::new(n)),
-                        Err(_) => node.push(kdl::KdlEntry::new(value.as_str())),
+                        Err(_) => node.push(kdl::KdlEntry::new(value)),
                     }
                 } else {
-                    node.push(kdl::KdlEntry::new(value.as_str()));
+                    node.push(kdl::KdlEntry::new(value));
                 }
                 children.nodes_mut().push(node);
             }
             doc.nodes_mut().push(block);
         }
+        let mut assign = kdl::KdlNode::new("assign");
+        let children = assign.ensure_children();
+        for source in Source::ALL {
+            // Resolved, not just what was stored: the file then says out
+            // loud what the applier will do on every adapter state.
+            let mut node = kdl::KdlNode::new(source.key());
+            node.push(kdl::KdlEntry::new(self.assigned(source).key()));
+            children.nodes_mut().push(node);
+        }
+        doc.nodes_mut().push(assign);
         doc.fmt();
         let mut out = String::from(
-            "// Per-power-source settings, edited from the System Interface's Power page\n\
-             // and applied by cce-power-apply (udev, boot, and on each change).\n\
-             // A lever missing from a block is left untouched for that source.\n",
+            "// Power modes and their adapter-state assignment, edited from the\n\
+             // System Interface's Power page and applied by cce-power-apply (udev,\n\
+             // boot, and on each change). A lever missing from a mode is left\n\
+             // untouched when that mode becomes active.\n",
         );
         out.push_str(&doc.to_string());
         out
@@ -437,63 +554,124 @@ pub fn apply_lever(lever: Lever, value: &str) -> Result<(), String> {
     }
 }
 
-/// Apply every lever the plan sets for one source. Failures are per lever —
-/// a missing NVIDIA driver must not stop the CPU profile from landing — and
-/// come back to the caller, which logs them.
+/// Apply every lever one mode sets. Failures are per lever — a missing
+/// NVIDIA driver must not stop the CPU profile from landing — and come back
+/// to the caller, which logs them.
+pub fn apply_mode(plan: &PowerPlan, mode: Mode) -> Vec<(Lever, Result<(), String>)> {
+    plan.levers(mode)
+        .map(|(lever, value)| (lever, apply_lever(lever, value)))
+        .collect::<Vec<_>>()
+}
+
+/// Apply whichever mode is assigned to one adapter state.
 pub fn apply_source(plan: &PowerPlan, source: Source) -> Vec<(Lever, Result<(), String>)> {
-    plan.set(source)
-        .iter()
-        .map(|(lever, value)| (*lever, apply_lever(*lever, value)))
-        .collect()
+    apply_mode(plan, plan.assigned(source))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn levers_of(plan: &PowerPlan, mode: Mode) -> Vec<(Lever, String)> {
+        plan.levers(mode).map(|(l, v)| (l, v.to_string())).collect()
+    }
+
     #[test]
-    fn kdl_round_trip_keeps_both_blocks_and_types() {
+    fn kdl_round_trip_keeps_modes_assignment_and_types() {
         let mut plan = PowerPlan::default();
-        plan.put(Source::Ac, Lever::Profile, Some("performance")).unwrap();
-        plan.put(Source::Ac, Lever::Turbo, Some("on")).unwrap();
-        plan.put(Source::Battery, Lever::Profile, Some("low-power")).unwrap();
-        plan.put(Source::Battery, Lever::IgpuMaxMhz, Some("800")).unwrap();
-        plan.put(Source::Battery, Lever::GpuLimitW, Some("40")).unwrap();
+        plan.put(Mode::Performance, Lever::Profile, Some("performance")).unwrap();
+        plan.put(Mode::Performance, Lever::Turbo, Some("on")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::Profile, Some("low-power")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::IgpuMaxMhz, Some("800")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::GpuLimitW, Some("40")).unwrap();
+        plan.assign(Source::Battery, Mode::Balanced);
         let text = plan.to_kdl();
         // Numbers are written as KDL integers, tokens as strings.
         assert!(text.contains("igpu_max_mhz 800"), "{text}");
         assert!(text.contains("profile \"low-power\""), "{text}");
-        assert_eq!(PowerPlan::parse(&text).unwrap(), plan);
+        assert!(text.contains("mode \"power-saver\""), "{text}");
+        assert!(text.contains("battery \"balanced\""), "{text}");
+        // The file says every assignment out loud, so what comes back is the
+        // same plan with the AC default written down — and writing it again
+        // is a fixed point.
+        let back = PowerPlan::parse(&text).unwrap();
+        assert_eq!(levers_of(&back, Mode::Performance), levers_of(&plan, Mode::Performance));
+        assert_eq!(levers_of(&back, Mode::PowerSaver), levers_of(&plan, Mode::PowerSaver));
+        for source in Source::ALL {
+            assert_eq!(back.assigned(source), plan.assigned(source));
+        }
+        assert_eq!(back.to_kdl(), text);
     }
 
     #[test]
     fn parse_accepts_empty_and_partial_files() {
         assert_eq!(PowerPlan::parse("").unwrap(), PowerPlan::default());
-        let p = PowerPlan::parse("battery {\n  epp \"power\"\n}\n").unwrap();
-        assert!(p.ac.is_empty());
-        assert_eq!(p.get(Source::Battery, Lever::Epp), Some("power"));
-        assert_eq!(p.get(Source::Ac, Lever::Epp), None);
+        let p = PowerPlan::parse("mode \"balanced\" {\n  epp \"power\"\n}\n").unwrap();
+        assert_eq!(p.get(Mode::Balanced, Lever::Epp), Some("power"));
+        assert_eq!(p.get(Mode::Performance, Lever::Epp), None);
+        // Nothing assigned: each adapter state keeps its default mode.
+        assert_eq!(p.assigned(Source::Ac), Mode::Performance);
+        assert_eq!(p.assigned(Source::Battery), Mode::PowerSaver);
     }
 
     #[test]
-    fn parse_rejects_unknown_levers_and_bad_values() {
-        assert!(PowerPlan::parse("ac {\n  brightness 50\n}\n").is_err());
+    fn the_pre_modes_file_migrates_onto_the_default_modes() {
+        // What /etc/cce/power.kdl looked like before modes existed: a bare
+        // block of levers per adapter state, applied on plug and unplug.
+        let old = "ac {\n  profile \"performance\"\n}\nbattery {\n  profile \"low-power\"\n  igpu_max_mhz 800\n}\n";
+        let p = PowerPlan::parse(old).unwrap();
+        // Each block landed on the mode its source runs, so the same levers
+        // still apply on the same adapter states.
+        assert_eq!(p.assigned(Source::Ac), Mode::Performance);
+        assert_eq!(p.assigned(Source::Battery), Mode::PowerSaver);
+        assert_eq!(p.get(Mode::Performance, Lever::Profile), Some("performance"));
+        assert_eq!(p.get(Mode::PowerSaver, Lever::IgpuMaxMhz), Some("800"));
+        assert!(levers_of(&p, Mode::Balanced).is_empty());
+        // And it rewrites in the new shape.
+        assert!(p.to_kdl().contains("mode \"performance\""));
+        assert_eq!(PowerPlan::parse(&p.to_kdl()).unwrap(), p);
+    }
+
+    #[test]
+    fn parse_rejects_unknown_names_and_bad_values() {
+        assert!(PowerPlan::parse("mode \"balanced\" {\n  brightness 50\n}\n").is_err());
+        assert!(PowerPlan::parse("mode \"turbo-max\" {\n}\n").is_err());
+        assert!(PowerPlan::parse("assign {\n  ac \"turbo-max\"\n}\n").is_err());
+        assert!(PowerPlan::parse("assign {\n  usb \"balanced\"\n}\n").is_err());
+        assert!(PowerPlan::parse("levers {\n  profile \"performance\"\n}\n").is_err());
         // A shell metacharacter never survives into the plan.
-        assert!(PowerPlan::parse("ac {\n  profile \"x;reboot\"\n}\n").is_err());
+        assert!(PowerPlan::parse("mode \"balanced\" {\n  profile \"x;reboot\"\n}\n").is_err());
         // Turbo is on/off only.
-        assert!(PowerPlan::parse("ac {\n  turbo \"yes\"\n}\n").is_err());
+        assert!(PowerPlan::parse("mode \"balanced\" {\n  turbo \"yes\"\n}\n").is_err());
         // A numeric lever given a token.
-        assert!(PowerPlan::parse("ac {\n  gpu_limit_w \"max\"\n}\n").is_err());
+        assert!(PowerPlan::parse("mode \"balanced\" {\n  gpu_limit_w \"max\"\n}\n").is_err());
     }
 
     #[test]
     fn put_none_clears_and_bad_values_are_refused() {
         let mut plan = PowerPlan::default();
-        plan.put(Source::Ac, Lever::Governor, Some("powersave")).unwrap();
-        assert!(plan.put(Source::Ac, Lever::Governor, Some("$(rm)")).is_err());
-        assert_eq!(plan.get(Source::Ac, Lever::Governor), Some("powersave"));
-        plan.put(Source::Ac, Lever::Governor, None).unwrap();
+        plan.put(Mode::Balanced, Lever::Governor, Some("powersave")).unwrap();
+        assert!(plan.put(Mode::Balanced, Lever::Governor, Some("$(rm)")).is_err());
+        assert_eq!(plan.get(Mode::Balanced, Lever::Governor), Some("powersave"));
+        plan.put(Mode::Balanced, Lever::Governor, None).unwrap();
         assert!(plan.is_empty());
+        // An assignment alone is not content — it changes nothing until a
+        // mode has a lever in it.
+        plan.assign(Source::Ac, Mode::Balanced);
+        assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn assignment_is_per_source_and_two_states_may_share_a_mode() {
+        let mut plan = PowerPlan::default();
+        plan.put(Mode::Balanced, Lever::Epp, Some("balance_power")).unwrap();
+        plan.assign(Source::Ac, Mode::Balanced);
+        plan.assign(Source::Battery, Mode::Balanced);
+        assert_eq!(plan.assigned(Source::Ac), Mode::Balanced);
+        assert_eq!(plan.assigned(Source::Battery), Mode::Balanced);
+        assert_eq!(PowerPlan::parse(&plan.to_kdl()).unwrap(), plan);
+        // Both states named, so nothing was left to a default.
+        assert!(plan.to_kdl().contains("ac \"balanced\""));
     }
 
     #[test]
@@ -530,7 +708,11 @@ mod tests {
         for s in Source::ALL {
             assert_eq!(Source::parse(s.key()), Some(s));
         }
+        for m in Mode::ALL {
+            assert_eq!(Mode::parse(m.key()), Some(m));
+        }
         assert_eq!(Lever::parse("brightness"), None);
+        assert_eq!(Mode::parse("ac"), None);
     }
 
     #[test]
@@ -540,11 +722,13 @@ mod tests {
         // Missing file is an empty plan, not an error.
         assert_eq!(PowerPlan::load_from(&path).unwrap(), PowerPlan::default());
         let mut plan = PowerPlan::default();
-        plan.put(Source::Battery, Lever::Aspm, Some("powersave")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::Aspm, Some("powersave")).unwrap();
+        plan.assign(Source::Ac, Mode::Balanced);
+        plan.assign(Source::Battery, Mode::PowerSaver);
         plan.save_to(&path).unwrap();
         assert_eq!(PowerPlan::load_from(&path).unwrap(), plan);
         // Garbage on disk is reported, not silently emptied.
-        std::fs::write(&path, "ac {\n  profile \n").unwrap();
+        std::fs::write(&path, "mode \"balanced\" {\n  profile \n").unwrap();
         assert!(PowerPlan::load_from(&path).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
