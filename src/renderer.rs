@@ -705,24 +705,33 @@ impl SystemInterface {
             let cw = cce_ui::widget::context_menu::w();
             let ch = cce_ui::widget::context_menu::h();
 
+            // This target is the legacy rect/text one, not a PaintCtx, so the
+            // plate cannot be the toolkit's lit one yet — but the rows and
+            // labels are the toolkit's: PAD-aware `row_y` / `text_labels`
+            // (the hand-rolled `idx * 24.0` painted every row 8px above
+            // where `cursor_moved` hit-tested it) and the menu font's family.
+            use cce_ui::widget::context_menu::{self, ROW_H};
             popover_pc.rect([0.22, 0.22, 0.28, 1.0], cx, cy, cw, ch);
             popover_pc.rect([0.06, 0.06, 0.09, 1.0], cx + 1.0, cy + 1.0, cw - 2.0, ch - 2.0);
 
-            if let Some(h_idx) = cce_ui::widget::context_menu::hovered_item() {
-                let iy = cy + h_idx as f32 * 24.0;
-                popover_pc.rect([0.20, 0.40, 0.65, 0.6], cx + 2.0, iy + 2.0, cw - 4.0, 20.0);
+            if let Some(h_idx) = context_menu::hovered_item() {
+                let iy = context_menu::row_y(h_idx);
+                popover_pc.rect([0.20, 0.40, 0.65, 0.6], cx + 2.0, iy + 2.0, cw - 4.0, ROW_H - 4.0);
             }
 
-            for (idx, opt) in cce_ui::widget::context_menu::options().iter().enumerate() {
-                let iy = cy + idx as f32 * 24.0 + (24.0 - 12.0) / 2.0;
-                let text_color = if idx == 0 {
-                    [0.44, 0.44, 0.47, 1.0]
-                } else if cce_ui::widget::context_menu::hovered_item() == Some(idx) {
-                    [1.0, 1.0, 1.0, 1.0]
-                } else {
-                    [0.80, 0.80, 0.83, 1.0]
-                };
-                popover_pc.text_with_bounds(opt, cx + 8.0, iy, 12.0, text_color, Some([cx, cy, cx + cw, cy + ch]));
+            let (family, _) = context_menu::label_font();
+            for label in context_menu::text_labels() {
+                let c = label.color;
+                let color = [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, 1.0];
+                popover_pc.text_with_font_and_bounds(
+                    &label.text,
+                    label.x,
+                    label.y,
+                    label.font_size,
+                    color,
+                    &family,
+                    Some([cx, cy, cx + cw, cy + ch]),
+                );
             }
         }
         self.popover_widgets = popover_pc.rects.iter().map(|(c, x, y, w, h, r, corners)| AppWidget {
