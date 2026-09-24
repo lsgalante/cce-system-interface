@@ -59,6 +59,7 @@ pub enum ServicesMessage {
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
 pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+    let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -69,7 +70,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
             // Tab header buttons: System Services, User Services
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             let tab_h = 28.0;
             let active_bg = [0.20, 0.40, 0.65, 0.4];
             let inactive_bg = [0.10, 0.10, 0.16, 0.3];
@@ -78,7 +79,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             let label1 = if stack.context.cw < 250.0 { "System" } else { "System Services" };
             let label2 = if stack.context.cw < 250.0 { "User" } else { "User Services" };
 
-            stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
+            stack.add_row(2, cce_ui::layout::plate_gap(), tab_h, |ctx, i, x, w| {
                 if i == 0 {
                     ctx.button(
                         label1,
@@ -109,20 +110,20 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             stack.context.spacing(4.0);
 
             // Search textbox
-            let search_w = sec_w - 24.0;
+            let search_w = sec_w - 2.0 * m;
             let search_h = 46.0;
 
-            state.search_box.set_row_rect(stack.context.left + 12.0, search_w);
+            state.search_box.set_row_rect(stack.context.left + m, search_w);
             stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
-            stack.context.spacing(8.0);
+            stack.context.spacing(cce_ui::layout::plate_gap());
 
             // Scroll box list
-            let list_box_x = sec.left + 12.0;
+            let list_box_x = sec.left + m;
             let list_box_y = sec.ay();
-            let list_box_w = sec_w - 24.0;
+            let list_box_w = sec_w - 2.0 * m;
             // Fill the page: the well's bottom wall lands at the page bottom,
-            // the list keeps a 12px inset above it.
-            let list_box_h = ((cy + ch) - 12.0 - list_box_y).max(120.0);
+            // the list keeps one margin above it.
+            let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
 
             // Filter services
             let query = if state.search_box.editing {
@@ -173,6 +174,8 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
 
+                    // TODO(style): the row's control run and text column
+                    // below are this list row's own layout.
                     let toggle_x = list_box_x + 10.0;
                     let restart_x = toggle_x + btn_w + btn_gap;
                     // The row's text starts after the controls and still ends
@@ -284,9 +287,10 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                 sec.pc.text("No services match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
             }
 
-            // End the section so the well's bottom wall sits 12px below the
-            // list (finish() places the wall at content_y + padding + 12).
-            sec.content_y = list_box_y + list_box_h + 12.0 - (sec.padding() + 12.0);
+            // End the section so the well's bottom wall sits one margin below
+            // the list: finish() places the wall at content_y + padding +
+            // margin, so the list's own bottom margin and that one cancel.
+            sec.content_y = list_box_y + list_box_h - sec.padding();
         }
     });
 

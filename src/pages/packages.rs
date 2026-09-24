@@ -325,6 +325,7 @@ pub fn view(
     layout: &mut dyn LayoutStrategy,
     ctx: &mut cce_ui::context::UiContext,
 ) -> PageContent {
+    let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -337,7 +338,7 @@ pub fn view(
         }
 
         // ── Tabs (with counts), filter, compact update row ──
-        let mut stack = sec.vstack(8.0);
+        let mut stack = sec.vstack(cce_ui::layout::plate_gap());
         let tab_h = 28.0;
         let active_bg = [0.20, 0.40, 0.65, 0.4];
         let inactive_bg = [0.10, 0.10, 0.16, 0.3];
@@ -346,7 +347,7 @@ pub fn view(
         let label1 = format!("Installed ({})", state.installed.len());
         let label2 = format!("Updates ({})", state.updates.len());
 
-        stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
+        stack.add_row(2, cce_ui::layout::plate_gap(), tab_h, |ctx, i, x, w| {
             if i == 0 {
                 ctx.button(
                     &label1,
@@ -376,9 +377,9 @@ pub fn view(
 
         stack.context.spacing(4.0);
 
-        let search_w = sec_w - 24.0;
+        let search_w = sec_w - 2.0 * m;
         let search_h = 46.0;
-        state.search_box.set_row_rect(stack.context.left + 12.0, search_w);
+        state.search_box.set_row_rect(stack.context.left + m, search_w);
         stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
         stack.context.spacing(4.0);
 
@@ -396,7 +397,7 @@ pub fn view(
         } else {
             ("Update System", [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0])
         };
-        stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+        stack.add_row(3, cce_ui::layout::plate_gap(), 26.0, |c, i, x, w| {
             if i == 0 {
                 c.button(btn_lbl, x, c.ay(), w, 26.0, bg, hover, [0.90, 0.90, 0.95, 1.0],
                     AppAction::Packages(PackagesMessage::StartUpdate));
@@ -436,14 +437,14 @@ pub fn view(
                     if y > sc.content_start_y {
                         y += sc.row_gap;
                     }
-                    let lx = sc.ax(12.0);
+                    let lx = sc.ax(m);
                     sc.pc.text(&parsed.name, lx, y, 14.0, [0.35, 0.65, 0.90, 1.0]);
                     sc.content_y = y + 20.0;
                     for h in &mut sc.grid.col_heights {
                         *h = sc.content_y;
                     }
                     if state.active_tab == PackageTab::Installed {
-                        let item_w = sc.cw - 2.0 * (sc.padding() + 12.0);
+                        let item_w = sc.cw - 2.0 * (sc.padding() + m);
                         let bw = 100.0;
                         let bx = lx + item_w - bw;
                         let (btn_lbl, bg, hover, text_col) = if state.uninstalling {
@@ -462,9 +463,9 @@ pub fn view(
                         return;
                     }
                     let mut y = sc.content_y + 4.0;
-                    let lx = sc.ax(12.0);
+                    let lx = sc.ax(m);
                     let vx = lx + 118.0;
-                    let usable_w = sc.cw - 118.0 - 2.0 * (sc.padding() + 12.0);
+                    let usable_w = sc.cw - 118.0 - 2.0 * (sc.padding() + m);
                     let max_chars = ((usable_w / 6.0) as usize).max(15);
                     sc.pc.text(key, lx, y, 11.0, TEXT_DIM);
                     let lines = wrap_text(val, max_chars);
@@ -517,10 +518,10 @@ pub fn view(
         section_divider(stack.context);
 
         // ── List fills the rest of the page ──
-        let list_box_x = sec.left + 12.0;
+        let list_box_x = sec.left + m;
         let list_box_y = sec.ay();
-        let list_box_w = sec_w - 24.0;
-        let list_box_h = ((cy + ch) - 12.0 - list_box_y).max(120.0);
+        let list_box_w = sec_w - 2.0 * m;
+        let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
 
         let query = if state.search_box.editing {
             state.search_box.edit_buffer.to_lowercase()
@@ -601,8 +602,10 @@ pub fn view(
             }
         }
 
-        // End the section so the well's bottom wall sits 12px below the list.
-        sec.content_y = list_box_y + list_box_h + 12.0 - (sec.padding() + 12.0);
+        // End the section so the well's bottom wall sits one margin below
+        // the list: finish() places the wall at content_y + padding + margin,
+        // so the list's own bottom margin and that one cancel.
+        sec.content_y = list_box_y + list_box_h - sec.padding();
     });
 
     final_pc

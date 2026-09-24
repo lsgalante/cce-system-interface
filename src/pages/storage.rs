@@ -246,9 +246,9 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
                 100.0, 0.0, 12.0, TEXT_FG,
             );
 
-            let bar_w = sec_w - 24.0;
+            let bar_w = sec_w - 2.0 * crate::app::section_margin();
             let yt = sec.ay();
-            let disk_bar_x = sec.ax(12.0);
+            let disk_bar_x = sec.ax(crate::app::section_margin());
             let mut disk_bar = cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
                 .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]);
             render_widget(sec.pc, &mut disk_bar, disk_bar_x, yt, bar_w, 8.0, ctx);
@@ -273,9 +273,9 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
                 100.0, 0.0, 12.0, TEXT_FG,
             );
 
-            let bar_w = sec_w - 24.0;
+            let bar_w = sec_w - 2.0 * crate::app::section_margin();
             let yt = sec.ay();
-            let ram_bar_x = sec.ax(12.0);
+            let ram_bar_x = sec.ax(crate::app::section_margin());
             let mut ram_bar = cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
                 .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]);
             render_widget(sec.pc, &mut ram_bar, ram_bar_x, yt, bar_w, 8.0, ctx);
@@ -316,7 +316,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
             }
 
             // Action Button
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             let btn_h = 32.0;
             
             // Retained widget rather than an immediate `sec.button`, so it can hold

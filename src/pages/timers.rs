@@ -323,6 +323,7 @@ fn systemctl_action(args: &[&str], is_system: bool) {
 }
 
 pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+    let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -333,7 +334,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             sec.text("Loading systemd timers...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
             // Tab header buttons: System Timers, User Timers
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             let tab_h = 28.0;
             let active_bg = [0.20, 0.40, 0.65, 0.4];
             let inactive_bg = [0.10, 0.10, 0.16, 0.3];
@@ -342,7 +343,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             let label1 = if stack.context.cw < 250.0 { "System" } else { "System Timers" };
             let label2 = if stack.context.cw < 250.0 { "User" } else { "User Timers" };
 
-            stack.add_row(2, 8.0, tab_h, |ctx, i, x, w| {
+            stack.add_row(2, cce_ui::layout::plate_gap(), tab_h, |ctx, i, x, w| {
                 if i == 0 {
                     ctx.button(
                         label1,
@@ -374,7 +375,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
             // New Timer (user scope) — compact button; the form unfolds below.
             let new_bg = if state.creating { active_bg } else { [0.13, 0.18, 0.14, 1.0] };
-            stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+            stack.add_row(3, cce_ui::layout::plate_gap(), 26.0, |c, i, x, w| {
                 if i == 0 {
                     c.button("New Timer", x, c.ay(), w, 26.0,
                         new_bg, [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
@@ -383,7 +384,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             });
 
             if state.creating || state.editing.is_some() {
-                let item_w = sec_w - 2.0 * (stack.context.padding() + 12.0);
+                let item_w = sec_w - 2.0 * (stack.context.padding() + m);
                 let rx = stack.context.left;
                 let widget_h = cce_ui::layout::spinbox_height();
 
@@ -394,17 +395,17 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 }
 
                 if state.creating {
-                    state.name_box.set_row_rect(rx + 12.0, item_w);
+                    state.name_box.set_row_rect(rx + m, item_w);
                     stack.add_widget(&mut state.name_box, item_w, widget_h, ctx);
                 }
-                state.command_box.set_row_rect(rx + 12.0, item_w);
+                state.command_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.command_box, item_w, widget_h, ctx);
-                state.schedule_box.set_row_rect(rx + 12.0, item_w);
+                state.schedule_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.schedule_box, item_w, widget_h, ctx);
 
                 stack.context.spacing(4.0);
                 let save_label = if state.editing.is_some() { "Save" } else { "Create" };
-                stack.add_row(3, 8.0, 26.0, |c, i, x, w| {
+                stack.add_row(3, cce_ui::layout::plate_gap(), 26.0, |c, i, x, w| {
                     match i {
                         0 => c.button(save_label, x, c.ay(), w, 26.0,
                             [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
@@ -421,13 +422,13 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
             }
 
-            stack.context.spacing(8.0);
+            stack.context.spacing(cce_ui::layout::plate_gap());
 
             // Scroll box list, filling the page like the services list.
-            let list_box_x = sec.left + 12.0;
+            let list_box_x = sec.left + m;
             let list_box_y = sec.ay();
-            let list_box_w = sec_w - 24.0;
-            let list_box_h = ((cy + ch) - 12.0 - list_box_y).max(120.0);
+            let list_box_w = sec_w - 2.0 * m;
+            let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
 
             let now = now_usec();
             let filtered: Vec<&TimerInfo> = state.timers.iter()
@@ -455,6 +456,8 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     let en_w = if is_small { 40.0 } else { 66.0 };
                     let edit_w = if is_small { 36.0 } else { 50.0 };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
+                    // TODO(style): the row's button run, dot and text
+                    // column below are this list row's own layout.
                     let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
 
                     let en_x = right_edge - en_w;
@@ -558,8 +561,10 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 sec.pc.text("No timers in this scope", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
             }
 
-            // End the section so the well's bottom wall sits 12px below the list.
-            sec.content_y = list_box_y + list_box_h + 12.0 - (sec.padding() + 12.0);
+            // End the section so the well's bottom wall sits one margin below
+            // the list: finish() places the wall at content_y + padding +
+            // margin, so the list's own bottom margin and that one cancel.
+            sec.content_y = list_box_y + list_box_h - sec.padding();
         }
     });
 

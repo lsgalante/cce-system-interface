@@ -426,13 +426,25 @@ impl RenderTarget for PageContent {
 }
 
 
+/// The inset from a section well's rim to the app's own content, on top of
+/// `section_padding()`. cce-ui's `SectionContext` lays its title tab, its
+/// grid and a VStack's widgets out `2 * padding + DEFAULT_MARGIN_X` in, and
+/// `finish()` lands the well's wall `padding + DEFAULT_MARGIN_X` past the
+/// content — a rect the app places inside a well has to match that number or
+/// sit off the toolkit's own geometry. A well is this app's pane, so this is
+/// where the pane rung belongs; TODO(style): become `plate_padding()` once
+/// SectionContext reads the rung instead of its literal.
+pub fn section_margin() -> f32 {
+    cce_ui::layout::SectionContext::<PageContent>::DEFAULT_MARGIN_X
+}
+
 /// A dim label / bright value pair on one line (the shared details idiom).
 pub fn section_kv_row(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>, label: &str, value: &str, value_color: [f32; 4]) {
     let mut y = sc.content_y;
     if y > sc.content_start_y {
         y += sc.row_gap;
     }
-    let lx = sc.ax(12.0);
+    let lx = sc.ax(section_margin());
     sc.pc.text(label, lx, y, 12.0, [0.53, 0.53, 0.60, 1.0]);
     sc.pc.text(value, lx + 130.0, y, 12.0, value_color);
     sc.content_y = y + 18.0;
@@ -444,8 +456,8 @@ pub fn section_kv_row(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>, 
 /// A hairline separating a well's zones.
 pub fn section_divider(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>) {
     let y = sc.content_y + sc.row_gap + 4.0;
-    let x = sc.ax(12.0);
-    let w = sc.cw - 2.0 * (sc.padding() + 12.0);
+    let x = sc.ax(section_margin());
+    let w = sc.cw - 2.0 * (sc.padding() + section_margin());
     sc.pc.rect([1.0, 1.0, 1.0, 0.06], x, y, w, 1.0);
     sc.content_y = y + 5.0;
     for h in &mut sc.grid.col_heights {

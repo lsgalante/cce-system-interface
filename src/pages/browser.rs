@@ -247,7 +247,7 @@ impl AppPage for BrowserState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Browser Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             let sec_w = stack.context.cw;
             let row_w = sec_w - 28.0;
 

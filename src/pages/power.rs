@@ -676,7 +676,9 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
 
         if f.charge_limit.is_some() {
             sec.spacing(10.0);
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
+            // TODO(style): the dropdown's 14px row inset is this page's own,
+            // two wider than the well margin its neighbours sit on.
             dd_limit.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(dd_limit, sec_w - 28.0, 44.0, ctx);
         }
@@ -712,7 +714,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         builder.add_section(&mut final_pc, "Power Mode", focused(1), |sec| {
             let sec_w = sec.cw;
             {
-                let mut stack = sec.vstack(8.0);
+                let mut stack = sec.vstack(cce_ui::layout::plate_gap());
                 dd_mode.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
                 stack.add_widget(dd_mode, sec_w - 28.0, 44.0, ctx);
             }
@@ -726,7 +728,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             }
             sec.text("Not set leaves a lever alone.", 12.0, 0.0, 11.0, TEXT_DIM);
             sec.spacing(6.0);
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             for i in 0..Lever::ALL.len() {
                 if levers.rows[i].is_empty() {
                     continue;
@@ -745,7 +747,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             sec.text("Which mode runs in each adapter state.", 12.0, 0.0, 11.0, TEXT_DIM);
             sec.text(&format!("{} right now.", f.source.label()), 12.0, 0.0, 11.0, GOOD);
             sec.spacing(6.0);
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             for source in sources.iter().copied() {
                 let dd = &mut dd_assign[source_index(source)];
                 dd.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);

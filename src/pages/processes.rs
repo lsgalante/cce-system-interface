@@ -258,8 +258,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
             // Scrolling box configuration for process list: one even inset
-            // between the list and the well's walls on all four sides.
-            let inset = 12.0;
+            // between the list and the well's walls on all four sides — the
+            // well margin the toolkit's SectionContext lays out on.
+            let inset = crate::app::section_margin();
             let list_box_x = rx + inset;
             let list_box_w = sec.cw - 2.0 * inset;
             // Power summary line above the list; the list starts below it.
@@ -285,6 +286,8 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             const COL_KILL: f32 = 720.0;
             const CONTENT_W: f32 = 745.0;
 
+            // TODO(style): the column offsets, header hit-target nudges and
+            // in-row text centring below are this table's own layout.
             let header_h = 22.0;
             state.cpu_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
             state.cpu_list.set_content_w(CONTENT_W);
@@ -393,12 +396,13 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             sec.pc.pop_clip_rect();
             
             if state.processes.is_empty() {
-                sec.pc.text("No active processes", list_box_x + 12.0, list_box_y + header_h + 16.0, 12.0, TEXT_DIM);
+                sec.pc.text("No active processes", list_box_x + inset, list_box_y + header_h + 16.0, 12.0, TEXT_DIM);
             }
 
-            // End the section so the well's bottom wall sits `inset` below the
-            // list (finish() places the wall at content_y + padding + 12).
-            sec.content_y = list_box_y + list_box_h + inset - (sec.padding() + 12.0);
+            // End the section so the well's bottom wall sits one margin below
+            // the list: finish() places the wall at content_y + padding +
+            // margin, so the list's own bottom margin and that one cancel.
+            sec.content_y = list_box_y + list_box_h - sec.padding();
         }
     });
 

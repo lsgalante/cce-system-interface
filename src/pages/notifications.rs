@@ -209,7 +209,7 @@ impl AppPage for NotificationsState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Notifications Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             let sec_w = stack.context.cw;
             self.enable_toggle.set_toggled(self.enable);
             stack.add_widget(&mut self.enable_toggle, sec_w - 28.0, cce_ui::layout::toggle_height(), ctx);

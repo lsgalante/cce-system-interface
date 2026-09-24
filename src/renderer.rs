@@ -175,6 +175,8 @@ impl SystemInterface {
         // height — the legacy window pass also ran before this frame's content
         // was measured.
         let sb_w = cce_ui::layout::scrollbar_width() * 1.6;
+        // TODO(style): the bar's 4px vertical stand-off pairs with the
+        // toolkit's `scrollbar_inset()` knob, not a rung of the ladder.
         self.page_scroll_bar.set_rect(
             logical_sw - sb_w - cce_ui::layout::scrollbar_inset(),
             self.header_height + 4.0,
@@ -244,12 +246,14 @@ impl SystemInterface {
                 0.0,
                 (false, false, false, false),
             ));
+            // The search box stands on the root plate: the window-edge inset.
+            let inset = cce_ui::layout::root_plate_inset();
             cce_ui::layout::render_widget(
                 &mut search_pc,
                 &mut self.search_box,
-                self.sidebar_width + 12.0,
+                self.sidebar_width + inset,
                 sh - 36.0,
-                sw - self.sidebar_width - 24.0,
+                sw - self.sidebar_width - 2.0 * inset,
                 30.0,
                 &mut self.ui_context,
             );
@@ -599,7 +603,7 @@ impl SystemInterface {
             let logical_tw = tw / scale_factor;
             let logical_lh = lh / scale_factor;
             let text_x = if left_align {
-                base.x + 8.0
+                base.x + cce_ui::layout::CONTROL_TEXT_INSET
             } else {
                 base.x + (base.w - logical_tw) / 2.0
             };
@@ -795,12 +799,17 @@ impl SystemInterface {
 
     pub(crate) fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
         use cce_ui::layout::AdaptiveGrid;
-        let margin = cce_ui::layout::page_margin();
+        // The sections are wells carved straight into the root plate (no
+        // sidebar, no pane between), so the page's edge is the window's edge:
+        // the root rung's inset, and the grid's gap the root rung's gap (set
+        // once in main; `AdaptiveGrid::init` reads the toolkit getters, the
+        // constructor args are the same numbers stated for the record).
+        let margin = cce_ui::layout::root_plate_inset();
         let cx = cx + margin;
         let cy = cy + margin;
         let cw = (cw - 2.0 * margin).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
-        let mut layout = AdaptiveGrid::new(260.0, 20.0);
+        let mut layout = AdaptiveGrid::new(cce_ui::layout::grid_min_col_width(), cce_ui::layout::root_plate_gap());
         // Page root dissolved (6u): the ctrl-nav entry focuses section 0, so root focus is
         // permanently false; views that highlighted on it OR in their first section's bool.
         // Section focus is the app-side index now (Phase 6w).

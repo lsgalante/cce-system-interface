@@ -266,7 +266,7 @@ where
 /// pretends otherwise clips one and pads the other.
 fn button_need(label: &str) -> f32 {
     let (family, size) = cce_ui::layout::control_label_font_parsed();
-    cce_ui::widget::display::measure_text_width(label, &family, size) + 24.0
+    cce_ui::widget::display::measure_text_width(label, &family, size) + 2.0 * cce_ui::layout::CONTROL_TEXT_INSET + 8.0
 }
 
 fn spawn_systemctl(action: &str) {
@@ -425,12 +425,12 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
     // ── 2. System Actions Section ──
     builder.add_section(&mut final_pc, "System Actions", sec_focused.get(1).copied().unwrap_or(false), |sec| {
-        let mut stack = sec.vstack(8.0);
+        let mut stack = sec.vstack(cce_ui::layout::plate_gap());
         let act_btn_h = 32.0;
 
         const ACTIONS: [&str; 4] = ["Suspend", "Hibernate", "Reboot", "Power Off"];
         let needs: Vec<f32> = ACTIONS.iter().map(|l| button_need(l)).collect();
-        stack.add_row_for(&needs, 8.0, act_btn_h, |ctx, i, x, w| {
+        stack.add_row_for(&needs, cce_ui::layout::plate_gap(), act_btn_h, |ctx, i, x, w| {
             match i {
                 0 => {
                     ctx.button("Suspend", x, ctx.ay(), w, act_btn_h,
@@ -540,7 +540,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let has_work = sf.scanned && !sf.pending.is_empty();
         let busy = sf.busy;
         let needs = [button_need("Check"), button_need("Install (root)")];
-        stack.add_row_for(&needs, 8.0, btn_h, move |c, i, x, w| {
+        stack.add_row_for(&needs, cce_ui::layout::plate_gap(), btn_h, move |c, i, x, w| {
             match i {
                 0 => {
                     c.button("Check", x, c.ay(), w, btn_h,

@@ -302,7 +302,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
             sec.text("Loading audio devices...", 12.0, 0.0, 12.0, TEXT_DIM);
             return;
         }
-        let mut stack = sec.vstack(8.0);
+        let mut stack = sec.vstack(cce_ui::layout::plate_gap());
 
         stack.context.text("Output", 12.0, 0.0, 14.0, HEADING);
         if state.sinks.is_empty() {

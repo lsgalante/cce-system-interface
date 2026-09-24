@@ -452,9 +452,10 @@ const ACCENT_BG: [f32; 4] = [0.20, 0.40, 0.65, 0.35];
 const TEXT_BTN: [f32; 4] = [0.90, 0.90, 0.95, 1.0];
 const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 
-/// Gap between account rows, and the inset from the region's own edges.
+/// Gap between account rows. style: deliberate — list rows pack tighter
+/// than the pane gap, like every list on this app's pages (the inset from
+/// the region's edges is the well margin, `section_margin()`).
 const LIST_GAP: f32 = 4.0;
-const LIST_INSET: f32 = 12.0;
 /// Rows shown before the region starts scrolling. The list sits ABOVE the
 /// actions and the edit form, so it cannot fill the page the way services'
 /// does; it grows with the account count up to here and scrolls past it,
@@ -469,13 +470,15 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
     let widget_h = cce_ui::layout::spinbox_height();
     let btn_h = 26.0;
+    let m = crate::app::section_margin();
+    let gap = cce_ui::layout::plate_gap();
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
             return;
         }
-        let item_w = sec.cw - 2.0 * (sec.padding() + 12.0);
+        let item_w = sec.cw - 2.0 * (sec.padding() + m);
         let rx = sec.left;
 
         // ── Account list: a scroll region, selection tinted, default marked ──
@@ -490,9 +493,9 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             // drawing at a different height than it virtualizes on would drift
             // the rows out from under their own hit boxes.
             let item_h = state.list.item_height;
-            let list_x = sec.left + LIST_INSET;
+            let list_x = sec.left + m;
             let list_y = sec.ay();
-            let list_w = sec.cw - 2.0 * LIST_INSET;
+            let list_w = sec.cw - 2.0 * m;
             let rows_shown = state.accounts.len().min(LIST_MAX_ROWS);
             let list_h = rows_shown as f32 * (item_h + LIST_GAP) + 8.0;
 
@@ -501,7 +504,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             state.list.update_bounds(state.accounts.len(), list_y, list_h);
             state.list.push_prims(sec.pc);
 
-            let btn_w = list_w - 2.0 * LIST_INSET;
+            let btn_w = list_w - 2.0 * m;
             sec.pc.push_clip_rect(list_x, list_y, list_w, list_h);
             for (idx, acc) in state.accounts.iter().enumerate() {
                 // Same predicate the region virtualizes on — a row scrolled out
@@ -526,7 +529,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 };
                 sec.pc.button_left(
                     &label,
-                    list_x + LIST_INSET,
+                    list_x + m,
                     draw_y,
                     btn_w,
                     item_h,
@@ -547,7 +550,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             sec.spacing(list_h + LIST_GAP);
         }
 
-        let mut stack = sec.vstack(8.0);
+        let mut stack = sec.vstack(gap);
         if state.accounts.is_empty() {
             stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
         }
@@ -585,7 +588,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         let sel = state.selected_idx.filter(|&i| i < state.accounts.len());
         let icons_ok = cce_ui::upload_icon("plus", 32).is_some();
         let (sq, bgap) = if icons_ok { (btn_h, 8.0) } else if narrow { (86.0, 6.0) } else { (110.0, 8.0) };
-        stack.add_row(1, 8.0, btn_h, |c, _, x, _w| {
+        stack.add_row(1, gap, btn_h, |c, _, x, _w| {
             // ONE y for the whole row. `c.ay()` reads the section's running
             // content_y, and each button emitted advances it past its own
             // bottom — normally right, because `add_row` resets content_y
@@ -613,17 +616,17 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             stack.context.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
             stack.context.text("Gmail signs in with Google below; iCloud requires an App Password.", 12.0, 0.0, 11.0, TEXT_DIM);
 
-            state.email_box.set_row_rect(rx + 12.0, item_w);
+            state.email_box.set_row_rect(rx + m, item_w);
             stack.add_widget(&mut state.email_box, item_w, widget_h, ctx);
-            state.password_box.set_row_rect(rx + 12.0, item_w);
+            state.password_box.set_row_rect(rx + m, item_w);
             stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
-            state.imap_box.set_row_rect(rx + 12.0, item_w);
+            state.imap_box.set_row_rect(rx + m, item_w);
             stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
-            state.smtp_box.set_row_rect(rx + 12.0, item_w);
+            state.smtp_box.set_row_rect(rx + m, item_w);
             stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
 
             stack.context.spacing(4.0);
-            stack.add_row(4, 8.0, btn_h, |c, i, x, w| {
+            stack.add_row(4, gap, btn_h, |c, i, x, w| {
                 let (label, colors, text_col, action) = match i {
                     0 => ("Save", BTN_PRIMARY, TEXT_BTN, AccountsMessage::AddAccountSave),
                     1 => ("Cancel", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::AddAccountCancel),
@@ -648,29 +651,29 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             // An OAuth account has no password to edit; a password one has no
             // client credentials. Neither ever shows the other's fields.
             if acc.is_oauth {
-                state.imap_box.set_row_rect(rx + 12.0, item_w);
+                state.imap_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
-                state.smtp_box.set_row_rect(rx + 12.0, item_w);
+                state.smtp_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
 
                 stack.context.spacing(4.0);
                 stack.context.text("Credentials this account refreshes tokens with, taking effect", 12.0, 0.0, 11.0, TEXT_DIM);
                 stack.context.text("on the next refresh \u{2014} Re-login to re-issue the tokens now.", 12.0, 0.0, 11.0, TEXT_DIM);
-                state.oauth_client_id_box.set_row_rect(rx + 12.0, item_w);
+                state.oauth_client_id_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.oauth_client_id_box, item_w, widget_h, ctx);
-                state.oauth_client_secret_box.set_row_rect(rx + 12.0, item_w);
+                state.oauth_client_secret_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.oauth_client_secret_box, item_w, widget_h, ctx);
             } else {
-                state.password_box.set_row_rect(rx + 12.0, item_w);
+                state.password_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
-                state.imap_box.set_row_rect(rx + 12.0, item_w);
+                state.imap_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
-                state.smtp_box.set_row_rect(rx + 12.0, item_w);
+                state.smtp_box.set_row_rect(rx + m, item_w);
                 stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
             }
 
             stack.context.spacing(4.0);
-            stack.add_row(2, 8.0, btn_h, |c, i, x, w| {
+            stack.add_row(2, gap, btn_h, |c, i, x, w| {
                 let (label, colors, action) = match i {
                     0 => ("Save", BTN_PRIMARY, AccountsMessage::EditAccountSave),
                     _ => ("Cancel", BTN_NEUTRAL, AccountsMessage::EditAccountCancel),
@@ -719,7 +722,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     actions.push((relogin, login_bg, TEXT_BTN, AccountsMessage::GoogleLoginInit));
                 }
                 if !actions.is_empty() {
-                    stack.add_row(actions.len(), 8.0, btn_h, |c, i, x, w| {
+                    stack.add_row(actions.len(), gap, btn_h, |c, i, x, w| {
                         if let Some((label, colors, text_col, action)) = actions.get(i).cloned() {
                             c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
                         }

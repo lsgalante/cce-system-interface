@@ -133,7 +133,7 @@ pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _r
         if !state.loaded {
             sec.text("Scanning installed applications...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else {
-            let mut stack = sec.vstack(8.0);
+            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
             for entry in state.categories.iter_mut() {
                 entry.dropdown.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
                 stack.add_widget(&mut entry.dropdown, sec_w - 28.0, 44.0, ctx);
