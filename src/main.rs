@@ -364,21 +364,20 @@ impl cce_ui::engine::Application for SystemInterface {
             }
         }
 
-        // One glass slab (data-editor's idiom): the beveled window plate, with the
-        // status bar carved into it as a step — everything else paints on top.
+        // One glass slab (data-editor's idiom): the root plate, with the status
+        // bar carved into it as a step — everything else paints on top. The
+        // standard spec (cce-ui `PlateSpec::window`) in this app's own dark
+        // green tint at the DE root opacity: a deliberate deviation from the
+        // DE root colour, and the one thing here that is not the standard.
         {
             let mut plate = cce_ui::color::to_linear([0x0a as f32 / 255.0, 0x1a as f32 / 255.0, 0x0e as f32 / 255.0, 1.0]);
             if plate[3] > 0.001 {
                 plate[3] = cce_ui::color::root_plate_opacity();
             }
-            // PlateSpec (cce-ui RFC 7b): the hardcoded r=12 detached this
-            // plate's corners from the compositor's silhouette clip.
-            pc.plate_spec(&cce_ui::scene::paint::PlateSpec {
-                rect: Rect { x: 0.0, y: 0.0, width, height },
-                material: cce_ui::scene::Material::opaque(plate),
-                window_corners: (true, true, true, true),
-                depth: cce_ui::layout::bevel_width(),
-            });
+            pc.plate_spec(
+                &cce_ui::scene::paint::PlateSpec::window(width, height)
+                    .with_material(cce_ui::scene::Material::opaque(plate)),
+            );
             let sb_h = self.status_height;
             let depth = cce_ui::layout::bar_wall_width().min(sb_h * 0.6);
             pc.recess_edges(
