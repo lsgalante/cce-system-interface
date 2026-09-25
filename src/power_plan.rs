@@ -139,9 +139,10 @@ pub enum Lever {
     Aspm,
     AudioIdleSecs,
     GpuLimitW,
+    Animations,
 }
 impl Lever {
-    pub const ALL: [Lever; 8] = [
+    pub const ALL: [Lever; 9] = [
         Lever::Profile,
         Lever::Epp,
         Lever::Governor,
@@ -150,6 +151,7 @@ impl Lever {
         Lever::Aspm,
         Lever::AudioIdleSecs,
         Lever::GpuLimitW,
+        Lever::Animations,
     ];
 
     /// The node name in the plan file, and the CLI spelling.
@@ -163,6 +165,7 @@ impl Lever {
             Lever::Aspm => "aspm",
             Lever::AudioIdleSecs => "audio_idle_secs",
             Lever::GpuLimitW => "gpu_limit_w",
+            Lever::Animations => "animations",
         }
     }
 
@@ -180,6 +183,7 @@ impl Lever {
             Lever::Aspm => "PCIe Power Management",
             Lever::AudioIdleSecs => "Audio Codec Idle",
             Lever::GpuLimitW => "GPU Power Limit",
+            Lever::Animations => "Animations",
         }
     }
 
@@ -189,12 +193,13 @@ impl Lever {
     }
 
     /// Shape check on a value before it goes anywhere near sysfs or a shell
-    /// line: a sysfs token, an unsigned integer, or on/off for turbo. This is
+    /// line: a sysfs token, an unsigned integer, or on/off for turbo and
+    /// animations. This is
     /// the guard `set` and `apply` share; range checks against the hardware
     /// happen in [`apply_lever`], where the ranges can be read.
     pub fn value_ok(self, v: &str) -> bool {
         match self {
-            Lever::Turbo => v == "on" || v == "off",
+            Lever::Turbo | Lever::Animations => v == "on" || v == "off",
             l if l.is_numeric() => v.parse::<u32>().is_ok(),
             _ => sysfs_token_ok(v),
         }
@@ -442,14 +447,15 @@ pub enum Automation {
     /// is only applied when the page itself changes a lever.
     #[default]
     Missing,
-    /// Both installed, but the helper predates modes: it cannot parse a
-    /// plan with `mode` blocks, so it applies nothing on plug or unplug —
-    /// and it rejects the page's own `set`/`assign` calls too.
+    /// Both installed, but the helper predates modes or one of the levers:
+    /// it cannot parse a plan that uses them, so it applies nothing on plug
+    /// or unplug — and it rejects the page's own `set`/`assign` calls too.
     Stale,
     Ready,
 }
 
-/// Whether a helper binary speaks the current, mode-shaped CLI.
+/// Whether a helper binary speaks the current CLI: modes, and every lever
+/// this page can send it.
 ///
 /// Asked by running it with no arguments, which prints its usage and exits
 /// 2 without touching anything. Deliberately NOT a string search inside the
@@ -459,17 +465,25 @@ pub enum Automation {
 /// This exists because a stale `/usr/bin/cce-power-apply` fails in the one
 /// way nothing reports: it takes the pkexec prompt, reads the mode name as
 /// an adapter state, and exits 2 — so a pick costs the user an
-/// authentication and changes nothing.
+/// authentication and changes nothing. A helper that knows modes but
+/// predates a lever fails the same way for that lever alone, which is why
+/// the lever list is part of the check.
 pub fn helper_speaks_modes(path: &Path) -> bool {
     std::process::Command::new(path)
         .output()
         .is_ok_and(|out| usage_speaks_modes(&String::from_utf8_lossy(&out.stderr)))
 }
 
-/// The usage text of a helper that knows about modes names `apply-mode`;
-/// the pre-modes one lists only `apply`, `set` and `show`.
+/// The usage text of a helper that knows about modes names `apply-mode`
+/// (the pre-modes one lists only `apply`, `set` and `show`), and its
+/// `levers:` line names every lever it accepts.
 fn usage_speaks_modes(usage: &str) -> bool {
-    usage.contains("apply-mode")
+    let levers: Vec<&str> = usage
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("levers:"))
+        .map(|l| l.split_whitespace().collect())
+        .unwrap_or_default();
+    usage.contains("apply-mode") && Lever::ALL.iter().all(|l| levers.contains(&l.key()))
 }
 
 /// Whether the root-side pieces are in place — the helper at its system
@@ -577,6 +591,7 @@ pub fn apply_lever(lever: Lever, value: &str) -> Result<(), String> {
             }
             write_sysfs(Path::new("/sys/module/snd_hda_intel/parameters/power_save"), value)
         }
+        Lever::Animations => write_animations(value),
         Lever::GpuLimitW => {
             // nvidia-smi validates the watts against the card's own min/max
             // and refuses anything outside them, so it is the range check.
@@ -593,6 +608,27 @@ pub fn apply_lever(lever: Lever, value: &str) -> Result<(), String> {
             }
         }
     }
+}
+
+/// Record the animations switch where every session reads it
+/// ([`cce_ui::motion::STATE_PATH`]). Not sysfs, but the same shape of lever:
+/// root writes it when the mode changes, and the compositor and every cce-ui
+/// client follow it without a restart. Under /run, not in anyone's config:
+/// this runs as root with no session and no `$HOME`, and a tmpfs file is
+/// rewritten at boot by the same coldplug run that applies the rest of the
+/// mode, so it can never outlive the plan that set it.
+fn write_animations(value: &str) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = Path::new(cce_ui::motion::STATE_PATH);
+    let dir = path.parent().expect("STATE_PATH has a parent");
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+    // Temp + rename so a reader never sees a torn value; world-readable
+    // because every session's processes read it.
+    let tmp = path.with_extension("tmp");
+    write_sysfs(&tmp, value)?;
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644))
+        .map_err(|e| format!("{}: {}", tmp.display(), e))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {}", path.display(), e))
 }
 
 /// Apply every lever one mode sets. Failures are per lever — a missing
@@ -724,6 +760,8 @@ mod tests {
         assert!(!Lever::Profile.value_ok("x;reboot"));
         assert!(Lever::Turbo.value_ok("off"));
         assert!(!Lever::Turbo.value_ok("0"));
+        assert!(Lever::Animations.value_ok("on"));
+        assert!(!Lever::Animations.value_ok("false"));
         assert!(Lever::AudioIdleSecs.value_ok("10"));
         assert!(!Lever::AudioIdleSecs.value_ok("-1"));
         assert!(!Lever::AudioIdleSecs.value_ok("ten"));
@@ -744,9 +782,16 @@ mod tests {
     #[test]
     fn the_usage_probe_tells_a_mode_helper_from_a_pre_modes_one() {
         // What this binary prints today.
-        assert!(usage_speaks_modes(
-            "usage: cce-power-apply apply [ac|battery]\n       cce-power-apply apply-mode <mode>\n"
-        ));
+        let levers = Lever::ALL.iter().map(|l| l.key()).collect::<Vec<_>>().join(" ");
+        let current = format!(
+            "usage: cce-power-apply apply [ac|battery]\n       cce-power-apply apply-mode <mode>\n \
+             modes:  performance balanced power-saver\n levers: {levers}\n"
+        );
+        assert!(usage_speaks_modes(&current));
+        // One that knows modes but predates a lever takes the prompt and
+        // rejects that lever — as stale, for that pick, as a pre-modes one.
+        let older = current.replace(" animations", "");
+        assert!(!usage_speaks_modes(&older), "{older}");
         // What the pre-modes one printed — the copy that silently rejects
         // every pick the page makes.
         assert!(!usage_speaks_modes(

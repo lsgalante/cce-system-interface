@@ -10,6 +10,12 @@
 //!   charge at 80% is the classic battery-longevity lever
 //! - `/sys/devices/system/cpu/intel_pstate/no_turbo` — turbo boost
 //!
+//! One lever is not a hardware interface: **Animations**, which the helper
+//! records at `cce_ui::motion::STATE_PATH` for the compositor and every
+//! cce-ui client to follow. It is per mode for the same reason the others
+//! are — easing every frame costs power, so it belongs with what changes on
+//! unplug — and it is always offered, since every host has animations.
+//!
 //! The page is three sections. **Battery** is the pack itself: its facts and
 //! the charge limit, which is a charging policy and so belongs to no mode.
 //! **Power Mode** edits one mode's levers, chosen by the dropdown at the top
@@ -98,6 +104,9 @@ pub struct PowerFacts {
     pub gpu_limit_w: Option<u32>,
     pub gpu_default_w: Option<u32>,
     pub gpu_min_w: Option<u32>,
+    /// Whether the session animates right now: the helper's state file, or
+    /// on when there is none — which is what the toolkit and compositor do.
+    pub animations: bool,
 }
 
 
@@ -371,6 +380,8 @@ pub async fn fetch_power_state() -> PowerFacts {
         }
     }
 
+    f.animations = cce_ui::motion::read_state().unwrap_or(true);
+
     f.hda_idle_secs =
         read_trim("/sys/module/snd_hda_intel/parameters/power_save").and_then(|s| s.parse().ok());
 
@@ -417,6 +428,9 @@ fn choices(lever: Lever, f: &PowerFacts) -> Vec<(String, String)> {
         Lever::Epp => tokens(&f.epps),
         Lever::Governor => tokens(&f.governors),
         Lever::Aspm => tokens(&f.aspm_policies),
+        Lever::Animations => {
+            vec![("on".to_string(), "Enabled".to_string()), ("off".to_string(), "Disabled".to_string())]
+        }
         Lever::Turbo => {
             if f.turbo.is_some() {
                 vec![("on".to_string(), "Enabled".to_string()), ("off".to_string(), "Disabled".to_string())]
@@ -470,6 +484,7 @@ fn live(lever: Lever, f: &PowerFacts) -> Option<String> {
         Lever::IgpuMaxMhz => f.igpu_mhz.map(|v| v.to_string()),
         Lever::AudioIdleSecs => f.hda_idle_secs.map(|v| v.to_string()),
         Lever::GpuLimitW => f.gpu_limit_w.map(|v| v.to_string()),
+        Lever::Animations => Some(if f.animations { "on" } else { "off" }.to_string()),
     }
 }
 
@@ -478,7 +493,7 @@ fn live(lever: Lever, f: &PowerFacts) -> Option<String> {
 /// silently matching the wrong one).
 fn display_of(lever: Lever, value: &str) -> String {
     match lever {
-        Lever::Turbo => if value == "on" { "Enabled" } else { "Disabled" }.to_string(),
+        Lever::Turbo | Lever::Animations => if value == "on" { "Enabled" } else { "Disabled" }.to_string(),
         Lever::IgpuMaxMhz => format!("{} MHz", value),
         Lever::AudioIdleSecs => {
             if value == "0" { "Never suspend".to_string() } else { format!("After {} s idle", value) }
@@ -500,6 +515,7 @@ fn set_live(lever: Lever, value: &str, f: &mut PowerFacts) {
         Lever::IgpuMaxMhz => f.igpu_mhz = value.parse().ok(),
         Lever::AudioIdleSecs => f.hda_idle_secs = value.parse().ok(),
         Lever::GpuLimitW => f.gpu_limit_w = value.parse().ok(),
+        Lever::Animations => f.animations = value == "on",
     }
 }
 
@@ -971,6 +987,7 @@ mod tests {
             aspm_policies: vec!["default".into(), "performance".into(), "powersave".into()],
             aspm: "default".to_string(),
             hda_idle_secs: Some(10),
+            animations: true,
         }
     }
 
@@ -989,6 +1006,7 @@ mod tests {
     const TURBO: usize = 3;
     const IGPU: usize = 4;
     const AUDIO: usize = 6;
+    const ANIMATIONS: usize = 8;
 
     #[test]
     fn the_lever_section_shows_the_edited_mode_behind_not_set() {
@@ -1146,32 +1164,32 @@ mod tests {
         rebuild_options(&mut st);
         let counts = |st: &mut PowerState| st.section_widgets().iter().map(Vec::len).collect::<Vec<_>>();
         // Every interface present: the charge limit, the mode picker plus all
-        // eight levers, and one assignment per adapter state.
-        assert_eq!(counts(&mut st), [1, 9, 2]);
+        // nine levers, and one assignment per adapter state.
+        assert_eq!(counts(&mut st), [1, 10, 2]);
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 8, 2]);
+        assert_eq!(counts(&mut st), [0, 9, 2]);
         // No cpufreq governors and no NVIDIA driver: both drop out too.
         st.facts.governors.clear();
         st.facts.gpu_limit_w = None;
         st.facts.gpu_default_w = None;
         st.facts.gpu_min_w = None;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 6, 2]);
+        assert_eq!(counts(&mut st), [0, 7, 2]);
         // No Intel render clocks, an ASPM-less kernel and no snd_hda_intel is
-        // down to profile and epp.
+        // down to profile, epp and animations — which no host lacks.
         st.facts.igpu_max_mhz = None;
         st.facts.igpu_min_mhz = None;
         st.facts.aspm_policies.clear();
         st.facts.hda_idle_secs = None;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 3, 2]);
+        assert_eq!(counts(&mut st), [0, 4, 2]);
         // A desktop: one adapter state, so there is nothing to assign.
         st.facts.battery_present = false;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 3]);
+        assert_eq!(counts(&mut st), [0, 4]);
     }
 
     #[test]
@@ -1275,12 +1293,34 @@ mod tests {
     }
 
     #[test]
+    fn animations_is_offered_everywhere_and_reports_the_live_state() {
+        let mut st = loaded();
+        assert_eq!(st.levers.rows[ANIMATIONS], ["", "on", "off"]);
+        assert_eq!(st.levers.dds[ANIMATIONS].options, ["Not set — now Enabled", "Enabled", "Disabled"]);
+        assert_eq!(st.levers.dds[ANIMATIONS].selected, 0);
+        // A host with none of the hardware levers still has animations.
+        st.facts = PowerFacts {
+            plan: st.facts.plan.clone(),
+            source: Source::Battery,
+            animations: false,
+            ..PowerFacts::default()
+        };
+        rebuild_options(&mut st);
+        assert_eq!(st.levers.dds[ANIMATIONS].options[0], "Not set — now Disabled");
+        // A planned value is selected like any other lever's.
+        st.facts.plan.put(Mode::PowerSaver, Lever::Animations, Some("off")).unwrap();
+        rebuild_options(&mut st);
+        assert_eq!(st.levers.dds[ANIMATIONS].selected, 2);
+    }
+
+    #[test]
     fn set_live_mirrors_each_lever() {
         let mut f = facts();
         set_live(Lever::Profile, "performance", &mut f);
         set_live(Lever::Turbo, "off", &mut f);
         set_live(Lever::IgpuMaxMhz, "800", &mut f);
         set_live(Lever::GpuLimitW, "40", &mut f);
+        set_live(Lever::Animations, "off", &mut f);
         assert_eq!(f.profile, "performance");
         assert_eq!(f.turbo, Some(false));
         assert_eq!(f.igpu_mhz, Some(800));
@@ -1288,5 +1328,6 @@ mod tests {
         // Round trip: what set_live wrote is what live() reads back.
         assert_eq!(live(Lever::Turbo, &f).as_deref(), Some("off"));
         assert_eq!(live(Lever::GpuLimitW, &f).as_deref(), Some("40"));
+        assert_eq!(live(Lever::Animations, &f).as_deref(), Some("off"));
     }
 }
