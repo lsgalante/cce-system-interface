@@ -631,11 +631,25 @@ fn write_animations(value: &str) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("{}: {}", path.display(), e))
 }
 
+/// The order levers are written in. The governor goes first: intel_pstate
+/// refuses any energy preference but "performance" while the `performance`
+/// governor is in force (EBUSY), and switching governors resets the
+/// preference to the one it cached. Written in plan order (alphabetical by
+/// `Lever`), the battery mode's `epp "power"` failed on every unplug and
+/// left all cores at EPP=performance under the powersave governor. Every
+/// other lever is independent and keeps plan order.
+fn apply_order<'a>(levers: impl Iterator<Item = (Lever, &'a str)>) -> Vec<(Lever, &'a str)> {
+    let mut v: Vec<(Lever, &str)> = levers.collect();
+    v.sort_by_key(|(lever, _)| (*lever != Lever::Governor) as u8);
+    v
+}
+
 /// Apply every lever one mode sets. Failures are per lever — a missing
 /// NVIDIA driver must not stop the CPU profile from landing — and come back
 /// to the caller, which logs them.
 pub fn apply_mode(plan: &PowerPlan, mode: Mode) -> Vec<(Lever, Result<(), String>)> {
-    plan.levers(mode)
+    apply_order(plan.levers(mode))
+        .into_iter()
         .map(|(lever, value)| (lever, apply_lever(lever, value)))
         .collect::<Vec<_>>()
 }
@@ -651,6 +665,26 @@ mod tests {
 
     fn levers_of(plan: &PowerPlan, mode: Mode) -> Vec<(Lever, String)> {
         plan.levers(mode).map(|(l, v)| (l, v.to_string())).collect()
+    }
+
+    #[test]
+    fn governor_is_written_before_epp() {
+        // The power-saver mode as shipped: plan order puts epp before
+        // governor, and intel_pstate rejects that pairing.
+        let mut plan = PowerPlan::default();
+        plan.put(Mode::PowerSaver, Lever::Profile, Some("low-power")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::Epp, Some("power")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::Governor, Some("powersave")).unwrap();
+        plan.put(Mode::PowerSaver, Lever::Turbo, Some("off")).unwrap();
+        let order: Vec<Lever> = apply_order(plan.levers(Mode::PowerSaver)).into_iter().map(|(l, _)| l).collect();
+        assert_eq!(order[0], Lever::Governor, "{order:?}");
+        // The rest keep plan order, and nothing is dropped or duplicated.
+        assert_eq!(order, vec![Lever::Governor, Lever::Profile, Lever::Epp, Lever::Turbo]);
+        // A mode without a governor is untouched.
+        let mut bare = PowerPlan::default();
+        bare.put(Mode::Balanced, Lever::Epp, Some("balance_power")).unwrap();
+        let order: Vec<Lever> = apply_order(bare.levers(Mode::Balanced)).into_iter().map(|(l, _)| l).collect();
+        assert_eq!(order, vec![Lever::Epp]);
     }
 
     #[test]
