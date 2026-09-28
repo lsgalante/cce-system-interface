@@ -326,7 +326,7 @@ async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
     );
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(&auth_url);
-    let _ = cce_ui::process::spawn_detached(cmd);
+    let _ = crate::spawn_detached(cmd);
 
     let accepted = match tokio::time::timeout(OAUTH_WAIT, listener.accept()).await {
         Ok(res) => res,
@@ -1013,7 +1013,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         AccountsMessage::ICloudLoginHelp => {
             let mut cmd = std::process::Command::new("xdg-open");
             cmd.arg("https://appleid.apple.com/");
-            let _ = cce_ui::process::spawn_detached(cmd);
+            let _ = crate::spawn_detached(cmd);
             state.status_msg = Some("Generate iCloud App Password...".to_string());
         }
     }
@@ -1325,4 +1325,3 @@ mod tests {
         assert!(!state.oauth_listener_running, "a finished flow frees the button");
     }
 }
-

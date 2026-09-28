@@ -272,7 +272,7 @@ fn button_need(label: &str) -> f32 {
 fn spawn_systemctl(action: &str) {
     let mut cmd = std::process::Command::new("systemctl");
     cmd.arg(action);
-    let _ = cce_ui::process::spawn_detached(cmd);
+    let _ = crate::spawn_detached(cmd);
 }
 
 fn spawn_systemctl_force(action: &str) {
@@ -280,7 +280,7 @@ fn spawn_systemctl_force(action: &str) {
     cmd.arg(action);
     cmd.arg("-f");
     cmd.arg("-f");
-    let _ = cce_ui::process::spawn_detached(cmd);
+    let _ = crate::spawn_detached(cmd);
 }
 
 #[derive(Debug, Clone, Default)]
