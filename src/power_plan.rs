@@ -30,6 +30,14 @@
 //! }
 //! ```
 //!
+//! Two levers are not sysfs: **animations** and the two **idle timeouts**
+//! (`idle_display_off_secs`, `idle_sleep_secs`). The applier records them
+//! as files under `/run/cce` ([`cce_ui::motion::STATE_PATH`],
+//! [`IDLE_DISPLAY_OFF_PATH`], [`IDLE_SLEEP_PATH`]) that the compositor and
+//! the toolkit follow without a reload; the idle files override the
+//! compositor's `idle { }` block while they exist, so battery can darken
+//! the display sooner than the desk does.
+//!
 //! A lever absent from a mode is left alone when that mode becomes active —
 //! "not set" means "don't touch", never "reset to a default". The older
 //! per-source form of this file (top-level `ac` / `battery` blocks of
@@ -140,9 +148,11 @@ pub enum Lever {
     AudioIdleSecs,
     GpuLimitW,
     Animations,
+    IdleDisplayOffSecs,
+    IdleSleepSecs,
 }
 impl Lever {
-    pub const ALL: [Lever; 9] = [
+    pub const ALL: [Lever; 11] = [
         Lever::Profile,
         Lever::Epp,
         Lever::Governor,
@@ -152,6 +162,8 @@ impl Lever {
         Lever::AudioIdleSecs,
         Lever::GpuLimitW,
         Lever::Animations,
+        Lever::IdleDisplayOffSecs,
+        Lever::IdleSleepSecs,
     ];
 
     /// The node name in the plan file, and the CLI spelling.
@@ -166,6 +178,8 @@ impl Lever {
             Lever::AudioIdleSecs => "audio_idle_secs",
             Lever::GpuLimitW => "gpu_limit_w",
             Lever::Animations => "animations",
+            Lever::IdleDisplayOffSecs => "idle_display_off_secs",
+            Lever::IdleSleepSecs => "idle_sleep_secs",
         }
     }
 
@@ -184,12 +198,21 @@ impl Lever {
             Lever::AudioIdleSecs => "Audio Codec Idle",
             Lever::GpuLimitW => "GPU Power Limit",
             Lever::Animations => "Animations",
+            Lever::IdleDisplayOffSecs => "Display Off After",
+            Lever::IdleSleepSecs => "Sleep After",
         }
     }
 
     /// Numeric levers are stored as KDL integers; the rest as strings.
     pub fn is_numeric(self) -> bool {
-        matches!(self, Lever::IgpuMaxMhz | Lever::AudioIdleSecs | Lever::GpuLimitW)
+        matches!(
+            self,
+            Lever::IgpuMaxMhz
+                | Lever::AudioIdleSecs
+                | Lever::GpuLimitW
+                | Lever::IdleDisplayOffSecs
+                | Lever::IdleSleepSecs
+        )
     }
 
     /// Shape check on a value before it goes anywhere near sysfs or a shell
@@ -591,7 +614,15 @@ pub fn apply_lever(lever: Lever, value: &str) -> Result<(), String> {
             }
             write_sysfs(Path::new("/sys/module/snd_hda_intel/parameters/power_save"), value)
         }
-        Lever::Animations => write_animations(value),
+        Lever::Animations => write_run_state(Path::new(cce_ui::motion::STATE_PATH), value),
+        Lever::IdleDisplayOffSecs | Lever::IdleSleepSecs => {
+            let secs: u32 = value.parse().map_err(|_| "bad seconds".to_string())?;
+            if secs > 86_400 {
+                return Err("idle timeout above a day".to_string());
+            }
+            let path = if lever == Lever::IdleDisplayOffSecs { IDLE_DISPLAY_OFF_PATH } else { IDLE_SLEEP_PATH };
+            write_run_state(Path::new(path), value)
+        }
         Lever::GpuLimitW => {
             // nvidia-smi validates the watts against the card's own min/max
             // and refuses anything outside them, so it is the range check.
@@ -610,17 +641,25 @@ pub fn apply_lever(lever: Lever, value: &str) -> Result<(), String> {
     }
 }
 
-/// Record the animations switch where every session reads it
-/// ([`cce_ui::motion::STATE_PATH`]). Not sysfs, but the same shape of lever:
-/// root writes it when the mode changes, and the compositor and every cce-ui
-/// client follow it without a restart. Under /run, not in anyone's config:
-/// this runs as root with no session and no `$HOME`, and a tmpfs file is
-/// rewritten at boot by the same coldplug run that applies the rest of the
-/// mode, so it can never outlive the plan that set it.
-fn write_animations(value: &str) -> Result<(), String> {
+/// Where the idle-timeout levers land, in seconds (0 = never). The
+/// compositor's idle manager polls both and lets a present file override
+/// its `idle { }` block; a missing file means "the config's value". The
+/// paths are repeated in `cce-fx`'s `idle.rs` (it cannot depend on this
+/// crate), so a rename must land on both sides.
+pub const IDLE_DISPLAY_OFF_PATH: &str = "/run/cce/idle_display_off";
+pub const IDLE_SLEEP_PATH: &str = "/run/cce/idle_sleep";
+
+/// Record a session-wide switch where every session reads it: the
+/// animations file ([`cce_ui::motion::STATE_PATH`]) and the idle-timeout
+/// files. Not sysfs, but the same shape of lever: root writes it when the
+/// mode changes, and the compositor and every cce-ui client follow it
+/// without a restart. Under /run, not in anyone's config: this runs as root
+/// with no session and no `$HOME`, and a tmpfs file is rewritten at boot by
+/// the same coldplug run that applies the rest of the mode, so it can never
+/// outlive the plan that set it.
+fn write_run_state(path: &Path, value: &str) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let path = Path::new(cce_ui::motion::STATE_PATH);
-    let dir = path.parent().expect("STATE_PATH has a parent");
+    let dir = path.parent().expect("run-state path has a parent");
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
     // Temp + rename so a reader never sees a torn value; world-readable
     // because every session's processes read it.
@@ -799,6 +838,10 @@ mod tests {
         assert!(Lever::AudioIdleSecs.value_ok("10"));
         assert!(!Lever::AudioIdleSecs.value_ok("-1"));
         assert!(!Lever::AudioIdleSecs.value_ok("ten"));
+        assert!(Lever::IdleDisplayOffSecs.value_ok("0"));
+        assert!(Lever::IdleSleepSecs.value_ok("1800"));
+        assert!(!Lever::IdleSleepSecs.value_ok("30m"));
+        assert!(Lever::IdleDisplayOffSecs.is_numeric());
     }
 
     #[test]

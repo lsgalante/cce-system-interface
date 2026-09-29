@@ -10,11 +10,15 @@
 //!   charge at 80% is the classic battery-longevity lever
 //! - `/sys/devices/system/cpu/intel_pstate/no_turbo` — turbo boost
 //!
-//! One lever is not a hardware interface: **Animations**, which the helper
-//! records at `cce_ui::motion::STATE_PATH` for the compositor and every
-//! cce-ui client to follow. It is per mode for the same reason the others
-//! are — easing every frame costs power, so it belongs with what changes on
-//! unplug — and it is always offered, since every host has animations.
+//! Three levers are not hardware interfaces: **Animations**, which the
+//! helper records at `cce_ui::motion::STATE_PATH` for the compositor and
+//! every cce-ui client to follow, and the two **idle timeouts** (display
+//! off, sleep), recorded at `power_plan::IDLE_DISPLAY_OFF_PATH` and
+//! `IDLE_SLEEP_PATH` for the compositor's idle manager, which lets them
+//! override its `idle { }` block. They are per mode for the same reason the
+//! others are — easing every frame costs power, and a display left lit on
+//! battery costs more — and they are always offered, since every host has
+//! a display and animations.
 //!
 //! The page is three sections. **Battery** is the pack itself: its facts and
 //! the charge limit, which is a charging policy and so belongs to no mode.
@@ -107,6 +111,10 @@ pub struct PowerFacts {
     /// Whether the session animates right now: the helper's state file, or
     /// on when there is none — which is what the toolkit and compositor do.
     pub animations: bool,
+    /// The compositor's effective idle timeouts in seconds (0 = never), from
+    /// `ccectl idle status`; None when no compositor answered.
+    pub idle_display_off_secs: Option<u32>,
+    pub idle_sleep_secs: Option<u32>,
 }
 
 
@@ -385,6 +393,16 @@ pub async fn fetch_power_state() -> PowerFacts {
     f.hda_idle_secs =
         read_trim("/sys/module/snd_hda_intel/parameters/power_save").and_then(|s| s.parse().ok());
 
+    // The compositor reports its effective timeouts (plan override or config)
+    // in `key=<secs>s` fields; no compositor, no rows worth a live value.
+    if let Ok(out) = tokio::process::Command::new("ccectl").args(["idle", "status"]).output().await {
+        if out.status.success() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            f.idle_display_off_secs = idle_status_field(&text, "display_off");
+            f.idle_sleep_secs = idle_status_field(&text, "sleep");
+        }
+    }
+
     if let Some(govs) = read_trim("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors") {
         f.governors = govs.split_whitespace().map(String::from).collect();
         f.governor = read_trim("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").unwrap_or_default();
@@ -413,6 +431,21 @@ pub async fn fetch_power_state() -> PowerFacts {
 
     f
 }
+
+/// One `<key>=<n>s` field of `ccectl idle status`.
+fn idle_status_field(status: &str, key: &str) -> Option<u32> {
+    status
+        .split_whitespace()
+        .find_map(|tok| tok.strip_prefix(key)?.strip_prefix('='))
+        .and_then(|v| v.strip_suffix('s'))
+        .and_then(|v| v.parse().ok())
+}
+
+/// The idle timeouts a mode may pick, in seconds. Fixed rungs rather than a
+/// free field: a dropdown is what every other lever is, and these cover the
+/// range anyone sets (0 = never).
+const IDLE_DISPLAY_OFF_CHOICES: [u32; 7] = [0, 60, 120, 300, 600, 900, 1800];
+const IDLE_SLEEP_CHOICES: [u32; 7] = [0, 300, 600, 900, 1800, 3600, 7200];
 
 // ── Lever rows ──────────────────────────────────────────────────────────
 
@@ -457,6 +490,14 @@ fn choices(lever: Lever, f: &PowerFacts) -> Vec<(String, String)> {
                 Vec::new()
             }
         }
+        Lever::IdleDisplayOffSecs => IDLE_DISPLAY_OFF_CHOICES
+            .iter()
+            .map(|v| (v.to_string(), display_of(Lever::IdleDisplayOffSecs, &v.to_string())))
+            .collect(),
+        Lever::IdleSleepSecs => IDLE_SLEEP_CHOICES
+            .iter()
+            .map(|v| (v.to_string(), display_of(Lever::IdleSleepSecs, &v.to_string())))
+            .collect(),
         Lever::GpuLimitW => {
             let mut out: Vec<(String, String)> = Vec::new();
             if let Some(d) = f.gpu_default_w {
@@ -485,6 +526,8 @@ fn live(lever: Lever, f: &PowerFacts) -> Option<String> {
         Lever::AudioIdleSecs => f.hda_idle_secs.map(|v| v.to_string()),
         Lever::GpuLimitW => f.gpu_limit_w.map(|v| v.to_string()),
         Lever::Animations => Some(if f.animations { "on" } else { "off" }.to_string()),
+        Lever::IdleDisplayOffSecs => f.idle_display_off_secs.map(|v| v.to_string()),
+        Lever::IdleSleepSecs => f.idle_sleep_secs.map(|v| v.to_string()),
     }
 }
 
@@ -499,7 +542,19 @@ fn display_of(lever: Lever, value: &str) -> String {
             if value == "0" { "Never suspend".to_string() } else { format!("After {} s idle", value) }
         }
         Lever::GpuLimitW => format!("{} W", value),
+        Lever::IdleDisplayOffSecs | Lever::IdleSleepSecs => idle_secs_text(value),
         _ => pretty(value),
+    }
+}
+
+/// "Never", or the duration in the unit it reads best in.
+fn idle_secs_text(value: &str) -> String {
+    match value.parse::<u32>() {
+        Ok(0) => "Never".to_string(),
+        Ok(s) if s % 3600 == 0 => format!("After {} h", s / 3600),
+        Ok(s) if s % 60 == 0 => format!("After {} min", s / 60),
+        Ok(s) => format!("After {} s", s),
+        Err(_) => value.to_string(),
     }
 }
 
@@ -516,6 +571,8 @@ fn set_live(lever: Lever, value: &str, f: &mut PowerFacts) {
         Lever::AudioIdleSecs => f.hda_idle_secs = value.parse().ok(),
         Lever::GpuLimitW => f.gpu_limit_w = value.parse().ok(),
         Lever::Animations => f.animations = value == "on",
+        Lever::IdleDisplayOffSecs => f.idle_display_off_secs = value.parse().ok(),
+        Lever::IdleSleepSecs => f.idle_sleep_secs = value.parse().ok(),
     }
 }
 
@@ -988,6 +1045,8 @@ mod tests {
             aspm: "default".to_string(),
             hda_idle_secs: Some(10),
             animations: true,
+            idle_display_off_secs: Some(600),
+            idle_sleep_secs: Some(1800),
         }
     }
 
@@ -1164,32 +1223,33 @@ mod tests {
         rebuild_options(&mut st);
         let counts = |st: &mut PowerState| st.section_widgets().iter().map(Vec::len).collect::<Vec<_>>();
         // Every interface present: the charge limit, the mode picker plus all
-        // nine levers, and one assignment per adapter state.
-        assert_eq!(counts(&mut st), [1, 10, 2]);
+        // eleven levers, and one assignment per adapter state.
+        assert_eq!(counts(&mut st), [1, 12, 2]);
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 9, 2]);
+        assert_eq!(counts(&mut st), [0, 11, 2]);
         // No cpufreq governors and no NVIDIA driver: both drop out too.
         st.facts.governors.clear();
         st.facts.gpu_limit_w = None;
         st.facts.gpu_default_w = None;
         st.facts.gpu_min_w = None;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 7, 2]);
+        assert_eq!(counts(&mut st), [0, 9, 2]);
         // No Intel render clocks, an ASPM-less kernel and no snd_hda_intel is
-        // down to profile, epp and animations — which no host lacks.
+        // down to profile, epp, animations and the two idle timeouts — which
+        // no host lacks.
         st.facts.igpu_max_mhz = None;
         st.facts.igpu_min_mhz = None;
         st.facts.aspm_policies.clear();
         st.facts.hda_idle_secs = None;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 4, 2]);
+        assert_eq!(counts(&mut st), [0, 6, 2]);
         // A desktop: one adapter state, so there is nothing to assign.
         st.facts.battery_present = false;
         rebuild_options(&mut st);
-        assert_eq!(counts(&mut st), [0, 4]);
+        assert_eq!(counts(&mut st), [0, 6]);
     }
 
     #[test]
@@ -1303,6 +1363,8 @@ mod tests {
             plan: st.facts.plan.clone(),
             source: Source::Battery,
             animations: false,
+            idle_display_off_secs: None,
+            idle_sleep_secs: None,
             ..PowerFacts::default()
         };
         rebuild_options(&mut st);
@@ -1329,5 +1391,23 @@ mod tests {
         assert_eq!(live(Lever::Turbo, &f).as_deref(), Some("off"));
         assert_eq!(live(Lever::GpuLimitW, &f).as_deref(), Some("40"));
         assert_eq!(live(Lever::Animations, &f).as_deref(), Some("off"));
+    }
+
+    #[test]
+    fn idle_timeouts_read_the_status_line_and_print_as_durations() {
+        let line = "display_off=600s sleep=1800s command=\"systemctl suspend\" idle=4s inhibited=false inhibited_by=\"\" displays_off=false sleeping=false\n";
+        assert_eq!(idle_status_field(line, "display_off"), Some(600));
+        assert_eq!(idle_status_field(line, "sleep"), Some(1800));
+        assert_eq!(idle_status_field(line, "idle"), Some(4));
+        assert_eq!(idle_status_field("garbage", "sleep"), None);
+        assert_eq!(idle_secs_text("0"), "Never");
+        assert_eq!(idle_secs_text("90"), "After 90 s");
+        assert_eq!(idle_secs_text("600"), "After 10 min");
+        assert_eq!(idle_secs_text("7200"), "After 2 h");
+        // Both levers are offered on every host, and the live row follows
+        // the compositor's report.
+        let f = facts();
+        assert_eq!(choices(Lever::IdleDisplayOffSecs, &f).len(), IDLE_DISPLAY_OFF_CHOICES.len());
+        assert_eq!(live(Lever::IdleSleepSecs, &f), Some("1800".to_string()));
     }
 }
