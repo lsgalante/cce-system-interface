@@ -599,6 +599,17 @@ impl cce_ui::engine::Application for SystemInterface {
         Some(&mut self.ui_context)
     }
 
+    // Page widgets are laid out unscrolled and drawn `scroll_y` higher (the
+    // popover replay in `rebuild_layout` subtracts it); the chrome dropdown
+    // is in window coords already.
+    fn popover_offset(&self, id: cce_ui::widget::WidgetId) -> (f32, f32) {
+        if id == self.page_dropdown.id() {
+            (0.0, 0.0)
+        } else {
+            (0.0, -self.scroll_y)
+        }
+    }
+
     fn clear_color(&self) -> [f32; 4] {
         [0.039, 0.102, 0.055, 1.0]
     }
