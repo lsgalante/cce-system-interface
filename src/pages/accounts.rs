@@ -169,11 +169,20 @@ pub fn get_accounts_path() -> std::path::PathBuf {
 pub fn load_accounts() -> Vec<AccountInfo> {
     let path = get_accounts_path();
     if path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(accounts) = serde_json::from_str(&content) {
-                return accounts;
+        // A file that cannot be read is shown as no accounts, never as the
+        // mock: the mock, saved back, is what used to replace real accounts.
+        // Nothing overwrites it either (`accounts_file::update` refuses).
+        return match std::fs::read_to_string(&path).map(|c| serde_json::from_str(&c)) {
+            Ok(Ok(accounts)) => accounts,
+            Ok(Err(e)) => {
+                eprintln!("accounts: {} does not parse: {e}", path.display());
+                Vec::new()
             }
-        }
+            Err(e) => {
+                eprintln!("accounts: cannot read {}: {e}", path.display());
+                Vec::new()
+            }
+        };
     }
     vec![
         AccountInfo {
@@ -192,18 +201,20 @@ pub fn load_accounts() -> Vec<AccountInfo> {
     ]
 }
 
-pub fn save_accounts(accounts: &[AccountInfo]) {
-    let path = get_accounts_path();
-    if let Ok(content) = serde_json::to_string_pretty(accounts) {
-        let _ = std::fs::write(&path, content);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = std::fs::metadata(&path) {
-                let mut perms = metadata.permissions();
-                perms.set_mode(0o600);
-                let _ = std::fs::set_permissions(&path, perms);
-            }
+/// Apply one change to accounts.json AS IT IS ON DISK, not to this page's
+/// copy, and adopt what was written. cce-mail writes the file too (refreshed
+/// tokens, passwords moved into the keyring), so saving the page's list
+/// wholesale would undo whatever it wrote since the last refresh. See
+/// `accounts_file` for the lock and the atomic replace.
+fn commit(state: &mut AccountsState, change: impl FnOnce(&mut Vec<AccountInfo>)) -> bool {
+    match crate::accounts_file::update(&get_accounts_path(), change) {
+        Ok(written) => {
+            state.accounts = written;
+            true
+        }
+        Err(e) => {
+            state.status_msg = Some(format!("Could not save accounts: {e}"));
+            false
         }
     }
 }
@@ -833,7 +844,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                 email: email.clone(),
                 imap,
                 smtp,
-                is_default: state.accounts.is_empty(),
+                is_default: false,
                 password: stored_password,
                 is_oauth: false,
                 access_token: None,
@@ -843,13 +854,19 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                 client_secret: None,
             };
 
-            if let Some(pos) = state.accounts.iter().position(|a| a.email == email) {
-                state.accounts[pos] = new_acc;
-            } else {
-                state.accounts.push(new_acc);
+            let saved = commit(state, |accounts| {
+                let mut new_acc = new_acc;
+                if let Some(pos) = accounts.iter().position(|a| a.email == new_acc.email) {
+                    new_acc.is_default = accounts[pos].is_default;
+                    accounts[pos] = new_acc;
+                } else {
+                    new_acc.is_default = accounts.is_empty();
+                    accounts.push(new_acc);
+                }
+            });
+            if !saved {
+                return;
             }
-
-            save_accounts(&state.accounts);
             state.adding_new = false;
             state.selected_idx = state.accounts.iter().position(|a| a.email == email);
             // Optimistic: the watcher's next probe confirms it.
@@ -865,12 +882,20 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         }
         AccountsMessage::DeleteAccount(idx) => {
             if idx < state.accounts.len() {
-                let deleted = state.accounts.remove(idx);
-                state.keyring.remove(&deleted.email);
-                if deleted.is_default && !state.accounts.is_empty() {
-                    state.accounts[0].is_default = true;
+                let deleted = state.accounts[idx].clone();
+                let saved = commit(state, |accounts| {
+                    let was_default = accounts.iter().any(|a| a.email == deleted.email && a.is_default);
+                    accounts.retain(|a| a.email != deleted.email);
+                    if was_default && !accounts.iter().any(|a| a.is_default) {
+                        if let Some(first) = accounts.first_mut() {
+                            first.is_default = true;
+                        }
+                    }
+                });
+                if !saved {
+                    return;
                 }
-                save_accounts(&state.accounts);
+                state.keyring.remove(&deleted.email);
                 // Drop the keyring password and cce-mail's cached mail too.
                 // The pre-rename service is cleared as well, so an account
                 // deleted before cce-mail ever adopted it leaves nothing behind.
@@ -888,10 +913,14 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         }
         AccountsMessage::MakeDefault(idx) => {
             if idx < state.accounts.len() {
-                for (i, acc) in state.accounts.iter_mut().enumerate() {
-                    acc.is_default = i == idx;
+                let email = state.accounts[idx].email.clone();
+                if !commit(state, |accounts| {
+                    for acc in accounts.iter_mut() {
+                        acc.is_default = acc.email == email;
+                    }
+                }) {
+                    return;
                 }
-                save_accounts(&state.accounts);
                 state.status_msg = Some("Default account updated!".to_string());
             }
         }
@@ -907,15 +936,18 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         }
         AccountsMessage::GoogleLoginSuccess(mut new_acc) => {
             let email = new_acc.email.clone();
-            if let Some(pos) = state.accounts.iter().position(|a| a.email == email) {
-                // A re-login refreshes credentials; it must not silently
-                // un-default the account it replaces.
-                new_acc.is_default = state.accounts[pos].is_default;
-                state.accounts[pos] = new_acc;
-            } else {
-                state.accounts.push(new_acc);
+            if !commit(state, |accounts| {
+                if let Some(pos) = accounts.iter().position(|a| a.email == new_acc.email) {
+                    // A re-login refreshes credentials; it must not silently
+                    // un-default the account it replaces.
+                    new_acc.is_default = accounts[pos].is_default;
+                    accounts[pos] = new_acc;
+                } else {
+                    accounts.push(new_acc);
+                }
+            }) {
+                return;
             }
-            save_accounts(&state.accounts);
             state.adding_new = false;
             state.selected_idx = state.accounts.iter().position(|a| a.email == email);
             state.status_msg = Some("Google account authenticated!".to_string());
@@ -980,6 +1012,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             let password = if is_oauth { String::new() } else { live_text(&state.password_box) };
 
             let mut msg = "Account updated".to_string();
+            let mut new_password = None;
             if !password.is_empty() {
                 // Same Secret Service entry cce-mail resolves; the on-disk
                 // field stays blank whenever the keyring accepted it.
@@ -993,16 +1026,30 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                         state.keyring.insert(email.clone(), KeyringStatus::OnDiskPlaintext);
                     }
                 }
-                state.accounts[idx].password = stored;
-            }
-            state.accounts[idx].imap = imap;
-            state.accounts[idx].smtp = smtp;
-            if let Some((id, secret)) = creds {
-                state.accounts[idx].client_id = Some(id);
-                state.accounts[idx].client_secret = Some(secret);
+                new_password = Some(stored);
             }
 
-            save_accounts(&state.accounts);
+            let mut found = false;
+            if !commit(state, |accounts| {
+                let Some(acc) = accounts.iter_mut().find(|a| a.email == email) else { return };
+                found = true;
+                if let Some(stored) = new_password {
+                    acc.password = stored;
+                }
+                acc.imap = imap;
+                acc.smtp = smtp;
+                if let Some((id, secret)) = creds {
+                    acc.client_id = Some(id);
+                    acc.client_secret = Some(secret);
+                }
+            }) {
+                return;
+            }
+            if !found {
+                state.editing_email = None;
+                state.status_msg = Some("That account no longer exists.".to_string());
+                return;
+            }
             state.editing_email = None;
             state.password_box.placeholder = None;
             state.status_msg = Some(msg);
@@ -1245,7 +1292,7 @@ mod tests {
     }
 
     /// These assertions deliberately stop short of EditAccountSave's success
-    /// path: it calls save_accounts, which writes the real accounts.json under
+    /// path: it calls commit, which writes the real accounts.json under
     /// XDG_CONFIG_HOME. Only the early-return paths are exercised here.
     #[test]
     fn edit_prefills_the_account_but_never_the_password() {

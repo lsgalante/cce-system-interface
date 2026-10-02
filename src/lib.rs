@@ -1,3 +1,4 @@
+mod accounts_file;
 pub mod app;
 pub mod pages;
 pub mod power_meter;
