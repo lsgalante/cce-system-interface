@@ -323,6 +323,7 @@ async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
     let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("Waiting for browser login...".to_string())));
     
     let (verifier, challenge) = generate_pkce();
+    let state = random_token();
     
     // Mail scopes: these accounts feed cce-mail's IMAP/SMTP (XOAUTH2 needs
     // https://mail.google.com/). The old request asked for cloud-platform/
@@ -332,55 +333,170 @@ async fn google_login_flow(sender: &calloop::channel::Sender<AppAction>) {
     // write half of the calendar mirror). No tasks scope: cce-list's lists
     // are vault notes now, and its Google Tasks sync is gone.
     let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fmail.google.com%2F+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri=http%3A%2F%2Flocalhost%3A36137%2Fauth%2Fcallback&response_type=code&scope=https%3A%2F%2Fmail.google.com%2F+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256&state={}",
         client_config.client_id,
-        challenge
+        challenge,
+        state
     );
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(&auth_url);
     let _ = crate::spawn_detached(cmd);
 
-    let accepted = match tokio::time::timeout(OAUTH_WAIT, listener.accept()).await {
-        Ok(res) => res,
-        Err(_) => {
-            let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(
-                "Google sign-in timed out — start the sign-in again to retry.".to_string(),
-            )));
-            return;
-        }
+    let deadline = tokio::time::Instant::now() + OAUTH_WAIT;
+    let Some((mut stream, outcome)) = await_oauth_callback(&listener, &state, deadline).await else {
+        let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(
+            "Google sign-in timed out — start the sign-in again to retry.".to_string(),
+        )));
+        return;
     };
-
-    if let Ok((mut stream, _)) = accepted {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let mut buffer = [0; 1024];
-        if let Ok(n) = stream.read(&mut buffer).await {
-            let req_str = String::from_utf8_lossy(&buffer[..n]);
-            if let Some(code_idx) = req_str.find("code=") {
-                let rest = &req_str[code_idx + 5..];
-                let end_idx = rest.find(|c: char| c == ' ' || c == '&' || c == '\r' || c == '\n').unwrap_or(rest.len());
-                let code = rest[..end_idx].to_string();
-                
-                let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("Exchanging code for token...".to_string())));
-                
-                // Perform token exchange
-                exchange_code_for_tokens(code, verifier, sender.clone()).await;
-                
-                let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
-                                <html><head><style>body { font-family: sans-serif; background-color: #08080c; color: #fff; text-align: center; padding-top: 50px; }</style></head><body><h2>Clear System Settings Authentication Successful!</h2><p>You can close this tab and return to the application.</p></body></html>";
-                let _ = stream.write_all(response.as_bytes()).await;
-                let _ = stream.flush().await;
+    match outcome {
+        Err(error) => {
+            let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(
+                format!("Google sign-in was not completed ({error})."),
+            )));
+            respond(&mut stream, "200 OK", false, "Sign-in cancelled",
+                "Nothing was saved. You can close this tab.").await;
+        }
+        Ok(code) => {
+            let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("Exchanging code for token...".to_string())));
+            if exchange_code_for_tokens(code, verifier, sender.clone()).await {
+                respond(&mut stream, "200 OK", true, "Clear System Settings Authentication Successful!",
+                    "You can close this tab and return to the application.").await;
             } else {
-                let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage("OAuth Error: No code received".to_string())));
-                let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
-                                <html><head><style>body { font-family: sans-serif; background-color: #08080c; color: #ff6060; text-align: center; padding-top: 50px; }</style></head><body><h2>Clear System Settings Authentication Failed</h2><p>No authorization code was found.</p></body></html>";
-                let _ = stream.write_all(response.as_bytes()).await;
-                let _ = stream.flush().await;
+                respond(&mut stream, "200 OK", false, "Clear System Settings Authentication Failed",
+                    "Google accepted the sign-in but the token exchange failed; System Settings shows why.").await;
             }
         }
     }
 }
 
-pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: calloop::channel::Sender<AppAction>) {
+/// Wait for the redirect that belongs to this flow: the connection it came
+/// on (still to be answered) and its code, or Google's `error=`. `None` when
+/// `deadline` passes first.
+///
+/// This used to take the FIRST connection and end the flow with it, so a
+/// favicon fetch, a browser preconnect, or any local process touching the
+/// port lost the sign-in. Everything that is not the callback carrying this
+/// flow's `state` is answered and the wait goes on.
+async fn await_oauth_callback(
+    listener: &tokio::net::TcpListener,
+    state: &str,
+    deadline: tokio::time::Instant,
+) -> Option<(tokio::net::TcpStream, Result<String, String>)> {
+    loop {
+        let mut stream = match tokio::time::timeout_at(deadline, listener.accept()).await {
+            Ok(Ok((stream, _))) => stream,
+            Ok(Err(_)) => continue,
+            Err(_) => return None,
+        };
+        let Some(head) = read_request_head(&mut stream).await else { continue };
+        match parse_oauth_callback(&head, state) {
+            OAuthCallback::NotCallback => {
+                respond(&mut stream, "404 Not Found", false, "Not found", "").await;
+            }
+            OAuthCallback::Unrecognised => {
+                // A stale tab from an earlier attempt, or a request this flow
+                // did not start. Say so, and keep waiting for the real one.
+                respond(&mut stream, "400 Bad Request", false, "Not this sign-in",
+                    "This page is from another sign-in attempt. Finish the one System Settings just opened.").await;
+            }
+            OAuthCallback::Denied(error) => return Some((stream, Err(error))),
+            OAuthCallback::Code(code) => return Some((stream, Ok(code))),
+        }
+    }
+}
+
+/// 16 random bytes, base64url: the OAuth `state` that ties the redirect to the
+/// flow that asked for it.
+fn random_token() -> String {
+    use base64::Engine;
+    use ring::rand::SecureRandom;
+    let mut bytes = [0u8; 16];
+    ring::rand::SystemRandom::new().fill(&mut bytes).unwrap();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// What one request to the loopback listener turned out to be.
+#[derive(Debug, PartialEq)]
+enum OAuthCallback {
+    /// Not a GET of /auth/callback at all (a favicon, a probe).
+    NotCallback,
+    /// The callback path, but without this flow's `state`, or with neither a
+    /// code nor an error.
+    Unrecognised,
+    /// Google redirected with `error=` (the user declined, or the request was
+    /// refused).
+    Denied(String),
+    /// The authorization code, URL-decoded.
+    Code(String),
+}
+
+/// Classify a request head. Only the request line's own query is read — the
+/// old `find("code=")` over the whole request matched a header (a Referer
+/// carrying `code=`) as readily as the query — and its values are decoded.
+fn parse_oauth_callback(head: &str, state: &str) -> OAuthCallback {
+    let mut parts = head.lines().next().unwrap_or("").split_whitespace();
+    let (Some("GET"), Some(target)) = (parts.next(), parts.next()) else {
+        return OAuthCallback::NotCallback;
+    };
+    if !target.starts_with('/') {
+        return OAuthCallback::NotCallback;
+    }
+    let Ok(url) = reqwest::Url::parse(&format!("http://localhost{target}")) else {
+        return OAuthCallback::NotCallback;
+    };
+    if url.path() != "/auth/callback" {
+        return OAuthCallback::NotCallback;
+    }
+    let param = |name: &str| url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned());
+    if param("state").as_deref() != Some(state) {
+        return OAuthCallback::Unrecognised;
+    }
+    if let Some(error) = param("error") {
+        return OAuthCallback::Denied(error);
+    }
+    match param("code") {
+        Some(code) if !code.is_empty() => OAuthCallback::Code(code),
+        _ => OAuthCallback::Unrecognised,
+    }
+}
+
+/// Read up to the end of the request head (8 KiB at most), giving up after a
+/// few seconds so a connection that never speaks cannot stall the listener.
+async fn read_request_head(stream: &mut tokio::net::TcpStream) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let read = async {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 1024];
+        while buf.len() < 8192 && !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = stream.read(&mut chunk).await.ok()?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+        }
+        Some(String::from_utf8_lossy(&buf).into_owned())
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), read).await.ok().flatten()
+}
+
+async fn respond(stream: &mut tokio::net::TcpStream, status: &str, ok: bool, title: &str, text: &str) {
+    use tokio::io::AsyncWriteExt;
+    let color = if ok { "#fff" } else { "#ff6060" };
+    let body = format!(
+        "<html><head><style>body {{ font-family: sans-serif; background-color: #08080c; color: {color}; text-align: center; padding-top: 50px; }}</style></head><body><h2>{title}</h2><p>{text}</p></body></html>"
+    );
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.flush().await;
+}
+
+/// Trade the code for tokens and report the new account; true when the
+/// account was signed in (every failure has already been reported as status).
+pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: calloop::channel::Sender<AppAction>) -> bool {
     let client_config = load_google_client_config();
     let client = reqwest::Client::new();
     let mut params = vec![
@@ -436,7 +552,7 @@ pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: ca
                                 };
                                 
                                 let _ = sender.send(AppAction::Accounts(AccountsMessage::GoogleLoginSuccess(new_acc)));
-                                return;
+                                return true;
                             }
                         }
                     }
@@ -451,6 +567,7 @@ pub async fn exchange_code_for_tokens(code: String, verifier: String, sender: ca
             let _ = sender.send(AppAction::Accounts(AccountsMessage::StatusMessage(format!("Token request failed: {}", e))));
         }
     }
+    false
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
@@ -1356,6 +1473,74 @@ mod tests {
 
         assert!(state.editing_email.is_none());
         assert!(state.password_box.placeholder.is_none(), "the placeholder does not leak into the add form");
+    }
+
+    fn get(target: &str) -> String {
+        format!("GET {target} HTTP/1.1\r\nHost: localhost:36137\r\n\r\n")
+    }
+
+    #[test]
+    fn the_callback_is_recognised_by_path_state_and_query_alone() {
+        let st = "s3cr3t";
+        // Google's code carries a slash, sometimes percent-encoded: decode it.
+        assert_eq!(
+            parse_oauth_callback(&get("/auth/callback?state=s3cr3t&code=4%2F0AbC&scope=x"), st),
+            OAuthCallback::Code("4/0AbC".into())
+        );
+        assert_eq!(parse_oauth_callback(&get("/auth/callback?code=4/0AbC&state=s3cr3t"), st), OAuthCallback::Code("4/0AbC".into()));
+        assert_eq!(
+            parse_oauth_callback(&get("/auth/callback?error=access_denied&state=s3cr3t"), st),
+            OAuthCallback::Denied("access_denied".into())
+        );
+        // Strays: they must not end the flow.
+        assert_eq!(parse_oauth_callback(&get("/favicon.ico"), st), OAuthCallback::NotCallback);
+        assert_eq!(parse_oauth_callback("", st), OAuthCallback::NotCallback);
+        assert_eq!(parse_oauth_callback("POST /auth/callback?code=x&state=s3cr3t HTTP/1.1\r\n\r\n", st), OAuthCallback::NotCallback);
+        // The callback, but not this flow's: a stale tab or a forged redirect.
+        assert_eq!(parse_oauth_callback(&get("/auth/callback?code=x&state=old"), st), OAuthCallback::Unrecognised);
+        assert_eq!(parse_oauth_callback(&get("/auth/callback?code=x"), st), OAuthCallback::Unrecognised);
+        assert_eq!(parse_oauth_callback(&get("/auth/callback?state=s3cr3t"), st), OAuthCallback::Unrecognised);
+        // A `code=` anywhere but the query is not a code.
+        let referer = "GET /auth/callback?state=s3cr3t HTTP/1.1\r\nReferer: https://x/?code=leak\r\n\r\n";
+        assert_eq!(parse_oauth_callback(referer, st), OAuthCallback::Unrecognised);
+    }
+
+    /// The bug: the listener took the first connection, whatever it was, and
+    /// ended the sign-in with it. Strays now get an answer and the wait goes on.
+    #[tokio::test]
+    async fn strays_are_answered_and_the_wait_goes_on() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        let waiter = tokio::spawn(async move {
+            let (_stream, outcome) = await_oauth_callback(&listener, "flow", deadline).await.unwrap();
+            outcome
+        });
+        async fn send(addr: std::net::SocketAddr, req: &str) -> String {
+            let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+            s.write_all(req.as_bytes()).await.unwrap();
+            let mut reply = String::new();
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), s.read_to_string(&mut reply)).await;
+            reply
+        }
+        // A connection that opens and says nothing (a preconnect)...
+        drop(tokio::net::TcpStream::connect(addr).await.unwrap());
+        // ...the favicon, and a stale tab from an earlier attempt.
+        assert!(send(addr, &get("/favicon.ico")).await.starts_with("HTTP/1.1 404"));
+        assert!(send(addr, &get("/auth/callback?code=old&state=earlier")).await.starts_with("HTTP/1.1 400"));
+        assert!(!waiter.is_finished(), "a stray ended the flow");
+        // The real redirect still lands. Its reply is the caller's to send.
+        let mut real = tokio::net::TcpStream::connect(addr).await.unwrap();
+        real.write_all(get("/auth/callback?code=4%2Freal&state=flow").as_bytes()).await.unwrap();
+        assert_eq!(waiter.await.unwrap(), Ok("4/real".to_string()));
+    }
+
+    #[tokio::test]
+    async fn the_wait_ends_at_the_deadline() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(50);
+        assert!(await_oauth_callback(&listener, "flow", deadline).await.is_none());
     }
 
     /// The listener flag has to come back down on EVERY exit path, not just the
