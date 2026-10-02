@@ -10,9 +10,11 @@
 //! - `apply [ac|battery]` — apply the mode assigned to the current (or the
 //!   named) adapter state. Run by `cce-power-apply.service`, which udev
 //!   starts when the Mains supply appears at boot or flips online/offline
-//!   (`udev/90-cce-power-apply.rules`). Per-lever failures are logged and do
-//!   not fail the run: a missing NVIDIA driver must not hide the CPU profile
-//!   that did land.
+//!   (`udev/90-cce-power-apply.rules`), and by
+//!   `cce-power-apply-resume.service` after every wake. It reads the source
+//!   again when it finishes and re-applies if it moved. Per-lever failures
+//!   are logged and do not fail the run: a missing NVIDIA driver must not
+//!   hide the CPU profile that did land.
 //! - `apply-mode <mode>` — apply one mode by name, whatever is plugged in.
 //! - `set <mode> <lever> <value|unset>` — record one lever on a mode and,
 //!   when that mode is the one running, apply it now. Run by the Power page
@@ -69,16 +71,48 @@ fn run_mode(plan: &PowerPlan, mode: Mode, what: &str) -> i32 {
     0
 }
 
+/// How many times one `apply` follows the source changing under it before
+/// it gives up and leaves the next udev event to finish the job. A charger
+/// with a bad contact can flap for as long as it likes.
+const MAX_APPLY_PASSES: usize = 4;
+
 fn cmd_apply(forced: Option<&str>) -> i32 {
-    let source = match forced {
-        None => current_source(),
-        Some(s) => Source::parse(s).unwrap_or_else(|| usage()),
-    };
     let plan = match load_plan() {
         Ok(p) => p,
         Err(code) => return code,
     };
-    run_mode(&plan, plan.assigned(source), source.key())
+    if let Some(s) = forced {
+        let source = Source::parse(s).unwrap_or_else(|| usage());
+        return run_mode(&plan, plan.assigned(source), source.key());
+    }
+    // Read the source again after applying, and go round once more if it
+    // moved. A udev event that lands while this run is still going cannot
+    // start another one: `systemctl start` on a oneshot that is already
+    // activating merges into the running job. Until 2026-10-02 that lost a
+    // plug-in at resume: a run started by an unplug as the lid closed was
+    // frozen with the rest of user space, finished two hours later on
+    // resume, and applied the battery mode it had read before sleeping while
+    // the plug-in's event merged into it. Animations stayed off on AC until
+    // the charger was replugged.
+    let mut source = current_source();
+    let mut pass = 1;
+    loop {
+        let code = run_mode(&plan, plan.assigned(source), source.key());
+        let now = current_source();
+        if now == source {
+            return code;
+        }
+        if pass == MAX_APPLY_PASSES {
+            eprintln!(
+                "cce-power-apply: source still changing after {} passes; applied {}, now {}",
+                pass, source.key(), now.key()
+            );
+            return code;
+        }
+        println!("cce-power-apply: source changed to {} while applying {}; applying again", now.key(), source.key());
+        source = now;
+        pass += 1;
+    }
 }
 
 fn cmd_apply_mode(rest: &[String]) -> i32 {

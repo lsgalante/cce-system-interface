@@ -1,0 +1,28 @@
+[Unit]
+Description=Re-apply the cce Power page's plan after waking
+Documentation=file:/etc/cce/power.kdl
+# The kernel's Mains change event is not a reliable record of a charger
+# plugged or pulled while the machine slept. Some firmware sends none, and
+# one that lands during the thaw merges into a cce-power-apply.service run
+# that sleep froze, which then applies what it read before sleeping. That
+# happened on 2026-10-02: the machine woke on AC in the battery mode, with
+# animations off. Each sleep target is reached only once the machine is
+# awake again, so ordering after them is "on resume".
+#
+# This runs the applier directly, not by starting cce-power-apply.service,
+# because the start would merge into that same frozen run. Two runs at once
+# are harmless: each reads the source again when it finishes.
+#
+# Wanted by the sleep targets, so unlike the udev-started unit this one does
+# nothing until it is enabled. X-CceEnable tells `ccebuild install-system`
+# to enable it (systemd ignores X- keys).
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+ConditionPathExists=/etc/cce/power.kdl
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cce-power-apply apply
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+X-CceEnable=yes
