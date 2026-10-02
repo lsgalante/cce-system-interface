@@ -238,9 +238,9 @@ fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String
     }
 
     let service = format!(
-        "[Unit]\nDescription={name} (created by cce-system-interface)\n\n[Service]\nType=oneshot\nExecStart=/bin/sh -c '{command}'\n",
+        "[Unit]\nDescription={name} (created by cce-system-interface)\n\n[Service]\nType=oneshot\nExecStart={exec}\n",
         name = name,
-        command = command.replace('\'', "'\\''"),
+        exec = exec_start_for(command),
     );
     let timer = format!(
         "[Unit]\nDescription={name} schedule\n\n[Timer]\nOnCalendar={schedule}\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
@@ -252,6 +252,65 @@ fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String
         .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user enable --now {}.timer", name)])
         .spawn();
     Ok(format!("Created and enabled {}.timer", name))
+}
+
+/// The `ExecStart=` value that runs `command` through `/bin/sh -c`.
+///
+/// systemd parses `ExecStart` itself before any shell sees it: `%` starts a
+/// specifier, `$` an environment substitution, and inside the quotes `\` is
+/// a C escape. Until 2026-10-02 the command was quoted for a SHELL
+/// (`'` → `'\''`) and nothing else, so `date +%F > file` wrote a unit
+/// systemd refused to load ("Failed to resolve unit specifiers"), a `$HOME`
+/// was expanded by systemd from its own environment, and the page still
+/// said "Created and enabled". Escaped here for systemd, the command reaches
+/// `sh -c` exactly as typed.
+fn exec_start_for(command: &str) -> String {
+    let mut out = String::from("/bin/sh -c '");
+    for c in command.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '%' => out.push_str("%%"),
+            '$' => out.push_str("$$"),
+            c => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// The command an `ExecStart=` value written by `exec_start_for` runs, or
+/// None for any other value (a unit this page did not write, or one written
+/// before 2026-10-02 with shell-style quoting), which the edit form then
+/// shows and saves raw.
+fn shell_command_of(exec_start: &str) -> Option<String> {
+    let body = exec_start.strip_prefix("/bin/sh -c '")?.strip_suffix('\'')?;
+    let mut out = String::new();
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next()? {
+                '\\' => out.push('\\'),
+                '\'' => out.push('\''),
+                'n' => out.push('\n'),
+                _ => return None,
+            },
+            '%' if chars.peek() == Some(&'%') => {
+                chars.next();
+                out.push('%');
+            }
+            '$' if chars.peek() == Some(&'$') => {
+                chars.next();
+                out.push('$');
+            }
+            // An unescaped quote, `%` or `$` is not something exec_start_for
+            // writes: a shell-quoted legacy unit, or a hand-written one.
+            '\'' | '%' | '$' => return None,
+            c => out.push(c),
+        }
+    }
+    Some(out)
 }
 
 /// First `Key=value` in a unit file, or None.
@@ -302,7 +361,13 @@ fn update_user_timer(base: &str, command: &str, schedule: &str) -> Result<String
     replace_unit_field(&dir.join(format!("{}.timer", base)), "OnCalendar", schedule)?;
     let service_path = dir.join(format!("{}.service", base));
     if service_path.exists() {
-        replace_unit_field(&service_path, "ExecStart", command)?;
+        // The form showed this unit's command decoded when it was one
+        // `exec_start_for` wrote (see EditStart), so it goes back encoded;
+        // any other ExecStart was shown raw and is written back raw.
+        let ours = read_unit_field(&service_path, "ExecStart")
+            .is_some_and(|v| shell_command_of(&v).is_some());
+        let value = if ours { exec_start_for(command) } else { command.to_string() };
+        replace_unit_field(&service_path, "ExecStart", &value)?;
     }
     let _ = tokio::process::Command::new("sh")
         .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user try-restart {}.timer", base)])
@@ -622,6 +687,7 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
                 .unwrap_or_default();
             let command = dir.as_ref()
                 .and_then(|d| read_unit_field(&d.join(format!("{}.service", base)), "ExecStart"))
+                .map(|raw| shell_command_of(&raw).unwrap_or(raw))
                 .unwrap_or_default();
             state.creating = false;
             state.editing = Some(base.clone());
@@ -752,6 +818,56 @@ impl crate::pages::AppPage for TimersState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const AWKWARD: [&str; 6] = [
+        "date +%F > /tmp/x",
+        "echo it's $HOME",
+        r"printf 'a\tb\n' | tr '\t' ,",
+        "rsync -a ~/a/ /mnt/b/ && notify-send 'done 100%'",
+        "echo $$ ${USER} %h %%",
+        "plain-command --flag",
+    ];
+
+    #[test]
+    fn a_timer_command_round_trips_through_its_exec_start() {
+        for cmd in AWKWARD {
+            let exec = exec_start_for(cmd);
+            assert_eq!(shell_command_of(&exec).as_deref(), Some(cmd), "{exec}");
+            // No bare specifier or substitution survives for systemd to act on.
+            let body = exec.trim_start_matches("/bin/sh -c '");
+            assert!(!body.replace("%%", "").contains('%'), "{exec}");
+            assert!(!body.replace("$$", "").contains('$'), "{exec}");
+        }
+    }
+
+    #[test]
+    fn a_unit_this_page_did_not_write_is_edited_raw() {
+        // The old shell-style quoting, and hand-written lines.
+        for raw in [r"/bin/sh -c 'echo it'\''s'", "/usr/bin/backup --all", "/bin/sh -c 'echo 100%'"] {
+            assert_eq!(shell_command_of(raw), None, "{raw}");
+        }
+    }
+
+    /// Asks systemd itself: `cargo test -p cce-system-interface --lib
+    /// timers -- --ignored`. Writes units to a temp dir only and loads none.
+    #[test]
+    #[ignore]
+    fn systemd_accepts_every_written_unit() {
+        let dir = std::env::temp_dir().join(format!("cce-timer-units-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (i, cmd) in AWKWARD.iter().enumerate() {
+            let path = dir.join(format!("t{i}.service"));
+            std::fs::write(&path, format!("[Service]\nType=oneshot\nExecStart={}\n", exec_start_for(cmd))).unwrap();
+            let out = std::process::Command::new("systemd-analyze")
+                .args(["--user", "verify"])
+                .arg(&path)
+                .output()
+                .unwrap();
+            let err = String::from_utf8_lossy(&out.stderr);
+            assert!(!err.contains("Failed to resolve") && !err.contains("fatal"), "{cmd:?}: {err}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn humanize_ranges() {
