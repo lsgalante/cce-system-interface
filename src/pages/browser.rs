@@ -1,6 +1,6 @@
 //! Browser (cce-browser) settings: homepage, search engine, download
-//! directory, history recording, navigation-bar position, page color
-//! scheme. Edits the
+//! directory, history recording, Raindrop bookmark sync, navigation-bar
+//! position, page color scheme. Edits the
 //! browser's own app config (`~/.config/cce/cce-browser/config.kdl`,
 //! section "browser") — the browser reloads it when its window regains
 //! focus.
@@ -41,6 +41,9 @@ pub struct BrowserConfig {
     pub search: String,
     pub download_dir: String,
     pub history: bool,
+    /// `browser.raindrop`: sync bookmarks with Raindrop.io's Unsorted
+    /// collection (cce-browser's RAINDROP-SYNC.md). Off unless set.
+    pub raindrop: bool,
     pub bar_position: String,
     pub color_scheme: String,
 }
@@ -51,6 +54,7 @@ pub struct BrowserState {
     pub search: String,
     pub download_dir: String,
     pub history: bool,
+    pub raindrop: bool,
     pub bar_position: String,
     pub color_scheme: String,
     pub homepage_box: cce_ui::widget::Adapted<TextBox>,
@@ -59,6 +63,7 @@ pub struct BrowserState {
     pub color_scheme_menu: cce_ui::widget::Adapted<Dropdown>,
     pub download_dir_box: cce_ui::widget::Adapted<TextBox>,
     pub history_toggle: cce_ui::widget::Adapted<Toggle>,
+    pub raindrop_toggle: cce_ui::widget::Adapted<Toggle>,
 }
 
 impl Default for BrowserState {
@@ -78,6 +83,7 @@ impl Default for BrowserState {
             search: config.search.clone(),
             download_dir: config.download_dir,
             history: config.history,
+            raindrop: config.raindrop,
             bar_position: config.bar_position.clone(),
             color_scheme: config.color_scheme.clone(),
             homepage_box,
@@ -98,6 +104,7 @@ impl Default for BrowserState {
             .with_label("Page Color Scheme"),
             download_dir_box,
             history_toggle: Toggle::new().with_label("Record History"),
+            raindrop_toggle: Toggle::new().with_label("Sync Bookmarks with Raindrop"),
         }
     }
 }
@@ -120,6 +127,7 @@ pub enum BrowserMessage {
     SetBarPosition(String),
     SetColorScheme(String),
     ToggleHistory,
+    ToggleRaindrop,
     /// Commit the homepage / download-dir text fields.
     Apply,
     Refreshed(BrowserConfig),
@@ -153,6 +161,10 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.history = !state.history;
             write_config_value("history", &state.history.to_string());
         }
+        BrowserMessage::ToggleRaindrop => {
+            state.raindrop = !state.raindrop;
+            write_config_value("raindrop", &state.raindrop.to_string());
+        }
         BrowserMessage::Apply => {
             state.homepage = live_text(&state.homepage_box);
             if state.homepage.is_empty() {
@@ -168,6 +180,7 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.loaded = true;
             state.search = new.search;
             state.history = new.history;
+            state.raindrop = new.raindrop;
             state.bar_position = new.bar_position;
             state.color_scheme = new.color_scheme;
             // Don't clobber fields mid-edit with watcher refreshes.
@@ -202,6 +215,7 @@ pub fn read_browser_config() -> BrowserConfig {
         search: val["browser"]["search"].as_str().unwrap_or("duckduckgo").to_string(),
         download_dir: val["browser"]["download-dir"].as_str().unwrap_or("").to_string(),
         history: val["browser"]["history"].as_bool().unwrap_or(true),
+        raindrop: val["browser"]["raindrop"].as_bool().unwrap_or(false),
         bar_position: val["browser"]["bar-position"].as_str().unwrap_or("top").to_string(),
         color_scheme: val["browser"]["color-scheme"].as_str().unwrap_or("dark").to_string(),
     }
@@ -228,6 +242,7 @@ impl AppPage for BrowserState {
             self.color_scheme_menu.id(),
             self.download_dir_box.id(),
             self.history_toggle.id(),
+            self.raindrop_toggle.id(),
         ]]
     }
 
@@ -272,6 +287,11 @@ impl AppPage for BrowserState {
             self.history_toggle.set_toggled(self.history);
             stack.add_widget(&mut self.history_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
 
+            // Needs a Raindrop token in the keyring (service=raindrop.io);
+            // the browser shows the sync's status on cce://bookmarks.
+            self.raindrop_toggle.set_toggled(self.raindrop);
+            stack.add_widget(&mut self.raindrop_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
+
             let btn_h = 32.0;
             stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
                 ctx.button(
@@ -315,6 +335,9 @@ impl AppPage for BrowserState {
         }
         if self.history_toggle.take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));
+        }
+        if self.raindrop_toggle.take_change() {
+            actions.push(AppAction::Browser(BrowserMessage::ToggleRaindrop));
         }
         // Enter in either text field commits both.
         if self.homepage_box.take_change() || self.download_dir_box.take_change() {
