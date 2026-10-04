@@ -1,0 +1,26 @@
+[Unit]
+Description=Lower PCIe power management to its deepest before sleeping
+Documentation=file:/etc/cce/power.kdl
+# The mode a suspend begins under stays in force until the machine wakes:
+# user space is frozen, so an unplug while asleep reaches no udev rule and
+# no cce-power-apply run. A suspend begun on AC therefore slept under the
+# AC mode's `aspm "performance"`, which keeps the PCIe links out of L1
+# substates and the package out of S0ix -- this machine has only s2idle --
+# and on 2026-10-03 a full battery was empty within 34 hours of closing the
+# lid. `cce-power-apply sleep` drops ASPM to powersupersave first;
+# cce-power-apply-resume.service puts the running mode's value back.
+#
+# Wanted by and ordered before sleep.target, which every sleep verb pulls in
+# ahead of its systemd-*.service, so the oneshot finishes before user space
+# is frozen. Like the resume unit it does nothing until enabled, which
+# X-CceEnable tells `ccebuild install-system` to do (systemd ignores X- keys).
+Before=sleep.target
+ConditionPathExists=/etc/cce/power.kdl
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cce-power-apply sleep
+
+[Install]
+WantedBy=sleep.target
+X-CceEnable=yes

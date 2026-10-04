@@ -15,6 +15,10 @@
 //!   again when it finishes and re-applies if it moved. Per-lever failures
 //!   are logged and do not fail the run: a missing NVIDIA driver must not
 //!   hide the CPU profile that did land.
+//! - `sleep` — lower PCIe ASPM to `powersupersave` before the machine
+//!   sleeps, when the running mode sets it to anything else. Run by
+//!   `cce-power-apply-sleep.service`; the resume unit's `apply` puts the
+//!   mode's own value back.
 //! - `apply-mode <mode>` — apply one mode by name, whatever is plugged in.
 //! - `set <mode> <lever> <value|unset>` — record one lever on a mode and,
 //!   when that mode is the one running, apply it now. Run by the Power page
@@ -35,6 +39,7 @@ use cce_settings::power_plan::{
 fn usage() -> ! {
     eprintln!(
         "usage: cce-power-apply apply [ac|battery]\n       \
+                cce-power-apply sleep\n       \
                 cce-power-apply apply-mode <mode>\n       \
                 cce-power-apply set <mode> <lever> <value|unset>\n       \
                 cce-power-apply assign <ac|battery> <mode>\n       \
@@ -115,6 +120,50 @@ fn cmd_apply(forced: Option<&str>) -> i32 {
     }
 }
 
+/// The ASPM policy every sleep starts under, whatever mode is running.
+const SLEEP_ASPM: &str = "powersupersave";
+
+/// Ready the machine to sleep. This laptop has only s2idle, where the
+/// package reaches S0ix only if its PCIe links can drop into L1 substates,
+/// and the AC mode's `aspm "performance"` forbids that. Nothing re-applies
+/// the plan while the machine sleeps, so a suspend begun on the charger kept
+/// that mode through an unplug: the battery history before 2026-10-04 shows
+/// sleeps begun on battery drawing about 1 W, and those begun on AC up to
+/// 4 W, enough to empty a full battery in a day and a half closed.
+///
+/// Only ASPM moves. The rest of a mode either has no effect in s2idle or,
+/// like the NVIDIA power limit, costs seconds of nvidia-smi on every lid
+/// close. And only when the running mode sets it: the resume unit's `apply`
+/// then restores that mode's value, so a mode that leaves ASPM alone is not
+/// woken into a policy it never chose.
+fn cmd_sleep() -> i32 {
+    let plan = match load_plan() {
+        Ok(p) => p,
+        Err(code) => return code,
+    };
+    let source = current_source();
+    let mode = plan.assigned(source);
+    match plan.get(mode, Lever::Aspm) {
+        None => {
+            println!("cce-power-apply: sleep: {} [{}] sets no aspm; left as is", source.key(), mode.key());
+            0
+        }
+        Some(v) if v == SLEEP_ASPM => 0,
+        Some(v) => match apply_lever(Lever::Aspm, SLEEP_ASPM) {
+            Ok(()) => {
+                println!("cce-power-apply: sleep: aspm {} -> {} ({} [{}] restores it on wake)", v, SLEEP_ASPM, source.key(), mode.key());
+                0
+            }
+            Err(e) => {
+                // Never fail the unit: a sleep that drains faster beats one
+                // systemd refuses to start.
+                eprintln!("cce-power-apply: sleep: aspm: {}", e);
+                0
+            }
+        },
+    }
+}
+
 fn cmd_apply_mode(rest: &[String]) -> i32 {
     let [mode] = rest else { usage() };
     let mode = Mode::parse(mode).unwrap_or_else(|| usage());
@@ -192,6 +241,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         Some("apply") => cmd_apply(args.get(1).map(String::as_str)),
+        Some("sleep") => cmd_sleep(),
         Some("apply-mode") => cmd_apply_mode(&args[1..]),
         Some("set") => cmd_set(&args[1..]),
         Some("assign") => cmd_assign(&args[1..]),
