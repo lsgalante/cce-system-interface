@@ -631,7 +631,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
     let widget_h = cce_ui::layout::spinbox_height();
-    let btn_h = 26.0;
+    let btn_h = cce_ui::layout::button_height();
     let m = crate::app::section_margin();
     let gap = cce_ui::layout::plate_gap();
 

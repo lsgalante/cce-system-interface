@@ -71,7 +71,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
         } else {
             // Tab header buttons: System Services, User Services
             let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let tab_h = 28.0;
+            let tab_h = cce_ui::layout::button_height();
             let active_bg = [0.20, 0.40, 0.65, 0.4];
             let inactive_bg = [0.10, 0.10, 0.16, 0.3];
             let hover_bg = [0.20, 0.20, 0.25, 0.15];
@@ -163,13 +163,14 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     //
                     // Sized on whether the icon set is actually THERE:
                     // `button_icon` falls back to the labels when it isn't, and
-                    // a 24px button doesn't clip a label so much as replace it
+                    // a square button doesn't clip a label so much as replace it
                     // — the text centers, so both ends cut and "Restart" reads
                     // "sta". `upload_icon` caches per (name, px), so asking
                     // every row costs one hash lookup.
                     let icons_ok = cce_ui::upload_icon("play", 32).is_some();
                     let is_small = sec_w < 350.0;
-                    let (btn_w, r_btn_w) = if icons_ok { (24.0, 24.0) } else { (46.0, 54.0) };
+                    let btn_h = cce_ui::layout::button_height();
+                    let (btn_w, r_btn_w) = if icons_ok { (btn_h, btn_h) } else { (46.0, 54.0) };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
 
                     // TODO(style): the row's control run and text column
@@ -182,8 +183,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     let item_x = restart_x + r_btn_w + 10.0;
                     let item_w = (list_box_x + list_box_w - 10.0) - item_x;
 
-                    let btn_y = draw_y + (item_h - 22.0) / 2.0;
-                    let btn_h = 22.0;
+                    let btn_y = draw_y + (item_h - btn_h) / 2.0;
 
                     // Service description, truncated to the room the row's text
                     // column actually has (the item insets its labels by 8px).

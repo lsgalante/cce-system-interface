@@ -233,7 +233,7 @@ impl AppPage for NotificationsState {
             self.duration_spinbox.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
             stack.add_widget(&mut self.duration_spinbox, sec_w - 28.0, 44.0, ctx);
 
-            let btn_h = 32.0;
+            let btn_h = cce_ui::layout::button_height();
             let white_color = [1.0, 1.0, 1.0, 1.0];
             let btn_bg = [0.20, 0.40, 0.65, 1.0];
             let btn_hover = [0.28, 0.50, 0.78, 1.0];

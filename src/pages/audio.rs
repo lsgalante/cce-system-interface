@@ -258,7 +258,8 @@ fn device_row(
 
     let sb_h = cce_ui::layout::spinbox_height();
     let sl_h = cce_ui::layout::slider_height();
-    let row_h = sb_h.max(sl_h).max(22.0);
+    let btn_h = cce_ui::layout::button_height();
+    let row_h = sb_h.max(sl_h).max(btn_h);
     let (mute_label, colors, mute_text) = if muted {
         ("Unmute", BTN_DANGER, TEXT_DANGER)
     } else {
@@ -281,9 +282,9 @@ fn device_row(
         c.button(
             mute_label,
             spin_x + spin_w + gap,
-            y + (row_h - 22.0) / 2.0,
+            y + (row_h - btn_h) / 2.0,
             mute_w,
-            22.0,
+            btn_h,
             colors.0,
             colors.1,
             mute_text,

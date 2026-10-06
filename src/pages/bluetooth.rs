@@ -163,7 +163,7 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         let row_gap = cce_ui::layout::label_margin();
         let margin = padding.max(12.0);
         let font_size = 12.0;
-        let btn_h = 28.0;
+        let btn_h = cce_ui::layout::button_height();
 
         if !state.loaded {
             sec.text("Loading Bluetooth status...", margin, 0.0, font_size, TEXT_DIM);
@@ -194,11 +194,12 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             // Hand-placed: sec.widget grid-places at full column width, which
             // would sit the toggle under the Scan button.
             let tx = sec.ax(margin);
-            render_widget(sec.pc, &mut state.toggle, tx, yt, bt_btn_w, btn_h, ctx);
+            let toggle_h = cce_ui::layout::toggle_height();
+            render_widget(sec.pc, &mut state.toggle, tx, yt, bt_btn_w, toggle_h, ctx);
             sec.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, btn_h,
                 TOGGLE_OFF, BTN_HOVER, WHITE,
                 AppAction::Bluetooth(BluetoothMessage::Scan));
-            sec.content_y = yt + btn_h + row_gap;
+            sec.content_y = yt + btn_h.max(toggle_h) + row_gap;
 
             if state.devices.is_empty() {
                 if state.enabled {
@@ -206,7 +207,7 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                     sec.text(no_devices_msg, margin, 0.0, font_size, TEXT_DIM);
                 }
             } else {
-                let item_h = 22.0;
+                let item_h = btn_h;
                 for dev in &state.devices {
                     let btn_w = if bt_sec_w < 250.0 { 42.0 } else { 70.0 };
                     let action_label = if dev.connected {

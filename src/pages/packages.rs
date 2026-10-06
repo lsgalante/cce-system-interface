@@ -339,7 +339,7 @@ pub fn view(
 
         // ── Tabs (with counts), filter, compact update row ──
         let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-        let tab_h = 28.0;
+        let tab_h = cce_ui::layout::button_height();
         let active_bg = [0.20, 0.40, 0.65, 0.4];
         let inactive_bg = [0.10, 0.10, 0.16, 0.3];
         let hover_bg = [0.20, 0.20, 0.25, 0.15];
@@ -397,13 +397,13 @@ pub fn view(
         } else {
             ("Update System", [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0])
         };
-        stack.add_row(3, cce_ui::layout::plate_gap(), 26.0, |c, i, x, w| {
+        stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
             if i == 0 {
-                c.button(btn_lbl, x, c.ay(), w, 26.0, bg, hover, [0.90, 0.90, 0.95, 1.0],
+                c.button(btn_lbl, x, c.ay(), w, tab_h, bg, hover, [0.90, 0.90, 0.95, 1.0],
                     AppAction::Packages(PackagesMessage::StartUpdate));
             } else if i == 1 {
                 let y = c.ay();
-                c.pc.text(&status_line, x, y + 6.0, 12.0, status_color);
+                c.pc.text(&status_line, x, y + (tab_h - 14.0) / 2.0, 12.0, status_color);
             }
         });
 
@@ -452,7 +452,9 @@ pub fn view(
                         } else {
                             ("Uninstall", [0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
                         };
-                        sc.button(btn_lbl, bx, y - 2.0, bw, 22.0, bg, hover, text_col,
+                        // Centred on the 14px name's line.
+                        let bh = cce_ui::layout::button_height();
+                        sc.button(btn_lbl, bx, y + (17.0 - bh) / 2.0, bw, bh, bg, hover, text_col,
                             AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())));
                     }
                 }
@@ -497,7 +499,7 @@ pub fn view(
                     let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
                     let cols_count = 4;
                     let gap = 4.0;
-                    let btn_h = 20.0;
+                    let btn_h = cce_ui::layout::button_height();
 
                     for chunk in reqs.chunks(cols_count) {
                         let btn_y = stack.context.ay();

@@ -317,7 +317,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
 
             // Action Button
             let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let btn_h = 32.0;
+            let btn_h = cce_ui::layout::button_height();
             
             // Retained widget rather than an immediate `sec.button`, so it can hold
             // keyboard focus. Its label/colours are re-synced each frame from the

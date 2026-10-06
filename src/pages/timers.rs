@@ -413,7 +413,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         } else {
             // Tab header buttons: System Timers, User Timers
             let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let tab_h = 28.0;
+            let tab_h = cce_ui::layout::button_height();
             let active_bg = [0.20, 0.40, 0.65, 0.4];
             let inactive_bg = [0.10, 0.10, 0.16, 0.3];
             let hover_bg = [0.20, 0.20, 0.25, 0.15];
@@ -453,9 +453,9 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
             // New Timer (user scope) — compact button; the form unfolds below.
             let new_bg = if state.creating { active_bg } else { [0.13, 0.18, 0.14, 1.0] };
-            stack.add_row(3, cce_ui::layout::plate_gap(), 26.0, |c, i, x, w| {
+            stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
                 if i == 0 {
-                    c.button("New Timer", x, c.ay(), w, 26.0,
+                    c.button("New Timer", x, c.ay(), w, tab_h,
                         new_bg, [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
                         crate::app::AppAction::Timers(TimersMessage::CreateStart));
                 }
@@ -483,12 +483,12 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
                 stack.context.spacing(4.0);
                 let save_label = if state.editing.is_some() { "Save" } else { "Create" };
-                stack.add_row(3, cce_ui::layout::plate_gap(), 26.0, |c, i, x, w| {
+                stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
                     match i {
-                        0 => c.button(save_label, x, c.ay(), w, 26.0,
+                        0 => c.button(save_label, x, c.ay(), w, tab_h,
                             [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
                             crate::app::AppAction::Timers(TimersMessage::CreateSave)),
-                        1 => c.button("Cancel", x, c.ay(), w, 26.0,
+                        1 => c.button("Cancel", x, c.ay(), w, tab_h,
                             [0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], [0.90, 0.90, 0.95, 1.0],
                             crate::app::AppAction::Timers(TimersMessage::CreateCancel)),
                         _ => {}
@@ -538,9 +538,11 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     // needs the wide button. `upload_icon` caches per
                     // (name, px), so asking every row is one hash lookup.
                     let compact = is_small && cce_ui::upload_icon("play", 32).is_some();
-                    let run_w = if compact { 40.0 } else { 76.0 };
-                    let en_w = if compact { 40.0 } else { 66.0 };
-                    let edit_w = if compact { 36.0 } else { 50.0 };
+                    // Glyph buttons are square at the control height.
+                    let btn_h = cce_ui::layout::button_height();
+                    let run_w = if compact { btn_h } else { 76.0 };
+                    let en_w = if compact { btn_h } else { 66.0 };
+                    let edit_w = if compact { btn_h } else { 50.0 };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
                     // TODO(style): the row's button run, dot and text
                     // column below are this list row's own layout.
@@ -550,8 +552,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     let run_x = en_x - btn_gap - run_w;
                     let edit_x = run_x - btn_gap - edit_w;
 
-                    let btn_y = draw_y + (item_h - 22.0) / 2.0;
-                    let btn_h = 22.0;
+                    let btn_y = draw_y + (item_h - btn_h) / 2.0;
 
                     // Title + schedule subtitle (truncated to the space before the buttons).
                     let text_left_edge = if timer.editable { edit_x } else { run_x };
@@ -648,7 +649,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                             );
                         }
                         _ => {
-                            sec.pc.text("static", en_x + 8.0, btn_y + 5.0, 11.0, TEXT_DIM);
+                            sec.pc.text("static", en_x + 8.0, btn_y + (btn_h - 12.0) / 2.0, 11.0, TEXT_DIM);
                         }
                     }
                 }

@@ -184,8 +184,9 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             // column width (the old wide "ON" plate).
             let yt = sec.ay();
             let tx = sec.ax(margin);
-            cce_ui::layout::render_widget(sec.pc, &mut state.wifi_toggle, tx, yt, wifi_btn_w, 28.0, ctx);
-            sec.content_y = yt + 28.0 + row_gap;
+            let toggle_h = cce_ui::layout::toggle_height();
+            cce_ui::layout::render_widget(sec.pc, &mut state.wifi_toggle, tx, yt, wifi_btn_w, toggle_h, ctx);
+            sec.content_y = yt + toggle_h + row_gap;
 
             if state.wifi_enabled {
                 // Flowing text rows — sec.text advances content_y itself.

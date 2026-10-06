@@ -262,14 +262,16 @@ impl SystemInterface {
                 (false, false, false, false),
             ));
             // The search box stands on the root plate: the window-edge inset.
+            // The toolkit's textbox height, centred in the 42px band.
             let inset = cce_ui::layout::root_plate_inset();
+            let box_h = cce_ui::layout::textbox_height();
             cce_ui::layout::render_widget(
                 &mut search_pc,
                 &mut self.search_box,
                 self.sidebar_width + inset,
-                sh - 36.0,
+                sh - 42.0 + (42.0 - box_h) / 2.0,
                 sw - self.sidebar_width - 2.0 * inset,
-                30.0,
+                box_h,
                 &mut self.ui_context,
             );
         }

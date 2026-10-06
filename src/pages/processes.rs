@@ -398,13 +398,14 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     if !dim {
                         // The `x` glyph in the danger tint; "Kill" only if
                         // the icon set is missing.
+                        let kill_h = cce_ui::layout::button_height();
                         sec.pc.button_icon_tinted(
                             "x",
                             "Kill",
                             list_box_x + COL_KILL - ox,
-                            draw_y + 3.0,
-                            20.0,
-                            row_h - 6.0,
+                            draw_y + (row_h - kill_h) / 2.0,
+                            kill_h,
+                            kill_h,
                             [0.0, 0.0, 0.0, 0.0],
                             [0.75, 0.30, 0.30, 0.45],
                             [0.85, 0.55, 0.55, 1.0],

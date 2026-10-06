@@ -314,7 +314,7 @@ impl AppPage for BrowserState {
             self.vi_mode_toggle.set_toggled(self.vi_mode);
             stack.add_widget(&mut self.vi_mode_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
 
-            let btn_h = 32.0;
+            let btn_h = cce_ui::layout::button_height();
             stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
                 ctx.button(
                     "Apply",
