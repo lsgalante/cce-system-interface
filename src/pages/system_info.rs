@@ -285,67 +285,60 @@ fn spawn_systemctl_force(action: &str) {
     let _ = crate::spawn_detached(cmd);
 }
 
-/// One compiled cce binary in `~/.local/bin` and when it was built.
+/// One compiled cce binary in `~/.local/bin` and how long it took to build.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstalledBuild {
     pub name: String,
-    pub built: std::time::SystemTime,
-    /// `target/release` holds a newer build than the one installed — built
-    /// but never deployed, which is half of what `ccebuild status` reports.
-    pub newer_uninstalled: bool,
+    /// Seconds the last recorded build of this binary took: its own bin unit
+    /// plus its crate's lib and build script, not its dependencies. `None`
+    /// when no build of it went through `ccebuild`, the only thing that
+    /// records them.
+    pub seconds: Option<f32>,
 }
 
-/// When the installed copy of a binary was built, and whether a newer build
-/// is waiting. Takes `(mtime, size)` of the installed file and, if present, of
-/// the one in `target/release`.
-///
-/// `ccebuild install` runs plain `install`, which does not preserve mtimes, so
-/// the installed file's own mtime is when it was INSTALLED. A whole-DE sweep
-/// installs long after the first crates finished building, so that is not the
-/// build time. When the build in `target/release` is no newer than the
-/// installed copy and the same size, it is the build that was installed, and
-/// its mtime is the real answer. Otherwise the build that was installed has
-/// since been overwritten (or never came from this tree), and the install
-/// time is the best bound left — the build can be no later than that.
-fn build_time(
-    installed: (std::time::SystemTime, u64),
-    built: Option<(std::time::SystemTime, u64)>,
-) -> (std::time::SystemTime, bool) {
-    match built {
-        Some((b_mtime, _)) if b_mtime > installed.0 => (installed.0, true),
-        Some((b_mtime, b_size)) if b_size == installed.1 => (b_mtime, false),
-        _ => (installed.0, false),
+/// `ccebuild`'s build-time record, `bin<TAB>seconds<TAB>epoch` per line
+/// (`BUILD_TIMES` in the script, filled from cargo's `--timings` reports).
+/// Cargo keeps no build durations of its own, so a binary built by a bare
+/// `cargo build` has no line here.
+fn parse_build_times(text: &str) -> std::collections::HashMap<String, f32> {
+    text.lines()
+        .filter_map(|l| {
+            let mut f = l.split('\t');
+            let bin = f.next()?;
+            let secs = f.next()?.parse::<f32>().ok()?;
+            Some((bin.to_string(), secs))
+        })
+        .collect()
+}
+
+/// "8.4s" / "1min 32s" — a build time, which unlike an age wants its tenths
+/// under a minute.
+fn format_build_duration(secs: f32) -> String {
+    // Rounded first, so 59.96 reads "1min 00s" rather than "60.0s".
+    if (secs * 10.0).round() < 600.0 {
+        format!("{:.1}s", secs)
+    } else {
+        let s = secs.round() as u64;
+        format!("{}min {:02}s", s / 60, s % 60)
     }
 }
 
-/// The workspace `ccebuild` last installed from, which it records for itself
-/// (`remember_workspace`). An app launched from the menu has no other way to
-/// find the tree.
-fn ccebuild_workspace() -> Option<std::path::PathBuf> {
-    let state = std::env::var_os("XDG_STATE_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".local/state")))?;
-    let ws = std::fs::read_to_string(state.join("cce/workspace")).ok()?;
-    let ws = std::path::PathBuf::from(ws.trim());
-    ws.is_dir().then_some(ws)
-}
-
-/// Every compiled `cce*` binary in `~/.local/bin`, oldest build first — the
-/// order that matters, since an app left behind by a toolkit sweep is stale
-/// against `cce-ui` in a way no built-vs-installed check can see, and its age
-/// is the only tell. Symlinks (`cce`, `cce-settings`) are aliases, and shell
-/// scripts (`ccebuild`, `cce-shadow`) have no build, so only ELF files count.
+/// Every compiled `cce*` binary in `~/.local/bin` with its recorded build
+/// time, slowest first and unrecorded ones last. Symlinks (`cce`,
+/// `cce-settings`) are aliases, and shell scripts (`ccebuild`, `cce-shadow`)
+/// have no build, so only ELF files count.
 fn scan_installed_builds() -> Vec<InstalledBuild> {
     use std::io::Read;
     let Some(home) = std::env::var_os("HOME") else { return Vec::new() };
-    let bindir = std::path::Path::new(&home).join(".local/bin");
-    let release = ccebuild_workspace().map(|ws| ws.join("target/release"));
+    let home = std::path::Path::new(&home);
+    let bindir = home.join(".local/bin");
+    let state = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".local/state"));
+    let times = std::fs::read_to_string(state.join("cce/build-times"))
+        .map(|t| parse_build_times(&t))
+        .unwrap_or_default();
     let Ok(entries) = std::fs::read_dir(&bindir) else { return Vec::new() };
-
-    let stat = |p: &std::path::Path| -> Option<(std::time::SystemTime, u64)> {
-        let m = std::fs::metadata(p).ok()?;
-        Some((m.modified().ok()?, m.len()))
-    };
 
     let mut builds: Vec<InstalledBuild> = entries
         .filter_map(|e| e.ok())
@@ -354,19 +347,21 @@ fn scan_installed_builds() -> Vec<InstalledBuild> {
             if !name.starts_with("cce") || !e.file_type().ok()?.is_file() {
                 return None;
             }
-            let path = e.path();
             let mut magic = [0u8; 4];
-            std::fs::File::open(&path).ok()?.read_exact(&mut magic).ok()?;
+            std::fs::File::open(e.path()).ok()?.read_exact(&mut magic).ok()?;
             if &magic != b"\x7fELF" {
                 return None;
             }
-            let installed = stat(&path)?;
-            let built = release.as_ref().and_then(|r| stat(&r.join(&name)));
-            let (built, newer_uninstalled) = build_time(installed, built);
-            Some(InstalledBuild { name, built, newer_uninstalled })
+            let seconds = times.get(&name).copied();
+            Some(InstalledBuild { name, seconds })
         })
         .collect();
-    builds.sort_by(|a, b| a.built.cmp(&b.built).then_with(|| a.name.cmp(&b.name)));
+    builds.sort_by(|a, b| match (a.seconds, b.seconds) {
+        (Some(x), Some(y)) => y.total_cmp(&x).then_with(|| a.name.cmp(&b.name)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.name.cmp(&b.name),
+    });
     builds
 }
 
@@ -654,9 +649,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     });
 
     // ── 6. Builds Section ──
-    // When each installed cce binary was built. Oldest first: a client nobody
-    // rebuilt after a toolkit change is stale in a way `ccebuild status`
-    // cannot see, and sinks to the top here by its age alone.
+    // How long each installed cce binary took to build, slowest first.
     builder.add_section(&mut final_pc, "Builds", sec_focused.get(5).copied().unwrap_or(false), |sec| {
         if !state.loaded {
             sec.text("Loading installed builds...", 12.0, 0.0, 12.0, TEXT_FG);
@@ -666,21 +659,16 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             sec.text("No cce binaries in ~/.local/bin", 12.0, 0.0, 12.0, TEXT_DIM);
             return;
         }
-        let now = std::time::SystemTime::now();
         let mut stack = sec.vstack(0.0);
         for b in &state.builds {
-            let age = now.duration_since(b.built).map(|d| d.as_secs()).unwrap_or(0);
-            let (when, col) = if b.newer_uninstalled {
-                // Fits the column; the full story is in `build_time`.
-                (format!("{} ago · newer build", crate::pages::timers::humanize(age)), DANGER_BG)
-            } else {
-                (format!("{} ago", crate::pages::timers::humanize(age)), TEXT_DIM)
-            };
+            // "—" is a binary no ccebuild build has timed (a bare `cargo
+            // build`, or one built before the timing was recorded).
+            let took = b.seconds.map(format_build_duration).unwrap_or_else(|| "—".to_string());
             let name = b.name.clone();
             stack.add_row(1, 0.0, 16.0, move |c, _, x, _| {
                 let y = c.ay();
                 c.pc.text(&name, x, y + 3.0, 11.0, TEXT_FG);
-                c.pc.text(&when, x + 140.0, y + 3.0, 11.0, col);
+                c.pc.text(&took, x + 140.0, y + 3.0, 11.0, TEXT_DIM);
             });
         }
     });
@@ -859,29 +847,21 @@ mod tests {
         assert!(parse_pending("==> system artifacts already up to date\n").is_empty());
     }
 
-    fn at(secs: u64) -> std::time::SystemTime {
-        std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)
+    /// The record is ccebuild's TSV; a malformed line (a hand edit, a
+    /// half-written file) drops out rather than failing the whole section.
+    #[test]
+    fn parse_build_times_reads_ccebuild_lines() {
+        let t = parse_build_times("cce-mail\t83.27\t1791251542\ncce-ui\t4.1\t1791251542\nbroken line\ncce-x\tnan?\t1\n");
+        assert_eq!(t.len(), 2);
+        assert_eq!(t.get("cce-mail"), Some(&83.27));
+        assert_eq!(t.get("cce-ui"), Some(&4.1));
     }
 
-    /// The installed build is the one in target/release: report when it was
-    /// built, not when the sweep got around to installing it.
     #[test]
-    fn build_time_prefers_the_matching_build() {
-        assert_eq!(build_time((at(200), 10), Some((at(100), 10))), (at(100), false));
-    }
-
-    /// A newer build that was never installed: the installed binary came from
-    /// an overwritten build, so the install time is the only bound left.
-    #[test]
-    fn build_time_flags_a_newer_uninstalled_build() {
-        assert_eq!(build_time((at(200), 10), Some((at(300), 12))), (at(200), true));
-    }
-
-    /// Older but a different size: not the build that was installed.
-    #[test]
-    fn build_time_ignores_a_build_that_does_not_match() {
-        assert_eq!(build_time((at(200), 10), Some((at(100), 12))), (at(200), false));
-        assert_eq!(build_time((at(200), 10), None), (at(200), false));
+    fn format_build_duration_keeps_tenths_under_a_minute() {
+        assert_eq!(format_build_duration(8.44), "8.4s");
+        assert_eq!(format_build_duration(92.0), "1min 32s");
+        assert_eq!(format_build_duration(59.96), "1min 00s");
     }
 
     #[test]

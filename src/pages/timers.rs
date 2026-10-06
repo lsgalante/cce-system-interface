@@ -83,7 +83,7 @@ pub enum TimersMessage {
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
 /// "46min" / "3h" / "5d 3h" — coarse two-unit humanization.
-pub(crate) fn humanize(secs: u64) -> String {
+fn humanize(secs: u64) -> String {
     let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
     if d > 0 {
         if h > 0 { format!("{}d {}h", d, h) } else { format!("{}d", d) }
