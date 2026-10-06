@@ -408,8 +408,40 @@ pub async fn fetch_power_state() -> PowerFacts {
         f.governor = read_trim("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").unwrap_or_default();
     }
 
-    // One nvidia-smi call for all three watt figures; any failure (no driver,
-    // module not loaded, no card) leaves them None and hides the dropdown.
+    (f.gpu_limit_w, f.gpu_default_w, f.gpu_min_w) = gpu_limits(gpu_limits_key(&f)).await;
+
+    f
+}
+
+/// The NVIDIA power limits `(current, default, minimum)` in watts, the last
+/// time nvidia-smi was asked, and what it was asked under.
+static GPU_LIMITS: std::sync::Mutex<Option<(u64, GpuLimits)>> = std::sync::Mutex::new(None);
+type GpuLimits = (Option<u32>, Option<u32>, Option<u32>);
+
+/// What decides the current limit: the power source and the plan — the
+/// root helper re-applies a mode's limit when either changes.
+fn gpu_limits_key(f: &PowerFacts) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    format!("{:?}|{:?}", f.source, f.plan).hash(&mut h);
+    h.finish()
+}
+
+/// The power limits, from one nvidia-smi call for all three; any failure
+/// (no driver, module not loaded, no card) leaves them None and hides the
+/// dropdown. The query wakes a runtime-suspended card, so while the card
+/// sleeps the last answer stands unless the source or the plan moved since —
+/// until 2026-10-05 the page asked every five seconds, which held the dGPU
+/// awake the whole time it was open.
+async fn gpu_limits(key: u64) -> GpuLimits {
+    if !crate::power_meter::dgpu_awake() {
+        if let Some((k, limits)) = *GPU_LIMITS.lock().unwrap() {
+            if k == key {
+                return limits;
+            }
+        }
+    }
+    let mut limits: GpuLimits = (None, None, None);
     if let Ok(out) = tokio::process::Command::new("nvidia-smi")
         .args(["--query-gpu=power.limit,power.default_limit,power.min_limit", "--format=csv,noheader,nounits"])
         .output()
@@ -422,14 +454,12 @@ pub async fn fetch_power_state() -> PowerFacts {
                     .split(',')
                     .map(|c| c.trim().parse::<f32>().ok().map(|v| v.round() as u32))
                     .collect();
-                f.gpu_limit_w = w.first().copied().flatten();
-                f.gpu_default_w = w.get(1).copied().flatten();
-                f.gpu_min_w = w.get(2).copied().flatten();
+                limits = (w.first().copied().flatten(), w.get(1).copied().flatten(), w.get(2).copied().flatten());
             }
         }
     }
-
-    f
+    *GPU_LIMITS.lock().unwrap() = Some((key, limits));
+    limits
 }
 
 /// One `<key>=<n>s` field of `ccectl idle status`.
@@ -569,7 +599,13 @@ fn set_live(lever: Lever, value: &str, f: &mut PowerFacts) {
         Lever::Turbo => f.turbo = Some(value == "on"),
         Lever::IgpuMaxMhz => f.igpu_mhz = value.parse().ok(),
         Lever::AudioIdleSecs => f.hda_idle_secs = value.parse().ok(),
-        Lever::GpuLimitW => f.gpu_limit_w = value.parse().ok(),
+        Lever::GpuLimitW => {
+            f.gpu_limit_w = value.parse().ok();
+            // The page set it: what a sleeping card's cached answer says now.
+            if let Some((_, limits)) = GPU_LIMITS.lock().unwrap().as_mut() {
+                limits.0 = f.gpu_limit_w;
+            }
+        }
         Lever::Animations => f.animations = value == "on",
         Lever::IdleDisplayOffSecs => f.idle_display_off_secs = value.parse().ok(),
         Lever::IdleSleepSecs => f.idle_sleep_secs = value.parse().ok(),

@@ -219,12 +219,42 @@ fn commit(state: &mut AccountsState, change: impl FnOnce(&mut Vec<AccountInfo>))
     }
 }
 
+/// The last keyring probe: which accounts it covered (their Debug form,
+/// hashed), when, and what it found.
+static KEYRING_PROBE: std::sync::Mutex<Option<(u64, std::time::Instant, Vec<(String, KeyringStatus)>)>> =
+    std::sync::Mutex::new(None);
+
+/// How long a keyring probe stands while the account list is unchanged.
+const KEYRING_PROBE_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Forget the last keyring probe, so the next refresh asks again — after
+/// anything this page does to an account or its secret.
+pub fn invalidate_keyring_probe() {
+    *KEYRING_PROBE.lock().unwrap() = None;
+}
+
 pub async fn fetch_accounts() -> AccountsSnapshot {
     let accounts = load_accounts();
+    // The probe fetches each account's secret over D-Bus to learn whether it
+    // exists, waking the keyring. This page refreshes every 3 s — it is the
+    // app's first page — so the probe is reused while the account list is
+    // the same, for up to KEYRING_PROBE_MAX_AGE; this page's own actions
+    // invalidate it (`invalidate_keyring_probe`).
+    let accounts_key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        format!("{accounts:?}").hash(&mut h);
+        h.finish()
+    };
+    if let Some((key, at, keyring)) = KEYRING_PROBE.lock().unwrap().as_ref() {
+        if *key == accounts_key && at.elapsed() < KEYRING_PROBE_MAX_AGE {
+            return AccountsSnapshot { accounts, keyring: keyring.clone() };
+        }
+    }
     // Secret Service lookups are synchronous DBus; keep them off the async
     // workers (a wedged provider used to block for 12s at a time).
     let probe = accounts.clone();
-    let keyring = tokio::task::spawn_blocking(move || {
+    let keyring: Vec<(String, KeyringStatus)> = tokio::task::spawn_blocking(move || {
         probe
             .iter()
             .filter_map(|acc| {
@@ -237,6 +267,7 @@ pub async fn fetch_accounts() -> AccountsSnapshot {
     })
     .await
     .unwrap_or_default();
+    *KEYRING_PROBE.lock().unwrap() = Some((accounts_key, std::time::Instant::now(), keyring.clone()));
     AccountsSnapshot { accounts, keyring }
 }
 

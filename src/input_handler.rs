@@ -194,7 +194,7 @@ impl SystemInterface {
                     self.focused_section = None;
                     let new_page = Page::ALL[idx];
                     self.app.current_page = new_page;
-                    self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
+                    self.current_page_shared.send_replace(idx as u8);
                     self.scroll_y = 0.0;
                 }
             }
@@ -547,7 +547,7 @@ impl SystemInterface {
                     cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
                     self.focused_section = None;
                     self.app.current_page = Page::ALL[idx];
-                    self.current_page_shared.store(idx as u8, std::sync::atomic::Ordering::SeqCst);
+                    self.current_page_shared.send_replace(idx as u8);
                     self.scroll_y = 0.0;
                     self.needs_rebuild = true;
                     return true;

@@ -173,7 +173,11 @@ struct SystemInterface {
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
-    current_page_shared: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    /// The page on screen, as the page workers see it (`watchers::PageWatch`).
+    current_page_shared: tokio::sync::watch::Sender<u8>,
+    /// A hash of the last snapshot each page worker sent, so an unchanged
+    /// refresh is dropped instead of rebuilding the page (`fresh_snapshot`).
+    seen_snapshots: std::collections::HashMap<&'static str, u64>,
     sender: calloop::channel::Sender<AppAction>,
     ui_context: cce_ui::context::UiContext,
     scroll_logs: Vec<String>,
@@ -215,10 +219,16 @@ impl cce_ui::engine::Application for SystemInterface {
 
         // ── Background refresh channels ──
         let initial_page_idx = INITIAL_PAGE_INDEX.load(std::sync::atomic::Ordering::SeqCst);
-        let current_page_shared = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(initial_page_idx as u8));
+        let (current_page_shared, page_rx) = tokio::sync::watch::channel(initial_page_idx as u8);
+        let wake: cce_settings::watchers::Wake = {
+            let sender = sender.clone();
+            std::sync::Arc::new(move || {
+                let _ = sender.send(AppAction::Wake);
+            })
+        };
 
         let (watchers, tx_backup, rx_backup, tx_update, rx_update) =
-            cce_settings::watchers::spawn_all(current_page_shared.clone());
+            cce_settings::watchers::spawn_all(page_rx, wake);
 
         let (sans_family, serif_family, monospace_family, _) = cce_ui::layout::read_preferred_fonts();
 
@@ -301,6 +311,7 @@ impl cce_ui::engine::Application for SystemInterface {
             serif_family,
             monospace_family,
             current_page_shared,
+            seen_snapshots: std::collections::HashMap::new(),
             sender,
             ui_context: cce_ui::context::UiContext::new(),
             scroll_logs: Vec::new(),
@@ -333,16 +344,14 @@ impl cce_ui::engine::Application for SystemInterface {
             *exit = true;
             return;
         }
+        // Wakes the loop so `tick` drains the workers' channels; whether
+        // anything is redrawn is `poll_background_updates`' call.
+        if let AppAction::Wake = msg {
+            return;
+        }
         self.handle_action(&msg);
         *needs_rebuild = true;
         self.needs_rebuild = true;
-    }
-
-    /// `poll_background_updates` drains sixteen std channels fed by the
-    /// page workers; the runner cannot see them, so it may not sleep past
-    /// this between ticks.
-    fn idle_poll_interval(&self) -> Option<std::time::Duration> {
-        Some(std::time::Duration::from_millis(250))
     }
 
     fn tick(&mut self, dt: f32, needs_rebuild: &mut bool) {
@@ -775,39 +784,72 @@ impl SystemInterface {
         moved || self.page_scroll_motion.is_animating()
     }
 
+    /// Whether a page worker's snapshot differs from the last one it sent.
+    /// The workers resend the whole state on every period whether or not
+    /// anything moved; applying an identical one changed nothing on screen
+    /// but rebuilt the page and redrew the window — the settings app sat at
+    /// ~3 fps at rest on its default page. Processes is not checked: its
+    /// refresh also settles pending kills (`killing.clear()`), and its CPU
+    /// column moves every time anyway.
+    fn fresh_snapshot<T: std::fmt::Debug>(&mut self, key: &'static str, snapshot: &T) -> bool {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        format!("{snapshot:?}").hash(&mut h);
+        let hash = h.finish();
+        self.seen_snapshots.insert(key, hash) != Some(hash)
+    }
+
     fn poll_background_updates(&mut self) {
         use pages::*;
         while let Ok(s) = self.rx_audio.try_recv() {
+            if !self.fresh_snapshot("audio", &s) {
+                continue;
+            }
             audio::update(&mut self.app.audio, audio::AudioMessage::Refreshed(s));
             if self.app.current_page == Page::Audio {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_network.try_recv() {
+            if !self.fresh_snapshot("network", &s) {
+                continue;
+            }
             network::update(&mut self.app.network, network::NetworkMessage::Refreshed(s));
             if self.app.current_page == Page::Network {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_timers.try_recv() {
+            if !self.fresh_snapshot("timers", &s) {
+                continue;
+            }
             pages::timers::update(&mut self.app.timers, pages::timers::TimersMessage::Refreshed(s));
             if self.app.current_page == Page::Timers {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_bluetooth.try_recv() {
+            if !self.fresh_snapshot("bluetooth", &s) {
+                continue;
+            }
             pages::bluetooth::update(&mut self.app.bluetooth, pages::bluetooth::BluetoothMessage::Refreshed(s));
             if self.app.current_page == Page::Bluetooth {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_power.try_recv() {
+            if !self.fresh_snapshot("power", &s) {
+                continue;
+            }
             pages::power::update(&mut self.app.power, pages::power::PowerMessage::Refreshed(s));
             if self.app.current_page == Page::Power {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_system.try_recv() {
+            if !self.fresh_snapshot("system", &s) {
+                continue;
+            }
             system_info::update(&mut self.app.system_info, system_info::SystemMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::System {
                 self.needs_rebuild = true;
@@ -820,30 +862,45 @@ impl SystemInterface {
             }
         }
         while let Ok(s) = self.rx_storage.try_recv() {
+            if !self.fresh_snapshot("storage", &s) {
+                continue;
+            }
             storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s));
             if self.app.current_page == Page::Storage {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_notifications.try_recv() {
+            if !self.fresh_snapshot("notifications", &s) {
+                continue;
+            }
             pages::notifications::update(&mut self.app.notifications, pages::notifications::NotificationsMessage::Refreshed(s));
             if self.app.current_page == Page::Notifications {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_browser.try_recv() {
+            if !self.fresh_snapshot("browser", &s) {
+                continue;
+            }
             pages::browser::update(&mut self.app.browser, pages::browser::BrowserMessage::Refreshed(s));
             if self.app.current_page == Page::Browser {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_default_apps.try_recv() {
+            if !self.fresh_snapshot("default_apps", &s) {
+                continue;
+            }
             pages::default_apps::update(&mut self.app.default_apps, pages::default_apps::DefaultAppsMessage::Refreshed(s));
             if self.app.current_page == Page::DefaultApps {
                 self.needs_rebuild = true;
             }
         }
         while let Ok(s) = self.rx_services.try_recv() {
+            if !self.fresh_snapshot("services", &s) {
+                continue;
+            }
             services::update(&mut self.app.services, services::ServicesMessage::Refreshed(s));
             if self.app.current_page == Page::Services {
                 self.needs_rebuild = true;
@@ -851,6 +908,9 @@ impl SystemInterface {
         }
 
         while let Ok(s) = self.rx_accounts.try_recv() {
+            if !self.fresh_snapshot("accounts", &s) {
+                continue;
+            }
             accounts::update(&mut self.app.accounts, accounts::AccountsMessage::Refreshed(s));
             if self.app.current_page == Page::Accounts {
                 self.needs_rebuild = true;
@@ -863,6 +923,9 @@ impl SystemInterface {
             }
         }
         while let Ok(s) = self.rx_packages.try_recv() {
+            if !self.fresh_snapshot("packages", &s) {
+                continue;
+            }
             pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::Refreshed(s));
             if self.app.current_page == Page::Packages {
                 self.needs_rebuild = true;
@@ -878,8 +941,18 @@ impl SystemInterface {
 
     fn handle_action(&mut self, action: &AppAction) {
         use pages::*;
+        // An action may change page state ahead of the system (a Wi-Fi
+        // toggle flips `wifi_enabled` before nmcli answers). If it fails, the
+        // next refresh equals the last one sent — and must still be applied
+        // to put the page right, so forget what was seen.
+        if !matches!(action, AppAction::Exit | AppAction::Wake) {
+            self.seen_snapshots.clear();
+        }
+        if matches!(action, AppAction::Accounts(_)) {
+            accounts::invalidate_keyring_probe();
+        }
         match action {
-            AppAction::Exit => {}
+            AppAction::Exit | AppAction::Wake => {}
             AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
             AppAction::Network(m) => network::update(&mut self.app.network, m.clone()),
             AppAction::Bluetooth(m) => pages::bluetooth::update(&mut self.app.bluetooth, m.clone()),
@@ -895,9 +968,11 @@ impl SystemInterface {
                 pages::storage::StorageMessage::StartBackup => {
                     pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup);
                     let tx = self.tx_backup.clone();
+                    let wake = self.sender.clone();
                     tokio::spawn(async move {
                         let res = pages::storage::run_backup().await;
                         let _ = tx.send(pages::storage::StorageMessage::BackupFinished(res));
+                        let _ = wake.send(AppAction::Wake);
                     });
                 }
                 _ => pages::storage::update(&mut self.app.storage, m.clone()),
@@ -930,18 +1005,22 @@ impl SystemInterface {
                 pages::packages::PackagesMessage::StartUpdate => {
                     pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::StartUpdate);
                     let tx = self.tx_update.clone();
+                    let wake = self.sender.clone();
                     tokio::spawn(async move {
                         let res = pages::packages::run_update().await;
                         let _ = tx.send(pages::packages::PackagesMessage::UpdateFinished(res));
+                        let _ = wake.send(AppAction::Wake);
                     });
                 }
                 pages::packages::PackagesMessage::UpdateFinished(res) => {
                     pages::packages::update(&mut self.app.packages, m.clone());
                     if res.is_ok() {
                         let tx = self.tx_update.clone();
+                        let wake = self.sender.clone();
                         tokio::spawn(async move {
                             let new_state = pages::packages::fetch_packages_state().await;
                             let _ = tx.send(pages::packages::PackagesMessage::Refreshed(new_state));
+                            let _ = wake.send(AppAction::Wake);
                         });
                     }
                 }
@@ -950,18 +1029,22 @@ impl SystemInterface {
                     let is_installed = self.app.packages.active_tab == pages::packages::PackageTab::Installed;
                     pages::packages::update(&mut self.app.packages, m.clone());
                     let tx = self.tx_update.clone();
+                    let wake = self.sender.clone();
                     tokio::spawn(async move {
                         let res = pages::packages::fetch_package_info(name_clone.clone(), is_installed).await;
                         let _ = tx.send(pages::packages::PackagesMessage::InfoFetched(name_clone, res));
+                        let _ = wake.send(AppAction::Wake);
                     });
                 }
                 pages::packages::PackagesMessage::SelectAndScrollPackage(ref name) => {
                     let name_clone = name.clone();
                     pages::packages::update(&mut self.app.packages, m.clone());
                     let tx = self.tx_update.clone();
+                    let wake = self.sender.clone();
                     tokio::spawn(async move {
                         let res = pages::packages::fetch_package_info(name_clone.clone(), true).await;
                         let _ = tx.send(pages::packages::PackagesMessage::InfoFetched(name_clone, res));
+                        let _ = wake.send(AppAction::Wake);
                     });
                 }
                 pages::packages::PackagesMessage::StartUninstall(ref name) => {
@@ -969,9 +1052,11 @@ impl SystemInterface {
                         pages::packages::update(&mut self.app.packages, m.clone());
                         let name_clone = name.clone();
                         let tx = self.tx_update.clone();
+                        let wake = self.sender.clone();
                         tokio::spawn(async move {
                             let res = pages::packages::run_uninstall(name_clone).await;
                             let _ = tx.send(pages::packages::PackagesMessage::UninstallFinished(res));
+                            let _ = wake.send(AppAction::Wake);
                         });
                     }
                 }
@@ -979,9 +1064,11 @@ impl SystemInterface {
                     pages::packages::update(&mut self.app.packages, m.clone());
                     if res.is_ok() {
                         let tx = self.tx_update.clone();
+                        let wake = self.sender.clone();
                         tokio::spawn(async move {
                             let new_state = pages::packages::fetch_packages_state().await;
                             let _ = tx.send(pages::packages::PackagesMessage::Refreshed(new_state));
+                            let _ = wake.send(AppAction::Wake);
                         });
                     }
                 }

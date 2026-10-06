@@ -107,6 +107,9 @@ impl AppState {
 #[derive(Debug, Clone)]
 pub enum AppAction {
     Exit,
+    /// A page worker sent a snapshot; the next tick drains it. Carries
+    /// nothing and rebuilds nothing by itself.
+    Wake,
     Audio(audio::AudioMessage),
     Browser(browser::BrowserMessage),
     DefaultApps(default_apps::DefaultAppsMessage),

@@ -491,10 +491,24 @@ pub enum Automation {
 /// authentication and changes nothing. A helper that knows modes but
 /// predates a lever fails the same way for that lever alone, which is why
 /// the lever list is part of the check.
+///
+/// The answer is kept per path and modification time: the Power page asks
+/// on every five-second refresh, and until 2026-10-05 each one ran the
+/// helper. A reinstalled helper has a new mtime and is asked again.
 pub fn helper_speaks_modes(path: &Path) -> bool {
-    std::process::Command::new(path)
+    type Seen = Vec<(PathBuf, Option<std::time::SystemTime>, bool)>;
+    static SEEN: std::sync::Mutex<Seen> = std::sync::Mutex::new(Vec::new());
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    if let Some(&(_, _, ok)) = SEEN.lock().unwrap().iter().find(|(p, t, _)| p == path && *t == mtime) {
+        return ok;
+    }
+    let ok = std::process::Command::new(path)
         .output()
-        .is_ok_and(|out| usage_speaks_modes(&String::from_utf8_lossy(&out.stderr)))
+        .is_ok_and(|out| usage_speaks_modes(&String::from_utf8_lossy(&out.stderr)));
+    let mut seen = SEEN.lock().unwrap();
+    seen.retain(|(p, _, _)| p != path);
+    seen.push((path.to_path_buf(), mtime, ok));
+    ok
 }
 
 /// The usage text of a helper that knows about modes names `apply-mode`

@@ -212,7 +212,33 @@ fn read_thinkpad_gpu_temp() -> Option<f32> {
     None
 }
 
+/// `uptime -p`'s wording ("1 day, 8 hours, 13 minutes"), from seconds.
+fn pretty_uptime(secs: u64) -> String {
+    let units = [("year", 365 * 86400), ("week", 7 * 86400), ("day", 86400), ("hour", 3600), ("minute", 60)];
+    let mut rest = secs;
+    let mut parts = Vec::new();
+    for (name, size) in units {
+        let n = rest / size;
+        rest %= size;
+        if n > 0 {
+            parts.push(format!("{n} {name}{}", if n == 1 { "" } else { "s" }));
+        }
+    }
+    if parts.is_empty() {
+        "0 minutes".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// nvidia-smi's temperature, asked for only while the card is awake — the
+/// query wakes a runtime-suspended card (processes.rs makes the same check
+/// for its draw figure). Until 2026-10-05 the System page asked every five
+/// seconds regardless, which kept the dGPU out of D3cold while it was open.
 async fn read_nvidia_gpu_temp() -> Option<f32> {
+    if !crate::power_meter::dgpu_awake() {
+        return None;
+    }
     let out = tokio::process::Command::new("nvidia-smi")
         .args(["--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"])
         .output().await.ok()?;
@@ -452,14 +478,16 @@ pub async fn fetch_system_state() -> SystemInfo {
         .and_then(|h| h.trim().split('.').next().map(|s| s.to_string()))
         .unwrap_or_default();
 
-    let kernel = tokio::process::Command::new("uname")
-        .args(["-r"]).output().await.ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    // Both from /proc rather than spawning `uname -r` and `uptime -p` on
+    // every refresh.
+    let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map(|k| k.trim().to_string())
         .unwrap_or_default();
 
-    let uptime = tokio::process::Command::new("uptime")
-        .args(["-p"]).output().await.ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_start_matches("up ").to_string())
+    let uptime = std::fs::read_to_string("/proc/uptime")
+        .ok()
+        .and_then(|u| u.split_whitespace().next()?.parse::<f64>().ok())
+        .map(|secs| pretty_uptime(secs as u64))
         .unwrap_or_default();
 
     static CPU_INFO: std::sync::OnceLock<(String, u32)> = std::sync::OnceLock::new();
@@ -493,9 +521,20 @@ pub async fn fetch_system_state() -> SystemInfo {
             let idle = vals.get(3).copied().unwrap_or(0);
             Some((idle, total))
         };
-        let (idle1, total1) = read_stat().unwrap_or((0, 1));
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // Busy share since the previous refresh; the first one samples a
+        // 100 ms window, as every refresh used to.
+        static LAST: std::sync::Mutex<Option<(u64, u64)>> = std::sync::Mutex::new(None);
+        let prev = *LAST.lock().unwrap();
+        let (idle1, total1) = match prev {
+            Some(p) => p,
+            None => {
+                let first = read_stat().unwrap_or((0, 1));
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                first
+            }
+        };
         let (idle2, total2) = read_stat().unwrap_or((0, 1));
+        *LAST.lock().unwrap() = Some((idle2, total2));
         let d_idle = idle2.saturating_sub(idle1);
         let d_total = total2.saturating_sub(total1);
         if d_total > 0 {
@@ -958,5 +997,18 @@ mod tests {
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod uptime_tests {
+    use super::pretty_uptime;
+
+    #[test]
+    fn reads_like_uptime_p() {
+        assert_eq!(pretty_uptime(30), "0 minutes");
+        assert_eq!(pretty_uptime(60), "1 minute");
+        assert_eq!(pretty_uptime(86400 + 8 * 3600 + 13 * 60 + 5), "1 day, 8 hours, 13 minutes");
+        assert_eq!(pretty_uptime(15 * 86400), "2 weeks, 1 day");
     }
 }
