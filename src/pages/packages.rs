@@ -517,10 +517,11 @@ pub fn view(
 
         section_divider(stack.context);
 
-        // ── List fills the rest of the page ──
-        let list_box_x = sec.left + m;
+        // ── List fills the rest of the page, across the section's content
+        // box (the box the section clips to) like the services list ──
+        let list_box_x = sec.content_left();
         let list_box_y = sec.ay();
-        let list_box_w = sec_w - 2.0 * m;
+        let list_box_w = sec.content_width();
         let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
 
         let query = if state.search_box.editing {

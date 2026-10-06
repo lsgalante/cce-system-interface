@@ -169,7 +169,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
     // ── WiFi (label-less well) ──
     builder.add_section_spanned(&mut final_pc, "", 1, root_focused, |sec| {
         let sec_w = sec.cw;
-        let rx = sec.left;
         let padding = sec.padding();
         let row_gap = cce_ui::layout::label_margin();
         let margin = padding.max(12.0);
@@ -212,9 +211,12 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             }
 
             if state.wifi_enabled && !state.available.is_empty() {
-                let list_box_x = rx + margin;
+                // Across the section's content box — the box the section
+                // clips to. At `left + margin` the framed list ran
+                // 2 * padding past it on both sides, cut off flat there.
+                let list_box_x = sec.content_left();
                 let list_box_y = sec.ay();
-                let list_box_w = sec_w - 2.0 * margin;
+                let list_box_w = sec.content_width();
                 let list_box_h = 160.0;
 
                 // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.

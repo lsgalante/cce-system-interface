@@ -502,10 +502,12 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
             stack.context.spacing(cce_ui::layout::plate_gap());
 
-            // Scroll box list, filling the page like the services list.
-            let list_box_x = sec.left + m;
+            // Scroll box list, filling the page like the services list, and
+            // across the section's content box like it (the box the section
+            // clips to).
+            let list_box_x = sec.content_left();
             let list_box_y = sec.ay();
-            let list_box_w = sec_w - 2.0 * m;
+            let list_box_w = sec.content_width();
             let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
 
             let now = now_usec();

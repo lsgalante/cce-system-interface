@@ -154,3 +154,129 @@ pub trait AppPage {
 }
 
 
+
+#[cfg(test)]
+mod list_clip_tests {
+    use super::*;
+    use cce_ui::widget::ScrollRegion;
+
+    fn render(page: &mut dyn AppPage) -> crate::app::PageContent {
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut ctx = cce_ui::context::UiContext::new();
+        page.view(10.0, 20.0, 820.0, 640.0, false, &[false; 4], &mut layout, &mut ctx)
+    }
+
+    /// A list sits inside its section's clip exactly when the clip it
+    /// pushes for its rows survives whole. Clips intersect, so a list
+    /// sticking out past the section's content box — laid out at
+    /// `left + margin` — gets its row clip narrowed to that box, the cut
+    /// that took the edges off the framed lists and the first letter off
+    /// the Processes summary. Row texts carry the clip in their bounds
+    /// (`[x0, y0, x1, y1]`), row buttons beside them (`[x, y, w, h]`).
+    fn assert_list_inside(name: &str, pc: &crate::app::PageContent, list: &ScrollRegion) {
+        let text_clips = pc.texts.iter().filter_map(|t| t.6);
+        let button_clips = pc.buttons.iter().filter_map(|b| b.2).map(|[x, y, w, h]| [x, y, x + w, y + h]);
+        let widest = text_clips
+            .chain(button_clips)
+            .filter(|b| b[1] >= list.y - 0.5 && b[3] <= list.y + list.h + 0.5)
+            .max_by(|a, b| (a[2] - a[0]).total_cmp(&(b[2] - b[0])))
+            .unwrap_or_else(|| panic!("{name}: no row drawn under the list's clip"));
+        let (l, r) = (list.x, list.x + list.w);
+        assert!(
+            (widest[0] - l).abs() < 0.5 && (widest[2] - r).abs() < 0.5,
+            "{name}: rows clip to [{}, {}], the list spans [{l}, {r}]",
+            widest[0],
+            widest[2]
+        );
+    }
+
+    #[test]
+    fn services_list_inside_its_section() {
+        let mut s = services::ServicesState::default();
+        s.loaded = true;
+        s.services = (0..5)
+            .map(|i| services::ServiceInfo {
+                name: format!("s{i}.service"),
+                description: "d".into(),
+                active_state: "active".into(),
+                sub_state: "running".into(),
+                is_system: true,
+            })
+            .collect();
+        let pc = render(&mut s);
+        assert_list_inside("services", &pc, &s.list);
+    }
+
+    #[test]
+    fn timers_list_inside_its_section() {
+        let mut s = timers::TimersState::default();
+        s.loaded = true;
+        s.timers = (0..5)
+            .map(|i| timers::TimerInfo {
+                unit: format!("t{i}.timer"),
+                activates: format!("t{i}.service"),
+                next_usec: None,
+                last_usec: None,
+                active: true,
+                file_state: "enabled".into(),
+                is_system: true,
+                editable: false,
+            })
+            .collect();
+        let pc = render(&mut s);
+        assert_list_inside("timers", &pc, &s.list);
+    }
+
+    #[test]
+    fn packages_list_inside_its_section() {
+        let mut s = packages::PackagesState::default();
+        s.loaded = true;
+        s.installed = (0..5)
+            .map(|i| packages::PackageInfo { name: format!("p{i}"), version: "1.0".into() })
+            .collect();
+        let pc = render(&mut s);
+        assert_list_inside("packages", &pc, &s.installed_list);
+    }
+
+    #[test]
+    fn network_list_inside_its_section() {
+        let mut s = network::NetworkState::default();
+        s.loaded = true;
+        s.wifi_enabled = true;
+        s.available = (0..3)
+            .map(|i| network::WifiNetwork { ssid: format!("net{i}"), signal: 50, secured: true, in_use: i == 0 })
+            .collect();
+        let pc = render(&mut s);
+        assert_list_inside("network", &pc, &s.wifi_list);
+    }
+
+    #[test]
+    fn accounts_list_inside_its_section() {
+        let mut s = accounts::AccountsState::default_mock();
+        s.loaded = true;
+        s.accounts = vec![serde_json::from_str(
+            r#"{"email":"a@example.org","imap":"imap.example.org:993","smtp":"smtp.example.org:465","is_default":true,"password":""}"#,
+        )
+        .unwrap()];
+        let pc = render(&mut s);
+        assert_list_inside("accounts", &pc, &s.list);
+    }
+
+    #[test]
+    fn processes_list_inside_its_section() {
+        let mut s = processes::ProcessesState { loaded: true, ..Default::default() };
+        s.processes = (0..5)
+            .map(|i| processes::ProcessRow {
+                pid: i.to_string(),
+                cpu: "1.0".into(),
+                mem_pct: "1.0".into(),
+                rss_kb: 1024,
+                command: "p".into(),
+                watts: None,
+                wakeups: None,
+            })
+            .collect();
+        let pc = render(&mut s);
+        assert_list_inside("processes", &pc, &s.cpu_list);
+    }
+}

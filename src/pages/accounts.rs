@@ -655,9 +655,12 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             // drawing at a different height than it virtualizes on would drift
             // the rows out from under their own hit boxes.
             let item_h = state.list.item_height;
-            let list_x = sec.left + m;
+            // Across the section's content box — the box the section clips
+            // to. At `left + m` the framed list ran 2 * padding past it on
+            // both sides, cut off flat there.
+            let list_x = sec.content_left();
             let list_y = sec.ay();
-            let list_w = sec.cw - 2.0 * m;
+            let list_w = sec.content_width();
             let rows_shown = state.accounts.len().min(LIST_MAX_ROWS);
             let list_h = rows_shown as f32 * (item_h + LIST_GAP) + 8.0;
 

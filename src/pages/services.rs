@@ -117,10 +117,12 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
             stack.context.spacing(cce_ui::layout::plate_gap());
 
-            // Scroll box list
-            let list_box_x = sec.left + m;
+            // Scroll box list, across the section's content box — the box
+            // the section clips to. At `left + m` the list ran 2 * padding
+            // past it on both sides, and the clip cut its edges off flat.
+            let list_box_x = sec.content_left();
             let list_box_y = sec.ay();
-            let list_box_w = sec_w - 2.0 * m;
+            let list_box_w = sec.content_width();
             // Fill the page: the well's bottom wall lands at the page bottom,
             // the list keeps one margin above it.
             let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
