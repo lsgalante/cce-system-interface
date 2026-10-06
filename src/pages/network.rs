@@ -118,12 +118,25 @@ async fn fetch_wifi_list() -> Vec<WifiNetwork> {
         let parts: Vec<&str> = line.splitn(4, ':').collect();
         if parts.len() >= 3 {
             let ssid = parts[0].to_string();
-            if ssid.is_empty() || ssid == "--" || seen.contains(&ssid) { continue; }
+            if ssid.is_empty() || ssid == "--" { continue; }
+            let in_use = parts.len() > 3 && parts[3] == "*";
+            if seen.contains(&ssid) {
+                // One SSID, several access points (a mesh, 2.4 + 5 GHz):
+                // the row is in use if ANY of them is. Keeping the first
+                // line's flag lost the mark whenever nmcli listed an idle
+                // AP of the network ahead of the connected one.
+                if in_use {
+                    if let Some(n) = networks.iter_mut().find(|n: &&mut WifiNetwork| n.ssid == ssid) {
+                        n.in_use = true;
+                    }
+                }
+                continue;
+            }
             seen.insert(ssid.clone());
             networks.push(WifiNetwork {
                 ssid, signal: parts[1].parse::<u8>().unwrap_or(0),
                 secured: !parts[2].is_empty(),
-                in_use: parts.len() > 3 && parts[3] == "*",
+                in_use,
             });
         }
     }
@@ -215,18 +228,28 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                 sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                 for (idx, net) in state.available.iter().enumerate() {
                     if let Some(draw_y) = state.wifi_list.get_item_draw_y(idx, 4.0) {
-                        let prefix = if net.in_use { ">" } else { " " };
                         let ssid_truncated = if net.ssid.len() > max_chars {
                             format!("{}...", &net.ssid[..max_chars.saturating_sub(3)])
                         } else {
                             net.ssid.clone()
                         };
-                        let label = format!("{}  {}  ({}%)", prefix, ssid_truncated, net.signal);
+                        let label = format!("{}  ({}%)", ssid_truncated, net.signal);
                         let active = net.in_use;
-                        sec.pc.button(&label, list_box_x + margin, draw_y, btn_w, 26.0,
+                        let row_x = list_box_x + margin;
+                        let row_h = 26.0;
+                        sec.pc.button(&label, row_x, draw_y, btn_w, row_h,
                             if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
                             if active { ACCENT } else { TEXT_FG },
                             AppAction::Network(NetworkMessage::ConnectWifi(net.ssid.clone())));
+                        // The network in use wears a `check` glyph at the
+                        // row's left (it was a ">" in the label), in the
+                        // plain text colour: ACCENT is the row's own green
+                        // and a glyph in it all but vanishes there.
+                        if active {
+                            let g = 12.0;
+                            sec.pc.icon("check", row_x + cce_ui::layout::CONTROL_TEXT_INSET,
+                                draw_y + (row_h - g) / 2.0, g, g, TEXT_FG);
+                        }
                     }
                 }
                 sec.pc.pop_clip_rect();

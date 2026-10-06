@@ -580,6 +580,8 @@ const BTN_DANGER: ([f32; 4], [f32; 4]) = ([0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 
 const ACCENT_BG: [f32; 4] = [0.20, 0.40, 0.65, 0.35];
 const TEXT_BTN: [f32; 4] = [0.90, 0.90, 0.95, 1.0];
 const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
+/// The amber the keyring line warns in — the list's `warning` glyph too.
+const TEXT_WARN: [f32; 4] = [0.90, 0.75, 0.40, 1.0];
 
 /// Gap between account rows. style: deliberate — list rows pack tighter
 /// than the pane gap, like every list on this app's pages (the inset from
@@ -641,15 +643,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) else {
                     continue;
                 };
-                let mut label = if acc.is_default {
-                    format!("{}   \u{2022} default", acc.email)
-                } else {
-                    acc.email.clone()
-                };
                 // The stranded-vault tell, visible without selecting the row.
-                if state.keyring.get(&acc.email) == Some(&KeyringStatus::Missing) {
-                    label.push_str("   \u{2022} no password");
-                }
+                let missing = state.keyring.get(&acc.email) == Some(&KeyringStatus::Missing);
                 let is_selected = state.selected_idx == Some(idx) && !state.adding_new;
                 let (bg, hover) = if is_selected {
                     (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
@@ -657,7 +652,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
                 };
                 sec.pc.button_left(
-                    &label,
+                    &acc.email,
                     list_x + m,
                     draw_y,
                     btn_w,
@@ -667,6 +662,33 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     TEXT_BTN,
                     AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
                 );
+                // The row's marks run on after the address: a `star` glyph
+                // and "default", a `warning` glyph and "no password". Each
+                // is its glyph and its word — the word alone when the icon
+                // set is missing — placed past the address as the renderer
+                // shapes it, in the button's own face.
+                let marks: &[(&str, &str, [f32; 4])] = match (acc.is_default, missing) {
+                    (true, true) => &[("star", "default", TEXT_BTN), ("warning", "no password", TEXT_WARN)],
+                    (true, false) => &[("star", "default", TEXT_BTN)],
+                    (false, true) => &[("warning", "no password", TEXT_WARN)],
+                    (false, false) => &[],
+                };
+                if !marks.is_empty() {
+                    let font = cce_ui::layout::button_font();
+                    let size = 12.0;
+                    let ty = crate::app::label_y_in(draw_y, item_h, size, Some(&font));
+                    let g = 11.0;
+                    let mut mx = list_x + m + cce_ui::layout::CONTROL_TEXT_INSET
+                        + crate::app::text_width(&acc.email, size, Some(&font));
+                    for (icon, word, color) in marks {
+                        mx += 18.0;
+                        if sec.pc.icon(icon, mx, draw_y + (item_h - g) / 2.0, g, g, *color) {
+                            mx += g + 4.0;
+                        }
+                        sec.pc.text_with_font(word, mx, ty, size, TEXT_BTN, &font);
+                        mx += crate::app::text_width(word, size, Some(&font));
+                    }
+                }
             }
             sec.pc.pop_clip_rect();
             // Reserve the region's height through `spacing`, NOT `content_y +=`:
@@ -823,7 +845,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     let (text, color) = match status {
                         KeyringStatus::InKeyring => ("in keyring", TEXT_BTN),
                         KeyringStatus::OnDiskPlaintext => {
-                            ("on disk (plaintext) \u{2014} migrates to keyring", [0.90, 0.75, 0.40, 1.0])
+                            ("on disk (plaintext) \u{2014} migrates to keyring", TEXT_WARN)
                         }
                         KeyringStatus::Missing => {
                             ("MISSING \u{2014} mail cannot sign in; Edit to set it", TEXT_DANGER)

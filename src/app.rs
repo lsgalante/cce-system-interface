@@ -153,6 +153,48 @@ impl ControlCarve {
     }
 }
 
+/// A bundled cce-icons glyph a page placed on its own (a sort chevron, a
+/// row's in-use check) rather than as a button's face: the tinted upload's
+/// image id, its rect and alpha, and the innermost clip at emission time —
+/// all page coordinates, pre-scroll, like `texts`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageIcon {
+    pub image: u32,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub alpha: f32,
+    pub clip: Option<[f32; 4]>,
+}
+
+/// The width `text` takes at `size` in `font` (None = the default UI face,
+/// what `PageContent::text` draws in), shaped as the renderer shapes it —
+/// for placing a glyph right after a run of text.
+pub fn text_width(text: &str, size: f32, font: Option<&str>) -> f32 {
+    cce_ui::geometry_font_system()
+        .lock()
+        .ok()
+        .and_then(|mut fs| {
+            cce_ui::backend::text::shaped_cluster_offsets(&mut fs, text, size, font)
+                .last()
+                .map(|&(_, total)| total)
+        })
+        .unwrap_or(0.0)
+}
+
+/// The y a label of `size` in `font` takes to sit centred in a band of
+/// height `h` at `y` — the renderer's own centring of a button label, so a
+/// run placed beside one shares its line.
+pub fn label_y_in(y: f32, h: f32, size: f32, font: Option<&str>) -> f32 {
+    let lh = cce_ui::geometry_font_system()
+        .lock()
+        .map(|mut fs| cce_ui::backend::get_text_buffer(&mut fs, "Ag", size, font).metrics().line_height)
+        .unwrap_or(size * 1.2)
+        / cce_ui::scale::scale_factor();
+    y + (h - lh) / 2.0
+}
+
 pub struct PageContent {
     pub rects: Vec<([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool))>,
     pub texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
@@ -160,6 +202,9 @@ pub struct PageContent {
     /// time (page coords) — the renderer clamps the drawn quad, label bounds,
     /// and the dispatch clone's hit rect to it.
     pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction, Option<[f32; 4]>)>,
+    /// Glyphs placed with [`PageContent::icon`] (and a widget's own, through
+    /// `RenderTarget::icon` — the expanded Dropdown's chevron).
+    pub icons: Vec<PageIcon>,
     /// Section wells claimed via `RenderTarget::section_relief` — the body box
     /// plus the title tab box, carved into the window plate by display_list as
     /// recess prims (page coordinates, pre-scroll).
@@ -186,6 +231,7 @@ impl Default for PageContent {
             rects: Vec::new(),
             texts: Vec::new(),
             buttons: Vec::new(),
+            icons: Vec::new(),
             reliefs: Vec::new(),
             control_reliefs: Vec::new(),
             control_relief_marks: Vec::new(),
@@ -201,6 +247,7 @@ impl PageContent {
             rects: Vec::new(),
             texts: Vec::new(),
             buttons: Vec::new(),
+            icons: Vec::new(),
             reliefs: Vec::new(),
             control_reliefs: Vec::new(),
             control_relief_marks: Vec::new(),
@@ -264,6 +311,25 @@ impl PageContent {
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
     }
 
+    /// A bundled cce-icons glyph at (x, y, w, h), tinted `color` as a text
+    /// colour is (raw sRGB, alpha = the image's) — the ONE way a page draws a
+    /// symbol, never a character in whatever face the font falls back to.
+    /// Rasterized at twice the rect's longer side for a 2x output.
+    ///
+    /// `false` when the icon set lacks the glyph, so the caller can say it
+    /// in a WORD instead; a measuring pass answers without recording.
+    pub fn icon(&mut self, name: &str, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> bool {
+        let px = (w.max(h) * 2.0).ceil().max(1.0) as u32;
+        let Some((image, _, _)) = cce_ui::upload_icon_tinted(name, px, cce_ui::icon_tint(color)) else {
+            return false;
+        };
+        if !self.measure_only {
+            let clip = self.clip_stack.last().copied();
+            self.icons.push(PageIcon { image, x, y, w, h, alpha: color[3], clip });
+        }
+        true
+    }
+
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                   bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                   action: AppAction) {
@@ -303,6 +369,41 @@ impl PageContent {
         self.buttons.push((btn, action, clip));
     }
 
+    /// A row of a list, in the toolkit's list style (`Button::new_list_row`,
+    /// what cce-mail, cce-fonts and cce-calendar rows wear): no plate,
+    /// transparent until hovered, the shared row wash. A plain [`button`]
+    /// with a transparent face is NOT that — under `control_relief` it still
+    /// gets a control plate, edges only, so every idle row of a list wore a
+    /// carved ring. No colours to pass: the renderer asks the row for its own.
+    ///
+    /// [`button`]: PageContent::button
+    pub fn list_row(&mut self, x: f32, y: f32, w: f32, h: f32, action: AppAction) {
+        if self.measure_only { return; }
+        let btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
+        let clip = self.clip_stack.last().copied();
+        self.buttons.push((btn, action, clip));
+    }
+
+    /// [`button_icon`](Self::button_icon) with the glyph tinted
+    /// `label_color` (its alpha the glyph's), where the face's colour is part
+    /// of what the control says — the process list's red Kill. The white
+    /// glyph `button_icon` uploads cannot carry a colour: an image has none.
+    pub fn button_icon_tinted(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32,
+                              bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
+                              action: AppAction) {
+        if self.measure_only { return; }
+        let mut btn = cce_ui::widget::Button::new(x, y, w, h)
+            .with_label(label)
+            .with_bg(bg)
+            .with_hover_bg(hover_bg)
+            .with_label_color(label_color);
+        if let Some((id, iw, ih)) = cce_ui::upload_icon_tinted(icon, 32, cce_ui::icon_tint(label_color)) {
+            btn = btn.with_icon(id, iw as f32, ih as f32).with_icon_alpha(label_color[3]);
+        }
+        let clip = self.clip_stack.last().copied();
+        self.buttons.push((btn, action, clip));
+    }
+
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                        bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                        action: AppAction) {
@@ -319,6 +420,10 @@ impl PageContent {
 }
 
 impl RenderTarget for PageContent {
+    fn icon(&mut self, name: &str, rect: cce_ui::scene::layout::Rect, color: [f32; 4]) {
+        PageContent::icon(self, name, rect.x, rect.y, rect.width, rect.height, color);
+    }
+
     fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
         if self.measure_only { return; }
         if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {

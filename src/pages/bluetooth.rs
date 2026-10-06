@@ -208,7 +208,6 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             } else {
                 let item_h = 22.0;
                 for dev in &state.devices {
-                    let status = if dev.connected { ">" } else { " " };
                     let btn_w = if bt_sec_w < 250.0 { 42.0 } else { 70.0 };
                     let action_label = if dev.connected {
                         if bt_sec_w < 250.0 { "Disc" } else { "Disconnect" }
@@ -216,15 +215,15 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                         if bt_sec_w < 250.0 { "Conn" } else { "Connect" }
                     };
 
-                    let label_max_w = (bt_sec_w - btn_w - 2.0 * padding - margin - row_gap).max(20.0);
+                    let label_max_w = (bt_sec_w - btn_w - 2.0 * padding - margin - row_gap - (font_size + 6.0)).max(20.0);
                     let label_max_chars = ((label_max_w / 6.0) as usize).max(5);
 
                     let is_unknown = dev.name.replace('-', ":").eq_ignore_ascii_case(&dev.mac);
                     let label = if is_unknown {
                         if bt_sec_w < 350.0 {
-                            format!("{} {}", status, dev.mac)
+                            dev.mac.clone()
                         } else {
-                            format!("{} Unknown Device ({})", status, dev.mac)
+                            format!("Unknown Device ({})", dev.mac)
                         }
                     } else {
                         if bt_sec_w < 350.0 {
@@ -233,9 +232,9 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                             } else {
                                 dev.name.clone()
                             };
-                            format!("{} {}", status, name_truncated)
+                            name_truncated
                         } else {
-                            let full_label = format!("{} {} ({})", status, dev.name, dev.mac);
+                            let full_label = format!("{} ({})", dev.name, dev.mac);
                             if full_label.len() > label_max_chars {
                                 format!("{}...", &full_label[..label_max_chars.saturating_sub(3)])
                             } else {
@@ -255,7 +254,14 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                         } else {
                             AppAction::Bluetooth(BluetoothMessage::Connect(dev.mac.clone()))
                         });
-                    sec.text(&label, text_x, text_y_offset, font_size, if dev.connected { ACCENT } else { TEXT_FG });
+                    // A connected device wears a `check` glyph ahead of its
+                    // name (it was a ">" in the label); every row keeps the
+                    // glyph's column so the names line up either way.
+                    let g = font_size;
+                    if dev.connected {
+                        sec.pc.icon("check", sec.ax(text_x), yt + (item_h - g) / 2.0, g, g, ACCENT);
+                    }
+                    sec.text(&label, text_x + g + 6.0, text_y_offset, font_size, if dev.connected { ACCENT } else { TEXT_FG });
                     sec.content_y = yt + item_h + row_gap;
                 }
             }

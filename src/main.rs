@@ -29,6 +29,29 @@ struct AppWidget {
     corners: (bool, bool, bool, bool),
 }
 
+/// A cce-icons glyph ready to draw: window coordinates (scroll already
+/// applied), the image's alpha, and the clip it was placed under
+/// (`[x, y, w, h]`) — an image has no geometry to trim, only a clip.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PlacedIcon {
+    pub image: u32,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub alpha: f32,
+    pub clip: Option<[f32; 4]>,
+}
+
+fn draw_placed_icon(pc: &mut cce_ui::scene::paint::PaintCtx, icon: &PlacedIcon) {
+    use cce_ui::scene::layout::Rect;
+    let rect = Rect { x: icon.x, y: icon.y, width: icon.w, height: icon.h };
+    match icon.clip {
+        Some([x, y, w, h]) => pc.clip(Rect { x, y, width: w, height: h }, |pc| pc.image(icon.image, rect, icon.alpha)),
+        None => pc.image(icon.image, rect, icon.alpha),
+    }
+}
+
 static INITIAL_PAGE_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 struct SystemInterface {
@@ -136,6 +159,15 @@ struct SystemInterface {
     /// images at all otherwise: `all_quads` carries quads and the text list
     /// carries labels, and an icon is neither.
     page_button_images: Vec<(u32, f32, f32, f32, f32, f32)>,
+    /// The page's own glyphs (`PageContent::icon`: a sort chevron, an in-use
+    /// check), drawn with the button faces under the page clip.
+    page_icon_images: Vec<PlacedIcon>,
+    /// Glyphs the popovers drew (the expanded Dropdown's chevron), drawn over
+    /// the popover plates.
+    popover_icon_images: Vec<PlacedIcon>,
+    /// Glyphs of the window chrome (the page dropdown's arrow), window
+    /// coordinates, drawn over the chrome outside the page clip.
+    window_icon_images: Vec<PlacedIcon>,
     // root plate container + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
@@ -262,6 +294,9 @@ impl cce_ui::engine::Application for SystemInterface {
             page_control_reliefs: Vec::new(),
             page_control_relief_marks: Vec::new(),
             page_button_images: Vec::new(),
+            page_icon_images: Vec::new(),
+            popover_icon_images: Vec::new(),
+            window_icon_images: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -524,13 +559,20 @@ impl cce_ui::engine::Application for SystemInterface {
         // Button icon faces, over the page's quads and its carves — clipped to
         // the page viewport, which is what cuts a half-scrolled list row's icon
         // at the list edge (an image has no geometry to trim, only a clip).
-        if !self.page_button_images.is_empty() {
+        if !self.page_button_images.is_empty() || !self.page_icon_images.is_empty() {
             let view = self.page_view(width, height);
             pc.clip(view, |pc| {
                 for &(image, x, y, w, h, alpha) in &self.page_button_images {
                     pc.image(image, Rect { x, y, width: w, height: h }, alpha);
                 }
+                for icon in &self.page_icon_images {
+                    draw_placed_icon(pc, icon);
+                }
             });
+        }
+
+        for icon in &self.window_icon_images {
+            draw_placed_icon(&mut pc, icon);
         }
 
         // The page scrollbar's raised layer: over the page content while a
@@ -573,6 +615,13 @@ impl cce_ui::engine::Application for SystemInterface {
                 emit_control_carve(&mut pc, carve);
             }
         }
+        for icon in &self.popover_icon_images {
+            draw_placed_icon(&mut pc, icon);
+        }
+        // The context menu last, over everything: the toolkit's lit plate,
+        // its rows and its labels in the menu font, with the row marks and
+        // page chevrons as cce-icons glyphs.
+        cce_ui::widget::context_menu::paint_with_labels(&mut pc);
         for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {
             pc.text_with(
                 text.clone(),

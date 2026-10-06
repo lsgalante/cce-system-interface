@@ -81,7 +81,7 @@ impl Default for ProcessesState {
 #[derive(Debug, Clone)]
 pub enum ProcessesMessage {
     Refreshed(ProcessesState),
-    /// The row's ✕ button: SIGTERM this pid.
+    /// The row's Kill button (the `x` glyph): SIGTERM this pid.
     Kill(String),
     /// A column header click. Mem headers toggle (Mem ⇄ back to Cpu); the
     /// CPU % header always selects Cpu.
@@ -305,35 +305,46 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
 
             // Header labels pan with the columns, clipped to the box. The
             // sortable ones (MEM, MEM %, CPU %) are buttons: the active key
-            // shows brighter with a ▾. Both memory headers toggle the same
+            // shows brighter with a `chevron-down` glyph after it (the sort
+            // is always descending). Both memory headers toggle the same
             // Mem sort — one bigger target, no distinction to learn.
             let active = |k: ProcSort| state.sort == k;
             let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
-            let mark = |label: &str, on: bool| {
-                if on { format!("{} \u{25bc}", label) } else { label.to_string() }
-            };
+            const HDR_SIZE: f32 = 11.0;
+            const HDR_Y: f32 = 5.0;
+            const CHEVRON: f32 = 9.0;
             sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, header_h);
-            sec.pc.text("PID", list_box_x + COL_PID - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
-            sec.pc.text("COMMAND", list_box_x + COL_COMMAND - ox, list_box_y + 5.0, 11.0, TEXT_DIM);
-            sec.pc.text(&mark("MEM", active(ProcSort::Mem)), list_box_x + COL_RSS - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Mem)));
-            sec.pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Mem)));
-            sec.pc.text(&mark("CPU %", active(ProcSort::Cpu)), list_box_x + COL_CPU - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Cpu)));
-            sec.pc.text(&mark("W", active(ProcSort::Power)), list_box_x + COL_WATTS - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Power)));
-            sec.pc.text(&mark("WAKE/s", active(ProcSort::Wakeups)), list_box_x + COL_WAKE - ox, list_box_y + 5.0, 11.0, hdr(active(ProcSort::Wakeups)));
+            let header = |pc: &mut PageContent, label: &str, col: f32, on: bool| {
+                let x = list_box_x + col - ox;
+                pc.text(label, x, list_box_y + HDR_Y, HDR_SIZE, hdr(on));
+                if on {
+                    let gx = x + crate::app::text_width(label, HDR_SIZE, None) + 3.0;
+                    let gy = list_box_y + (header_h - CHEVRON) / 2.0;
+                    pc.icon("chevron-down", gx, gy, CHEVRON, CHEVRON, hdr(on));
+                }
+            };
+            sec.pc.text("PID", list_box_x + COL_PID - ox, list_box_y + HDR_Y, HDR_SIZE, TEXT_DIM);
+            sec.pc.text("COMMAND", list_box_x + COL_COMMAND - ox, list_box_y + HDR_Y, HDR_SIZE, TEXT_DIM);
+            header(sec.pc, "MEM", COL_RSS, active(ProcSort::Mem));
+            sec.pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + HDR_Y, HDR_SIZE, hdr(active(ProcSort::Mem)));
+            header(sec.pc, "CPU %", COL_CPU, active(ProcSort::Cpu));
+            header(sec.pc, "W", COL_WATTS, active(ProcSort::Power));
+            header(sec.pc, "WAKE/s", COL_WAKE, active(ProcSort::Wakeups));
 
-            // Invisible header hit targets (transparent, subtle hover), inside
-            // the header clip so they pan and cut with the labels. They share
-            // no rect with the row buttons, so emission order is free here.
-            sec.pc.button("", list_box_x + COL_RSS - ox - 4.0, list_box_y, 52.0, header_h - 2.0,
-                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
-            sec.pc.button("", list_box_x + COL_MEM - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
-                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
-            sec.pc.button("", list_box_x + COL_CPU - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
-                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Cpu)));
-            sec.pc.button("", list_box_x + COL_WATTS - ox - 4.0, list_box_y, 48.0, header_h - 2.0,
-                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Power)));
-            sec.pc.button("", list_box_x + COL_WAKE - ox - 4.0, list_box_y, 62.0, header_h - 2.0,
-                [0.0; 4], [1.0, 1.0, 1.0, 0.05], [0.0; 4], AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Wakeups)));
+            // Header hit targets, list-row style like the rows (plateless,
+            // washed on hover), inside the header clip so they pan and cut
+            // with the labels. They share no rect with the row buttons, so
+            // emission order is free here.
+            sec.pc.list_row(list_box_x + COL_RSS - ox - 4.0, list_box_y, 52.0, header_h - 2.0,
+                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
+            sec.pc.list_row(list_box_x + COL_MEM - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
+                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
+            sec.pc.list_row(list_box_x + COL_CPU - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
+                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Cpu)));
+            sec.pc.list_row(list_box_x + COL_WATTS - ox - 4.0, list_box_y, 48.0, header_h - 2.0,
+                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Power)));
+            sec.pc.list_row(list_box_x + COL_WAKE - ox - 4.0, list_box_y, 62.0, header_h - 2.0,
+                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Wakeups)));
             sec.pc.pop_clip_rect();
 
             let row_h = 24.0;
@@ -342,18 +353,16 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             sec.pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, list_box_h - header_h);
             for (idx, p) in state.processes.iter().enumerate() {
                 if let Some(draw_y) = state.cpu_list.get_item_draw_y(idx, 4.0) {
-                    // Standard row action button (transparent background, highlights
-                    // on hover). Viewport-fixed on purpose: the hover band spans the
-                    // visible row whatever the horizontal pan.
-                    sec.pc.button(
-                        "",
+                    // The row itself, in the DE's list style: plateless,
+                    // washed on hover. A transparent plain button here wore a
+                    // control plate per row — the whole list read as a stack
+                    // of carved rings. Viewport-fixed on purpose: the hover
+                    // band spans the visible row whatever the horizontal pan.
+                    sec.pc.list_row(
                         list_box_x + 2.0,
                         draw_y,
                         list_box_w - 16.0,
                         row_h,
-                        [0.0, 0.0, 0.0, 0.0],
-                        [1.0, 1.0, 1.0, 0.06],
-                        [0.0, 0.0, 0.0, 0.0],
                         AppAction::Processes(ProcessesMessage::None),
                     );
 
@@ -377,10 +386,13 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     // AFTER the row button on purpose: overlapping page
                     // buttons all see the click and the LAST take_click wins
                     // the dispatched action (input_handler's collect loop), so
-                    // ✕ beats the row's no-op exactly because it comes later.
+                    // the Kill button beats the row's no-op exactly because it comes later.
                     if !dim {
-                        sec.pc.button(
-                            "\u{00d7}",
+                        // The `x` glyph in the danger tint; "Kill" only if
+                        // the icon set is missing.
+                        sec.pc.button_icon_tinted(
+                            "x",
+                            "Kill",
                             list_box_x + COL_KILL - ox,
                             draw_y + 3.0,
                             20.0,
@@ -432,7 +444,7 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
         }
         ProcessesMessage::Kill(pid) => {
             // Plain SIGTERM, same privileges as the app. No confirm dialog:
-            // the target is a small ✕ the pointer has to mean. Failure needs
+            // the target is a small `x` glyph the pointer has to mean. Failure needs
             // no channel — a survivor un-dims on the next 3s refresh.
             // Parsed, not passed through: `kill 0` signals the whole process
             // group (this app included), and negative pids kill groups too.
@@ -556,10 +568,10 @@ mod tests {
             .filter(|(_, (_, a, _))| matches!(a, AppAction::Processes(ProcessesMessage::Kill(_))))
             .map(|(i, _)| i)
             .collect();
-        // One ✕ per row except the pending one (pid 2).
+        // One Kill button per row except the pending one (pid 2).
         assert_eq!(kills.len(), 2, "{:?}", pc.buttons.iter().map(|(_, a, _)| a).collect::<Vec<_>>());
-        // Ordering invariant the dispatch relies on: each ✕ comes after its
-        // row's hover button — last take_click wins, so ✕ must be later.
+        // Ordering invariant the dispatch relies on: each Kill comes after
+        // its row's hover button — last take_click wins, so Kill must be later.
         let rows: Vec<usize> = pc
             .buttons
             .iter()
@@ -665,8 +677,15 @@ mod tests {
             .collect();
         // MEM + MEM % both toggle Mem; CPU % selects Cpu; then W and WAKE/s.
         assert_eq!(sorts, [ProcSort::Mem, ProcSort::Mem, ProcSort::Cpu, ProcSort::Power, ProcSort::Wakeups]);
-        // Active-sort indicator rides the CPU % header by default.
-        assert!(pc.texts.iter().any(|t| t.0.starts_with("CPU %") && t.0.contains('\u{25bc}')));
+        // Active-sort indicator rides the CPU % header by default — as a
+        // `chevron-down` glyph after the header text, never a character in it.
+        assert!(pc.texts.iter().any(|t| t.0 == "CPU %"));
+        assert!(pc.texts.iter().all(|t| !t.0.contains('\u{25bc}')));
+        if cce_ui::upload_icon("chevron-down", 18).is_some() {
+            let cpu = pc.texts.iter().find(|t| t.0 == "CPU %").unwrap();
+            assert_eq!(pc.icons.len(), 1, "one sort chevron");
+            assert!(pc.icons[0].x > cpu.2, "the chevron follows the header text");
+        }
     }
 
     #[test]

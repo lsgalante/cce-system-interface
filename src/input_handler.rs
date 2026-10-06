@@ -343,6 +343,18 @@ impl SystemInterface {
         for (btn, _) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
             btn.base_mut().y -= actual_dy;
         }
+        // The glyphs ride with the page too — a button's icon face and the
+        // page's own icons — or they stand still while their rows scroll
+        // past them until something rebuilds.
+        for (_, _, y, _, _, _) in &mut self.page_button_images {
+            *y -= actual_dy;
+        }
+        for icon in &mut self.page_icon_images {
+            icon.y -= actual_dy;
+            if let Some(c) = icon.clip.as_mut() {
+                c[1] -= actual_dy;
+            }
+        }
         self.last_scroll_y = self.scroll_y;
         self.page_scroll_bar.scroll_y = self.scroll_y;
         true

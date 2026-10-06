@@ -124,6 +124,7 @@ impl SystemInterface {
         let mut texts = Vec::new();
         let mut page_buttons = Vec::new();
         let mut page_button_images: Vec<(u32, f32, f32, f32, f32, f32)> = Vec::new();
+        let mut page_icon_images: Vec<crate::PlacedIcon> = Vec::new();
 
         cce_ui::widget::hover_animation::reset_frame_registration();
         self.ui_context.clear_popovers();
@@ -170,6 +171,15 @@ impl SystemInterface {
         // root plate container dissolved, hand it the plate frame for its concentric-corner cut.
         self.page_dropdown.set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
+        // The chrome is collected below through `all_quads` and the text walk,
+        // which carry no images — so the closed dropdown's `chevron-down`
+        // comes from this pass, which `render_widget` hands to
+        // `RenderTarget::icon`. Window coordinates: no scroll applies.
+        let window_icon_images: Vec<crate::PlacedIcon> = dummy_pc
+            .icons
+            .iter()
+            .map(|ic| crate::PlacedIcon { image: ic.image, x: ic.x, y: ic.y, w: ic.w, h: ic.h, alpha: ic.alpha, clip: ic.clip })
+            .collect();
         let switcher_h = if self.search_open {
             logical_sh - self.header_height - 42.0 - self.status_height
         } else {
@@ -485,8 +495,14 @@ impl SystemInterface {
         }
         for (btn, action, clip) in &pc.buttons {
             let base = btn.base();
-            let bg = btn.bg.unwrap_or([0.16, 0.16, 0.24, 1.0]);
-            let hover_bg = btn.hover_bg.unwrap_or([0.25, 0.30, 0.26, 1.0]);
+            // The button's own idle and hover faces: the page's colours when
+            // it passed them, else the toolkit's for the button's kind — a
+            // list row's transparent-until-hover wash (`PageContent::list_row`).
+            let mut probe = (**btn).clone();
+            probe.set_hovered(false);
+            let bg = cce_ui::widget::Paint::color(&probe);
+            probe.set_hovered(true);
+            let hover_bg = cce_ui::widget::Paint::color(&probe);
             // Clamp to the emission-time clip rect (page coords) so a partially
             // scrolled list row's button draws cut at the list edge, not bleeding.
             let (mut px0, mut py0, mut px1, mut py1) =
@@ -656,6 +672,23 @@ impl SystemInterface {
             page_buttons.push((btn_clone, action.clone()));
         }
 
+        // The page's own glyphs (`PageContent::icon`): shifted by the scroll
+        // as the texts are, cut at the clip they were placed under (a list's
+        // box) by display_list, and dimmed with the text a search leaves
+        // unmatched.
+        let searching = self.search_open && !self.search_query.is_empty();
+        for ic in &pc.icons {
+            page_icon_images.push(crate::PlacedIcon {
+                image: ic.image,
+                x: ic.x,
+                y: ic.y - scroll_offset_y,
+                w: ic.w,
+                h: ic.h,
+                alpha: if searching { ic.alpha * 0.25 } else { ic.alpha },
+                clip: ic.clip.map(|[x, y, w, h]| [x, y - scroll_offset_y, w, h]),
+            });
+        }
+
 
 
 
@@ -713,47 +746,23 @@ impl SystemInterface {
                 let shifted = bounds.map(|[l, tb, rr, b]| [l, tb - self.scroll_y, rr, b - self.scroll_y]);
                 popover_pc.texts.push((t, size, x, y - self.scroll_y, tc, font, shifted));
             }
+            for ic in page_pop_pc.icons {
+                popover_pc.icons.push(cce_settings::app::PageIcon {
+                    y: ic.y - self.scroll_y,
+                    clip: ic.clip.map(|[x, y, w, h]| [x, y - self.scroll_y, w, h]),
+                    ..ic
+                });
+            }
             for (carve, mark) in page_pop_pc.control_reliefs.into_iter().zip(page_pop_pc.control_relief_marks) {
                 popover_pc.control_reliefs.push(carve.shifted_y(-self.scroll_y));
                 popover_pc.control_relief_marks.push(rect_base + mark);
             }
         }
-        if cce_ui::widget::context_menu::is_visible() {
-            use cce_ui::layout::RenderTarget;
-            let cx = cce_ui::widget::context_menu::x();
-            let cy = cce_ui::widget::context_menu::y();
-            let cw = cce_ui::widget::context_menu::w();
-            let ch = cce_ui::widget::context_menu::h();
-
-            // This target is the legacy rect/text one, not a PaintCtx, so the
-            // plate cannot be the toolkit's lit one yet — but the rows and
-            // labels are the toolkit's: PAD-aware `row_y` / `text_labels`
-            // (the hand-rolled `idx * 24.0` painted every row 8px above
-            // where `cursor_moved` hit-tested it) and the menu font's family.
-            use cce_ui::widget::context_menu::{self, ROW_H};
-            popover_pc.rect([0.22, 0.22, 0.28, 1.0], cx, cy, cw, ch);
-            popover_pc.rect([0.06, 0.06, 0.09, 1.0], cx + 1.0, cy + 1.0, cw - 2.0, ch - 2.0);
-
-            if let Some(h_idx) = context_menu::hovered_item() {
-                let iy = context_menu::row_y(h_idx);
-                popover_pc.rect([0.20, 0.40, 0.65, 0.6], cx + 2.0, iy + 2.0, cw - 4.0, ROW_H - 4.0);
-            }
-
-            let (family, _) = context_menu::label_font();
-            for label in context_menu::text_labels() {
-                let c = label.color;
-                let color = [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, 1.0];
-                popover_pc.text_with_font_and_bounds(
-                    &label.text,
-                    label.x,
-                    label.y,
-                    label.font_size,
-                    color,
-                    &family,
-                    Some([cx, cy, cx + cw, cy + ch]),
-                );
-            }
-        }
+        // The context menu is NOT collected here: display_list paints it
+        // straight into the frame with `context_menu::paint_with_labels`,
+        // the toolkit's lit plate and its labels in the menu font — and its
+        // marks (✓ ● ○) and page chevrons as cce-icons glyphs, which the
+        // bare `text_labels()` this used to loop over cannot draw.
         self.popover_widgets = popover_pc.rects.iter().map(|(c, x, y, w, h, r, corners)| AppWidget {
             x: *x, y: *y, w: *w, h: *h,
             color: *c, hover_color: *c,
@@ -762,6 +771,11 @@ impl SystemInterface {
             corners: *corners,
         }).collect();
         self.popover_texts = popover_pc.texts;
+        self.popover_icon_images = popover_pc
+            .icons
+            .iter()
+            .map(|ic| crate::PlacedIcon { image: ic.image, x: ic.x, y: ic.y, w: ic.w, h: ic.h, alpha: ic.alpha, clip: ic.clip })
+            .collect();
         self.popover_control_reliefs = popover_pc.control_reliefs;
         self.popover_control_relief_marks = popover_pc.control_relief_marks;
 
@@ -769,6 +783,8 @@ impl SystemInterface {
         self.texts = texts;
         self.page_buttons = page_buttons;
         self.page_button_images = page_button_images;
+        self.page_icon_images = page_icon_images;
+        self.window_icon_images = window_icon_images;
 
         // The id-rooted router (`propagate_event(event, WidgetId)`) resolves roots
         // through the registry, and `clear_hierarchy` above wiped it. The view pass

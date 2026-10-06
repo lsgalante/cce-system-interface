@@ -167,11 +167,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     // every row costs one hash lookup.
                     let icons_ok = cce_ui::upload_icon("play", 32).is_some();
                     let is_small = sec_w < 350.0;
-                    let (btn_w, r_btn_w) = match (icons_ok, is_small) {
-                        (true, _) => (24.0, 24.0),
-                        (false, true) => (24.0, 24.0),
-                        (false, false) => (46.0, 54.0),
-                    };
+                    let (btn_w, r_btn_w) = if icons_ok { (24.0, 24.0) } else { (46.0, 54.0) };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
 
                     // TODO(style): the row's control run and text column
@@ -238,13 +234,11 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     let running = transport_running(&service.active_state, &service.sub_state);
 
                     // Fallback labels only — an icon face never draws them.
-                    // Without the icons a narrow row is back to needing the
-                    // one-glyph words it used before.
-                    let (start_lbl, stop_lbl, restart_lbl) = if icons_ok || !is_small {
-                        ("Start", "Stop", "Restart")
-                    } else {
-                        ("\u{25b6}", "\u{25a0}", "\u{27f3}")
-                    };
+                    // Without the icons a row says it in WORDS, narrow or
+                    // not: a symbol drawn as a character is exactly what the
+                    // icon set exists to replace, so the buttons keep the
+                    // width a word needs instead.
+                    let (start_lbl, stop_lbl, restart_lbl) = ("Start", "Stop", "Restart");
 
                     // Start/Stop, collapsed
                     sec.pc.button_icon(
