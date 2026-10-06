@@ -62,16 +62,6 @@ pub struct SystemState {
     pub sysfiles: SysFiles,
     pub hostname_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub uptime_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-
-
-
-    pub suspend_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
-    pub hibernate_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
-    pub reboot_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
-    pub poweroff_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
-    pub force_shutdown_btn: cce_ui::widget::Adapted<cce_ui::widget::Button>,
-
-
 }
 
 impl std::fmt::Debug for SystemState {
@@ -109,34 +99,6 @@ impl Default for SystemState {
             sysfiles: SysFiles::default(),
             hostname_label: Label::new(""),
             uptime_label: Label::new(""),
-
-
-
-            suspend_btn: Button::new(0.0, 0.0, 0.0, 32.0)
-                .with_label("Suspend")
-                .with_bg([0.20, 0.33, 0.22, 1.0])
-                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
-                .with_label_color([1.0, 1.0, 1.0, 1.0]),
-            hibernate_btn: Button::new(0.0, 0.0, 0.0, 32.0)
-                .with_label("Hibernate")
-                .with_bg([0.20, 0.33, 0.22, 1.0])
-                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
-                .with_label_color([1.0, 1.0, 1.0, 1.0]),
-            reboot_btn: Button::new(0.0, 0.0, 0.0, 32.0)
-                .with_label("Reboot")
-                .with_bg([0.67, 0.20, 0.20, 1.0])
-                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
-                .with_label_color([1.0, 1.0, 1.0, 1.0]),
-            poweroff_btn: Button::new(0.0, 0.0, 0.0, 32.0)
-                .with_label("Power Off")
-                .with_bg([0.67, 0.20, 0.20, 1.0])
-                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
-                .with_label_color([1.0, 1.0, 1.0, 1.0]),
-            force_shutdown_btn: Button::new(0.0, 0.0, 0.0, 32.0)
-                .with_label("Force Shutdown")
-                .with_bg([0.67, 0.20, 0.20, 1.0])
-                .with_hover_bg([0.25, 0.30, 0.26, 1.0])
-                .with_label_color([1.0, 1.0, 1.0, 1.0]),
         }
     }
 }
