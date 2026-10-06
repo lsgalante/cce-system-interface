@@ -176,12 +176,11 @@ impl SystemInterface {
             logical_sh - self.header_height - self.status_height
         };
         // The page scrollbar, on the designer parameter-pane geometry: the DE
-        // width widened (the bar rides over page content and reads too slim at
-        // stock width), stood off the window's right edge by the configured
+        // width widened, stood off the window's right edge by the configured
         // inset instead of hugging it. Updated with LAST frame's content
         // height — the legacy window pass also ran before this frame's content
         // was measured.
-        let sb_w = cce_ui::layout::scrollbar_width() * 1.6;
+        let sb_w = crate::scroll_bar::ScrollBar::width();
         // TODO(style): the bar's 4px vertical stand-off pairs with the
         // toolkit's `scrollbar_inset()` knob, not a rung of the ladder.
         self.page_scroll_bar.set_rect(
@@ -352,6 +351,16 @@ impl SystemInterface {
         }
         self.content_h = max_y;
         self.page_scroll_bar.update(self.scroll_y, max_y, lch);
+        // Give the bar its lane exactly while it shows. The flip lays the page
+        // out once more on the next frame (`needs_rebuild` below) rather than
+        // twice in this one: a view registers widgets and popovers as it
+        // draws. It cannot oscillate — a page that overflows at full width
+        // only grows taller in the narrower lane, and one that fits in the
+        // lane fits at full width too.
+        let lane_flipped = (max_y > lch) != self.page_scroll_bar.lane;
+        if lane_flipped {
+            self.page_scroll_bar.lane = !self.page_scroll_bar.lane;
+        }
 
         let scroll_offset_y = self.scroll_y;
 
@@ -798,7 +807,7 @@ impl SystemInterface {
                 self.ui_context.set_focused_id(id);
             }
         }
-        self.needs_rebuild = false;
+        self.needs_rebuild = lane_flipped;
         self.laid_out_page = Some(self.app.current_page);
         self.last_scroll_y = self.scroll_y;
         self.ui_context.clear_dirty();
@@ -814,7 +823,11 @@ impl SystemInterface {
         let margin = cce_ui::layout::root_plate_inset();
         let cx = cx + margin;
         let cy = cy + margin;
-        let cw = (cw - 2.0 * margin).max(1.0);
+        // While the page scrolls its right margin starts at the scrollbar's
+        // inner edge, not the window's: the bar no longer covers the right
+        // column's wall and content.
+        let lane = if self.page_scroll_bar.lane { crate::scroll_bar::ScrollBar::lane_width() } else { 0.0 };
+        let cw = (cw - 2.0 * margin - lane).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
         let mut layout = AdaptiveGrid::new(cce_ui::layout::grid_min_col_width(), cce_ui::layout::root_plate_gap());
         // Page root dissolved (6u): the ctrl-nav entry focuses section 0, so root focus is

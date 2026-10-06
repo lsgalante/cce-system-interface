@@ -15,6 +15,11 @@ pub struct ScrollBar {
     pub content_h: f32,
     pub viewport_h: f32,
     pub dragging: bool,
+    /// The page is laid out narrower by [`ScrollBar::lane_width`] so the bar
+    /// has a lane of its own beside the sections instead of riding over the
+    /// right column. Set from the page's measured height each layout (see
+    /// `rebuild_layout_inner`), so it is on exactly while the bar shows.
+    pub lane: bool,
     hovered: bool,
     /// The shared raise/sink hysteresis (the designer parameter-pane treatment):
     /// idle the bar sinks behind the translucent window plate and takes no
@@ -29,9 +34,22 @@ impl ScrollBar {
             content_h: 0.0,
             viewport_h: 0.0,
             dragging: false,
+            lane: false,
             hovered: false,
             activity: ScrollbarActivity::new(),
         })
+    }
+
+    /// The bar's width: the DE scrollbar width widened (at stock width it
+    /// reads too slim against the page's wells).
+    pub fn width() -> f32 {
+        cce_ui::layout::scrollbar_width() * 1.6
+    }
+
+    /// The window's right-edge strip the bar occupies — its width plus its
+    /// stand-off from the window edge. The page reserves it while it scrolls.
+    pub fn lane_width() -> f32 {
+        Self::width() + cce_ui::layout::scrollbar_inset()
     }
 
     pub fn update(&mut self, scroll_y: f32, content_h: f32, viewport_h: f32) {
