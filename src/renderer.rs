@@ -90,7 +90,14 @@ fn collect_window_child(
 
 impl SystemInterface {
 
+    /// Lay the page out and flatten it into the cached frame, keeping what
+    /// its widgets claimed for text input (`text_claim`).
     pub(crate) fn rebuild_layout(&mut self, sw: f32, sh: f32) {
+        let ((), claim) = cce_ui::text_input::capture(|| self.rebuild_layout_inner(sw, sh));
+        self.text_claim = claim;
+    }
+
+    fn rebuild_layout_inner(&mut self, sw: f32, sh: f32) {
         if std::env::var("CCE_HOVER_DEBUG").is_ok() {
             let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() % 100000;
             eprintln!("[hover] t={} rebuild", t);

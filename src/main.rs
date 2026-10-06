@@ -110,6 +110,11 @@ struct SystemInterface {
     /// rebuild and the clone at the same rect takes the focus back (lit as it
     /// is collected, focused at the pass's tail).
     refocus_rect: Option<(f32, f32, f32, f32)>,
+    /// What the last rebuild's widgets claimed for text input (an editing
+    /// TextBox, `cce_ui::text_input::capture`). Claimed again every frame:
+    /// a frame that only replays the cached layout paints no widget, and
+    /// would otherwise read as the field closing.
+    text_claim: Option<[f32; 4]>,
     page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
     // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
@@ -249,6 +254,7 @@ impl cce_ui::engine::Application for SystemInterface {
             focused_section: None,
             laid_out_page: None,
             refocus_rect: None,
+            text_claim: None,
             page_dropdown,
             page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
             content_h: 0.0,
@@ -581,6 +587,9 @@ impl cce_ui::engine::Application for SystemInterface {
                 font.clone(),
                 *bounds,
             );
+        }
+        if let Some([x, y, w, h]) = self.text_claim {
+            cce_ui::text_input::claim(x, y, w, h);
         }
         Some(pc.finish())
     }
