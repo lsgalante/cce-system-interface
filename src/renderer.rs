@@ -157,7 +157,7 @@ impl SystemInterface {
 
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
-        let dropdown_h = 18.0f32;
+        let dropdown_h = cce_ui::layout::dropdown_height();
         let size = self.page_dropdown.measure(
             cce_ui::widget::LayoutConstraints::new(0.0, 500.0, dropdown_h, dropdown_h),
             &self.ui_context,

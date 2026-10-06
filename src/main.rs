@@ -261,7 +261,9 @@ impl cce_ui::engine::Application for SystemInterface {
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
-            status_height: 24.0,
+            // The page switcher at the toolkit's dropdown height, inset 3px
+            // top and bottom: the bar grows with the control, not the reverse.
+            status_height: cce_ui::layout::dropdown_height() + 6.0,
             cursor_x: 0.0,
             cursor_y: 0.0,
             rx_audio: watchers.rx_audio,
