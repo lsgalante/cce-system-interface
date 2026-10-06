@@ -55,9 +55,9 @@ impl Default for PackagesState {
             updates: Vec::new(),
             active_tab: PackageTab::Installed,
             search_box: TextBox::new(String::new()).with_placeholder("Filter Packages..."),
-            installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false),
+            installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
             installed_items: Vec::new(),
-            updates_list: ScrollRegion::new(32.0, 4.0).with_frame(false),
+            updates_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
             updates_items: Vec::new(),
             updating: false,
             last_update_res: None,
@@ -561,6 +561,8 @@ pub fn view(
                     }
                 }
                 sec.pc.pop_clip_rect();
+                // The scrollbar's fore copy, over the rows at the raise's fade.
+                state.installed_list.push_scrollbar_fore(sec.pc);
 
                 if filtered.is_empty() {
                     sec.pc.text("No packages match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
@@ -596,6 +598,8 @@ pub fn view(
                     }
                 }
                 sec.pc.pop_clip_rect();
+                // The scrollbar's fore copy, over the rows at the raise's fade.
+                state.updates_list.push_scrollbar_fore(sec.pc);
 
                 if filtered.is_empty() {
                     sec.pc.text("No updates match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
@@ -703,6 +707,7 @@ impl PackagesState {
             let item_height_full = self.installed_list.item_height + self.installed_list.item_gap;
             let target_y = idx as f32 * item_height_full - 164.0;
             self.installed_list.set_scroll_y(target_y);
+            self.installed_list.notify_scrolled();
         }
     }
 }
@@ -845,6 +850,14 @@ impl crate::pages::AppPage for PackagesState {
 
     fn tick(&mut self, dt: f32) -> bool {
         self.installed_list.tick(dt) | self.updates_list.tick(dt)
+    }
+
+    /// Only the active tab's list is laid out and drawn.
+    fn frameless_lists(&self) -> Vec<&ScrollRegion> {
+        vec![match self.active_tab {
+            PackageTab::Installed => &self.installed_list,
+            PackageTab::Updates => &self.updates_list,
+        }]
     }
 }
 

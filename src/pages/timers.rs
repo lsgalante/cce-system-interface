@@ -50,7 +50,7 @@ impl Default for TimersState {
             loaded: false,
             timers: Vec::new(),
             active_tab: TimerTab::System,
-            list: ScrollRegion::new(36.0, 6.0).with_frame(false),
+            list: ScrollRegion::new(36.0, 6.0).with_frame(false).with_sink_behind(true),
             items: Vec::new(),
             creating: false,
             editing: None,
@@ -654,6 +654,8 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 }
             }
             sec.pc.pop_clip_rect();
+            // The scrollbar's fore copy, over the rows at the raise's fade.
+            state.list.push_scrollbar_fore(sec.pc);
 
             if filtered.is_empty() {
                 sec.pc.text("No timers in this scope", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
@@ -845,6 +847,10 @@ impl crate::pages::AppPage for TimersState {
 
     fn tick(&mut self, dt: f32) -> bool {
         self.list.tick(dt)
+    }
+
+    fn frameless_lists(&self) -> Vec<&ScrollRegion> {
+        vec![&self.list]
     }
 }
 

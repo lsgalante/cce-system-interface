@@ -122,7 +122,7 @@ impl AccountsState {
             tb.is_password = true;
             tb
         };
-        state.list = ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP);
+        state.list = ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_sink_behind(true);
         state
     }
 }
@@ -725,6 +725,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 }
             }
             sec.pc.pop_clip_rect();
+            // The scrollbar's fore copy, over the rows at the raise's fade.
+            state.list.push_scrollbar_fore(sec.pc);
             // Reserve the region's height through `spacing`, NOT `content_y +=`:
             // SectionContext keeps a parallel per-column Grid, and its own
             // `spacing` recomputes `content_y = grid.max_height()`. A manual

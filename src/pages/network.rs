@@ -34,7 +34,7 @@ impl Default for NetworkState {
             ip_address: String::new(),
             device: String::new(),
             available: Vec::new(),
-            wifi_list: ScrollRegion::new(26.0, 4.0),
+            wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
             wifi_toggle: Toggle::new(),
         }
     }
@@ -98,7 +98,7 @@ pub async fn fetch_network_state() -> NetworkState {
         loaded: true,
         wifi_enabled, connected_ssid, signal_strength: signal,
         ip_address, device, available,
-        wifi_list: ScrollRegion::new(26.0, 4.0),
+        wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
         wifi_toggle: Toggle::new(),
     }
 }
@@ -255,6 +255,8 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                     }
                 }
                 sec.pc.pop_clip_rect();
+                // The scrollbar's fore copy, over the rows at the raise's fade.
+                state.wifi_list.push_scrollbar_fore(sec.pc);
                 sec.content_y += list_box_h + row_gap;
             }
         }

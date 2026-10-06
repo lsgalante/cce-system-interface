@@ -70,7 +70,7 @@ impl Default for ProcessesState {
         Self {
             loaded: false,
             processes: Vec::new(),
-            cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
+            cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false).with_sink_behind(true),
             killing: std::collections::HashSet::new(),
             sort: ProcSort::Cpu,
             power: PowerSummary::default(),
@@ -236,7 +236,7 @@ pub async fn fetch_processes_state() -> ProcessesState {
     ProcessesState {
         loaded: true,
         processes,
-        cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false),
+        cpu_list: ScrollRegion::new(24.0, 2.0).with_frame(false).with_sink_behind(true),
         killing: std::collections::HashSet::new(),
         sort: ProcSort::Cpu,
         power,
@@ -277,9 +277,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             //
             // Columns live in CONTENT space at fixed offsets; every draw
             // subtracts scroll_x. CONTENT_W > box width = the h-bar appears.
-            // Sized so the default 820px window shows the whole table, Kill
-            // column clear of the scrollbar, without the h-bar: COMMAND gives
-            // up the 20px the content box's inset took.
+            // Sized so the default 820px window shows the whole table without
+            // the h-bar: COMMAND gives up the 20px the content box's inset
+            // took.
             const COL_PID: f32 = 12.0;
             const COL_COMMAND: f32 = 80.0;
             const COL_RSS: f32 = 380.0;
@@ -295,10 +295,10 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let header_h = 22.0;
             state.cpu_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
             state.cpu_list.set_content_w(CONTENT_W);
-            // The bottom scrollbar needs its own band: rows must stop above
-            // it or the last row draws under the pills.
-            let bottom_reserve = if state.cpu_list.h_scroll_active() { 18.0 } else { 6.0 };
-            let rows_h = list_box_h - header_h - bottom_reserve;
+            // No band for the horizontal scrollbar: it rides the rows'
+            // centre line, crossing the vertical one, behind the plate until
+            // a scroll raises it.
+            let rows_h = list_box_h - header_h - 6.0;
             state.cpu_list.update_bounds(state.processes.len(), list_box_y + header_h, rows_h);
             state.cpu_list.push_prims(sec.pc);
 
@@ -414,6 +414,8 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 }
             }
             sec.pc.pop_clip_rect();
+            // The scrollbar's fore copy, over the rows at the raise's fade.
+            state.cpu_list.push_scrollbar_fore(sec.pc);
             
             if state.processes.is_empty() {
                 sec.pc.text("No active processes", list_box_x + inset, list_box_y + header_h + 16.0, 12.0, TEXT_DIM);
@@ -515,6 +517,10 @@ impl crate::pages::AppPage for ProcessesState {
 
     fn tick(&mut self, dt: f32) -> bool {
         self.cpu_list.tick(dt)
+    }
+
+    fn frameless_lists(&self) -> Vec<&ScrollRegion> {
+        vec![&self.cpu_list]
     }
 }
 

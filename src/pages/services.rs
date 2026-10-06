@@ -41,7 +41,7 @@ impl Default for ServicesState {
             services: Vec::new(),
             active_tab: ServiceTab::System,
             search_box: TextBox::new(String::new()).with_label("Filter Services"),
-            list: ScrollRegion::new(36.0, 6.0).with_frame(false),
+            list: ScrollRegion::new(36.0, 6.0).with_frame(false).with_sink_behind(true),
             items: Vec::new(),
         }
     }
@@ -159,7 +159,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     // used to be: the dot was reporting what the transport icon
                     // already says (play = stopped, stop = running), so the
                     // controls take the column it was using and the name/
-                    // description run from there to the scrollbar gutter.
+                    // description run from there to the row's right inset.
                     //
                     // Sized on whether the icon set is actually THERE:
                     // `button_icon` falls back to the labels when it isn't, and
@@ -176,11 +176,11 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                     // below are this list row's own layout.
                     let toggle_x = list_box_x + 10.0;
                     let restart_x = toggle_x + btn_w + btn_gap;
-                    // The row's text starts after the controls and still ends
-                    // short of the scrollbar gutter, exactly where it did when
-                    // the controls were on the right.
+                    // The row's text starts after the controls and ends the
+                    // controls' inset short of the right wall: no gutter for
+                    // the scrollbar, which rides the list's centre line.
                     let item_x = restart_x + r_btn_w + 10.0;
-                    let item_w = (list_box_x + list_box_w - 20.0) - item_x;
+                    let item_w = (list_box_x + list_box_w - 10.0) - item_x;
 
                     let btn_y = draw_y + (item_h - 22.0) / 2.0;
                     let btn_h = 22.0;
@@ -278,6 +278,8 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                 }
             }
             sec.pc.pop_clip_rect();
+            // The scrollbar's fore copy, over the rows at the raise's fade.
+            state.list.push_scrollbar_fore(sec.pc);
 
             if filtered_services.is_empty() {
                 sec.pc.text("No services match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
@@ -528,6 +530,10 @@ impl crate::pages::AppPage for ServicesState {
 
     fn tick(&mut self, dt: f32) -> bool {
         self.list.tick(dt)
+    }
+
+    fn frameless_lists(&self) -> Vec<&ScrollRegion> {
+        vec![&self.list]
     }
 }
 

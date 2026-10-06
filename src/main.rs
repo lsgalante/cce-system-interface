@@ -406,12 +406,25 @@ impl cce_ui::engine::Application for SystemInterface {
             self.page_scroll_bar
                 .layer_quads(Rect { x: bx, y: by, width: bw, height: bh })
         };
-        // Sunk layer: under the translucent window plate, so idle the bar
-        // reads as sunk INTO the window rather than gone, and the plate
-        // occludes it from input. Track and thumb are pills (the designer look).
-        if !self.page_scroll_bar.raised() {
-            for &(r, c) in &page_bar {
-                pc.rounded_rect(r, r.width.min(r.height) * 0.5, (true, true, true, true), c);
+        // The idle copy: under the translucent window plate, every frame, so
+        // the bar reads as sunk INTO the window rather than gone, and the
+        // plate occludes it from input. Track and thumb are pills (the
+        // designer look). The fore copy fades in over it, below.
+        for &(r, c) in &page_bar {
+            pc.rounded_rect(r, r.width.min(r.height) * 0.5, (true, true, true, true), c);
+        }
+        // The frameless inner lists' idle copies go under the plate too: they
+        // sit on wells carved into it, so this is the plate behind them. In
+        // page coordinates, so shifted by the page scroll and clipped to the
+        // page view as the wells are. Their fore copies are the pages'.
+        {
+            let view = self.page_view(width, height);
+            let scroll_y = self.scroll_y;
+            for list in self.app.get_current_page().frameless_lists() {
+                let mut shown = list.clone();
+                shown.y -= scroll_y;
+                shown.viewport_y -= scroll_y;
+                pc.clip(view, |pc| shown.push_scrollbar_prims(pc));
             }
         }
 
@@ -588,10 +601,13 @@ impl cce_ui::engine::Application for SystemInterface {
             draw_placed_icon(&mut pc, icon);
         }
 
-        // The page scrollbar's raised layer: over the page content while a
-        // scroll or drag holds it up (popovers still stack above it).
-        if self.page_scroll_bar.raised() {
-            for &(r, c) in &page_bar {
+        // The page scrollbar's fore copy: over the page content at the
+        // raise's fade, while a scroll or drag holds it up and as it sinks
+        // (popovers still stack above it).
+        let fade = self.page_scroll_bar.fade();
+        if fade > 0.001 {
+            for &(r, mut c) in &page_bar {
+                c[3] *= fade;
                 pc.rounded_rect(r, r.width.min(r.height) * 0.5, (true, true, true, true), c);
             }
         }

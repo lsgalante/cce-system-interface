@@ -15,11 +15,6 @@ pub struct ScrollBar {
     pub content_h: f32,
     pub viewport_h: f32,
     pub dragging: bool,
-    /// The page is laid out narrower by [`ScrollBar::lane_width`] so the bar
-    /// has a lane of its own beside the sections instead of riding over the
-    /// right column. Set from the page's measured height each layout (see
-    /// `rebuild_layout_inner`), so it is on exactly while the bar shows.
-    pub lane: bool,
     hovered: bool,
     /// The shared raise/sink hysteresis (the designer parameter-pane treatment):
     /// idle the bar sinks behind the translucent window plate and takes no
@@ -34,22 +29,15 @@ impl ScrollBar {
             content_h: 0.0,
             viewport_h: 0.0,
             dragging: false,
-            lane: false,
             hovered: false,
             activity: ScrollbarActivity::new(),
         })
     }
 
-    /// The bar's width: the DE scrollbar width widened (at stock width it
-    /// reads too slim against the page's wells).
+    /// The bar's width: the DE's centred-bar width (it rides the page's
+    /// centre line, over the sections, with no lane of its own).
     pub fn width() -> f32 {
-        cce_ui::layout::scrollbar_width() * 1.6
-    }
-
-    /// The window's right-edge strip the bar occupies — its width plus its
-    /// stand-off from the window edge. The page reserves it while it scrolls.
-    pub fn lane_width() -> f32 {
-        Self::width() + cce_ui::layout::scrollbar_inset()
+        cce_ui::layout::centred_scrollbar_width()
     }
 
     pub fn update(&mut self, scroll_y: f32, content_h: f32, viewport_h: f32) {
@@ -62,10 +50,10 @@ impl ScrollBar {
         self.content_h > self.viewport_h
     }
 
-    /// Whether the bar currently rides in front of the content (and takes
-    /// input) rather than idling behind the window plate.
-    pub fn raised(&self) -> bool {
-        self.activity.raised()
+    /// How far the fore copy has faded in, 0..=1: the raise and the sink are
+    /// a fade over the idle copy, not a flip.
+    pub fn fade(&self) -> f32 {
+        self.activity.fade()
     }
 
     /// A scroll landed (wheel fast path, keyboard): refresh the hold and raise
@@ -85,22 +73,15 @@ impl ScrollBar {
         self.activity.tick(dt, visible, self.dragging) || holding
     }
 
-    /// The track + thumb quads for the host's two-layer emission: drawn under
-    /// the window plate while sunk, over the page content while raised. Colors
-    /// keep the widget's hover/drag tint.
+    /// The track + thumb quads for the host's two copies: the idle one under
+    /// the window plate every frame, the fore one over the page content at
+    /// [`Self::fade`]. The DE's shared track and thumb colours.
     pub fn layer_quads(&self, rect: Rect) -> Vec<(Rect, [f32; 4])> {
         let mut out = Vec::new();
         if self.content_h > self.viewport_h && rect.height > 0.0 {
-            out.push((rect, [0.15, 0.15, 0.20, 0.3]));
+            out.push((rect, cce_ui::color::scrollbar_track_color()));
             if let Some((tx, ty, tw, th)) = self.thumb_rect(rect) {
-                let thumb_color = if self.dragging {
-                    [0.70, 0.70, 0.75, 0.6]
-                } else if self.hovered && self.activity.raised() {
-                    [0.65, 0.65, 0.70, 0.5]
-                } else {
-                    [0.60, 0.60, 0.65, 0.4]
-                };
-                out.push((Rect { x: tx, y: ty, width: tw, height: th }, thumb_color));
+                out.push((Rect { x: tx, y: ty, width: tw, height: th }, cce_ui::color::scrollbar_thumb_color()));
             }
         }
         out

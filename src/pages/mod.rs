@@ -151,6 +151,17 @@ pub trait AppPage {
     fn tick(&mut self, _dt: f32) -> bool {
         false
     }
+
+    /// The page's FRAMELESS inner lists, as laid out this frame. Their
+    /// scrollbars ride their centre lines behind the plate: a framed list
+    /// lays its idle copy under its own bg (`ScrollRegion::push_prims`), but
+    /// a frameless one sits straight on a well carved into the root plate,
+    /// so the host draws its idle copy before the root plate
+    /// (`push_scrollbar_prims`). The fore copy is the page's, after its rows
+    /// (`push_scrollbar_fore`). Default: none.
+    fn frameless_lists(&self) -> Vec<&cce_ui::widget::ScrollRegion> {
+        Vec::new()
+    }
 }
 
 
@@ -188,6 +199,34 @@ mod list_clip_tests {
             widest[0],
             widest[2]
         );
+    }
+
+    /// Every inner list's scrollbar is the DE's one design: it rides the
+    /// list's centre line, behind the plate until a scroll raises it
+    /// (sinking IS centring for a `ScrollRegion`). The frameless ones are
+    /// handed to the host, whose idle copy goes under the root plate they
+    /// are carved into; a framed one lays its own under its bg.
+    #[test]
+    fn every_inner_list_rides_its_centre_line_behind_the_plate() {
+        let app = crate::app::AppState::default();
+        let lists: [(&str, &ScrollRegion); 7] = [
+            ("accounts", &app.accounts.list),
+            ("network", &app.network.wifi_list),
+            ("packages installed", &app.packages.installed_list),
+            ("packages updates", &app.packages.updates_list),
+            ("processes", &app.processes.cpu_list),
+            ("services", &app.services.list),
+            ("timers", &app.timers.list),
+        ];
+        for (name, list) in lists {
+            assert!(list.sink_behind, "{name}: its bar sinks behind the plate");
+        }
+        for page in [&app.services as &dyn AppPage, &app.timers, &app.processes, &app.packages] {
+            assert_eq!(page.frameless_lists().len(), 1, "a frameless list is handed to the host");
+        }
+        for page in [&app.accounts as &dyn AppPage, &app.network] {
+            assert!(page.frameless_lists().is_empty(), "a framed list lays its own idle copy");
+        }
     }
 
     #[test]
