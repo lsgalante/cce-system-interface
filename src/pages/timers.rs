@@ -387,6 +387,19 @@ fn systemctl_action(args: &[&str], is_system: bool) {
     }
 }
 
+/// A timer row's button: the `icon` glyph (tinted `label_color`, so the
+/// red Disable stays red) when `compact`, else the `word`. `word` is also
+/// the fallback a glyph face shows when the icon set is missing.
+#[allow(clippy::too_many_arguments)]
+fn button_glyph(pc: &mut PageContent, compact: bool, icon: &str, word: &str, x: f32, y: f32, w: f32, h: f32,
+                bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: crate::app::AppAction) {
+    if compact {
+        pc.button_icon_tinted(icon, word, x, y, w, h, bg, hover_bg, label_color, action);
+    } else {
+        pc.button(word, x, y, w, h, bg, hover_bg, label_color, action);
+    }
+}
+
 pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
@@ -517,9 +530,15 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             for (idx, timer) in filtered.iter().enumerate() {
                 if let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) {
                     let is_small = sec_w < 350.0;
-                    let run_w = if is_small { 40.0 } else { 76.0 };
-                    let en_w = if is_small { 40.0 } else { 66.0 };
-                    let edit_w = if is_small { 36.0 } else { 50.0 };
+                    // A narrow row's buttons are cce-icons glyphs (pencil,
+                    // play, stop, circle) — but only when the icon set is
+                    // THERE: without it they fall back to words, and a word
+                    // needs the wide button. `upload_icon` caches per
+                    // (name, px), so asking every row is one hash lookup.
+                    let compact = is_small && cce_ui::upload_icon("play", 32).is_some();
+                    let run_w = if compact { 40.0 } else { 76.0 };
+                    let en_w = if compact { 40.0 } else { 66.0 };
+                    let edit_w = if compact { 36.0 } else { 50.0 };
                     let btn_gap = if is_small { 4.0 } else { 6.0 };
                     // TODO(style): the row's button run, dot and text
                     // column below are this list row's own layout.
@@ -556,9 +575,13 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
                     // Edit: only for user units living in ~/.config/systemd/user.
                     if timer.editable {
-                        let lbl = if is_small { "\u{270e}" } else { "Edit" };
-                        sec.pc.button(
-                            lbl,
+                        // `button_glyph` below: the glyph when compact,
+                        // else (or with no icon set) the word.
+                        button_glyph(
+                            sec.pc,
+                            compact,
+                            "pencil",
+                            "Edit",
                             edit_x,
                             btn_y,
                             edit_w,
@@ -571,9 +594,11 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     }
 
                     // Run Now: start the activated service immediately.
-                    let run_lbl = if is_small { "\u{25b6}" } else { "Run Now" };
-                    sec.pc.button(
-                        run_lbl,
+                    button_glyph(
+                        sec.pc,
+                        compact,
+                        "play",
+                        if is_small { "Run" } else { "Run Now" },
                         run_x,
                         btn_y,
                         run_w,
@@ -587,9 +612,11 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     // Enable/Disable the timer unit; static units have no toggle.
                     match timer.file_state.as_str() {
                         "enabled" | "enabled-runtime" => {
-                            let lbl = if is_small { "\u{25a0}" } else { "Disable" };
-                            sec.pc.button(
-                                lbl,
+                            button_glyph(
+                                sec.pc,
+                                compact,
+                                "stop",
+                                "Disable",
                                 en_x,
                                 btn_y,
                                 en_w,
@@ -601,9 +628,13 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                             );
                         }
                         "disabled" => {
-                            let lbl = if is_small { "\u{25cf}" } else { "Enable" };
-                            sec.pc.button(
-                                lbl,
+                            // `circle`, the filled dot the narrow row
+                            // always used: `play` is Run Now's beside it.
+                            button_glyph(
+                                sec.pc,
+                                compact,
+                                "circle",
+                                "Enable",
                                 en_x,
                                 btn_y,
                                 en_w,
