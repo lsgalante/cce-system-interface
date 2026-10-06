@@ -49,6 +49,7 @@ pub struct SystemState {
     pub cpu_cores: u32,
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
+    pub builds: Vec<InstalledBuild>,
     pub cpu_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub cpu_usage_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
     pub cpu_temp_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
@@ -97,6 +98,7 @@ impl Default for SystemState {
             cpu_cores: 0,
             gpus: Vec::new(),
             gpu_strings: Vec::new(),
+            builds: Vec::new(),
             cpu_label: Label::new("CPU Info"),
             cpu_usage_label: Label::new("CPU Usage"),
             cpu_temp_label: Label::new("CPU Temp"),
@@ -283,6 +285,91 @@ fn spawn_systemctl_force(action: &str) {
     let _ = crate::spawn_detached(cmd);
 }
 
+/// One compiled cce binary in `~/.local/bin` and when it was built.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstalledBuild {
+    pub name: String,
+    pub built: std::time::SystemTime,
+    /// `target/release` holds a newer build than the one installed — built
+    /// but never deployed, which is half of what `ccebuild status` reports.
+    pub newer_uninstalled: bool,
+}
+
+/// When the installed copy of a binary was built, and whether a newer build
+/// is waiting. Takes `(mtime, size)` of the installed file and, if present, of
+/// the one in `target/release`.
+///
+/// `ccebuild install` runs plain `install`, which does not preserve mtimes, so
+/// the installed file's own mtime is when it was INSTALLED. A whole-DE sweep
+/// installs long after the first crates finished building, so that is not the
+/// build time. When the build in `target/release` is no newer than the
+/// installed copy and the same size, it is the build that was installed, and
+/// its mtime is the real answer. Otherwise the build that was installed has
+/// since been overwritten (or never came from this tree), and the install
+/// time is the best bound left — the build can be no later than that.
+fn build_time(
+    installed: (std::time::SystemTime, u64),
+    built: Option<(std::time::SystemTime, u64)>,
+) -> (std::time::SystemTime, bool) {
+    match built {
+        Some((b_mtime, _)) if b_mtime > installed.0 => (installed.0, true),
+        Some((b_mtime, b_size)) if b_size == installed.1 => (b_mtime, false),
+        _ => (installed.0, false),
+    }
+}
+
+/// The workspace `ccebuild` last installed from, which it records for itself
+/// (`remember_workspace`). An app launched from the menu has no other way to
+/// find the tree.
+fn ccebuild_workspace() -> Option<std::path::PathBuf> {
+    let state = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".local/state")))?;
+    let ws = std::fs::read_to_string(state.join("cce/workspace")).ok()?;
+    let ws = std::path::PathBuf::from(ws.trim());
+    ws.is_dir().then_some(ws)
+}
+
+/// Every compiled `cce*` binary in `~/.local/bin`, oldest build first — the
+/// order that matters, since an app left behind by a toolkit sweep is stale
+/// against `cce-ui` in a way no built-vs-installed check can see, and its age
+/// is the only tell. Symlinks (`cce`, `cce-settings`) are aliases, and shell
+/// scripts (`ccebuild`, `cce-shadow`) have no build, so only ELF files count.
+fn scan_installed_builds() -> Vec<InstalledBuild> {
+    use std::io::Read;
+    let Some(home) = std::env::var_os("HOME") else { return Vec::new() };
+    let bindir = std::path::Path::new(&home).join(".local/bin");
+    let release = ccebuild_workspace().map(|ws| ws.join("target/release"));
+    let Ok(entries) = std::fs::read_dir(&bindir) else { return Vec::new() };
+
+    let stat = |p: &std::path::Path| -> Option<(std::time::SystemTime, u64)> {
+        let m = std::fs::metadata(p).ok()?;
+        Some((m.modified().ok()?, m.len()))
+    };
+
+    let mut builds: Vec<InstalledBuild> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            if !name.starts_with("cce") || !e.file_type().ok()?.is_file() {
+                return None;
+            }
+            let path = e.path();
+            let mut magic = [0u8; 4];
+            std::fs::File::open(&path).ok()?.read_exact(&mut magic).ok()?;
+            if &magic != b"\x7fELF" {
+                return None;
+            }
+            let installed = stat(&path)?;
+            let built = release.as_ref().and_then(|r| stat(&r.join(&name)));
+            let (built, newer_uninstalled) = build_time(installed, built);
+            Some(InstalledBuild { name, built, newer_uninstalled })
+        })
+        .collect();
+    builds.sort_by(|a, b| a.built.cmp(&b.built).then_with(|| a.name.cmp(&b.name)));
+    builds
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SystemInfo {
     pub hostname: String,
@@ -293,6 +380,7 @@ pub struct SystemInfo {
     pub cpu_usage: f32,
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
+    pub builds: Vec<InstalledBuild>,
 }
 
 pub async fn fetch_system_state() -> SystemInfo {
@@ -394,6 +482,7 @@ pub async fn fetch_system_state() -> SystemInfo {
         cpu_cores,
         gpus,
         gpu_strings,
+        builds: scan_installed_builds(),
     }
 }
 
@@ -407,10 +496,11 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, _ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
-    // Seven, matching the add_section calls below and the seven groups
+    // Six, matching the add_section calls below and the six groups
     // section_widgets reports. The count caps the grid's column count
-    // (`n.min(cols)`), so the stale 8 only bit once the window was wide enough
-    // for eight columns — harmless, but it read as a missing eighth section.
+    // (`n.min(cols)`), so a stale count only bites once the window is wide
+    // enough for that many columns — harmless, but it reads as a missing
+    // section.
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
 
     // ── 1. System Section ──
@@ -563,10 +653,37 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         });
     });
 
-    // ── 6. GPU Power Section ──
-
-
-
+    // ── 6. Builds Section ──
+    // When each installed cce binary was built. Oldest first: a client nobody
+    // rebuilt after a toolkit change is stale in a way `ccebuild status`
+    // cannot see, and sinks to the top here by its age alone.
+    builder.add_section(&mut final_pc, "Builds", sec_focused.get(5).copied().unwrap_or(false), |sec| {
+        if !state.loaded {
+            sec.text("Loading installed builds...", 12.0, 0.0, 12.0, TEXT_FG);
+            return;
+        }
+        if state.builds.is_empty() {
+            sec.text("No cce binaries in ~/.local/bin", 12.0, 0.0, 12.0, TEXT_DIM);
+            return;
+        }
+        let now = std::time::SystemTime::now();
+        let mut stack = sec.vstack(0.0);
+        for b in &state.builds {
+            let age = now.duration_since(b.built).map(|d| d.as_secs()).unwrap_or(0);
+            let (when, col) = if b.newer_uninstalled {
+                // Fits the column; the full story is in `build_time`.
+                (format!("{} ago · newer build", crate::pages::timers::humanize(age)), DANGER_BG)
+            } else {
+                (format!("{} ago", crate::pages::timers::humanize(age)), TEXT_DIM)
+            };
+            let name = b.name.clone();
+            stack.add_row(1, 0.0, 16.0, move |c, _, x, _| {
+                let y = c.ay();
+                c.pc.text(&name, x, y + 3.0, 11.0, TEXT_FG);
+                c.pc.text(&when, x + 140.0, y + 3.0, 11.0, col);
+            });
+        }
+    });
 
     final_pc
 }
@@ -584,6 +701,7 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
             state.cpu_cores = new.cpu_cores;
             state.gpus = new.gpus;
             state.gpu_strings = new.gpu_strings.clone();
+            state.builds = new.builds;
 
             if state.loaded {
                 state.hostname_label.set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
@@ -675,7 +793,7 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
 
 impl crate::pages::AppPage for SystemState {
-    // Sections: [System, System Actions, CPU, GPU, System Files, Battery]
+    // Sections: [System, System Actions, CPU, GPU, System Files, Builds]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
             Vec::new(),
@@ -739,6 +857,31 @@ mod tests {
     #[test]
     fn parse_pending_is_empty_when_nothing_differs() {
         assert!(parse_pending("==> system artifacts already up to date\n").is_empty());
+    }
+
+    fn at(secs: u64) -> std::time::SystemTime {
+        std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)
+    }
+
+    /// The installed build is the one in target/release: report when it was
+    /// built, not when the sweep got around to installing it.
+    #[test]
+    fn build_time_prefers_the_matching_build() {
+        assert_eq!(build_time((at(200), 10), Some((at(100), 10))), (at(100), false));
+    }
+
+    /// A newer build that was never installed: the installed binary came from
+    /// an overwritten build, so the install time is the only bound left.
+    #[test]
+    fn build_time_flags_a_newer_uninstalled_build() {
+        assert_eq!(build_time((at(200), 10), Some((at(300), 12))), (at(200), true));
+    }
+
+    /// Older but a different size: not the build that was installed.
+    #[test]
+    fn build_time_ignores_a_build_that_does_not_match() {
+        assert_eq!(build_time((at(200), 10), Some((at(100), 12))), (at(200), false));
+        assert_eq!(build_time((at(200), 10), None), (at(200), false));
     }
 
     #[test]
