@@ -152,15 +152,17 @@ struct SystemInterface {
     /// `popover_control_relief_marks`; the page layer interleaves the same way.
     page_control_relief_marks: Vec<usize>,
     /// Control troughs from `PageContent::control_reliefs` (page coords,
-    /// pre-scroll) — each carved as a flush inset plate after the section wells.
-    page_control_reliefs: Vec<ControlCarve>,
-    /// Icon faces for the page's buttons — `(image, x, y, w, h, alpha)`, page
-    /// coords already scroll-shifted by the renderer. A flat host draws no
-    /// images at all otherwise: `all_quads` carries quads and the text list
-    /// carries labels, and an icon is neither.
-    page_button_images: Vec<(u32, f32, f32, f32, f32, f32)>,
-    /// The page's own glyphs (`PageContent::icon`: a sort chevron, an in-use
-    /// check), drawn with the button faces under the page clip.
+    /// pre-scroll) — each carved as a flush inset plate after the section
+    /// wells — with the clip its control was emitted under (`[x, y, w, h]`,
+    /// page coords, pre-scroll). A button's plate needs it: the renderer
+    /// clamps the button's quad to its list, but a carve is drawn whole, so a
+    /// row half-scrolled out of a list left its plate standing past the edge.
+    page_control_reliefs: Vec<(ControlCarve, Option<[f32; 4]>)>,
+    /// The page's glyphs, drawn under the page clip and each its own: a
+    /// button's icon face, and the page's own (`PageContent::icon`: a sort
+    /// chevron, an in-use check). A flat host draws no images at all
+    /// otherwise: `all_quads` carries quads and the text list carries labels,
+    /// and an icon is neither.
     page_icon_images: Vec<PlacedIcon>,
     /// Glyphs the popovers drew (the expanded Dropdown's chevron), drawn over
     /// the popover plates.
@@ -303,7 +305,6 @@ impl cce_ui::engine::Application for SystemInterface {
             page_reliefs: Vec::new(),
             page_control_reliefs: Vec::new(),
             page_control_relief_marks: Vec::new(),
-            page_button_images: Vec::new(),
             page_icon_images: Vec::new(),
             popover_icon_images: Vec::new(),
             window_icon_images: Vec::new(),
@@ -456,8 +457,13 @@ impl cce_ui::engine::Application for SystemInterface {
                 .peekable();
             let mut emit_pending = |pc: &mut cce_ui::scene::paint::PaintCtx, upto: usize| {
                 while carves.peek().map_or(false, |&(_, mark)| mark <= upto) {
-                    let (carve, _) = carves.next().unwrap();
-                    pc.clip(view, |pc| emit_control_carve(pc, carve.shifted_y(-scroll_y)));
+                    let ((carve, clip), _) = carves.next().unwrap();
+                    pc.clip(view, |pc| match clip {
+                        Some([x, y, w, h]) => pc.clip(Rect { x, y: y - scroll_y, width: w, height: h }, |pc| {
+                            emit_control_carve(pc, carve.shifted_y(-scroll_y))
+                        }),
+                        None => emit_control_carve(pc, carve.shifted_y(-scroll_y)),
+                    });
                 }
             };
             for (i, w) in self.widgets.iter().enumerate() {
@@ -565,15 +571,13 @@ impl cce_ui::engine::Application for SystemInterface {
             });
         }
 
-        // Button icon faces, over the page's quads and its carves — clipped to
-        // the page viewport, which is what cuts a half-scrolled list row's icon
-        // at the list edge (an image has no geometry to trim, only a clip).
-        if !self.page_button_images.is_empty() || !self.page_icon_images.is_empty() {
+        // The page's glyphs — button icon faces and the page's own — over
+        // its quads and carves, under the page viewport and each under the
+        // clip it was placed with, which is what cuts a half-scrolled list
+        // row's glyph at the list edge.
+        if !self.page_icon_images.is_empty() {
             let view = self.page_view(width, height);
             pc.clip(view, |pc| {
-                for &(image, x, y, w, h, alpha) in &self.page_button_images {
-                    pc.image(image, Rect { x, y, width: w, height: h }, alpha);
-                }
                 for icon in &self.page_icon_images {
                     draw_placed_icon(pc, icon);
                 }

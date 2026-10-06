@@ -253,16 +253,17 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
 
     // ── Processes Section (label-less well) ──
     builder.add_section_spanned(&mut final_pc, "", 1, root_focused || sec_focused.first().copied().unwrap_or(false), |sec| {
-        let rx = sec.left;
         if !state.loaded {
             sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
         } else {
-            // Scrolling box configuration for process list: one even inset
-            // between the list and the well's walls on all four sides — the
-            // well margin the toolkit's SectionContext lays out on.
+            // The list fills the section's content box across — the box the
+            // section clips everything it draws to. Laid out at `left + 12`
+            // instead, it started 2 * padding outside that clip, which cut
+            // the first letter off the summary line and the left edge off
+            // every row's hover wash. Top and bottom keep the well margin.
             let inset = crate::app::section_margin();
-            let list_box_x = rx + inset;
-            let list_box_w = sec.cw - 2.0 * inset;
+            let list_box_x = sec.content_left();
+            let list_box_w = sec.content_width();
             // Power summary line above the list; the list starts below it.
             let summary_h = 18.0;
             sec.pc.text(&summary_line(&state.power), list_box_x, sec.well_top() + inset + 2.0, 11.0, TEXT_DIM);
@@ -276,15 +277,18 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             //
             // Columns live in CONTENT space at fixed offsets; every draw
             // subtracts scroll_x. CONTENT_W > box width = the h-bar appears.
+            // Sized so the default 820px window shows the whole table, Kill
+            // column clear of the scrollbar, without the h-bar: COMMAND gives
+            // up the 20px the content box's inset took.
             const COL_PID: f32 = 12.0;
             const COL_COMMAND: f32 = 80.0;
-            const COL_RSS: f32 = 400.0;
-            const COL_MEM: f32 = 480.0;
-            const COL_CPU: f32 = 545.0;
-            const COL_WATTS: f32 = 605.0;
-            const COL_WAKE: f32 = 655.0;
-            const COL_KILL: f32 = 720.0;
-            const CONTENT_W: f32 = 745.0;
+            const COL_RSS: f32 = 380.0;
+            const COL_MEM: f32 = 460.0;
+            const COL_CPU: f32 = 525.0;
+            const COL_WATTS: f32 = 585.0;
+            const COL_WAKE: f32 = 635.0;
+            const COL_KILL: f32 = 700.0;
+            const CONTENT_W: f32 = 725.0;
 
             // TODO(style): the column offsets, header hit-target nudges and
             // in-row text centring below are this table's own layout.
@@ -294,7 +298,8 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // The bottom scrollbar needs its own band: rows must stop above
             // it or the last row draws under the pills.
             let bottom_reserve = if state.cpu_list.h_scroll_active() { 18.0 } else { 6.0 };
-            state.cpu_list.update_bounds(state.processes.len(), list_box_y + header_h, list_box_h - header_h - bottom_reserve);
+            let rows_h = list_box_h - header_h - bottom_reserve;
+            state.cpu_list.update_bounds(state.processes.len(), list_box_y + header_h, rows_h);
             state.cpu_list.push_prims(sec.pc);
 
             let ox = state.cpu_list.scroll_x;
@@ -349,8 +354,11 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
 
             let row_h = 24.0;
 
-            // Visible process rows rendering (virtualized/clipped)
-            sec.pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, list_box_h - header_h);
+            // Visible process rows, clipped to the rows' viewport — not on
+            // into the reserve band below it, where the scroll region still
+            // hands back a row starting there and its Kill button stood alone
+            // under the list.
+            sec.pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, rows_h);
             for (idx, p) in state.processes.iter().enumerate() {
                 if let Some(draw_y) = state.cpu_list.get_item_draw_y(idx, 4.0) {
                     // The row itself, in the DE's list style: plateless,
@@ -726,6 +734,47 @@ mod tests {
         update(&mut state, ProcessesMessage::SortBy(ProcSort::Power));
         assert_eq!(state.sort, ProcSort::Cpu);
         assert_eq!(order(&state), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn list_lies_inside_the_section_clip() {
+        // The list used to sit at `left + 12`, 2 * padding outside the
+        // content box the section clips to: the summary lost its first
+        // letter and every row's hover wash its left edge.
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        state.processes = (0..40).map(|i| row(&i.to_string())).collect();
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut ctx = cce_ui::context::UiContext::new();
+        let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx);
+        for t in &pc.texts {
+            if let Some(b) = t.6 {
+                assert!(t.2 >= b[0], "{:?} starts at {} left of its clip {}", t.0, t.2, b[0]);
+            }
+        }
+        for (b, a, clip) in &pc.buttons {
+            if let Some(c) = clip {
+                assert!(cce_ui::widget::WidgetHost::base(b).x >= c[0], "{a:?} starts left of its clip");
+            }
+        }
+    }
+
+    #[test]
+    fn rows_clip_at_their_viewport_not_the_band_below() {
+        // The scroll region hands back a row that starts just past its
+        // viewport; clipped only at the list's bottom, that row's Kill button
+        // stood alone in the reserve band under the last row.
+        let mut state = ProcessesState { loaded: true, ..Default::default() };
+        state.processes = (0..40).map(|i| row(&i.to_string())).collect();
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut ctx = cce_ui::context::UiContext::new();
+        let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx);
+        let rows_bottom = state.cpu_list.viewport_y + state.cpu_list.viewport_h;
+        for (_, a, clip) in &pc.buttons {
+            if matches!(a, AppAction::Processes(ProcessesMessage::Kill(_))) {
+                let c = clip.expect("rows are clipped");
+                assert_eq!(c[1] + c[3], rows_bottom);
+            }
+        }
     }
 
     #[test]

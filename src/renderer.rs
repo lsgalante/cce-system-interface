@@ -123,7 +123,6 @@ impl SystemInterface {
         let mut widgets = Vec::new();
         let mut texts = Vec::new();
         let mut page_buttons = Vec::new();
-        let mut page_button_images: Vec<(u32, f32, f32, f32, f32, f32)> = Vec::new();
         let mut page_icon_images: Vec<crate::PlacedIcon> = Vec::new();
 
         cce_ui::widget::hover_animation::reset_frame_registration();
@@ -303,7 +302,7 @@ impl SystemInterface {
         // Page content in LOGICAL coordinates, then scale to physical
         let pc = self.render_page_content(lcx, lcy, lcw, lch);
         self.page_reliefs = pc.reliefs.clone();
-        self.page_control_reliefs = pc.control_reliefs.clone();
+        self.page_control_reliefs = pc.control_reliefs.iter().map(|&c| (c, None)).collect();
         self.page_control_relief_marks.clear();
 
 
@@ -563,7 +562,10 @@ impl SystemInterface {
                     if refocused {
                         plate.tint = Some(cce_ui::widget::ControlPlate::focus_tint());
                     }
-                    self.page_control_reliefs.push(ControlCarve::Plate {
+                    // Under the button's own clip, as its quad is clamped:
+                    // drawn whole, a row half-scrolled out of a list kept
+                    // its plate standing past the list's edge.
+                    let carve = ControlCarve::Plate {
                         x: plate.rect.x,
                         y: plate.rect.y,
                         w: plate.rect.width,
@@ -572,15 +574,17 @@ impl SystemInterface {
                         depth: plate.depth,
                         color: plate.face_fill(),
                         tint: plate.tint,
-                    });
+                    };
+                    self.page_control_reliefs.push((carve, *clip));
                     self.page_control_relief_marks.push(widgets.len());
                 }
             }
             // An icon face replaces the label entirely (as it does in
             // `Button::paint`). The rect comes from the button's own
             // `icon_rect` so the glyph lands where the paint path would put
-            // it; display_list draws these under the page clip, which is what
-            // cuts a half-scrolled row's icon at the list edge.
+            // it, and it keeps the button's clip: the page clip alone let a
+            // row half-scrolled out of a list show its whole glyph past the
+            // list's edge.
             let has_icon = if let Some((image, irect, alpha)) =
                 btn.icon_rect(cce_ui::scene::layout::Rect {
                     x: base.x,
@@ -589,7 +593,15 @@ impl SystemInterface {
                     height: base.h,
                 })
             {
-                page_button_images.push((image, irect.x, irect.y, irect.width, irect.height, alpha));
+                page_icon_images.push(crate::PlacedIcon {
+                    image,
+                    x: irect.x,
+                    y: irect.y,
+                    w: irect.width,
+                    h: irect.height,
+                    alpha,
+                    clip: clip.map(|[x, y, w, h]| [x, y - scroll_offset_y, w, h]),
+                });
                 true
             } else {
                 false
@@ -782,7 +794,6 @@ impl SystemInterface {
         self.widgets = widgets;
         self.texts = texts;
         self.page_buttons = page_buttons;
-        self.page_button_images = page_button_images;
         self.page_icon_images = page_icon_images;
         self.window_icon_images = window_icon_images;
 
