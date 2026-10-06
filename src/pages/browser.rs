@@ -1,5 +1,5 @@
 //! Browser (cce-browser) settings: homepage, search engine, download
-//! directory, history recording, Raindrop bookmark sync, navigation-bar
+//! directory, history recording, Raindrop bookmark sync, vi mode, navigation-bar
 //! position, page color scheme. Edits the
 //! browser's own app config (`~/.config/cce/cce-browser/config.kdl`,
 //! section "browser") — the browser reloads it when its window regains
@@ -44,6 +44,9 @@ pub struct BrowserConfig {
     /// `browser.raindrop`: sync bookmarks with Raindrop.io's Unsorted
     /// collection (cce-browser's RAINDROP-SYNC.md). Off unless set.
     pub raindrop: bool,
+    /// `browser.vi-mode`: qutebrowser-style modal keys (cce-browser's
+    /// `src/vi.rs`). Off unless set.
+    pub vi_mode: bool,
     pub bar_position: String,
     pub color_scheme: String,
 }
@@ -55,6 +58,7 @@ pub struct BrowserState {
     pub download_dir: String,
     pub history: bool,
     pub raindrop: bool,
+    pub vi_mode: bool,
     pub bar_position: String,
     pub color_scheme: String,
     pub homepage_box: cce_ui::widget::Adapted<TextBox>,
@@ -64,6 +68,7 @@ pub struct BrowserState {
     pub download_dir_box: cce_ui::widget::Adapted<TextBox>,
     pub history_toggle: cce_ui::widget::Adapted<Toggle>,
     pub raindrop_toggle: cce_ui::widget::Adapted<Toggle>,
+    pub vi_mode_toggle: cce_ui::widget::Adapted<Toggle>,
 }
 
 impl Default for BrowserState {
@@ -84,6 +89,7 @@ impl Default for BrowserState {
             download_dir: config.download_dir,
             history: config.history,
             raindrop: config.raindrop,
+            vi_mode: config.vi_mode,
             bar_position: config.bar_position.clone(),
             color_scheme: config.color_scheme.clone(),
             homepage_box,
@@ -105,6 +111,7 @@ impl Default for BrowserState {
             download_dir_box,
             history_toggle: Toggle::new().with_label("Record History"),
             raindrop_toggle: Toggle::new().with_label("Sync Bookmarks with Raindrop"),
+            vi_mode_toggle: Toggle::new().with_label("Vi Keys (qutebrowser-style)"),
         }
     }
 }
@@ -128,6 +135,7 @@ pub enum BrowserMessage {
     SetColorScheme(String),
     ToggleHistory,
     ToggleRaindrop,
+    ToggleViMode,
     /// Commit the homepage / download-dir text fields.
     Apply,
     Refreshed(BrowserConfig),
@@ -165,6 +173,10 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.raindrop = !state.raindrop;
             write_config_value("raindrop", &state.raindrop.to_string());
         }
+        BrowserMessage::ToggleViMode => {
+            state.vi_mode = !state.vi_mode;
+            write_config_value("vi-mode", &state.vi_mode.to_string());
+        }
         BrowserMessage::Apply => {
             state.homepage = live_text(&state.homepage_box);
             if state.homepage.is_empty() {
@@ -181,6 +193,7 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.search = new.search;
             state.history = new.history;
             state.raindrop = new.raindrop;
+            state.vi_mode = new.vi_mode;
             state.bar_position = new.bar_position;
             state.color_scheme = new.color_scheme;
             // Don't clobber fields mid-edit with watcher refreshes.
@@ -216,6 +229,7 @@ pub fn read_browser_config() -> BrowserConfig {
         download_dir: val["browser"]["download-dir"].as_str().unwrap_or("").to_string(),
         history: val["browser"]["history"].as_bool().unwrap_or(true),
         raindrop: val["browser"]["raindrop"].as_bool().unwrap_or(false),
+        vi_mode: val["browser"]["vi-mode"].as_bool().unwrap_or(false),
         bar_position: val["browser"]["bar-position"].as_str().unwrap_or("top").to_string(),
         color_scheme: val["browser"]["color-scheme"].as_str().unwrap_or("dark").to_string(),
     }
@@ -243,6 +257,7 @@ impl AppPage for BrowserState {
             self.download_dir_box.id(),
             self.history_toggle.id(),
             self.raindrop_toggle.id(),
+            self.vi_mode_toggle.id(),
         ]]
     }
 
@@ -292,6 +307,9 @@ impl AppPage for BrowserState {
             self.raindrop_toggle.set_toggled(self.raindrop);
             stack.add_widget(&mut self.raindrop_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
 
+            self.vi_mode_toggle.set_toggled(self.vi_mode);
+            stack.add_widget(&mut self.vi_mode_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
+
             let btn_h = 32.0;
             stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
                 ctx.button(
@@ -338,6 +356,9 @@ impl AppPage for BrowserState {
         }
         if self.raindrop_toggle.take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleRaindrop));
+        }
+        if self.vi_mode_toggle.take_change() {
+            actions.push(AppAction::Browser(BrowserMessage::ToggleViMode));
         }
         // Enter in either text field commits both.
         if self.homepage_box.take_change() || self.download_dir_box.take_change() {
