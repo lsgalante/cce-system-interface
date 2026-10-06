@@ -30,8 +30,11 @@ impl Default for NotificationsState {
         Self {
             loaded: false,
             enable: true,
+            // Left-aligned: centred, the label straddled the seam at the
+            // toggle's midpoint (see the Browser page's toggles).
             enable_toggle: Toggle::new()
                 .with_label("Enable Notifications")
+                .with_left_align(true)
                 .with_config(&get_config_path(), "enable"),
             bell: "none".to_string(),
             bell_menu: Dropdown::new(

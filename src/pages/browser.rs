@@ -109,9 +109,13 @@ impl Default for BrowserState {
             )
             .with_label("Page Color Scheme"),
             download_dir_box,
-            history_toggle: Toggle::new().with_label("Record History"),
-            raindrop_toggle: Toggle::new().with_label("Sync Bookmarks with Raindrop"),
-            vi_mode_toggle: Toggle::new().with_label("Vi Keys (qutebrowser-style)"),
+            // Left-aligned, as the designer's parameter pane sets its toggles:
+            // a toggle's run is half its width, so the seam where run meets
+            // well sits at the midpoint, and a centred label on a row-wide
+            // toggle had it drawn straight through the text.
+            history_toggle: Toggle::new().with_label("Record History").with_left_align(true),
+            raindrop_toggle: Toggle::new().with_label("Sync Bookmarks with Raindrop").with_left_align(true),
+            vi_mode_toggle: Toggle::new().with_label("Vi Keys (qutebrowser-style)").with_left_align(true),
         }
     }
 }
