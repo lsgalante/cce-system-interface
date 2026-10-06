@@ -14,7 +14,8 @@
 //!   `cce-power-apply-resume.service` after every wake. It reads the source
 //!   again when it finishes and re-applies if it moved. Per-lever failures
 //!   are logged and do not fail the run: a missing NVIDIA driver must not
-//!   hide the CPU profile that did land.
+//!   hide the CPU profile that did land. The plan's battery charge limit,
+//!   which belongs to no mode, is re-applied by every run.
 //! - `sleep` — lower PCIe ASPM to `powersupersave` before the machine
 //!   sleeps, when the running mode sets it to anything else. Run by
 //!   `cce-power-apply-sleep.service`; the resume unit's `apply` puts the
@@ -25,6 +26,8 @@
 //!   under pkexec, the app's standard privileged path.
 //! - `assign <ac|battery> <mode>` — point an adapter state at a mode and,
 //!   when that state is the live one, apply the mode now.
+//! - `charge-limit <start|unset> <end|unset>` — record the battery's charge
+//!   window (whole percent) and apply it now, whatever is plugged in.
 //! - `show` — print the plan and the live adapter state.
 //!
 //! Installed to `/usr/bin` by `ccebuild install-system` (the udev rule and
@@ -33,7 +36,8 @@
 //! side is installed.
 
 use cce_settings::power_plan::{
-    apply_lever, apply_mode, current_source, Lever, Mode, PowerPlan, Source, PLAN_PATH,
+    apply_charge_limit, apply_lever, apply_mode, current_source, ChargeLimit, Lever, Mode, PowerPlan, Source,
+    PLAN_PATH,
 };
 
 fn usage() -> ! {
@@ -43,6 +47,7 @@ fn usage() -> ! {
                 cce-power-apply apply-mode <mode>\n       \
                 cce-power-apply set <mode> <lever> <value|unset>\n       \
                 cce-power-apply assign <ac|battery> <mode>\n       \
+                cce-power-apply charge-limit <start|unset> <end|unset>\n       \
                 cce-power-apply show\n\
          modes:  {}\n\
          levers: {}",
@@ -76,6 +81,25 @@ fn run_mode(plan: &PowerPlan, mode: Mode, what: &str) -> i32 {
     0
 }
 
+/// Apply the plan's charge window and report it. Nothing to say when the
+/// plan has none: the battery's thresholds are then not this binary's.
+fn run_charge_limit(plan: &PowerPlan) -> i32 {
+    let limit = plan.charge_limit();
+    if limit.is_unset() {
+        return 0;
+    }
+    match apply_charge_limit(limit) {
+        Ok(()) => {
+            println!("charge limit: {}", limit);
+            0
+        }
+        Err(e) => {
+            eprintln!("cce-power-apply: charge limit ({}): {}", limit, e);
+            1
+        }
+    }
+}
+
 /// How many times one `apply` follows the source changing under it before
 /// it gives up and leaves the next udev event to finish the job. A charger
 /// with a bad contact can flap for as long as it likes.
@@ -86,6 +110,11 @@ fn cmd_apply(forced: Option<&str>) -> i32 {
         Ok(p) => p,
         Err(code) => return code,
     };
+    // Every run, not only when the page sets it: the firmware forgets the
+    // thresholds (a pack that runs flat comes back at 0/100), and this run
+    // is what boot, every plug and unplug, and every wake already start.
+    // Its failure is logged and, like a lever's, does not fail the run.
+    run_charge_limit(&plan);
     if let Some(s) = forced {
         let source = Source::parse(s).unwrap_or_else(|| usage());
         return run_mode(&plan, plan.assigned(source), source.key());
@@ -225,6 +254,27 @@ fn cmd_assign(rest: &[String]) -> i32 {
     0
 }
 
+fn cmd_charge_limit(rest: &[String]) -> i32 {
+    let [start, end] = rest else { usage() };
+    let pct = |s: &str| -> Option<u32> {
+        if s == "unset" { None } else { Some(s.parse().unwrap_or_else(|_| usage())) }
+    };
+    let limit = ChargeLimit { start: pct(start), end: pct(end) };
+    let mut plan = match load_plan() {
+        Ok(p) => p,
+        Err(code) => return code,
+    };
+    if let Err(e) = plan.set_charge_limit(limit) {
+        eprintln!("cce-power-apply: {}", e);
+        return 2;
+    }
+    if let Err(e) = plan.save() {
+        eprintln!("cce-power-apply: writing {}: {}", PLAN_PATH, e);
+        return 1;
+    }
+    run_charge_limit(&plan)
+}
+
 fn cmd_show() -> i32 {
     match load_plan() {
         Ok(plan) => {
@@ -245,6 +295,7 @@ fn main() {
         Some("apply-mode") => cmd_apply_mode(&args[1..]),
         Some("set") => cmd_set(&args[1..]),
         Some("assign") => cmd_assign(&args[1..]),
+        Some("charge-limit") => cmd_charge_limit(&args[1..]),
         Some("show") => cmd_show(),
         _ => usage(),
     };

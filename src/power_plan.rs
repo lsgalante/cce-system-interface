@@ -38,6 +38,14 @@
 //! compositor's `idle { }` block while they exist, so battery can darken
 //! the display sooner than the desk does.
 //!
+//! The battery **charge limit** is in the plan too, but belongs to no mode
+//! (`charge_limit { start 75; end 80 }`, [`ChargeLimit`]): it is a charging
+//! policy, and one that changed on every plug and unplug would defeat it.
+//! The applier writes it on every `apply` — at boot, on each adapter change
+//! and after every wake — because the firmware does not keep it: until
+//! 2026-10-06 the Power page wrote sysfs once and recorded nothing, and a
+//! battery that ran flat came back charging to 100%.
+//!
 //! A lever absent from a mode is left alone when that mode becomes active —
 //! "not set" means "don't touch", never "reset to a default". The older
 //! per-source form of this file (top-level `ac` / `battery` blocks of
@@ -136,7 +144,7 @@ impl Mode {
 
 /// The levers that make sense per mode. The battery charge limit is
 /// deliberately not one: it is a charging policy, not something to flip when
-/// the mode changes.
+/// the mode changes, so it is plan-wide ([`ChargeLimit`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Lever {
     Profile,
@@ -236,11 +244,58 @@ pub fn sysfs_token_ok(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-/// The levers of every mode, plus which mode each adapter state runs.
+/// The battery's charge window, in whole percent: charging stops at `end`
+/// and, once stopped, resumes only below `start` — so a pack held at 80%
+/// is not topped up from 79% every few minutes. Either half absent means
+/// "leave that threshold alone", like an absent lever.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ChargeLimit {
+    pub start: Option<u32>,
+    pub end: Option<u32>,
+}
+
+impl ChargeLimit {
+    pub fn is_unset(&self) -> bool {
+        self.start.is_none() && self.end.is_none()
+    }
+
+    /// The kernel's ranges (start 0–99, end 1–100), and a start below the
+    /// end, since a window that resumes at or above where it stops is not
+    /// one the firmware will take.
+    pub fn check(&self) -> Result<(), String> {
+        if self.start.is_some_and(|s| s > 99) {
+            return Err("charge_limit start must be 0–99".to_string());
+        }
+        if self.end.is_some_and(|e| e == 0 || e > 100) {
+            return Err("charge_limit end must be 1–100".to_string());
+        }
+        if let (Some(s), Some(e)) = (self.start, self.end) {
+            if s >= e {
+                return Err(format!("charge_limit start {} must be below end {}", s, e));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for ChargeLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.start, self.end) {
+            (Some(s), Some(e)) => write!(f, "start {}%, end {}%", s, e),
+            (Some(s), None) => write!(f, "start {}%", s),
+            (None, Some(e)) => write!(f, "end {}%", e),
+            (None, None) => write!(f, "not set"),
+        }
+    }
+}
+
+/// The levers of every mode, which mode each adapter state runs, and the
+/// plan-wide battery charge limit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PowerPlan {
     modes: BTreeMap<Mode, BTreeMap<Lever, String>>,
     assign: BTreeMap<Source, Mode>,
+    charge: ChargeLimit,
 }
 
 impl PowerPlan {
@@ -285,6 +340,18 @@ impl PowerPlan {
         self.assign.insert(source, mode);
     }
 
+    pub fn charge_limit(&self) -> ChargeLimit {
+        self.charge
+    }
+
+    /// Record the charge window. Rejects one that fails
+    /// [`ChargeLimit::check`] rather than storing it.
+    pub fn set_charge_limit(&mut self, limit: ChargeLimit) -> Result<(), String> {
+        limit.check()?;
+        self.charge = limit;
+        Ok(())
+    }
+
     /// No lever set on any mode. The assignment alone is not content: it
     /// changes nothing until some mode has a lever in it.
     pub fn is_empty(&self) -> bool {
@@ -319,6 +386,25 @@ impl PowerPlan {
                             .ok_or_else(|| format!("unknown mode {:?} assigned to {}", key, sname))?;
                         plan.assign(source, mode);
                     }
+                }
+                "charge_limit" => {
+                    let mut limit = ChargeLimit::default();
+                    if let Some(children) = node.children() {
+                        for child in children.nodes() {
+                            let cname = child.name().value();
+                            let pct = child
+                                .get(0)
+                                .and_then(|e| e.value().as_i64())
+                                .and_then(|n| u32::try_from(n).ok())
+                                .ok_or_else(|| format!("charge_limit.{} needs one whole percent", cname))?;
+                            match cname {
+                                "start" => limit.start = Some(pct),
+                                "end" => limit.end = Some(pct),
+                                _ => return Err(format!("unknown setting {:?} under charge_limit", cname)),
+                            }
+                        }
+                    }
+                    plan.set_charge_limit(limit)?;
                 }
                 // The pre-modes file: a bare block of levers per adapter
                 // state. Each becomes that state's default mode, which is
@@ -387,12 +473,25 @@ impl PowerPlan {
             children.nodes_mut().push(node);
         }
         doc.nodes_mut().push(assign);
+        if !self.charge.is_unset() {
+            let mut block = kdl::KdlNode::new("charge_limit");
+            let children = block.ensure_children();
+            for (name, pct) in [("start", self.charge.start), ("end", self.charge.end)] {
+                if let Some(pct) = pct {
+                    let mut node = kdl::KdlNode::new(name);
+                    node.push(kdl::KdlEntry::new(i64::from(pct)));
+                    children.nodes_mut().push(node);
+                }
+            }
+            doc.nodes_mut().push(block);
+        }
         doc.fmt();
         let mut out = String::from(
             "// Power modes and their adapter-state assignment, edited from the\n\
              // System Interface's Power page and applied by cce-power-apply (udev,\n\
              // boot, and on each change). A lever missing from a mode is left\n\
-             // untouched when that mode becomes active.\n",
+             // untouched when that mode becomes active. The charge limit belongs\n\
+             // to no mode and is re-applied on every change.\n",
         );
         out.push_str(&doc.to_string());
         out
@@ -513,14 +612,18 @@ pub fn helper_speaks_modes(path: &Path) -> bool {
 
 /// The usage text of a helper that knows about modes names `apply-mode`
 /// (the pre-modes one lists only `apply`, `set` and `show`), and its
-/// `levers:` line names every lever it accepts.
+/// `levers:` line names every lever it accepts. It must also name
+/// `charge-limit`: a helper from before the charge limit cannot parse a
+/// plan holding one, so it would apply nothing on plug or unplug.
 fn usage_speaks_modes(usage: &str) -> bool {
     let levers: Vec<&str> = usage
         .lines()
         .find_map(|l| l.trim().strip_prefix("levers:"))
         .map(|l| l.split_whitespace().collect())
         .unwrap_or_default();
-    usage.contains("apply-mode") && Lever::ALL.iter().all(|l| levers.contains(&l.key()))
+    usage.contains("apply-mode")
+        && usage.contains("charge-limit")
+        && Lever::ALL.iter().all(|l| levers.contains(&l.key()))
 }
 
 /// Whether the root-side pieces are in place — the helper at its system
@@ -652,6 +755,78 @@ pub fn apply_lever(lever: Lever, value: &str) -> Result<(), String> {
                 Err(format!("nvidia-smi -pl {}: {}", value, msg.trim()))
             }
         }
+    }
+}
+
+/// Every battery with a charge-limit knob, `/sys/class/power_supply/BAT*`,
+/// sorted.
+fn charge_batteries() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir("/sys/class/power_supply")
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("BAT"))
+                        && p.join("charge_control_end_threshold").exists()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// Whether the start threshold goes in before the end. The firmware
+/// (thinkpad_acpi) refuses a start above the end in force and an end below
+/// the start in force, so a window moving up must raise its end first and
+/// one moving down must lower its start first; `current_end` is what the
+/// battery reports now. Written start-then-end blindly, 75/80 → 85/90
+/// fails on the start.
+fn start_first(limit: ChargeLimit, current_end: Option<u32>) -> bool {
+    match (limit.start, current_end) {
+        (Some(s), Some(cur)) => s <= cur,
+        _ => true,
+    }
+}
+
+/// Write the charge window to every battery that has one. A threshold
+/// already at its value is not rewritten; a start the battery has no file
+/// for is reported after the end has landed, since the end is the half that
+/// protects the pack.
+pub fn apply_charge_limit(limit: ChargeLimit) -> Result<(), String> {
+    limit.check()?;
+    if limit.is_unset() {
+        return Ok(());
+    }
+    let batteries = charge_batteries();
+    if batteries.is_empty() {
+        return Err("no battery exposes charge_control_end_threshold".to_string());
+    }
+    const START: &str = "charge_control_start_threshold";
+    const END: &str = "charge_control_end_threshold";
+    let mut missing_start = Vec::new();
+    for bat in batteries {
+        let read = |file: &str| read_trim(&bat.join(file)).and_then(|s| s.parse::<u32>().ok());
+        let start = match limit.start {
+            Some(s) if bat.join(START).exists() => Some((START, s)),
+            Some(_) => {
+                missing_start.push(bat.display().to_string());
+                None
+            }
+            None => None,
+        };
+        let end = limit.end.map(|e| (END, e));
+        let order = if start_first(limit, read(END)) { [start, end] } else { [end, start] };
+        for (file, pct) in order.into_iter().flatten() {
+            if read(file) != Some(pct) {
+                write_sysfs(&bat.join(file), &pct.to_string())?;
+            }
+        }
+    }
+    if missing_start.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("no {} on {}; only the end was applied", START, missing_start.join(", ")))
     }
 }
 
@@ -875,7 +1050,8 @@ mod tests {
         // What this binary prints today.
         let levers = Lever::ALL.iter().map(|l| l.key()).collect::<Vec<_>>().join(" ");
         let current = format!(
-            "usage: cce-power-apply apply [ac|battery]\n       cce-power-apply apply-mode <mode>\n \
+            "usage: cce-power-apply apply [ac|battery]\n       cce-power-apply apply-mode <mode>\n       \
+             cce-power-apply charge-limit <start|unset> <end|unset>\n \
              modes:  performance balanced power-saver\n levers: {levers}\n"
         );
         assert!(usage_speaks_modes(&current));
@@ -883,6 +1059,10 @@ mod tests {
         // rejects that lever — as stale, for that pick, as a pre-modes one.
         let older = current.replace(" animations", "");
         assert!(!usage_speaks_modes(&older), "{older}");
+        // One from before the charge limit cannot even parse a plan that
+        // holds one.
+        let no_charge = current.replace("charge-limit", "");
+        assert!(!usage_speaks_modes(&no_charge), "{no_charge}");
         // What the pre-modes one printed — the copy that silently rejects
         // every pick the page makes.
         assert!(!usage_speaks_modes(
@@ -890,6 +1070,58 @@ mod tests {
         ));
         // A helper that cannot be run at all is not a helper that speaks.
         assert!(!helper_speaks_modes(Path::new("/nonexistent/cce-power-apply")));
+    }
+
+    #[test]
+    fn the_charge_limit_is_plan_wide_and_round_trips() {
+        let text = "mode \"performance\" { aspm \"performance\"; }\n\
+                    charge_limit { start 75; end 80; }\n";
+        let plan = PowerPlan::parse(text).unwrap();
+        assert_eq!(plan.charge_limit(), ChargeLimit { start: Some(75), end: Some(80) });
+        // It is in no mode's levers, and survives a write and a re-read.
+        assert_eq!(levers_of(&plan, Mode::Performance), [(Lever::Aspm, "performance".to_string())]);
+        let again = PowerPlan::parse(&plan.to_kdl()).unwrap();
+        assert_eq!(again.charge_limit(), plan.charge_limit());
+        assert_eq!(levers_of(&again, Mode::Performance), levers_of(&plan, Mode::Performance));
+        // Half a window keeps only that half; none writes no block at all.
+        let end_only = PowerPlan::parse("charge_limit { end 60; }").unwrap();
+        assert_eq!(end_only.charge_limit(), ChargeLimit { start: None, end: Some(60) });
+        assert_eq!(PowerPlan::parse(&end_only.to_kdl()).unwrap().charge_limit(), end_only.charge_limit());
+        assert!(!PowerPlan::default().to_kdl().contains("charge_limit"));
+    }
+
+    #[test]
+    fn a_charge_window_must_be_one_the_firmware_takes() {
+        for bad in [
+            "charge_limit { start 80; end 80; }",
+            "charge_limit { start 90; end 80; }",
+            "charge_limit { end 0; }",
+            "charge_limit { end 101; }",
+            "charge_limit { start 100; }",
+            "charge_limit { start -1; }",
+            "charge_limit { end \"80\"; }",
+            "charge_limit { stop 80; }",
+        ] {
+            assert!(PowerPlan::parse(bad).is_err(), "{bad}");
+        }
+        let mut plan = PowerPlan::default();
+        assert!(plan.set_charge_limit(ChargeLimit { start: Some(85), end: Some(80) }).is_err());
+        assert!(plan.charge_limit().is_unset(), "a refused window is not stored");
+        plan.set_charge_limit(ChargeLimit { start: Some(0), end: Some(100) }).unwrap();
+    }
+
+    #[test]
+    fn a_charge_window_moving_up_writes_its_end_first() {
+        let window = |s, e| ChargeLimit { start: Some(s), end: Some(e) };
+        // 75/80 → 85/90: a start of 85 over an end of 80 is refused.
+        assert!(!start_first(window(85, 90), Some(80)));
+        // 75/80 → 55/60, and the factory 0/100 → 75/80: start first, or the
+        // new end would sit below the old start.
+        assert!(start_first(window(55, 60), Some(80)));
+        assert!(start_first(window(75, 80), Some(100)));
+        // An end the battery does not report, or no start to order.
+        assert!(start_first(window(75, 80), None));
+        assert!(start_first(ChargeLimit { start: None, end: Some(80) }, Some(60)));
     }
 
     #[test]

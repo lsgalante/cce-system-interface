@@ -6,8 +6,8 @@
 //! exposes (missing ones render as absent, not as dead widgets):
 //! - `/sys/firmware/acpi/platform_profile` — firmware power profile
 //! - `/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference`
-//! - `/sys/class/power_supply/BAT*/charge_control_end_threshold` — capping
-//!   charge at 80% is the classic battery-longevity lever
+//! - `/sys/class/power_supply/BAT*/charge_control_{start,end}_threshold` —
+//!   capping charge at 80% is the classic battery-longevity lever
 //! - `/sys/devices/system/cpu/intel_pstate/no_turbo` — turbo boost
 //!
 //! Three levers are not hardware interfaces: **Animations**, which the
@@ -22,6 +22,10 @@
 //!
 //! The page is three sections. **Battery** is the pack itself: its facts and
 //! the charge limit, which is a charging policy and so belongs to no mode.
+//! Each choice is a window — stop at 80%, resume below 75% — kept in the plan
+//! and re-applied by the helper on every run, because the firmware forgets
+//! it (until 2026-10-06 a pick here was one sysfs write, gone the first
+//! time the battery ran flat).
 //! **Power Mode** edits one mode's levers, chosen by the dropdown at the top
 //! of the section — one section rather than one per mode, so the levers sit
 //! in the same place whichever mode is being edited. **Mode Assignment**
@@ -39,7 +43,7 @@
 //! honest, with no extra error channel.
 
 use crate::app::{AppAction, PageContent};
-use crate::power_plan::{self, Automation, Lever, Mode, PowerPlan, Source};
+use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
 use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
 use cce_ui::widget::{Adapted, Dropdown, WidgetHost};
 use std::path::{Path, PathBuf};
@@ -82,6 +86,8 @@ pub struct PowerFacts {
     pub model: String,
     /// charge_control_end_threshold, when the battery has one.
     pub charge_limit: Option<u32>,
+    /// charge_control_start_threshold, when the battery has one too.
+    pub charge_start: Option<u32>,
     /// intel_pstate no_turbo, inverted to "turbo enabled".
     pub turbo: Option<bool>,
     /// scaling_available_governors, and cpu0's active one. Moved here from the
@@ -152,8 +158,9 @@ pub struct PowerState {
     pub loaded: bool,
     pub facts: PowerFacts,
     pub dd_limit: Adapted<Dropdown>,
-    /// Sysfs value per charge-limit dropdown row (options are display text).
-    pub limit_values: Vec<u32>,
+    /// The charge window per charge-limit dropdown row (options are display
+    /// text).
+    pub limit_values: Vec<ChargeLimit>,
     /// Which mode the lever section is editing. Page state, not plan state:
     /// it says what is on screen, never what the machine runs.
     pub editing: Mode,
@@ -210,15 +217,6 @@ pub enum PowerMessage {
     Set { lever: Lever, idx: usize },
     /// Which mode an adapter state runs, by option index.
     Assign { source: Source, idx: usize },
-}
-
-/// Root action via pkexec, the app's standard privileged path. Detached: the
-/// polkit prompt runs in its own process, the UI never blocks, and the
-/// watcher's next read reports what actually happened.
-fn run_privileged(cmd: String) {
-    let _ = std::process::Command::new("pkexec")
-        .args(["sh", "-c", &cmd])
-        .spawn();
 }
 
 /// The helper that records and applies the plan: the system copy when
@@ -339,6 +337,7 @@ pub async fn fetch_power_state() -> PowerFacts {
         f.vendor = b("manufacturer").unwrap_or_default();
         f.model = b("model_name").unwrap_or_default();
         f.charge_limit = b("charge_control_end_threshold").and_then(|s| s.parse().ok());
+        f.charge_start = b("charge_control_start_threshold").and_then(|s| s.parse().ok());
     }
     f.ac_online = read_trim("/sys/class/power_supply/AC/online").map(|s| s == "1");
     f.source = power_plan::current_source();
@@ -663,29 +662,47 @@ fn source_index(source: Source) -> usize {
     Source::ALL.iter().position(|s| *s == source).unwrap()
 }
 
+/// The charge-limit rows: each preset is a window that stops at its end and
+/// resumes five points below it, so a pack held there is not topped up by a
+/// percent at a time. A battery with no start threshold gets the ends
+/// alone. The row shown is the plan's window, or — before anything has been
+/// planned — what the battery reports; a window that is neither preset gets
+/// its own row rather than silently matching the wrong one.
+fn charge_rows(f: &PowerFacts) -> (Vec<ChargeLimit>, Vec<String>, usize) {
+    let has_start = f.charge_start.is_some();
+    let window = |start: u32, end: u32| ChargeLimit { start: has_start.then_some(start), end: Some(end) };
+    let mut values = vec![window(0, 100), window(75, 80), window(55, 60)];
+    let mut options = vec![
+        "100% — full capacity".to_string(),
+        "80% — longevity".to_string(),
+        "60% — max longevity".to_string(),
+    ];
+    let planned = f.plan.charge_limit();
+    let current = if planned.is_unset() { ChargeLimit { start: f.charge_start, end: f.charge_limit } } else { planned };
+    let selected = match values.iter().position(|v| *v == current) {
+        Some(i) => i,
+        None => match current.end {
+            Some(end) => {
+                values.push(current);
+                options.push(match current.start {
+                    Some(start) if start > 0 => format!("{}% — current, from {}%", end, start),
+                    _ => format!("{}% — current", end),
+                });
+                values.len() - 1
+            }
+            None => 0,
+        },
+    };
+    (values, options, selected)
+}
+
 /// Rebuild every dropdown's options/selection from fresh facts.
 fn rebuild_options(state: &mut PowerState) {
     let f = &state.facts;
     if !state.dd_limit.open {
-        let mut values = vec![100u32, 80, 60];
-        if let Some(cur) = f.charge_limit {
-            if !values.contains(&cur) {
-                values.push(cur);
-            }
-        }
-        state.dd_limit.options = values
-            .iter()
-            .map(|v| match v {
-                100 => "100% — full capacity".to_string(),
-                80 => "80% — longevity".to_string(),
-                60 => "60% — max longevity".to_string(),
-                other => format!("{}% — current", other),
-            })
-            .collect();
-        state.dd_limit.selected = f
-            .charge_limit
-            .and_then(|cur| values.iter().position(|v| *v == cur))
-            .unwrap_or(0);
+        let (values, options, selected) = charge_rows(f);
+        state.dd_limit.options = options;
+        state.dd_limit.selected = selected;
         state.limit_values = values;
     }
     if !state.dd_mode.open {
@@ -885,15 +902,34 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
             }
         }
         PowerMessage::SetLimit(idx) => {
-            if let Some(v) = state.limit_values.get(idx).copied() {
-                if (1..=100).contains(&v) {
-                    run_privileged(format!(
-                        "for f in /sys/class/power_supply/BAT*/charge_control_end_threshold; do echo {} > \"$f\"; done",
-                        v
-                    ));
-                    state.facts.charge_limit = Some(v);
-                }
+            let Some(limit) = state.limit_values.get(idx).copied() else {
+                return;
+            };
+            // The rows are built from presets and sysfs reads, but the check
+            // makes the argv safe by construction, as the lever guard does.
+            if limit.check().is_err() || limit.end.is_none() {
+                return;
             }
+            let Some(helper) = helper_path() else {
+                log::error!("[power] cce-power-apply not found at {} or beside this binary", power_plan::HELPER_SYSTEM_PATH);
+                return;
+            };
+            let arg = |pct: Option<u32>| pct.map_or_else(|| "unset".to_string(), |p| p.to_string());
+            // Through the helper rather than a one-off sysfs write: it records
+            // the window in the plan, which every later run re-applies.
+            let _ = std::process::Command::new("pkexec")
+                .arg(&helper)
+                .arg("charge-limit")
+                .arg(arg(limit.start))
+                .arg(arg(limit.end))
+                .spawn();
+            // Optimistic mirror of what the helper will make true.
+            let _ = state.facts.plan.set_charge_limit(limit);
+            state.facts.charge_limit = limit.end;
+            if limit.start.is_some() {
+                state.facts.charge_start = limit.start;
+            }
+            rebuild_options(state);
         }
         PowerMessage::EditMode(idx) => {
             // Page-local: switching which mode is on screen writes nothing
@@ -919,9 +955,11 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                 log::error!("[power] cce-power-apply not found at {} or beside this binary", power_plan::HELPER_SYSTEM_PATH);
                 return;
             };
-            // Detached, like run_privileged: the helper records the pick and,
-            // when this mode is the running one, applies it; the watcher's
-            // next read reports what actually happened.
+            // Under pkexec, the app's standard privileged path, and detached:
+            // the polkit prompt runs in its own process and the UI never
+            // blocks. The helper records the pick and, when this mode is the
+            // running one, applies it; the watcher's next read reports what
+            // actually happened.
             let _ = std::process::Command::new("pkexec")
                 .arg(&helper)
                 .arg("set")
@@ -1068,6 +1106,7 @@ mod tests {
             epps: vec!["default".into(), "performance".into(), "balance_power".into(), "power".into()],
             epp: "balance_power".to_string(),
             charge_limit: Some(80),
+            charge_start: Some(75),
             turbo: Some(true),
             governors: vec!["performance".into(), "powersave".into()],
             governor: "powersave".to_string(),
@@ -1187,16 +1226,44 @@ mod tests {
     }
 
     #[test]
-    fn charge_limit_rows_map_current_and_off_list_values() {
+    fn charge_limit_rows_are_windows_and_map_current_and_off_list_values() {
+        let w = |start, end| ChargeLimit { start: Some(start), end: Some(end) };
         let mut st = loaded();
-        assert_eq!(st.dd_limit.selected, 1); // 80
-        assert_eq!(st.limit_values, [100, 80, 60]);
-        // An off-list threshold gets its own row instead of a wrong match.
-        st.facts.charge_limit = Some(75);
+        // Nothing planned: the battery's own 75/80 is the longevity preset.
+        assert_eq!(st.limit_values, [w(0, 100), w(75, 80), w(55, 60)]);
+        assert_eq!(st.dd_limit.selected, 1);
+        // An off-list window gets its own row instead of a wrong match.
+        st.facts.charge_limit = Some(70);
+        st.facts.charge_start = Some(65);
         rebuild_options(&mut st);
-        assert_eq!(st.limit_values, [100, 80, 60, 75]);
+        assert_eq!(st.limit_values[3], w(65, 70));
         assert_eq!(st.dd_limit.selected, 3);
-        assert!(st.dd_limit.options[3].contains("75%"));
+        assert_eq!(st.dd_limit.options[3], "70% — current, from 65%");
+        // Once planned, the plan is what the row shows — the firmware
+        // having forgotten it (0/100) is what the helper puts right.
+        st.facts.plan.set_charge_limit(w(55, 60)).unwrap();
+        st.facts.charge_limit = Some(100);
+        st.facts.charge_start = Some(0);
+        rebuild_options(&mut st);
+        assert_eq!(st.dd_limit.selected, 2);
+        // A battery with no start threshold is offered the ends alone.
+        st.facts.plan = PowerPlan::default();
+        st.facts.charge_start = None;
+        st.facts.charge_limit = Some(80);
+        rebuild_options(&mut st);
+        assert_eq!(st.limit_values[1], ChargeLimit { start: None, end: Some(80) });
+        assert_eq!(st.dd_limit.selected, 1);
+    }
+
+    #[test]
+    fn a_charge_limit_pick_is_recorded_in_the_plan() {
+        let mut st = loaded();
+        update(&mut st, PowerMessage::SetLimit(0));
+        assert_eq!(st.facts.plan.charge_limit(), ChargeLimit { start: Some(0), end: Some(100) });
+        assert_eq!((st.facts.charge_start, st.facts.charge_limit), (Some(0), Some(100)));
+        assert_eq!(st.dd_limit.selected, 0);
+        // No mode gained a lever from it.
+        assert!(Mode::ALL.iter().all(|m| st.facts.plan.levers(*m).all(|(l, _)| l == Lever::Profile)));
     }
 
     #[test]
