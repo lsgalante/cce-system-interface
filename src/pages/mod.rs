@@ -271,7 +271,7 @@ mod list_clip_tests {
         let mut s = packages::PackagesState::default();
         s.loaded = true;
         s.installed = (0..5)
-            .map(|i| packages::PackageInfo { name: format!("p{i}"), version: "1.0".into() })
+            .map(|i| packages::PackageInfo { name: format!("p{i}"), version: "1.0".into(), ..Default::default() })
             .collect();
         let pc = render(&mut s);
         assert_list_inside("packages", &pc, &s.installed_list);

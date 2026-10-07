@@ -1025,6 +1025,9 @@ impl SystemInterface {
             },
             AppAction::Packages(m) => match m {
                 pages::packages::PackagesMessage::StartUpdate => {
+                    if self.app.packages.busy() {
+                        return;
+                    }
                     pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::StartUpdate);
                     let tx = self.tx_update.clone();
                     let wake = self.sender.clone();
@@ -1069,30 +1072,63 @@ impl SystemInterface {
                         let _ = wake.send(AppAction::Wake);
                     });
                 }
-                pages::packages::PackagesMessage::StartUninstall(ref name) => {
-                    if !self.app.packages.uninstalling {
+                pages::packages::PackagesMessage::PreviewRemoval(ref targets) => {
+                    if !targets.is_empty() && !self.app.packages.busy() {
                         pages::packages::update(&mut self.app.packages, m.clone());
-                        let name_clone = name.clone();
+                        let targets = targets.clone();
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
                         tokio::spawn(async move {
-                            let res = pages::packages::run_uninstall(name_clone).await;
-                            let _ = tx.send(pages::packages::PackagesMessage::UninstallFinished(res));
+                            let res = pages::packages::preview_removal(targets.clone()).await;
+                            let _ = tx.send(pages::packages::PackagesMessage::RemovalPreviewed(targets, res));
                             let _ = wake.send(AppAction::Wake);
                         });
                     }
                 }
-                pages::packages::PackagesMessage::UninstallFinished(res) => {
-                    pages::packages::update(&mut self.app.packages, m.clone());
-                    if res.is_ok() {
+                pages::packages::PackagesMessage::StartUninstall(ref targets) => {
+                    if !targets.is_empty() && !self.app.packages.busy() {
+                        pages::packages::update(&mut self.app.packages, m.clone());
+                        let targets = targets.clone();
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
                         tokio::spawn(async move {
-                            let new_state = pages::packages::fetch_packages_state().await;
-                            let _ = tx.send(pages::packages::PackagesMessage::Refreshed(new_state));
+                            let res = pages::packages::run_uninstall(targets.clone()).await;
+                            let _ = tx.send(pages::packages::PackagesMessage::UninstallFinished(targets, res));
                             let _ = wake.send(AppAction::Wake);
                         });
                     }
+                }
+                pages::packages::PackagesMessage::SetInstallReason(ref targets, explicit) => {
+                    if !targets.is_empty() && !self.app.packages.busy() {
+                        pages::packages::update(&mut self.app.packages, m.clone());
+                        let (targets, explicit) = (targets.clone(), *explicit);
+                        let tx = self.tx_update.clone();
+                        let wake = self.sender.clone();
+                        tokio::spawn(async move {
+                            let res = pages::packages::run_set_install_reason(targets.clone(), explicit).await;
+                            let _ = tx.send(pages::packages::PackagesMessage::InstallReasonSet(targets, explicit, res));
+                            let _ = wake.send(AppAction::Wake);
+                        });
+                    }
+                }
+                // Both outcomes refresh, failure included: the list (and the
+                // orphan set, which either can change) is pacman's to report.
+                pages::packages::PackagesMessage::UninstallFinished(..)
+                | pages::packages::PackagesMessage::InstallReasonSet(..) => {
+                    pages::packages::update(&mut self.app.packages, m.clone());
+                    let tx = self.tx_update.clone();
+                    let wake = self.sender.clone();
+                    // The details pane shows the install reason; re-read it.
+                    let reread = self.app.packages.selected_package.clone();
+                    tokio::spawn(async move {
+                        let new_state = pages::packages::fetch_packages_state().await;
+                        let _ = tx.send(pages::packages::PackagesMessage::Refreshed(new_state));
+                        if let Some(name) = reread {
+                            let res = pages::packages::fetch_package_info(name.clone(), true).await;
+                            let _ = tx.send(pages::packages::PackagesMessage::InfoFetched(name, res));
+                        }
+                        let _ = wake.send(AppAction::Wake);
+                    });
                 }
                 _ => pages::packages::update(&mut self.app.packages, m.clone()),
             },

@@ -3,10 +3,15 @@ use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
 use cce_ui::widget::{WidgetHost, TextBox, InteractiveListItem};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PackageInfo {
     pub name: String,
     pub version: String,
+    /// `pacman -Qe`: installed on purpose rather than pulled in as a dependency.
+    pub explicit: bool,
+    /// `pacman -Qdt`: a dependency nothing installed requires or optionally
+    /// requires any more — what `pacman -Rns $(pacman -Qdtq)` would sweep.
+    pub orphan: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +33,34 @@ impl Default for PackageTab {
     }
 }
 
+/// Which slice of the installed list the Installed tab shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InstalledFilter {
+    #[default]
+    All,
+    Explicit,
+    Orphans,
+}
+
+impl InstalledFilter {
+    fn admits(self, p: &PackageInfo) -> bool {
+        match self {
+            InstalledFilter::All => true,
+            InstalledFilter::Explicit => p.explicit,
+            InstalledFilter::Orphans => p.orphan,
+        }
+    }
+}
+
+/// What a removal would take, asked of `pacman -Rs --print` before anything
+/// is removed: the targets plus every dependency only they needed, or the
+/// error that stops it (a target another package still requires).
+#[derive(Debug, Clone)]
+pub struct RemovalPlan {
+    pub targets: Vec<String>,
+    pub outcome: Result<Vec<(String, u64)>, String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PackagesState {
     pub loaded: bool,
@@ -45,6 +78,16 @@ pub struct PackagesState {
     pub selected_package_info: Option<String>,
     pub loading_info: bool,
     pub uninstalling: bool,
+    pub filter: InstalledFilter,
+    /// Row clicks toggle membership in `checked` instead of opening details.
+    pub select_mode: bool,
+    pub checked: std::collections::BTreeSet<String>,
+    /// The confirmation step of a removal; `previewing` while pacman is asked.
+    pub removal: Option<RemovalPlan>,
+    pub previewing: bool,
+    pub marking: bool,
+    /// Outcome of the last remove / mark, shown until the next one starts.
+    pub last_action: Option<Result<String, String>>,
 }
 
 impl Default for PackagesState {
@@ -65,6 +108,13 @@ impl Default for PackagesState {
             selected_package_info: None,
             loading_info: false,
             uninstalling: false,
+            filter: InstalledFilter::All,
+            select_mode: false,
+            checked: std::collections::BTreeSet::new(),
+            removal: None,
+            previewing: false,
+            marking: false,
+            last_action: None,
         }
     }
 }
@@ -78,8 +128,21 @@ pub enum PackagesMessage {
     SelectPackage(Option<String>),
     SelectAndScrollPackage(String),
     InfoFetched(String, Result<String, String>),
-    StartUninstall(String),
-    UninstallFinished(Result<(), String>),
+    SetFilter(InstalledFilter),
+    ToggleSelectMode,
+    ToggleChecked(String),
+    CheckAllVisible,
+    ClearChecked,
+    /// Ask pacman what removing these would take; nothing is removed yet.
+    PreviewRemoval(Vec<String>),
+    RemovalPreviewed(Vec<String>, Result<Vec<(String, u64)>, String>),
+    CancelRemoval,
+    /// Remove a previewed plan's targets (and the dependencies only they need).
+    StartUninstall(Vec<String>),
+    UninstallFinished(Vec<String>, Result<(), String>),
+    /// `true` = mark explicitly installed, `false` = mark as a dependency.
+    SetInstallReason(Vec<String>, bool),
+    InstallReasonSet(Vec<String>, bool, Result<(), String>),
 }
 
 pub async fn fetch_packages_state() -> PackagesState {
@@ -96,23 +159,40 @@ pub async fn fetch_packages_state() -> PackagesState {
 }
 
 async fn fetch_installed_packages() -> Vec<PackageInfo> {
-    let mut list = Vec::new();
-    if let Ok(output) = tokio::process::Command::new("pacman")
-        .arg("-Q")
-        .output()
-        .await
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 {
-                list.push(PackageInfo {
-                    name: parts[0].to_string(),
-                    version: parts[1].to_string(),
-                });
-            }
-        }
+    let (all, explicit, orphans) = tokio::join!(
+        pacman_stdout(&["-Q"]),
+        pacman_stdout(&["-Qeq"]),
+        // Exits 1 when there are none; the empty stdout is the right answer.
+        pacman_stdout(&["-Qdtq"]),
+    );
+    parse_installed(&all, &explicit, &orphans)
+}
+
+async fn pacman_stdout(args: &[&str]) -> String {
+    match tokio::process::Command::new("pacman").args(args).output().await {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
+        Err(_) => String::new(),
     }
+}
+
+/// `pacman -Q` lines joined with the `-Qeq` and `-Qdtq` name lists.
+pub fn parse_installed(all: &str, explicit: &str, orphans: &str) -> Vec<PackageInfo> {
+    let explicit: std::collections::HashSet<&str> = explicit.lines().map(str::trim).collect();
+    let orphans: std::collections::HashSet<&str> = orphans.lines().map(str::trim).collect();
+    let mut list: Vec<PackageInfo> = all
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let name = parts.next()?;
+            let version = parts.next()?;
+            Some(PackageInfo {
+                name: name.to_string(),
+                version: version.to_string(),
+                explicit: explicit.contains(name),
+                orphan: orphans.contains(name),
+            })
+        })
+        .collect();
     list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     list
 }
@@ -154,19 +234,144 @@ pub async fn run_update() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn run_uninstall(name: String) -> Result<(), String> {
+/// pacman's own explanation of a failure. It writes the reason to stderr,
+/// and for a broken dependency the lines that NAME the dependency (`:: removing
+/// x breaks dependency 'x' required by y`) are what make the error useful —
+/// so keep every line, not just the first.
+fn pacman_error(output: &std::process::Output) -> String {
+    let text = summarize_pacman_failure(
+        &String::from_utf8_lossy(&output.stderr),
+        &String::from_utf8_lossy(&output.stdout),
+    );
+    match output.status.code() {
+        // pkexec's own codes (pacman itself exits 1): 126 = not authorized,
+        // 127 = the dialog was dismissed or authentication failed.
+        Some(126) | Some(127) => {
+            if text.is_empty() {
+                "Authorization was cancelled or denied".to_string()
+            } else {
+                format!("Authorization was cancelled or denied ({text})")
+            }
+        }
+        _ if text.is_empty() => format!("pacman exited with {}", output.status),
+        _ => text,
+    }
+}
+
+/// pacman splits a refusal across both streams: the `error:` headline goes to
+/// stderr, the `:: removing x breaks dependency 'x' required by y` lines that
+/// say WHY go to stdout (with progress chatter like "checking dependencies...").
+/// Keep the headline, fold the break lines into one "x is still required by
+/// a, b, c" per package, and drop the chatter.
+pub fn summarize_pacman_failure(stderr: &str, stdout: &str) -> String {
+    let mut lines: Vec<String> = stderr.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect();
+    let mut required_by: Vec<(String, Vec<String>)> = Vec::new();
+    for line in stdout.lines().chain(stderr.lines()).map(str::trim) {
+        let Some(rest) = line.strip_prefix(":: removing ") else {
+            if line.starts_with("error:") && !lines.iter().any(|l| l == line) {
+                lines.push(line.to_string());
+            }
+            continue;
+        };
+        // "acl breaks dependency 'acl' required by coreutils"
+        if let (Some(pkg), Some(by)) = (rest.split_whitespace().next(), rest.rsplit(" required by ").next()) {
+            // One line per broken dependency, and a package can depend on
+            // the target twice over (`acl` and the `libacl.so` it provides).
+            match required_by.iter_mut().find(|(p, _)| p == pkg) {
+                Some((_, list)) if list.iter().any(|b| b == by) => {}
+                Some((_, list)) => list.push(by.to_string()),
+                None => required_by.push((pkg.to_string(), vec![by.to_string()])),
+            }
+        }
+    }
+    // The break lines were also counted from stderr above when pacman wrote
+    // them there; they are summarized below instead.
+    lines.retain(|l| !l.starts_with(":: removing "));
+    for (pkg, by) in required_by {
+        lines.push(format!("{pkg} is still required by {}", by.join(", ")));
+    }
+    lines.join("\n")
+}
+
+/// What `pacman -Rs` would remove for `targets`, as (name, installed bytes).
+/// Runs unprivileged: `--print` resolves the transaction without locking or
+/// touching the database.
+pub async fn preview_removal(targets: Vec<String>) -> Result<Vec<(String, u64)>, String> {
+    let output = tokio::process::Command::new("pacman")
+        .args(["-Rs", "--print", "--print-format", "%n %s", "--"])
+        .args(&targets)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run pacman: {}", e))?;
+    if !output.status.success() {
+        return Err(pacman_error(&output));
+    }
+    Ok(parse_removal_preview(&String::from_utf8_lossy(&output.stdout)))
+}
+
+pub fn parse_removal_preview(stdout: &str) -> Vec<(String, u64)> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let name = parts.next()?;
+            let size = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            Some((name.to_string(), size))
+        })
+        .collect()
+}
+
+/// Removes `targets` and the dependencies only they needed (`-Rs`), in ONE
+/// transaction — pacman orders it, so a target and the package that required
+/// it can go together. Removing them one call at a time fails on whichever
+/// comes first and silently leaves its dependencies behind as orphans.
+pub async fn run_uninstall(targets: Vec<String>) -> Result<(), String> {
     let output = tokio::process::Command::new("pkexec")
-        .args(["pacman", "-R", "--noconfirm", &name])
+        .args(["pacman", "-Rs", "--noconfirm", "--"])
+        .args(&targets)
         .output()
         .await
         .map_err(|e| format!("Failed to run uninstall: {}", e))?;
-        
     if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!("Uninstall process failed: {}", err));
+        return Err(pacman_error(&output));
     }
-    
     Ok(())
+}
+
+/// `pacman -D --asexplicit` / `--asdeps`: changes only the install reason.
+pub async fn run_set_install_reason(targets: Vec<String>, explicit: bool) -> Result<(), String> {
+    let flag = if explicit { "--asexplicit" } else { "--asdeps" };
+    let output = tokio::process::Command::new("pkexec")
+        .args(["pacman", "-D", flag, "--"])
+        .args(&targets)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run pacman: {}", e))?;
+    if !output.status.success() {
+        return Err(pacman_error(&output));
+    }
+    Ok(())
+}
+
+pub fn human_size(bytes: u64) -> String {
+    let b = bytes as f64;
+    if b >= 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.1} GiB", b / (1024.0 * 1024.0 * 1024.0))
+    } else if b >= 1024.0 * 1024.0 {
+        format!("{:.1} MiB", b / (1024.0 * 1024.0))
+    } else {
+        format!("{:.0} KiB", b / 1024.0)
+    }
+}
+
+/// A button wide enough for its label in the (monospace) button font.
+fn label_button_w(label: &str) -> f32 {
+    label.chars().count() as f32 * 9.5 + 28.0
+}
+
+/// "3 packages" / "1 package".
+fn count_noun(n: usize) -> String {
+    if n == 1 { "1 package".to_string() } else { format!("{n} packages") }
 }
 
 pub async fn fetch_package_info(name: String, installed: bool) -> Result<String, String> {
@@ -228,6 +433,7 @@ pub struct ParsedPackageInfo {
     pub packager: String,
     pub build_date: String,
     pub required_by: String,
+    pub install_reason: String,
     pub commands: String,
 }
 
@@ -270,6 +476,7 @@ pub fn parse_package_info(raw: &str) -> ParsedPackageInfo {
     let packager = get_val("Packager");
     let build_date = get_val("Build Date");
     let required_by = get_val("Required By");
+    let install_reason = get_val("Install Reason");
     let commands = get_val("Commands");
 
     ParsedPackageInfo {
@@ -282,6 +489,7 @@ pub fn parse_package_info(raw: &str) -> ParsedPackageInfo {
         packager,
         build_date,
         required_by,
+        install_reason,
         commands,
     }
 }
@@ -417,11 +625,143 @@ pub fn view(
             }
         }
 
+        // Characters per line for wrapped status text at 11px.
+        let wrap_chars = (((sec_w - 2.0 * m - 24.0) / 6.5) as usize).max(20);
+        let busy = state.busy();
+
+        // ── Filter row: All / Explicit / Orphans, and the select-mode switch ──
+        if state.active_tab == PackageTab::Installed {
+            let n_explicit = state.installed.iter().filter(|p| p.explicit).count();
+            let n_orphans = state.installed.iter().filter(|p| p.orphan).count();
+            let filters = [
+                (InstalledFilter::All, format!("All ({})", state.installed.len())),
+                (InstalledFilter::Explicit, format!("Explicit ({n_explicit})")),
+                (InstalledFilter::Orphans, format!("Orphans ({n_orphans})")),
+            ];
+            let select_label = if state.select_mode { "Done Selecting" } else { "Select..." };
+            let filter = state.filter;
+            let select_mode = state.select_mode;
+            stack.add_row(4, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
+                if let Some((f, label)) = filters.get(i) {
+                    let bg = if filter == *f { active_bg } else { inactive_bg };
+                    c.button(label, x, c.ay(), w, tab_h, bg, hover_bg, [0.90, 0.90, 0.95, 1.0],
+                        AppAction::Packages(PackagesMessage::SetFilter(*f)));
+                } else {
+                    let bg = if select_mode { active_bg } else { inactive_bg };
+                    c.button(select_label, x, c.ay(), w, tab_h, bg, hover_bg, [0.90, 0.90, 0.95, 1.0],
+                        AppAction::Packages(PackagesMessage::ToggleSelectMode));
+                }
+            });
+
+            // ── Bulk actions over the checked rows ──
+            if state.select_mode {
+                let n = state.checked.len();
+                let summary = if n == 0 {
+                    "Click rows to select".to_string()
+                } else {
+                    format!("{} selected", count_noun(n))
+                };
+                let targets: Vec<String> = state.checked.iter().cloned().collect();
+                let can_act = n > 0 && !busy;
+                let (act_bg, act_text) = if can_act { (TOGGLE_OFF, TEXT_FG) } else { (TOGGLE_OFF, TEXT_DIM) };
+                stack.add_row(5, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
+                    let y = c.ay();
+                    match i {
+                        0 => c.pc.text(&summary, x, y + (tab_h - 14.0) / 2.0, 12.0, if n > 0 { ACCENT } else { TEXT_DIM }),
+                        1 => c.button("Select Visible", x, y, w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
+                            AppAction::Packages(PackagesMessage::CheckAllVisible)),
+                        2 => c.button("Clear", x, y, w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
+                            AppAction::Packages(PackagesMessage::ClearChecked)),
+                        3 => c.button(if state.marking { "Marking..." } else { "Mark Explicit" }, x, y, w, tab_h,
+                            act_bg, if can_act { BTN_HOVER } else { act_bg }, act_text,
+                            AppAction::Packages(PackagesMessage::SetInstallReason(targets.clone(), true))),
+                        _ => c.button("Remove...", x, y, w, tab_h,
+                            if can_act { [0.25, 0.14, 0.14, 1.0] } else { TOGGLE_OFF },
+                            if can_act { [0.40, 0.20, 0.20, 1.0] } else { TOGGLE_OFF },
+                            if can_act { [0.95, 0.55, 0.55, 1.0] } else { TEXT_DIM },
+                            AppAction::Packages(PackagesMessage::PreviewRemoval(targets.clone()))),
+                    }
+                });
+            }
+        }
+
+        // ── Removal confirmation: what pacman says it would take ──
+        if state.previewing {
+            stack.context.text("Checking what would be removed...", 12.0, 0.0, 12.0, TEXT_DIM);
+        } else if let Some(plan) = state.removal.clone() {
+            section_divider(stack.context);
+            match &plan.outcome {
+                Ok(pkgs) => {
+                    let total: u64 = pkgs.iter().map(|(_, s)| *s).sum();
+                    let extra = pkgs.len().saturating_sub(plan.targets.len());
+                    let head = if extra > 0 {
+                        format!("Remove {} ({}), including {} no longer needed:",
+                            count_noun(pkgs.len()), human_size(total),
+                            if extra == 1 { "1 dependency".to_string() } else { format!("{extra} dependencies") })
+                    } else {
+                        format!("Remove {} ({}):", count_noun(pkgs.len()), human_size(total))
+                    };
+                    stack.context.text(&head, 12.0, 0.0, 12.0, [0.95, 0.75, 0.55, 1.0]);
+                    let names = pkgs.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ");
+                    let lines = wrap_text(&names, wrap_chars);
+                    const MAX_LINES: usize = 6;
+                    for line in lines.iter().take(MAX_LINES) {
+                        stack.context.text(line, 12.0, 0.0, 11.0, TEXT_FG);
+                    }
+                    if lines.len() > MAX_LINES {
+                        let shown: usize = lines.iter().take(MAX_LINES).map(|l| l.split_whitespace().count()).sum();
+                        stack.context.text(&format!("... and {} more", pkgs.len().saturating_sub(shown)), 12.0, 0.0, 11.0, TEXT_DIM);
+                    }
+                    let confirm = if state.uninstalling { "Removing...".to_string() } else { format!("Remove {}", count_noun(pkgs.len())) };
+                    let targets = plan.targets.clone();
+                    stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
+                        let y = c.ay();
+                        if i == 0 {
+                            c.button(&confirm, x, y, w, tab_h, [0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0],
+                                AppAction::Packages(PackagesMessage::StartUninstall(targets.clone())));
+                        } else if i == 1 {
+                            c.button("Cancel", x, y, w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
+                                AppAction::Packages(PackagesMessage::CancelRemoval));
+                        }
+                    });
+                }
+                Err(err) => {
+                    stack.context.text(&format!("Can't remove {}:", plan.targets.join(", ")), 12.0, 0.0, 12.0, RED);
+                    for line in err.lines().flat_map(|l| wrap_text(l, wrap_chars)).take(8) {
+                        stack.context.text(&line, 12.0, 0.0, 11.0, [0.95, 0.55, 0.55, 1.0]);
+                    }
+                    stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
+                        if i == 0 {
+                            c.button("Dismiss", x, c.ay(), w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
+                                AppAction::Packages(PackagesMessage::CancelRemoval));
+                        }
+                    });
+                }
+            }
+        }
+
+        // ── Outcome of the last remove / mark ──
+        if let Some(ref res) = state.last_action {
+            match res {
+                Ok(msg) => stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]),
+                Err(err) => {
+                    for (i, line) in err.lines().flat_map(|l| wrap_text(l, wrap_chars)).take(8).enumerate() {
+                        stack.context.text(&line, 12.0, 0.0, if i == 0 { 12.0 } else { 11.0 }, RED);
+                    }
+                }
+            }
+        }
+
         // ── Selected package details ──
-        if state.loading_info || state.selected_package.is_some() {
+        // Set aside while a removal is being confirmed: the plan names the
+        // package, and both together push the list off the page.
+        let confirming = state.previewing || state.removal.is_some();
+        if !confirming && (state.loading_info || state.selected_package.is_some()) {
             section_divider(stack.context);
         }
-        if state.loading_info {
+        if confirming {
+            // Nothing: the confirmation above stands in for the details.
+        } else if state.loading_info {
             stack.context.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
         } else if let Some(pkg_name) = state.selected_package.clone() {
             if let Some(info_raw) = state.selected_package_info.clone() {
@@ -443,19 +783,36 @@ pub fn view(
                     for h in &mut sc.grid.col_heights {
                         *h = sc.content_y;
                     }
-                    if state.active_tab == PackageTab::Installed {
-                        let item_w = sc.cw - 2.0 * (sc.padding() + m);
-                        let bw = 100.0;
-                        let bx = lx + item_w - bw;
-                        let (btn_lbl, bg, hover, text_col) = if state.uninstalling {
-                            ("Uninstalling...", TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
+                    let is_installed = state.installed.iter().find(|p| p.name == pkg_name);
+                    if let (PackageTab::Installed, Some(info)) = (state.active_tab, is_installed) {
+                        // Right-aligned to the box every button row lays out in
+                        // (`row_layout`); a width derived from cw by hand ran
+                        // a few px past the well and cut the button's edge.
+                        let right = sc.row_layout(1, 0.0).first().map(|&(x, w)| x + w).unwrap_or(lx);
+                        let bw = label_button_w("Uninstall");
+                        let bx = right - bw;
+                        let (btn_lbl, bg, hover, text_col) = if busy {
+                            ("Uninstall", TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
                         } else {
                             ("Uninstall", [0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
                         };
                         // Centred on the 14px name's line.
                         let bh = cce_ui::layout::button_height();
-                        sc.button(btn_lbl, bx, y + (17.0 - bh) / 2.0, bw, bh, bg, hover, text_col,
-                            AppAction::Packages(PackagesMessage::StartUninstall(pkg_name.clone())));
+                        let by = y + (17.0 - bh) / 2.0;
+                        sc.button(btn_lbl, bx, by, bw, bh, bg, hover, text_col,
+                            AppAction::Packages(PackagesMessage::PreviewRemoval(vec![pkg_name.clone()])));
+                        // The install-reason flip beside it: an explicit package can
+                        // be handed back as a dependency (so it goes when nothing
+                        // needs it) and a dependency kept for good.
+                        let (mark_lbl, to_explicit) = if info.explicit {
+                            ("Mark as Dependency", false)
+                        } else {
+                            ("Mark Explicit", true)
+                        };
+                        let mw = label_button_w(mark_lbl);
+                        let text_col = if busy { TEXT_DIM } else { TEXT_FG };
+                        sc.button(mark_lbl, bx - 4.0 - mw, by, mw, bh, TOGGLE_OFF, if busy { TOGGLE_OFF } else { BTN_HOVER }, text_col,
+                            AppAction::Packages(PackagesMessage::SetInstallReason(vec![pkg_name.clone()], to_explicit)));
                     }
                 }
 
@@ -485,6 +842,13 @@ pub fn view(
                 };
 
                 kv_wrap(stack.context, "Version", &parsed.version);
+                let orphan = state.installed.iter().any(|p| p.name == pkg_name && p.orphan);
+                let reason = if orphan {
+                    format!("{} (orphan: nothing requires it now)", parsed.install_reason)
+                } else {
+                    parsed.install_reason.clone()
+                };
+                kv_wrap(stack.context, "Install Reason", &reason);
                 kv_wrap(stack.context, "Size", &parsed.size);
                 kv_wrap(stack.context, "Licenses", &parsed.licenses);
                 kv_wrap(stack.context, "Website", &parsed.website);
@@ -500,8 +864,13 @@ pub fn view(
                     let cols_count = 4;
                     let gap = 4.0;
                     let btn_h = cce_ui::layout::button_height();
+                    // A core library is required by hundreds (glibc: ~300). Every
+                    // row of buttons pushes the list down, and past the page's
+                    // bottom the list loses its box; a few rows say enough.
+                    const MAX_REQ_ROWS: usize = 4;
+                    let shown = reqs.len().min(cols_count * MAX_REQ_ROWS);
 
-                    for chunk in reqs.chunks(cols_count) {
+                    for chunk in reqs[..shown].chunks(cols_count) {
                         let btn_y = stack.context.ay();
                         let cols = stack.context.row_layout(cols_count, gap);
                         for (i, &pkg) in chunk.iter().enumerate() {
@@ -510,6 +879,9 @@ pub fn view(
                                 stack.context.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
                             }
                         }
+                    }
+                    if reqs.len() > shown {
+                        stack.context.text(&format!("... and {} more", reqs.len() - shown), 12.0, 0.0, 11.0, TEXT_DIM);
                     }
                 }
             } else {
@@ -534,9 +906,9 @@ pub fn view(
 
         match state.active_tab {
             PackageTab::Installed => {
-                let filtered: Vec<&PackageInfo> = state.installed.iter()
-                    .filter(|p| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
-                    .collect();
+                let visible = state.visible_installed();
+                let installed = &state.installed;
+                let filtered: Vec<&PackageInfo> = visible.iter().map(|&i| &installed[i]).collect();
 
                 // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
                 state.installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
@@ -557,8 +929,17 @@ pub fn view(
                         // Rows dispatch as extra roots (the dissolved list is no parent).
                         let item = &mut state.installed_items[idx];
                         item.title = pkg.name.clone();
-                        item.subtitle = Some(format!("Version: {}", pkg.version));
-                        item.selected = Some(&pkg.name) == state.selected_package.as_ref();
+                        let reason = match (pkg.explicit, pkg.orphan) {
+                            (true, _) => "explicit",
+                            (false, true) => "orphan",
+                            (false, false) => "dependency",
+                        };
+                        item.subtitle = Some(format!("{}  ·  {}", pkg.version, reason));
+                        item.selected = if state.select_mode {
+                            state.checked.contains(&pkg.name)
+                        } else {
+                            Some(&pkg.name) == state.selected_package.as_ref()
+                        };
                         render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
                     }
                 }
@@ -567,7 +948,12 @@ pub fn view(
                 state.installed_list.push_scrollbar_fore(sec.pc);
 
                 if filtered.is_empty() {
-                    sec.pc.text("No packages match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                    let msg = if state.filter == InstalledFilter::Orphans && query.is_empty() {
+                        "No orphaned packages"
+                    } else {
+                        "No packages match the query"
+                    };
+                    sec.pc.text(msg, list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
                 }
             }
             PackageTab::Updates => {
@@ -627,6 +1013,8 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
             // Selection, fetched info, and in-flight update/uninstall flags are
             // LOCAL state — the periodic background refresh must not clear them.
             // Only drop a selection whose package no longer exists anywhere.
+            let installed = &state.installed;
+            state.checked.retain(|n| installed.iter().any(|p| &p.name == n));
             if let Some(sel) = state.selected_package.clone() {
                 let still_exists = state.installed.iter().any(|p| p.name == sel)
                     || state.updates.iter().any(|u| u.name == sel);
@@ -675,20 +1063,101 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
                 }
             }
         }
-        PackagesMessage::StartUninstall(_name) => {
-            state.uninstalling = true;
+        PackagesMessage::SetFilter(filter) => {
+            if state.filter != filter {
+                state.filter = filter;
+                state.installed_list.set_scroll_y(0.0);
+                state.installed_items.clear();
+            }
         }
-        PackagesMessage::UninstallFinished(res) => {
+        PackagesMessage::ToggleSelectMode => {
+            state.select_mode = !state.select_mode;
+            if state.select_mode {
+                // The details pane belongs to single selection; free its space.
+                state.selected_package = None;
+                state.selected_package_info = None;
+                state.loading_info = false;
+            } else {
+                state.checked.clear();
+            }
+        }
+        PackagesMessage::ToggleChecked(name) => {
+            if !state.checked.remove(&name) {
+                state.checked.insert(name);
+            }
+        }
+        PackagesMessage::CheckAllVisible => {
+            for i in state.visible_installed() {
+                state.checked.insert(state.installed[i].name.clone());
+            }
+        }
+        PackagesMessage::ClearChecked => state.checked.clear(),
+        PackagesMessage::PreviewRemoval(_) => {
+            state.previewing = true;
+            state.removal = None;
+            state.last_action = None;
+        }
+        PackagesMessage::RemovalPreviewed(targets, outcome) => {
+            state.previewing = false;
+            state.removal = Some(RemovalPlan { targets, outcome });
+        }
+        PackagesMessage::CancelRemoval => {
+            state.removal = None;
+            state.previewing = false;
+        }
+        PackagesMessage::StartUninstall(_) => {
+            state.uninstalling = true;
+            state.last_action = None;
+        }
+        PackagesMessage::UninstallFinished(targets, res) => {
             state.uninstalling = false;
+            let removed = state.removal.as_ref()
+                .filter(|p| p.targets == targets)
+                .and_then(|p| p.outcome.as_ref().ok())
+                .map(|pkgs| pkgs.len())
+                .unwrap_or(targets.len());
+            state.removal = None;
             match res {
-                Ok(_) => {
-                    state.selected_package = None;
-                    state.selected_package_info = None;
+                Ok(()) => {
+                    for t in &targets {
+                        state.checked.remove(t);
+                    }
+                    if state.selected_package.as_ref().is_some_and(|s| targets.contains(s)) {
+                        state.selected_package = None;
+                        state.selected_package_info = None;
+                    }
+                    state.last_action = Some(Ok(format!("Removed {}", count_noun(removed))));
                 }
                 Err(err) => {
-                    state.selected_package_info = Some(format!("Uninstall failed: {}", err));
+                    state.last_action = Some(Err(format!("Removal failed: {err}")));
                 }
             }
+        }
+        PackagesMessage::SetInstallReason(_, _) => {
+            state.marking = true;
+            state.last_action = None;
+        }
+        PackagesMessage::InstallReasonSet(targets, explicit, res) => {
+            state.marking = false;
+            let what = if explicit { "explicitly installed" } else { "dependencies" };
+            state.last_action = Some(match res {
+                Ok(()) => {
+                    // Reflect it now; the refresh that follows confirms it (and
+                    // recomputes orphans, which a reason change can create).
+                    for p in state.installed.iter_mut().filter(|p| targets.contains(&p.name)) {
+                        p.explicit = explicit;
+                        if explicit {
+                            p.orphan = false;
+                        }
+                    }
+                    if targets.len() == 1 {
+                        Ok(format!("Marked {} as {}", targets[0], if explicit { "explicitly installed" } else { "a dependency" }))
+                    } else {
+                        Ok(format!("Marked {} as {}", count_noun(targets.len()), what))
+                    }
+                }
+                Err(err) => Err(format!("Marking failed: {err}")),
+            });
         }
         PackagesMessage::SelectAndScrollPackage(name) => {
             state.select_and_scroll_to(&name);
@@ -697,8 +1166,43 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
 }
 
 impl PackagesState {
+    /// A pacman transaction (or pkexec prompt) is in flight. pacman holds one
+    /// database lock, so a second one started now would only fail.
+    pub fn busy(&self) -> bool {
+        self.updating || self.uninstalling || self.marking
+    }
+
+    /// The search query as typed so far (the box commits only on Enter).
+    fn query(&self) -> String {
+        if self.search_box.editing {
+            self.search_box.edit_buffer.to_lowercase()
+        } else {
+            self.search_box.text.to_lowercase()
+        }
+    }
+
+    /// Indices into `installed` of the rows the Installed tab shows, in order:
+    /// the filter, then the search. The view paints exactly these and the click
+    /// mapping resolves against them, so the two can never disagree.
+    pub fn visible_installed(&self) -> Vec<usize> {
+        let query = self.query();
+        self.installed
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| self.filter.admits(p))
+            .filter(|(_, p)| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     pub fn select_and_scroll_to(&mut self, pkg_name: &str) {
         self.active_tab = PackageTab::Installed;
+        // The scroll target below is an index into the whole list, so the
+        // list must be unfiltered for it to land on the package.
+        self.filter = InstalledFilter::All;
+        self.select_mode = false;
+        self.checked.clear();
+        self.installed_items.clear();
         self.search_box.text.clear();
         self.search_box.edit_buffer.clear();
         self.search_box.editing = false;
@@ -761,15 +1265,17 @@ impl crate::pages::AppPage for PackagesState {
 
         match self.active_tab {
             PackageTab::Installed => {
-                let filtered: Vec<&PackageInfo> = self.installed.iter()
-                    .filter(|p| p.name.to_lowercase().contains(&query) || p.version.to_lowercase().contains(&query))
-                    .collect();
+                let visible = self.visible_installed();
                 for (idx, item) in self.installed_items.iter_mut().enumerate() {
                     if item.just_clicked {
                         item.just_clicked = false;
-                        if idx < filtered.len() {
-                            let pkg = filtered[idx];
-                            actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(pkg.name.clone()))));
+                        if let Some(&i) = visible.get(idx) {
+                            let name = self.installed[i].name.clone();
+                            actions.push(AppAction::Packages(if self.select_mode {
+                                PackagesMessage::ToggleChecked(name)
+                            } else {
+                                PackagesMessage::SelectPackage(Some(name))
+                            }));
                         }
                     }
                 }
@@ -871,14 +1377,14 @@ mod tests {
     fn refresh_preserves_selection_and_flags() {
         let mut st = PackagesState::default();
         st.loaded = true;
-        st.installed = vec![PackageInfo { name: "foo".into(), version: "1".into() }];
+        st.installed = vec![PackageInfo { name: "foo".into(), version: "1".into(), ..Default::default() }];
         st.selected_package = Some("foo".into());
         st.selected_package_info = Some("info".into());
         st.updating = true;
 
         let fresh = PackagesState {
             loaded: true,
-            installed: vec![PackageInfo { name: "foo".into(), version: "2".into() }],
+            installed: vec![PackageInfo { name: "foo".into(), version: "2".into(), ..Default::default() }],
             ..Default::default()
         };
         update(&mut st, PackagesMessage::Refreshed(fresh));
@@ -891,6 +1397,183 @@ mod tests {
         update(&mut st, PackagesMessage::Refreshed(fresh2));
         assert!(st.selected_package.is_none());
         assert!(st.selected_package_info.is_none());
+    }
+
+    fn pkg(name: &str, explicit: bool, orphan: bool) -> PackageInfo {
+        PackageInfo { name: name.into(), version: "1".into(), explicit, orphan }
+    }
+
+    fn loaded_state() -> PackagesState {
+        let mut st = PackagesState::default();
+        st.loaded = true;
+        st.installed = vec![
+            pkg("alpha", true, false),
+            pkg("beta", false, true),
+            pkg("gamma", false, false),
+            pkg("gamma-orphan", false, true),
+        ];
+        st
+    }
+
+    #[test]
+    fn parse_installed_joins_reason_and_orphan_lists() {
+        let list = parse_installed("zed 1.0\nRust 2.0\ncmake 3.0\n", "zed\n", "cmake\n");
+        let names: Vec<_> = list.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["cmake", "Rust", "zed"], "sorted case-insensitively");
+        assert!(list[2].explicit && !list[2].orphan);
+        assert!(!list[1].explicit && !list[1].orphan);
+        assert!(!list[0].explicit && list[0].orphan);
+    }
+
+    #[test]
+    fn filter_and_search_compose() {
+        let mut st = loaded_state();
+        assert_eq!(st.visible_installed().len(), 4);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
+        assert_eq!(st.visible_installed(), vec![1, 3]);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Explicit));
+        assert_eq!(st.visible_installed(), vec![0]);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
+        st.search_box.text = "gamma".into();
+        assert_eq!(st.visible_installed(), vec![3]);
+    }
+
+    /// A click on visible row N must name the package painted at row N, under
+    /// a filter too — the view and the click mapping share `visible_installed`.
+    #[test]
+    fn row_click_resolves_through_the_filter() {
+        let mut st = loaded_state();
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut ctx = cce_ui::context::UiContext::new();
+        view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ctx);
+        assert_eq!(st.installed_items.len(), 2);
+        st.installed_items[1].just_clicked = true;
+        let mut actions = Vec::new();
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions);
+        match actions.as_slice() {
+            [AppAction::Packages(PackagesMessage::SelectPackage(Some(n)))] => assert_eq!(n, "gamma-orphan"),
+            other => panic!("unexpected actions: {other:?}"),
+        }
+
+        // In select mode the same click toggles the row instead.
+        update(&mut st, PackagesMessage::ToggleSelectMode);
+        st.installed_items[1].just_clicked = true;
+        let mut actions = Vec::new();
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions);
+        match actions.as_slice() {
+            [AppAction::Packages(PackagesMessage::ToggleChecked(n))] => assert_eq!(n, "gamma-orphan"),
+            other => panic!("unexpected actions: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn select_mode_checks_and_clears() {
+        let mut st = loaded_state();
+        st.selected_package = Some("alpha".into());
+        update(&mut st, PackagesMessage::ToggleSelectMode);
+        assert!(st.selected_package.is_none(), "select mode frees the details pane");
+        update(&mut st, PackagesMessage::ToggleChecked("beta".into()));
+        update(&mut st, PackagesMessage::ToggleChecked("beta".into()));
+        assert!(st.checked.is_empty(), "a second click unchecks");
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
+        update(&mut st, PackagesMessage::CheckAllVisible);
+        assert_eq!(st.checked.iter().cloned().collect::<Vec<_>>(), ["beta", "gamma-orphan"]);
+        // A refresh drops checked names that are gone.
+        let fresh = PackagesState { loaded: true, installed: vec![pkg("beta", false, true)], ..Default::default() };
+        update(&mut st, PackagesMessage::Refreshed(fresh));
+        assert_eq!(st.checked.iter().cloned().collect::<Vec<_>>(), ["beta"]);
+        update(&mut st, PackagesMessage::ToggleSelectMode);
+        assert!(st.checked.is_empty(), "leaving select mode clears the selection");
+    }
+
+    /// The failure that prompted this page's rework: a removal pacman refuses
+    /// (a dependency still requires it) used to land in the details text,
+    /// where the info parser found no known key and showed nothing at all.
+    #[test]
+    fn refused_removal_stays_visible() {
+        let mut st = loaded_state();
+        let err = "error: failed to prepare transaction (could not satisfy dependencies)\n\
+                   :: removing beta breaks dependency 'beta' required by alpha".to_string();
+        update(&mut st, PackagesMessage::PreviewRemoval(vec!["beta".into()]));
+        assert!(st.previewing);
+        update(&mut st, PackagesMessage::RemovalPreviewed(vec!["beta".into()], Err(err.clone())));
+        assert!(!st.previewing);
+        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let texts: Vec<String> = pc.texts.iter().map(|t| t.0.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("required by alpha")), "the reason is painted: {texts:?}");
+
+        // And a failed transaction reports into last_action, not the details.
+        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]));
+        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Err(err)));
+        assert!(!st.uninstalling);
+        assert!(matches!(&st.last_action, Some(Err(e)) if e.contains("required by alpha")));
+    }
+
+    #[test]
+    fn successful_removal_reports_the_whole_plan() {
+        let mut st = loaded_state();
+        st.checked.insert("beta".into());
+        update(&mut st, PackagesMessage::RemovalPreviewed(
+            vec!["beta".into()],
+            Ok(parse_removal_preview("beta 1024\nlibbeta 2048\n")),
+        ));
+        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]));
+        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Ok(())));
+        assert!(st.removal.is_none());
+        assert!(st.checked.is_empty());
+        assert!(matches!(&st.last_action, Some(Ok(m)) if m == "Removed 2 packages"));
+    }
+
+    #[test]
+    fn marking_explicit_updates_rows_at_once() {
+        let mut st = loaded_state();
+        update(&mut st, PackagesMessage::SetInstallReason(vec!["beta".into()], true));
+        assert!(st.busy());
+        update(&mut st, PackagesMessage::InstallReasonSet(vec!["beta".into()], true, Ok(())));
+        assert!(!st.busy());
+        assert!(st.installed[1].explicit && !st.installed[1].orphan);
+        assert!(matches!(&st.last_action, Some(Ok(m)) if m == "Marked beta as explicitly installed"));
+    }
+
+    #[test]
+    fn jump_to_package_clears_the_filter() {
+        let mut st = loaded_state();
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
+        update(&mut st, PackagesMessage::SelectAndScrollPackage("alpha".into()));
+        assert_eq!(st.filter, InstalledFilter::All);
+        assert_eq!(st.selected_package.as_deref(), Some("alpha"));
+    }
+
+    /// Captured from `pacman -Rs --print -- acl` (stdout/stderr as pacman split them).
+    #[test]
+    fn dependency_refusal_is_summarized() {
+        let stderr = "error: failed to prepare transaction (could not satisfy dependencies)\n";
+        let stdout = "checking dependencies...\n\
+                      :: removing acl breaks dependency 'acl' required by coreutils\n\
+                      :: removing acl breaks dependency 'acl' required by cups\n\
+                      :: removing acl breaks dependency 'libacl.so=1-64' required by cups\n\
+                      :: removing attr breaks dependency 'attr' required by acl\n";
+        assert_eq!(
+            summarize_pacman_failure(stderr, stdout),
+            "error: failed to prepare transaction (could not satisfy dependencies)\n\
+             acl is still required by coreutils, cups\n\
+             attr is still required by acl"
+        );
+        // Lines pacman wrote to stderr instead are not duplicated.
+        let both = format!("{stderr}:: removing acl breaks dependency 'acl' required by cups\n");
+        assert_eq!(
+            summarize_pacman_failure(&both, ""),
+            "error: failed to prepare transaction (could not satisfy dependencies)\nacl is still required by cups"
+        );
+    }
+
+    #[test]
+    fn preview_parse_and_sizes() {
+        assert_eq!(parse_removal_preview("a 10\nb x\n\n"), vec![("a".to_string(), 10), ("b".to_string(), 0)]);
+        assert_eq!(human_size(2048), "2 KiB");
+        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MiB");
     }
 
     #[test]
