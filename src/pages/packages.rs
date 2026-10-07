@@ -1325,8 +1325,7 @@ impl crate::pages::AppPage for PackagesState {
             if list.get_item_draw_y(idx, 4.0).is_none() {
                 continue;
             }
-            let (id, ptr) = (i.id(), i.as_ptr_mut());
-            ctx.register_widget(id, ptr);
+            ctx.register_host(i);
         }
     }
 

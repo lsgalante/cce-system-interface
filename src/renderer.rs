@@ -795,18 +795,11 @@ impl SystemInterface {
         // never go through it, so re-register them here. The page buttons are
         // per-rebuild clones — registration follows the fresh allocations.
         {
-            let id = self.search_box.id();
-            let ptr = self.search_box.as_ptr_mut();
-            self.ui_context.register_widget(id, ptr);
-            let id = self.page_dropdown.id();
-            let ptr = self.page_dropdown.as_ptr_mut();
-            self.ui_context.register_widget(id, ptr);
-            let id = self.page_scroll_bar.id();
-            let ptr = self.page_scroll_bar.as_ptr_mut();
-            self.ui_context.register_widget(id, ptr);
+            self.ui_context.register_host(&mut self.search_box);
+            self.ui_context.register_host(&mut self.page_dropdown);
+            self.ui_context.register_host(&mut self.page_scroll_bar);
             for (btn, _) in self.page_buttons.iter_mut() {
-                let (id, ptr) = (btn.id(), btn.as_ptr_mut());
-                self.ui_context.register_widget(id, ptr);
+                self.ui_context.register_host(btn);
             }
         }
         // A Tab step's focus, handed to the fresh clone at the same rect (the
