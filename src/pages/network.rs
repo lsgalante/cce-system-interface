@@ -1,7 +1,7 @@
 use crate::app::{AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
 
 #[derive(Debug, Clone)]
@@ -162,7 +162,7 @@ const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
 const ACT_BTN: [f32; 4] = [0.16, 0.29, 0.18, 1.0];
 
-pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -314,7 +314,7 @@ impl crate::pages::AppPage for NetworkState {
         ch: f32,
         root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         // Page root dissolved (6u): the ctrl-nav entry focuses section 0 now, which used to
@@ -369,7 +369,7 @@ mod tests {
         let mut state = NetworkState::default();
         state.loaded = true;
         state.wifi_enabled = true;
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
@@ -382,7 +382,7 @@ mod tests {
         state.connected_ssid = "MyHomeWiFi".to_string();
         state.signal_strength = 80;
         state.ip_address = "192.168.1.50".to_string();
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }

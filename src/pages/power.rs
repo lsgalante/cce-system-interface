@@ -45,7 +45,7 @@
 use crate::app::{AppAction, PageContent};
 use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
+use cce_ui::layout::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::{Adapted, Dropdown, WidgetHost};
 use std::path::{Path, PathBuf};
 
@@ -728,7 +728,7 @@ fn when_text(source: Source) -> &'static str {
         Source::Battery => "unplugged",
     }
 }
-pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let focused = |i: usize| sec_focused.get(i).copied().unwrap_or(false);
@@ -1046,7 +1046,7 @@ impl crate::pages::AppPage for PowerState {
         ch: f32,
         root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
@@ -1419,7 +1419,7 @@ mod tests {
     fn the_three_sections_paint_and_the_assignment_one_drops_on_a_desktop() {
         let mut ctx = cce_ui::context::UiContext::new();
         let mut paint = |st: &mut PowerState, sections: usize| {
-            let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+            let mut layout = cce_ui::layout::PageFlow::new();
             let sec_focused = vec![false; sections];
             let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
             assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
@@ -1439,7 +1439,7 @@ mod tests {
     fn a_stale_root_helper_is_named_on_the_page() {
         let mut ctx = cce_ui::context::UiContext::new();
         let mut lines = |st: &mut PowerState| -> Vec<String> {
-            let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+            let mut layout = cce_ui::layout::PageFlow::new();
             let sec_focused = vec![false; 3];
             let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
             pc.texts.iter().map(|t| t.0.clone()).collect()

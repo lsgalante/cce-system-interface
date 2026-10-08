@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow};
 use cce_ui::widget::{Adapted, Toggle};
 
 #[derive(Debug, Clone)]
@@ -153,7 +153,7 @@ fn bt_scan() {
         .spawn();
 }
 
-pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -326,7 +326,7 @@ impl crate::pages::AppPage for BluetoothState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)

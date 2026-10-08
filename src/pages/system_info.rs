@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use cce_ui::widget::{Label, WidgetHost, Button};
 
 
@@ -558,7 +558,7 @@ const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, _ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, _ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     // Six, matching the add_section calls below and the six groups
@@ -889,7 +889,7 @@ impl crate::pages::AppPage for SystemState {
         ch: f32,
         root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         // Phase 6u: System used to render through the WIDGET TREE (the only page that
@@ -955,7 +955,7 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = SystemState::default();
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let sec_focused = vec![false, false, false, false, false, false, false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);

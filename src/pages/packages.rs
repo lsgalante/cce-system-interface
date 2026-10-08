@@ -1,7 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, SectionContext, RenderTarget};
 use cce_ui::widget::{WidgetHost, TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone, Default)]
@@ -531,7 +531,7 @@ pub fn view(
     cw: f32,
     ch: f32,
     sec_focused: &[bool],
-    layout: &mut dyn LayoutStrategy,
+    layout: &mut PageFlow,
     ctx: &mut cce_ui::context::UiContext,
 ) -> PageContent {
     let m = crate::app::section_margin();
@@ -1251,7 +1251,7 @@ impl crate::pages::AppPage for PackagesState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
@@ -1444,7 +1444,7 @@ mod tests {
     fn row_click_resolves_through_the_filter() {
         let mut st = loaded_state();
         update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
         view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ctx);
         assert_eq!(st.installed_items.len(), 2);
@@ -1499,7 +1499,7 @@ mod tests {
         assert!(st.previewing);
         update(&mut st, PackagesMessage::RemovalPreviewed(vec!["beta".into()], Err(err.clone())));
         assert!(!st.previewing);
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
         let texts: Vec<String> = pc.texts.iter().map(|t| t.0.clone()).collect();
         assert!(texts.iter().any(|t| t.contains("required by alpha")), "the reason is painted: {texts:?}");
@@ -1579,7 +1579,7 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = PackagesState::default();
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }

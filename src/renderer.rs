@@ -826,12 +826,11 @@ impl SystemInterface {
     }
 
     pub(crate) fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
-        use cce_ui::layout::AdaptiveGrid;
+        use cce_ui::layout::PageFlow;
         // The sections are wells carved straight into the root plate (no
         // sidebar, no pane between), so the page's edge is the window's edge:
         // the root rung's inset, and the grid's gap the root rung's gap (set
-        // once in main; `AdaptiveGrid::init` reads the toolkit getters, the
-        // constructor args are the same numbers stated for the record).
+        // once in main; `PageFlow::init` reads the toolkit's grid getters).
         let margin = cce_ui::layout::root_plate_inset();
         let cx = cx + margin;
         let cy = cy + margin;
@@ -839,7 +838,7 @@ impl SystemInterface {
         // over the sections, behind the root plate until a scroll raises it.
         let cw = (cw - 2.0 * margin).max(1.0);
         let ch = (ch - 2.0 * margin).max(1.0);
-        let mut layout = AdaptiveGrid::new(cce_ui::layout::grid_min_col_width(), cce_ui::layout::root_plate_gap());
+        let mut layout = PageFlow::new();
         // Page root dissolved (6u): the ctrl-nav entry focuses section 0, so root focus is
         // permanently false; views that highlighted on it OR in their first section's bool.
         // Section focus is the app-side index now (Phase 6w).

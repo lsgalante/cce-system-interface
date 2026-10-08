@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow};
 use std::fs;
 
 /// What the background poll produces — the fetched numbers only, never the
@@ -224,7 +224,7 @@ const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
@@ -401,7 +401,7 @@ impl crate::pages::AppPage for StorageState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)

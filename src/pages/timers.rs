@@ -5,7 +5,7 @@
 use crate::app::{PageContent, SectionContextExt};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox, WidgetHost};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -401,7 +401,7 @@ fn button_glyph(pc: &mut PageContent, compact: bool, icon: &str, word: &str, x: 
     }
 }
 
-pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
@@ -789,7 +789,7 @@ impl crate::pages::AppPage for TimersState {
         ch: f32,
         root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)

@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, section_kv_row};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::ScrollRegion;
 use cce_ui::widget::{TextBox, WidgetHost};
 
@@ -626,7 +626,7 @@ const LIST_GAP: f32 = 4.0;
 /// one-or-two-account host this page usually runs on.
 const LIST_MAX_ROWS: usize = 8;
 
-pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -1296,7 +1296,7 @@ impl crate::pages::AppPage for AccountsState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        layout: &mut cce_ui::layout::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
@@ -1362,13 +1362,13 @@ impl crate::pages::AppPage for AccountsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cce_ui::layout::AdaptiveGrid;
+    use cce_ui::layout::PageFlow;
 
     #[test]
     fn test_accounts_page_view() {
         let mut state = AccountsState::default_mock();
         state.loaded = true;
-        let mut layout = AdaptiveGrid::new(260.0, 20.0);
+        let mut layout = PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
         println!("PC BUTTONS COUNT: {}", pc.buttons.len());
         for (i, (btn, _, _)) in pc.buttons.iter().enumerate() {
@@ -1392,7 +1392,7 @@ mod tests {
         let mut state = AccountsState::default_mock();
         state.loaded = true;
         state.accounts = (0..12).map(|i| acct(&format!("a{i}@example.org"), false)).collect();
-        let mut layout = AdaptiveGrid::new(260.0, 20.0);
+        let mut layout = PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
 
         let list_bottom = state.list.y + state.list.h;
@@ -1418,7 +1418,7 @@ mod tests {
         let mut state = AccountsState::default_mock();
         state.loaded = true;
         state.accounts = (0..40).map(|i| acct(&format!("a{i}@example.org"), false)).collect();
-        let mut layout = AdaptiveGrid::new(260.0, 20.0);
+        let mut layout = PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
 
         let rows = pc

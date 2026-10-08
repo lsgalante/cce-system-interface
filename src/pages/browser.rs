@@ -8,7 +8,7 @@
 use std::fs;
 
 use cce_ui::widget::Owned;
-use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
+use cce_ui::layout::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::input::{Dropdown, Toggle};
 use cce_ui::widget::{TextBox, WidgetHost};
 
@@ -274,7 +274,7 @@ impl AppPage for BrowserState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> PageContent {
         let mut final_pc = PageContent::new();

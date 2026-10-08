@@ -12,7 +12,7 @@
 
 use crate::app::{AppAction, PageContent};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use cce_ui::widget::{Dropdown, WidgetHost};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -124,7 +124,7 @@ fn rebuild_entry_options(entry: &mut CategoryEntry) {
     entry.option_ids = ids;
 }
 
-pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut dyn LayoutStrategy, ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
@@ -441,7 +441,7 @@ impl crate::pages::AppPage for DefaultAppsState {
         ch: f32,
         root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)

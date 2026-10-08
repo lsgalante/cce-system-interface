@@ -226,23 +226,6 @@ pub struct PageContent {
     /// over the highlight. The popover layer interleaves on these marks.
     pub control_relief_marks: Vec<usize>,
     pub clip_stack: Vec<[f32; 4]>,
-    pub measure_only: bool,
-}
-
-impl Default for PageContent {
-    fn default() -> Self {
-        Self {
-            rects: Vec::new(),
-            texts: Vec::new(),
-            buttons: Vec::new(),
-            icons: Vec::new(),
-            reliefs: Vec::new(),
-            control_reliefs: Vec::new(),
-            control_relief_marks: Vec::new(),
-            clip_stack: Vec::new(),
-            measure_only: true,
-        }
-    }
 }
 
 impl PageContent {
@@ -256,7 +239,6 @@ impl PageContent {
             control_reliefs: Vec::new(),
             control_relief_marks: Vec::new(),
             clip_stack: Vec::new(),
-            measure_only: false,
         }
     }
 
@@ -297,20 +279,17 @@ impl PageContent {
     }
 
     pub fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        if self.measure_only { return; }
         if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
             self.rects.push((color, cx, cy, cw, ch, 0.0, (true, true, true, true)));
         }
     }
 
     pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        if self.measure_only { return; }
         let cb = self.get_clipped_bounds(None);
         self.texts.push((content.to_string(), size, x, y, color, None, cb));
     }
 
     pub fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        if self.measure_only { return; }
         let cb = self.get_clipped_bounds(None);
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
     }
@@ -321,23 +300,20 @@ impl PageContent {
     /// Rasterized at twice the rect's longer side for a 2x output.
     ///
     /// `false` when the icon set lacks the glyph, so the caller can say it
-    /// in a WORD instead; a measuring pass answers without recording.
+    /// in a WORD instead.
     pub fn icon(&mut self, name: &str, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> bool {
         let px = (w.max(h) * 2.0).ceil().max(1.0) as u32;
         let Some((image, _, _)) = cce_ui::upload_icon_tinted(name, px, cce_ui::icon_tint(color)) else {
             return false;
         };
-        if !self.measure_only {
-            let clip = self.clip_stack.last().copied();
-            self.icons.push(PageIcon { image, x, y, w, h, alpha: color[3], clip });
-        }
+        let clip = self.clip_stack.last().copied();
+        self.icons.push(PageIcon { image, x, y, w, h, alpha: color[3], clip });
         true
     }
 
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                   bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                   action: AppAction) {
-        if self.measure_only { return; }
         let btn = cce_ui::widget::Button::new(x, y, w, h)
             .with_label(label)
             .with_bg(bg)
@@ -358,7 +334,6 @@ impl PageContent {
     pub fn button_icon(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32,
                        bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                        alpha: f32, action: AppAction) {
-        if self.measure_only { return; }
         let mut btn = cce_ui::widget::Button::new(x, y, w, h)
             .with_label(label)
             .with_bg(bg)
@@ -382,7 +357,6 @@ impl PageContent {
     ///
     /// [`button`]: PageContent::button
     pub fn list_row(&mut self, x: f32, y: f32, w: f32, h: f32, action: AppAction) {
-        if self.measure_only { return; }
         let btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
         let clip = self.clip_stack.last().copied();
         self.buttons.push((Owned::new(btn), action, clip));
@@ -395,7 +369,6 @@ impl PageContent {
     pub fn button_icon_tinted(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32,
                               bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                               action: AppAction) {
-        if self.measure_only { return; }
         let mut btn = cce_ui::widget::Button::new(x, y, w, h)
             .with_label(label)
             .with_bg(bg)
@@ -411,7 +384,6 @@ impl PageContent {
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
                        bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4],
                        action: AppAction) {
-        if self.measure_only { return; }
         let btn = cce_ui::widget::Button::new(x, y, w, h)
             .with_label(label)
             .with_bg(bg)
@@ -429,46 +401,39 @@ impl RenderTarget for PageContent {
     }
 
     fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        if self.measure_only { return; }
         if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
             self.rects.push((color, cx, cy, cw, ch, 0.0, (true, true, true, true)));
         }
     }
 
     fn rect_with_radius(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32) {
-        if self.measure_only { return; }
         if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
             self.rects.push((color, cx, cy, cw, ch, radius, (true, true, true, true)));
         }
     }
 
     fn rect_with_radius_corners(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, corners: (bool, bool, bool, bool)) {
-        if self.measure_only { return; }
         if let Some((cx, cy, cw, ch)) = self.get_clipped_rect(x, y, w, h) {
             self.rects.push((color, cx, cy, cw, ch, radius, corners));
         }
     }
 
     fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        if self.measure_only { return; }
         let cb = self.get_clipped_bounds(None);
         self.texts.push((content.to_string(), size, x, y, color, None, cb));
     }
 
     fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        if self.measure_only { return; }
         let cb = self.get_clipped_bounds(None);
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
     }
 
     fn text_with_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], bounds: Option<[f32; 4]>) {
-        if self.measure_only { return; }
         let cb = self.get_clipped_bounds(bounds);
         self.texts.push((content.to_string(), size, x, y, color, None, cb));
     }
 
     fn text_with_font_and_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str, bounds: Option<[f32; 4]>) {
-        if self.measure_only { return; }
         let cb = self.get_clipped_bounds(bounds);
         self.texts.push((content.to_string(), size, x, y, color, Some(font.to_string()), cb));
     }
@@ -480,9 +445,6 @@ impl RenderTarget for PageContent {
     /// The flat-path bridge offers each Dropdown's flush inset trough here;
     /// carve it for real (display_list turns these into inset plates).
     fn inset_plate(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32) {
-        if self.measure_only {
-            return;
-        }
         self.control_relief_marks.push(self.rects.len());
         self.control_reliefs.push(ControlCarve::Plate { x, y, w, h, radius, depth, color, tint: None });
     }
@@ -495,9 +457,6 @@ impl RenderTarget for PageContent {
     /// face left level, a well drops the whole interior, a boss raises it.
     /// Collapsing them would give this app controls no other relief host has.
     fn relief_carve(&mut self, carve: &cce_ui::layout::ReliefCarve) {
-        if self.measure_only {
-            return;
-        }
         self.control_relief_marks.push(self.rects.len());
         self.control_reliefs.push(ControlCarve::Step(*carve));
     }
@@ -508,14 +467,11 @@ impl RenderTarget for PageContent {
         if f.focused || !cce_ui::layout::control_relief() {
             return false;
         }
-        if !self.measure_only {
-            self.reliefs.push(((f.x, f.y, f.w, f.h), f.tab));
-        }
+        self.reliefs.push(((f.x, f.y, f.w, f.h), f.tab));
         true
     }
 
     fn push_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
-        if self.measure_only { return; }
         let clip = if let Some(&parent_clip) = self.clip_stack.last() {
             let cx = x.max(parent_clip[0]);
             let cy = y.max(parent_clip[1]);
@@ -529,7 +485,6 @@ impl RenderTarget for PageContent {
     }
 
     fn pop_clip_rect(&mut self) {
-        if self.measure_only { return; }
         self.clip_stack.pop();
     }
 }

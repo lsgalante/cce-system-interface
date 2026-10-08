@@ -1149,8 +1149,8 @@ fn main() {
 
     // One gap everywhere: the wells fill their grid allocations, so the grid
     // gap IS the visual section gap. The sections stand on the root plate,
-    // so it is the root rung's sibling gap — `AdaptiveGrid::init` reads the
-    // toolkit's grid_gap, hence the set here rather than a constructor arg.
+    // so it is the root rung's sibling gap — `PageFlow::init` reads the
+    // toolkit's grid_gap, hence the set here.
     cce_ui::layout::set_grid_gap(cce_ui::layout::root_plate_gap());
 
     let mut initial_page = Page::ALL[0];

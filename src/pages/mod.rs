@@ -93,7 +93,7 @@ pub trait AppPage {
         ch: f32,
         root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn cce_ui::layout::LayoutStrategy,
+        layout: &mut cce_ui::layout::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent;
 
@@ -172,7 +172,7 @@ mod list_clip_tests {
     use cce_ui::widget::ScrollRegion;
 
     fn render(page: &mut dyn AppPage) -> crate::app::PageContent {
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
         page.view(10.0, 20.0, 820.0, 640.0, false, &[false; 4], &mut layout, &mut ctx)
     }

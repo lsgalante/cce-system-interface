@@ -3,7 +3,7 @@ use std::io::Write;
 use cce_ui::widget::Owned;
 use cce_ui::widget::input::{Toggle, Dropdown, Spinbox};
 use cce_ui::widget::WidgetHost;
-use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use crate::pages::AppPage;
 
@@ -205,7 +205,7 @@ impl AppPage for NotificationsState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut dyn LayoutStrategy,
+        layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> PageContent {
         let mut final_pc = PageContent::new();
@@ -284,7 +284,7 @@ pub(crate) mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = NotificationsState::default();
-        let mut layout = cce_ui::layout::ColumnLayout::new(20.0);
+        let mut layout = cce_ui::layout::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = state.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
