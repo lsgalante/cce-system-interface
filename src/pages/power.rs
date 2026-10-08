@@ -44,6 +44,7 @@
 
 use crate::app::{AppAction, PageContent};
 use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
 use cce_ui::widget::{Adapted, Dropdown, WidgetHost};
 use std::path::{Path, PathBuf};
@@ -129,7 +130,7 @@ pub struct PowerFacts {
 #[derive(Debug, Clone)]
 pub struct LeverSet {
     /// One dropdown per [`Lever::ALL`] entry, in that order.
-    pub dds: Vec<Adapted<Dropdown>>,
+    pub dds: Vec<Owned<Adapted<Dropdown>>>,
     /// The plan value behind each row of each dropdown (options are display
     /// text). Row 0 is always the "Not set" row and holds the empty string;
     /// an empty Vec means the interface is absent on this host and the
@@ -142,7 +143,7 @@ impl Default for LeverSet {
         Self {
             dds: Lever::ALL
                 .iter()
-                .map(|l| Dropdown::new(vec!["—".to_string()], 0).with_label(l.label()))
+                .map(|l| Owned::new(Dropdown::new(vec!["—".to_string()], 0).with_label(l.label())))
                 .collect(),
             rows: vec![Vec::new(); Lever::ALL.len()],
         }
@@ -157,17 +158,17 @@ fn lever_index(lever: Lever) -> usize {
 pub struct PowerState {
     pub loaded: bool,
     pub facts: PowerFacts,
-    pub dd_limit: Adapted<Dropdown>,
+    pub dd_limit: Owned<Adapted<Dropdown>>,
     /// The charge window per charge-limit dropdown row (options are display
     /// text).
     pub limit_values: Vec<ChargeLimit>,
     /// Which mode the lever section is editing. Page state, not plan state:
     /// it says what is on screen, never what the machine runs.
     pub editing: Mode,
-    pub dd_mode: Adapted<Dropdown>,
+    pub dd_mode: Owned<Adapted<Dropdown>>,
     pub levers: LeverSet,
     /// One mode picker per [`Source::ALL`] entry, in that order.
-    pub dd_assign: Vec<Adapted<Dropdown>>,
+    pub dd_assign: Vec<Owned<Adapted<Dropdown>>>,
 }
 
 impl Default for PowerState {
@@ -175,14 +176,14 @@ impl Default for PowerState {
         Self {
             loaded: false,
             facts: PowerFacts::default(),
-            dd_limit: Dropdown::new(vec!["—".to_string()], 0).with_label("Battery Charge Limit"),
+            dd_limit: Owned::new(Dropdown::new(vec!["—".to_string()], 0).with_label("Battery Charge Limit")),
             limit_values: Vec::new(),
             editing: Mode::default(),
-            dd_mode: Dropdown::new(mode_options(), 0).with_label("Mode"),
+            dd_mode: Owned::new(Dropdown::new(mode_options(), 0).with_label("Mode")),
             levers: LeverSet::default(),
             dd_assign: Source::ALL
                 .iter()
-                .map(|s| Dropdown::new(mode_options(), 0).with_label(s.label()))
+                .map(|s| Owned::new(Dropdown::new(mode_options(), 0).with_label(s.label())))
                 .collect(),
         }
     }

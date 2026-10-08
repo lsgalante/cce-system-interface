@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Adapted, Toggle};
 
@@ -18,7 +19,7 @@ pub struct BluetoothState {
     pub enabled: bool,
     pub devices: Vec<BluetoothDevice>,
     pub scanning: bool,
-    pub toggle: Adapted<Toggle>,
+    pub toggle: Owned<Adapted<Toggle>>,
 }
 
 impl Default for BluetoothState {
@@ -30,7 +31,7 @@ impl Default for BluetoothState {
             enabled: false,
             devices: Vec::new(),
             scanning: false,
-            toggle: Toggle::new(),
+            toggle: Owned::new(Toggle::new()),
         }
     }
 }
@@ -80,7 +81,7 @@ pub async fn fetch_bluetooth_page_state() -> BluetoothState {
         .unwrap_or(false);
 
     let devices = if enabled { fetch_devices().await } else { Vec::new() };
-    BluetoothState { loaded: true, installed, service_active, enabled, devices, scanning: false, toggle: Toggle::new() }
+    BluetoothState { loaded: true, installed, service_active, enabled, devices, scanning: false, toggle: Owned::new(Toggle::new()) }
 }
 
 async fn fetch_devices() -> Vec<BluetoothDevice> {

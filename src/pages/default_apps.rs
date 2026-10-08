@@ -11,6 +11,7 @@
 //! entries, and startcce exports as `$TERMINAL` for everything else.
 
 use crate::app::{AppAction, PageContent};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Dropdown, WidgetHost};
 use std::collections::HashMap;
@@ -60,7 +61,7 @@ pub struct CategoryEntry {
     /// Applied value per dropdown option (desktop id for MIME categories, a
     /// command for Terminal; None = the "not set" placeholder row).
     pub option_ids: Vec<Option<String>>,
-    pub dropdown: cce_ui::widget::Adapted<Dropdown>,
+    pub dropdown: Owned<cce_ui::widget::Adapted<Dropdown>>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +81,7 @@ impl Default for DefaultAppsState {
                     kind,
                     info: CategoryInfo { candidates: Vec::new(), current: None },
                     option_ids: vec![None],
-                    dropdown: Dropdown::new(vec![NOT_SET.to_string()], 0).with_label(label),
+                    dropdown: Owned::new(Dropdown::new(vec![NOT_SET.to_string()], 0).with_label(label)),
                 })
                 .collect(),
         }

@@ -1,3 +1,4 @@
+use cce_ui::widget::Owned;
 use cce_ui::widget::hover_animation;
 use cce_ui::cosmic_text::{Buffer, FontSystem};
 
@@ -74,7 +75,7 @@ struct SystemInterface {
     /// (`PageContent::control_relief_marks`) — display_list slots each carve
     /// back between the rects the widget drew before and after it.
     popover_control_relief_marks: Vec<usize>,
-    page_buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction)>,
+    page_buttons: Vec<(Owned<cce_ui::widget::Adapted<cce_ui::widget::Button>>, AppAction)>,
 
     sidebar_width: f32,
     header_height: f32,
@@ -138,12 +139,12 @@ struct SystemInterface {
     /// a frame that only replays the cached layout paints no widget, and
     /// would otherwise read as the field closing.
     text_claim: Option<[f32; 4]>,
-    page_dropdown: cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>,
+    page_dropdown: Owned<cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>>,
     // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
     // (rendered into the window assembly, evented directly). content_h feeds it — the
     // window pass reads last frame's value, exactly as the legacy Page did.
-    page_scroll_bar: cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>,
+    page_scroll_bar: Owned<cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>>,
     content_h: f32,
     // Section wells: body box + title tab (page coords, pre-scroll) — carved by
     // display_list.
@@ -185,7 +186,7 @@ struct SystemInterface {
     scroll_logs: Vec<String>,
     search_open: bool,
     search_query: String,
-    search_box: cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>,
+    search_box: Owned<cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>>,
 
 }
 
@@ -301,8 +302,8 @@ impl cce_ui::engine::Application for SystemInterface {
             laid_out_page: None,
             refocus_rect: None,
             text_claim: None,
-            page_dropdown,
-            page_scroll_bar: crate::scroll_bar::ScrollBar::new(),
+            page_dropdown: Owned::new(page_dropdown),
+            page_scroll_bar: Owned::new(crate::scroll_bar::ScrollBar::new()),
             content_h: 0.0,
             page_reliefs: Vec::new(),
             page_control_reliefs: Vec::new(),
@@ -320,9 +321,9 @@ impl cce_ui::engine::Application for SystemInterface {
             scroll_logs: Vec::new(),
             search_open: false,
             search_query: String::new(),
-            search_box: cce_ui::widget::input::TextBox::new(String::new())
+            search_box: Owned::new(cce_ui::widget::input::TextBox::new(String::new())
                 .with_placeholder("Search sections & parameters...")
-                .with_draw_bg_border(false),
+                .with_draw_bg_border(false)),
         };
         this.app.system_info.sender = Some(this.sender.clone());
 

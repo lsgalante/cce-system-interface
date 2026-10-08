@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent};
+use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
@@ -21,7 +22,7 @@ pub struct NetworkState {
     pub device: String,
     pub available: Vec<WifiNetwork>,
     pub wifi_list: ScrollRegion,
-    pub wifi_toggle: Adapted<Toggle>,
+    pub wifi_toggle: Owned<Adapted<Toggle>>,
 }
 
 impl Default for NetworkState {
@@ -35,7 +36,7 @@ impl Default for NetworkState {
             device: String::new(),
             available: Vec::new(),
             wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
-            wifi_toggle: Toggle::new(),
+            wifi_toggle: Owned::new(Toggle::new()),
         }
     }
 }
@@ -99,7 +100,7 @@ pub async fn fetch_network_state() -> NetworkState {
         wifi_enabled, connected_ssid, signal_strength: signal,
         ip_address, device, available,
         wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
-        wifi_toggle: Toggle::new(),
+        wifi_toggle: Owned::new(Toggle::new()),
     }
 }
 

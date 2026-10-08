@@ -489,7 +489,7 @@ impl SystemInterface {
             // The button's own idle and hover faces: the page's colours when
             // it passed them, else the toolkit's for the button's kind — a
             // list row's transparent-until-hover wash (`PageContent::list_row`).
-            let mut probe = (**btn).clone();
+            let mut probe = (***btn).clone();
             probe.set_hovered(false);
             let bg = cce_ui::widget::Paint::color(&probe);
             probe.set_hovered(true);

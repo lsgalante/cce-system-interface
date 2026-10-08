@@ -3,6 +3,7 @@
 //! timer units (system scope through pkexec).
 
 use crate::app::{PageContent, SectionContextExt};
+use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox, WidgetHost};
@@ -34,13 +35,13 @@ pub struct TimersState {
     pub timers: Vec<TimerInfo>,
     pub active_tab: TimerTab,
     pub list: ScrollRegion,
-    pub items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
+    pub items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
     pub creating: bool,
     /// Base unit name (without .timer) being edited, form shared with create.
     pub editing: Option<String>,
-    pub name_box: cce_ui::widget::Adapted<TextBox>,
-    pub command_box: cce_ui::widget::Adapted<TextBox>,
-    pub schedule_box: cce_ui::widget::Adapted<TextBox>,
+    pub name_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub command_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub schedule_box: Owned<cce_ui::widget::Adapted<TextBox>>,
     pub status_msg: Option<String>,
 }
 
@@ -54,12 +55,12 @@ impl Default for TimersState {
             items: Vec::new(),
             creating: false,
             editing: None,
-            name_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Name")
-                .with_placeholder("backup"),
-            command_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Command")
-                .with_placeholder("/home/me/bin/backup.sh --fast"),
-            schedule_box: TextBox::new(String::new()).with_draw_bg_border(true).with_label("Schedule (OnCalendar)")
-                .with_placeholder("daily \u{2022} Mon 09:00 \u{2022} *-*-* 03:00:00"),
+            name_box: Owned::new(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Name")
+                .with_placeholder("backup")),
+            command_box: Owned::new(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Command")
+                .with_placeholder("/home/me/bin/backup.sh --fast")),
+            schedule_box: Owned::new(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Schedule (OnCalendar)")
+                .with_placeholder("daily \u{2022} Mon 09:00 \u{2022} *-*-* 03:00:00")),
             status_msg: None,
         }
     }
@@ -524,7 +525,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             if state.items.len() != filtered.len() {
                 state.items.clear();
                 for _ in 0..filtered.len() {
-                    state.items.push(InteractiveListItem::new(""));
+                    state.items.push(Owned::new(InteractiveListItem::new("")));
                 }
             }
 
@@ -571,7 +572,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
 
                     let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
-                    let mut dot = StatusDot::new(dot_state);
+                    let mut dot = Owned::new(StatusDot::new(dot_state));
                     render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
 
                     let active_txt = [0.90, 0.90, 0.95, 1.0];

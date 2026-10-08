@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use std::fs;
 
@@ -34,7 +35,7 @@ pub struct StorageState {
     pub error_message: Option<String>,
     /// Retained so it can hold keyboard focus: ctrl+i descends into the Full
     /// System Backup section and lands here, and Enter/Space runs the backup.
-    pub backup_button: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    pub backup_button: Owned<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
 }
 
 impl Default for StorageState {
@@ -50,7 +51,7 @@ impl Default for StorageState {
             last_backup_time: "Never".to_string(),
             backup_size: "0 B".to_string(),
             error_message: None,
-            backup_button: cce_ui::widget::Button::new(0.0, 0.0, 0.0, 32.0)
+            backup_button: Owned::new(cce_ui::widget::Button::new(0.0, 0.0, 0.0, 32.0)
                 // Flat fill + border, not the SDF bevel: PageContent's RenderTarget
                 // has no `bevel`, so a raised plate silently draws nothing here
                 // (the label renders, the plate does not). The border path is also
@@ -59,7 +60,7 @@ impl Default for StorageState {
                 .with_label("Run Backup")
                 .with_bg(BTN_BG)
                 .with_hover_bg(BTN_HOVER)
-                .with_label_color(WHITE),
+                .with_label_color(WHITE)),
         }
     }
 }
@@ -249,8 +250,8 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
             let bar_w = sec_w - 2.0 * crate::app::section_margin();
             let yt = sec.ay();
             let disk_bar_x = sec.ax(crate::app::section_margin());
-            let mut disk_bar = cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
-                .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]);
+            let mut disk_bar = Owned::new(cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
+                .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]));
             render_widget(sec.pc, &mut disk_bar, disk_bar_x, yt, bar_w, 8.0, ctx);
         }
     });
@@ -276,8 +277,8 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
             let bar_w = sec_w - 2.0 * crate::app::section_margin();
             let yt = sec.ay();
             let ram_bar_x = sec.ax(crate::app::section_margin());
-            let mut ram_bar = cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
-                .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]);
+            let mut ram_bar = Owned::new(cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
+                .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]));
             render_widget(sec.pc, &mut ram_bar, ram_bar_x, yt, bar_w, 8.0, ctx);
         }
     });

@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Spinbox, Slider, WidgetHost};
 
@@ -25,10 +26,10 @@ pub struct AudioState {
     pub loaded: bool,
     pub sinks: Vec<AudioSink>,
     pub sources: Vec<AudioSource>,
-    pub sink_spinboxes: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>,
-    pub source_spinboxes: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>,
-    pub sink_sliders: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
-    pub source_sliders: Vec<Box<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
+    pub sink_spinboxes: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>>,
+    pub source_spinboxes: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>>,
+    pub sink_sliders: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>>,
+    pub source_sliders: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -232,8 +233,8 @@ fn device_row(
     active: bool,
     muted: bool,
     volume: f32,
-    slider: &mut cce_ui::widget::Adapted<Slider>,
-    spin: &mut cce_ui::widget::Adapted<Spinbox>,
+    slider: &mut Owned<cce_ui::widget::Adapted<Slider>>,
+    spin: &mut Owned<cce_ui::widget::Adapted<Spinbox>>,
     mute_action: AppAction,
     ctx: &mut cce_ui::context::UiContext,
 ) {
@@ -356,10 +357,10 @@ pub fn update(state: &mut AudioState, msg: AudioMessage) {
             state.loaded = new.loaded;
             state.sinks = new.sinks;
             state.sources = new.sources;
-            state.sink_spinboxes.resize_with(state.sinks.len(), || Box::new(Spinbox::new(50, 0, 100, 1)));
-            state.source_spinboxes.resize_with(state.sources.len(), || Box::new(Spinbox::new(50, 0, 100, 1)));
-            state.sink_sliders.resize_with(state.sinks.len(), || Box::new(Slider::new().with_range(0.0, 1.0).with_scroll(true)));
-            state.source_sliders.resize_with(state.sources.len(), || Box::new(Slider::new().with_range(0.0, 1.0).with_scroll(true)));
+            state.sink_spinboxes.resize_with(state.sinks.len(), || Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))));
+            state.source_spinboxes.resize_with(state.sources.len(), || Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))));
+            state.sink_sliders.resize_with(state.sinks.len(), || Box::new(Owned::new(Slider::new().with_range(0.0, 1.0).with_scroll(true))));
+            state.source_sliders.resize_with(state.sources.len(), || Box::new(Owned::new(Slider::new().with_range(0.0, 1.0).with_scroll(true))));
         }
         AudioMessage::SinkVolume(id, vol) => {
             if let Some(sink) = state.sinks.iter_mut().find(|s| s.id == id) {
@@ -490,17 +491,17 @@ mod tests {
             ],
             sources: vec![],
             sink_spinboxes: vec![
-                Box::new(Spinbox::new(57, 0, 100, 1)),
-                Box::new(Spinbox::new(50, 0, 100, 1)),
-                Box::new(Spinbox::new(50, 0, 100, 1)),
-                Box::new(Spinbox::new(50, 0, 100, 1)),
+                Box::new(Owned::new(Spinbox::new(57, 0, 100, 1))),
+                Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))),
+                Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))),
+                Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))),
             ],
             source_spinboxes: vec![],
             sink_sliders: vec![
-                Box::new(Slider::new()),
-                Box::new(Slider::new()),
-                Box::new(Slider::new()),
-                Box::new(Slider::new()),
+                Box::new(Owned::new(Slider::new())),
+                Box::new(Owned::new(Slider::new())),
+                Box::new(Owned::new(Slider::new())),
+                Box::new(Owned::new(Slider::new())),
             ],
             source_sliders: vec![],
         };
@@ -522,7 +523,7 @@ mod tests {
     fn test_boxed_spinbox_right_click_crash() {
         use cce_ui::widget::{WidgetHost, Spinbox};
         let mut state = AudioState::default();
-        state.sink_spinboxes.push(Box::new(Spinbox::new(50, 0, 100, 1)));
+        state.sink_spinboxes.push(Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))));
         let mut ctx = cce_ui::context::UiContext::new();
         let sb = &mut state.sink_spinboxes[0];
         sb.set_rect(0.0, 0.0, 100.0, 44.0);

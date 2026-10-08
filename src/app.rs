@@ -1,3 +1,4 @@
+use cce_ui::widget::Owned;
 use cce_ui::layout::RenderTarget;
 
 use crate::pages::audio;
@@ -204,7 +205,7 @@ pub struct PageContent {
     /// (button, action, clip): clip is the innermost push_clip_rect at emission
     /// time (page coords) — the renderer clamps the drawn quad, label bounds,
     /// and the dispatch clone's hit rect to it.
-    pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction, Option<[f32; 4]>)>,
+    pub buttons: Vec<(Owned<cce_ui::widget::Adapted<cce_ui::widget::Button>>, AppAction, Option<[f32; 4]>)>,
     /// Glyphs placed with [`PageContent::icon`] (and a widget's own, through
     /// `RenderTarget::icon` — the expanded Dropdown's chevron).
     pub icons: Vec<PageIcon>,
@@ -343,7 +344,7 @@ impl PageContent {
             .with_hover_bg(hover_bg)
             .with_label_color(label_color);
         let clip = self.clip_stack.last().copied();
-        self.buttons.push((btn, action, clip));
+        self.buttons.push((Owned::new(btn), action, clip));
     }
 
     /// A button whose face is a bundled cce-icons glyph instead of a label.
@@ -369,7 +370,7 @@ impl PageContent {
             btn = btn.with_icon(id, iw as f32, ih as f32).with_icon_alpha(alpha);
         }
         let clip = self.clip_stack.last().copied();
-        self.buttons.push((btn, action, clip));
+        self.buttons.push((Owned::new(btn), action, clip));
     }
 
     /// A row of a list, in the toolkit's list style (`Button::new_list_row`,
@@ -384,7 +385,7 @@ impl PageContent {
         if self.measure_only { return; }
         let btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
         let clip = self.clip_stack.last().copied();
-        self.buttons.push((btn, action, clip));
+        self.buttons.push((Owned::new(btn), action, clip));
     }
 
     /// [`button_icon`](Self::button_icon) with the glyph tinted
@@ -404,7 +405,7 @@ impl PageContent {
             btn = btn.with_icon(id, iw as f32, ih as f32).with_icon_alpha(label_color[3]);
         }
         let clip = self.clip_stack.last().copied();
-        self.buttons.push((btn, action, clip));
+        self.buttons.push((Owned::new(btn), action, clip));
     }
 
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -418,7 +419,7 @@ impl PageContent {
             .with_label_color(label_color)
             .with_left_align(true);
         let clip = self.clip_stack.last().copied();
-        self.buttons.push((btn, action, clip));
+        self.buttons.push((Owned::new(btn), action, clip));
     }
 }
 

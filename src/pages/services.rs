@@ -1,4 +1,5 @@
 use crate::app::{PageContent, SectionContextExt};
+use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::{TextBox, InteractiveListItem, WidgetHost};
@@ -29,9 +30,9 @@ pub struct ServicesState {
     pub loaded: bool,
     pub services: Vec<ServiceInfo>,
     pub active_tab: ServiceTab,
-    pub search_box: cce_ui::widget::Adapted<TextBox>,
+    pub search_box: Owned<cce_ui::widget::Adapted<TextBox>>,
     pub list: ScrollRegion,
-    pub items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
+    pub items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
 }
 
 impl Default for ServicesState {
@@ -40,7 +41,7 @@ impl Default for ServicesState {
             loaded: false,
             services: Vec::new(),
             active_tab: ServiceTab::System,
-            search_box: TextBox::new(String::new()).with_label("Filter Services"),
+            search_box: Owned::new(TextBox::new(String::new()).with_label("Filter Services")),
             list: ScrollRegion::new(36.0, 6.0).with_frame(false).with_sink_behind(true),
             items: Vec::new(),
         }
@@ -148,7 +149,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             if state.items.len() != filtered_services.len() {
                 state.items.clear();
                 for _ in 0..filtered_services.len() {
-                    state.items.push(InteractiveListItem::new(""));
+                    state.items.push(Owned::new(InteractiveListItem::new("")));
                 }
             }
 

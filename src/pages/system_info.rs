@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
 use cce_ui::widget::{Label, WidgetHost, Button};
 
@@ -50,9 +51,9 @@ pub struct SystemState {
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
     pub builds: Vec<InstalledBuild>,
-    pub cpu_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub cpu_usage_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub cpu_temp_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub cpu_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub cpu_usage_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub cpu_temp_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
 
     // Power-related fields
 
@@ -60,8 +61,8 @@ pub struct SystemState {
     pub initialized: bool,
     pub sender: Option<calloop::channel::Sender<AppAction>>,
     pub sysfiles: SysFiles,
-    pub hostname_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
-    pub uptime_label: cce_ui::widget::Adapted<cce_ui::widget::Label>,
+    pub hostname_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub uptime_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
 }
 
 impl std::fmt::Debug for SystemState {
@@ -89,16 +90,16 @@ impl Default for SystemState {
             gpus: Vec::new(),
             gpu_strings: Vec::new(),
             builds: Vec::new(),
-            cpu_label: Label::new("CPU Info"),
-            cpu_usage_label: Label::new("CPU Usage"),
-            cpu_temp_label: Label::new("CPU Temp"),
+            cpu_label: Owned::new(Label::new("CPU Info")),
+            cpu_usage_label: Owned::new(Label::new("CPU Usage")),
+            cpu_temp_label: Owned::new(Label::new("CPU Temp")),
 
 
             initialized: false,
             sender: None,
             sysfiles: SysFiles::default(),
-            hostname_label: Label::new(""),
-            uptime_label: Label::new(""),
+            hostname_label: Owned::new(Label::new("")),
+            uptime_label: Owned::new(Label::new("")),
         }
     }
 }

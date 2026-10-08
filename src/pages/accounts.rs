@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, section_kv_row};
+use cce_ui::widget::Owned;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy, RenderTarget};
 use cce_ui::widget::ScrollRegion;
 use cce_ui::widget::{TextBox, WidgetHost};
@@ -79,10 +80,10 @@ pub struct AccountsState {
     pub accounts: Vec<AccountInfo>,
     pub selected_idx: Option<usize>,
     pub adding_new: bool,
-    pub email_box: cce_ui::widget::Adapted<TextBox>,
-    pub password_box: cce_ui::widget::Adapted<TextBox>,
-    pub imap_box: cce_ui::widget::Adapted<TextBox>,
-    pub smtp_box: cce_ui::widget::Adapted<TextBox>,
+    pub email_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub password_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub imap_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub smtp_box: Owned<cce_ui::widget::Adapted<TextBox>>,
     pub status_msg: Option<String>,
     pub status_msg_timer: f32,
     pub oauth_listener_running: bool,
@@ -92,8 +93,8 @@ pub struct AccountsState {
     pub editing_email: Option<String>,
     /// Per-account OAuth credentials — the copy in `accounts.json` that
     /// cce-mail actually refreshes with, not the global template.
-    pub oauth_client_id_box: cce_ui::widget::Adapted<TextBox>,
-    pub oauth_client_secret_box: cce_ui::widget::Adapted<TextBox>,
+    pub oauth_client_id_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub oauth_client_secret_box: Owned<cce_ui::widget::Adapted<TextBox>>,
     /// Per-address keyring status from the last snapshot, plus optimistic
     /// updates from Save/Delete (the 3s watcher pass corrects them).
     pub keyring: std::collections::HashMap<String, KeyringStatus>,
@@ -108,19 +109,19 @@ pub struct AccountsState {
 impl AccountsState {
     pub fn default_mock() -> Self {
         let mut state = Self::default();
-        state.email_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Email Address");
+        state.email_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Email Address"));
         state.password_box = {
             let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Password / App Password");
             tb.is_password = true;
-            tb
+            Owned::new(tb)
         };
-        state.imap_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server");
-        state.smtp_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server");
-        state.oauth_client_id_box = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID");
+        state.imap_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server"));
+        state.smtp_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server"));
+        state.oauth_client_id_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID"));
         state.oauth_client_secret_box = {
             let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client Secret");
             tb.is_password = true;
-            tb
+            Owned::new(tb)
         };
         state.list = ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_sink_behind(true);
         state

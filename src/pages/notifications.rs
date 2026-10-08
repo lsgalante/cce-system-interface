@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use cce_ui::widget::Owned;
 use cce_ui::widget::input::{Toggle, Dropdown, Spinbox};
 use cce_ui::widget::WidgetHost;
 use cce_ui::layout::{PageLayoutBuilder, LayoutStrategy};
@@ -18,11 +19,11 @@ pub struct NotificationsConfig {
 pub struct NotificationsState {
     pub loaded: bool,
     pub enable: bool,
-    pub enable_toggle: cce_ui::widget::Adapted<Toggle>,
+    pub enable_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
     pub bell: String,
-    pub bell_menu: cce_ui::widget::Adapted<Dropdown>,
+    pub bell_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
     pub duration: i32,
-    pub duration_spinbox: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
+    pub duration_spinbox: Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>,
 }
 
 impl Default for NotificationsState {
@@ -32,12 +33,12 @@ impl Default for NotificationsState {
             enable: true,
             // Left-aligned: centred, the label straddled the seam at the
             // toggle's midpoint (see the Browser page's toggles).
-            enable_toggle: Toggle::new()
+            enable_toggle: Owned::new(Toggle::new()
                 .with_label("Enable Notifications")
                 .with_left_align(true)
-                .with_config(&get_config_path(), "enable"),
+                .with_config(&get_config_path(), "enable")),
             bell: "none".to_string(),
-            bell_menu: Dropdown::new(
+            bell_menu: Owned::new(Dropdown::new(
                 vec![
                     "None".to_string(),
                     "Bell".to_string(),
@@ -45,12 +46,12 @@ impl Default for NotificationsState {
                     "Message".to_string(),
                 ],
                 0,
-            ).with_label("Notification Sound"),
+            ).with_label("Notification Sound")),
             duration: 5,
-            duration_spinbox: Spinbox::new(5, 1, 60, 1)
+            duration_spinbox: Owned::new(Spinbox::new(5, 1, 60, 1)
                 .with_label("Notification Duration")
                 .with_unit("s")
-                .with_config(&get_config_path(), "duration"),
+                .with_config(&get_config_path(), "duration")),
         }
     }
 }

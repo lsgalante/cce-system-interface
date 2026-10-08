@@ -1,4 +1,5 @@
 use crate::app::{AppAction, PageContent, SectionContextExt, section_divider};
+use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, LayoutStrategy, SectionContext, RenderTarget};
 use cce_ui::widget::{WidgetHost, TextBox, InteractiveListItem};
@@ -67,11 +68,11 @@ pub struct PackagesState {
     pub installed: Vec<PackageInfo>,
     pub updates: Vec<UpdateInfo>,
     pub active_tab: PackageTab,
-    pub search_box: cce_ui::widget::Adapted<TextBox>,
+    pub search_box: Owned<cce_ui::widget::Adapted<TextBox>>,
     pub installed_list: ScrollRegion,
-    pub installed_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
+    pub installed_items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
     pub updates_list: ScrollRegion,
-    pub updates_items: Vec<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>,
+    pub updates_items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
     pub updating: bool,
     pub last_update_res: Option<Result<(), String>>,
     pub selected_package: Option<String>,
@@ -97,7 +98,7 @@ impl Default for PackagesState {
             installed: Vec::new(),
             updates: Vec::new(),
             active_tab: PackageTab::Installed,
-            search_box: TextBox::new(String::new()).with_placeholder("Filter Packages..."),
+            search_box: Owned::new(TextBox::new(String::new()).with_placeholder("Filter Packages...")),
             installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
             installed_items: Vec::new(),
             updates_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
@@ -919,7 +920,7 @@ pub fn view(
                 if state.installed_items.len() != filtered.len() {
                     state.installed_items.clear();
                     for _ in 0..filtered.len() {
-                        state.installed_items.push(InteractiveListItem::new(""));
+                        state.installed_items.push(Owned::new(InteractiveListItem::new("")));
                     }
                 }
 
@@ -970,7 +971,7 @@ pub fn view(
                 if state.updates_items.len() != filtered.len() {
                     state.updates_items.clear();
                     for _ in 0..filtered.len() {
-                        state.updates_items.push(InteractiveListItem::new(""));
+                        state.updates_items.push(Owned::new(InteractiveListItem::new("")));
                     }
                 }
 

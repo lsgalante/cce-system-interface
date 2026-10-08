@@ -7,6 +7,7 @@
 
 use std::fs;
 
+use cce_ui::widget::Owned;
 use cce_ui::layout::{LayoutStrategy, PageLayoutBuilder};
 use cce_ui::widget::input::{Dropdown, Toggle};
 use cce_ui::widget::{TextBox, WidgetHost};
@@ -61,14 +62,14 @@ pub struct BrowserState {
     pub vi_mode: bool,
     pub bar_position: String,
     pub color_scheme: String,
-    pub homepage_box: cce_ui::widget::Adapted<TextBox>,
-    pub search_menu: cce_ui::widget::Adapted<Dropdown>,
-    pub bar_position_menu: cce_ui::widget::Adapted<Dropdown>,
-    pub color_scheme_menu: cce_ui::widget::Adapted<Dropdown>,
-    pub download_dir_box: cce_ui::widget::Adapted<TextBox>,
-    pub history_toggle: cce_ui::widget::Adapted<Toggle>,
-    pub raindrop_toggle: cce_ui::widget::Adapted<Toggle>,
-    pub vi_mode_toggle: cce_ui::widget::Adapted<Toggle>,
+    pub homepage_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub search_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
+    pub bar_position_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
+    pub color_scheme_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
+    pub download_dir_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub history_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
+    pub raindrop_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
+    pub vi_mode_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
 }
 
 impl Default for BrowserState {
@@ -92,30 +93,30 @@ impl Default for BrowserState {
             vi_mode: config.vi_mode,
             bar_position: config.bar_position.clone(),
             color_scheme: config.color_scheme.clone(),
-            homepage_box,
-            search_menu: Dropdown::new(
+            homepage_box: Owned::new(homepage_box),
+            search_menu: Owned::new(Dropdown::new(
                 SEARCH_ENGINES.iter().map(|(_, label)| label.to_string()).collect(),
                 search_index(&config.search),
             )
-            .with_label("Search Engine"),
-            bar_position_menu: Dropdown::new(
+            .with_label("Search Engine")),
+            bar_position_menu: Owned::new(Dropdown::new(
                 BAR_POSITIONS.iter().map(|(_, label)| label.to_string()).collect(),
                 bar_position_index(&config.bar_position),
             )
-            .with_label("Navigation Bar Position"),
-            color_scheme_menu: Dropdown::new(
+            .with_label("Navigation Bar Position")),
+            color_scheme_menu: Owned::new(Dropdown::new(
                 COLOR_SCHEMES.iter().map(|(_, label)| label.to_string()).collect(),
                 color_scheme_index(&config.color_scheme),
             )
-            .with_label("Page Color Scheme"),
-            download_dir_box,
+            .with_label("Page Color Scheme")),
+            download_dir_box: Owned::new(download_dir_box),
             // Left-aligned, as the designer's parameter pane sets its toggles:
             // a toggle's run is half its width, so the seam where run meets
             // well sits at the midpoint, and a centred label on a row-wide
             // toggle had it drawn straight through the text.
-            history_toggle: Toggle::new().with_label("Record History").with_left_align(true),
-            raindrop_toggle: Toggle::new().with_label("Sync Bookmarks with Raindrop").with_left_align(true),
-            vi_mode_toggle: Toggle::new().with_label("Vi Keys (qutebrowser-style)").with_left_align(true),
+            history_toggle: Owned::new(Toggle::new().with_label("Record History").with_left_align(true)),
+            raindrop_toggle: Owned::new(Toggle::new().with_label("Sync Bookmarks with Raindrop").with_left_align(true)),
+            vi_mode_toggle: Owned::new(Toggle::new().with_label("Vi Keys (qutebrowser-style)").with_left_align(true)),
         }
     }
 }
