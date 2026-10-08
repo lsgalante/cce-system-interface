@@ -1,8 +1,8 @@
-use crate::app::{AppAction, PageContent, SectionContextExt, section_divider, section_kv_row};
+use crate::app::{form_button, form_divider, form_pairs, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::ScrollRegion;
-use cce_ui::widget::{TextBox, WidgetHost};
+use cce_ui::widget::TextBox;
 
 /// Secret Service entries are keyed by (service, address) — the same pair
 /// cce-mail resolves passwords through. `KEYRING_SERVICE_LEGACY` is the
@@ -633,198 +633,156 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
 
     let widget_h = cce_ui::layout::spinbox_height();
     let btn_h = cce_ui::layout::button_height();
-    let m = crate::app::section_margin();
-    let gap = cce_ui::layout::plate_gap();
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
+        let mut form = sec.form();
         if !state.loaded {
-            sec.text("Loading online accounts...", 12.0, 0.0, 12.0, TEXT_DIM);
+            form.column().text("Loading online accounts...", 12.0, TEXT_DIM);
+            sec.place(form, ctx);
             return;
         }
-        let item_w = sec.cw - 2.0 * (sec.padding() + m);
-        let rx = sec.left;
+        let narrow = form.width() < 520.0;
+        // A login in flight is an active mode too — tint whichever button could
+        // have started it, so the "already waiting on the browser" reply is not
+        // the only clue.
+        let login_bg = if state.oauth_listener_running { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
+        let add_bg = if state.adding_new { (ACCENT_BG, ACCENT_BG) } else { BTN_PRIMARY };
+        let sel = state.selected_idx.filter(|&i| i < state.accounts.len());
+        let mut col = form.column();
 
         // ── Account list: a scroll region, selection tinted, default marked ──
-        // Laid out on the section context BEFORE the vstack, the way network's
-        // wifi list is. A VStack derives each row's y from
-        // `max(grid.max_height(), content_y)`, so a region that advances only
-        // `content_y` is invisible to the grid half of that and every following
-        // row lands back on top of the list.
-        if !state.accounts.is_empty() {
+        // It grows with the account count up to LIST_MAX_ROWS and scrolls past it.
+        if state.accounts.is_empty() {
+            col.text("No accounts configured.", 12.0, TEXT_DIM);
+        } else {
             // Row height comes from the region, not from spinbox_height():
             // ScrollRegion floors item_height at the list font's line box, and
             // drawing at a different height than it virtualizes on would drift
             // the rows out from under their own hit boxes.
             let item_h = state.list.item_height;
-            // Across the section's content box — the box the section clips
-            // to. At `left + m` the framed list ran 2 * padding past it on
-            // both sides, cut off flat there.
-            let list_x = sec.content_left();
-            let list_y = sec.ay();
-            let list_w = sec.content_width();
             let rows_shown = state.accounts.len().min(LIST_MAX_ROWS);
             let list_h = rows_shown as f32 * (item_h + LIST_GAP) + 8.0;
-
-            // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-            state.list.set_rect(list_x, list_y, list_w, list_h);
-            state.list.update_bounds(state.accounts.len(), list_y, list_h);
-            state.list.push_prims(sec.pc);
-
-            let btn_w = list_w - 2.0 * m;
-            sec.pc.push_clip_rect(list_x, list_y, list_w, list_h);
-            for (idx, acc) in state.accounts.iter().enumerate() {
-                // Same predicate the region virtualizes on — a row scrolled out
-                // of the box is not emitted at all.
-                let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) else {
-                    continue;
-                };
-                // The stranded-vault tell, visible without selecting the row.
-                let missing = state.keyring.get(&acc.email) == Some(&KeyringStatus::Missing);
-                let is_selected = state.selected_idx == Some(idx) && !state.adding_new;
-                let (bg, hover) = if is_selected {
-                    (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
-                } else {
-                    ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
-                };
-                sec.pc.button_left(
-                    &acc.email,
-                    list_x + m,
-                    draw_y,
-                    btn_w,
-                    item_h,
-                    bg,
-                    hover,
-                    TEXT_BTN,
-                    AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
-                );
-                // The row's marks run on after the address: a `star` glyph
-                // and "default", a `warning` glyph and "no password". Each
-                // is its glyph and its word — the word alone when the icon
-                // set is missing — placed past the address as the renderer
-                // shapes it, in the button's own face.
-                let marks: &[(&str, &str, [f32; 4])] = match (acc.is_default, missing) {
-                    (true, true) => &[("star", "default", TEXT_BTN), ("warning", "no password", TEXT_WARN)],
-                    (true, false) => &[("star", "default", TEXT_BTN)],
-                    (false, true) => &[("warning", "no password", TEXT_WARN)],
-                    (false, false) => &[],
-                };
-                if !marks.is_empty() {
-                    let font = cce_ui::layout::button_font();
-                    let size = 12.0;
-                    let ty = crate::app::label_y_in(draw_y, item_h, size, Some(&font));
-                    let g = 11.0;
-                    let mut mx = list_x + m + cce_ui::layout::CONTROL_TEXT_INSET
-                        + crate::app::text_width(&acc.email, size, Some(&font));
-                    for (icon, word, color) in marks {
-                        mx += 18.0;
-                        if sec.pc.icon(icon, mx, draw_y + (item_h - g) / 2.0, g, g, *color) {
-                            mx += g + 4.0;
+            // The list's own inset of its rows inside its frame.
+            let m = crate::app::section_margin();
+            let list = &mut state.list;
+            let accounts = &state.accounts;
+            let keyring = &state.keyring;
+            let (selected_idx, adding_new) = (state.selected_idx, state.adding_new);
+            col.draw(0.0, list_h, false, move |pc, r, _| {
+                let (list_x, list_y, list_w, list_h) = (r.x, r.y, r.width, r.height);
+                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                list.set_rect(list_x, list_y, list_w, list_h);
+                list.update_bounds(accounts.len(), list_y, list_h);
+                list.push_prims(pc);
+                let btn_w = list_w - 2.0 * m;
+                pc.push_clip_rect(list_x, list_y, list_w, list_h);
+                for (idx, acc) in accounts.iter().enumerate() {
+                    // Same predicate the region virtualizes on — a row scrolled out
+                    // of the box is not emitted at all.
+                    let Some(draw_y) = list.get_item_draw_y(idx, 4.0) else {
+                        continue;
+                    };
+                    // The stranded-vault tell, visible without selecting the row.
+                    let missing = keyring.get(&acc.email) == Some(&KeyringStatus::Missing);
+                    let is_selected = selected_idx == Some(idx) && !adding_new;
+                    let (bg, hover) = if is_selected {
+                        (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
+                    } else {
+                        ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
+                    };
+                    pc.button_left(
+                        &acc.email,
+                        list_x + m,
+                        draw_y,
+                        btn_w,
+                        item_h,
+                        bg,
+                        hover,
+                        TEXT_BTN,
+                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
+                    );
+                    // The row's marks run on after the address: a `star` glyph
+                    // and "default", a `warning` glyph and "no password". Each
+                    // is its glyph and its word — the word alone when the icon
+                    // set is missing — placed past the address as the renderer
+                    // shapes it, in the button's own face.
+                    let marks: &[(&str, &str, [f32; 4])] = match (acc.is_default, missing) {
+                        (true, true) => &[("star", "default", TEXT_BTN), ("warning", "no password", TEXT_WARN)],
+                        (true, false) => &[("star", "default", TEXT_BTN)],
+                        (false, true) => &[("warning", "no password", TEXT_WARN)],
+                        (false, false) => &[],
+                    };
+                    if !marks.is_empty() {
+                        let font = cce_ui::layout::button_font();
+                        let size = 12.0;
+                        let ty = crate::app::label_y_in(draw_y, item_h, size, Some(&font));
+                        let g = 11.0;
+                        let mut mx = list_x + m + cce_ui::layout::CONTROL_TEXT_INSET
+                            + crate::app::text_width(&acc.email, size, Some(&font));
+                        for (icon, word, color) in marks {
+                            mx += 18.0;
+                            if pc.icon(icon, mx, draw_y + (item_h - g) / 2.0, g, g, *color) {
+                                mx += g + 4.0;
+                            }
+                            pc.text_with_font(word, mx, ty, size, TEXT_BTN, &font);
+                            mx += crate::app::text_width(word, size, Some(&font));
                         }
-                        sec.pc.text_with_font(word, mx, ty, size, TEXT_BTN, &font);
-                        mx += crate::app::text_width(word, size, Some(&font));
                     }
                 }
-            }
-            sec.pc.pop_clip_rect();
-            // The scrollbar's fore copy, over the rows at the raise's fade.
-            state.list.push_scrollbar_fore(sec.pc);
-            // Reserve the region's height through `spacing`, NOT `content_y +=`:
-            // SectionContext keeps a parallel per-column Grid, and its own
-            // `spacing` recomputes `content_y = grid.max_height()`. A manual
-            // `content_y` bump that leaves the grid untouched is therefore
-            // discarded by the next spacing call, and every following row lands
-            // back on top of the list. (Network's list gets away with the bare
-            // `content_y +=` only because nothing follows it in that section.)
-            sec.spacing(list_h + LIST_GAP);
+                pc.pop_clip_rect();
+                // The scrollbar's fore copy, over the rows at the raise's fade.
+                list.push_scrollbar_fore(pc);
+            });
         }
-
-        let mut stack = sec.vstack(gap);
-        if state.accounts.is_empty() {
-            stack.context.text("No accounts configured.", 12.0, 0.0, 12.0, TEXT_DIM);
-        }
-
-        stack.context.spacing(6.0);
 
         // ── Global actions ──
-        // Adding is the only one left. Google sign-in lives inside the form
-        // (next to Save) because adding an account is a single intent, and the
-        // Google API client id/secret is file-backed config edited in
-        // ~/.config/cce/google_client.json — set once or never, so it follows
-        // input.kdl's precedent of having no settings UI at all.
-        let add_bg = if state.adding_new { (ACCENT_BG, ACCENT_BG) } else { BTN_PRIMARY };
-        // A login in flight is an active mode too — tint whichever button could
-        // have started it, so the "already waiting on the browser" reply is not
-        // the only clue.
-        let login_bg = if state.oauth_listener_running { (ACCENT_BG, ACCENT_BG) } else { BTN_NEUTRAL };
-        let narrow = item_w < 520.0;
-
-        // Add, Edit, Delete in one row of squares. Edit and Delete used to live
-        // down in the selected-account zone; they belong next to Add because
-        // all three act on the account LIST, while everything below the divider
-        // is about one account's fields.
-        //
-        // Icon faces, so each is a square the height of a button rather than a
-        // share of the section width — the row is drawn as one full-width cell
-        // with the buttons placed inside it, since equal columns would stretch
-        // a 26px glyph across a third of the section.
-        //
-        // Edit and Delete need a selection, so they appear only with one. They
-        // are OMITTED rather than dimmed: an icon's only disabled state is
+        // Add, Edit, Delete in one row of squares. Edit and Delete act on the
+        // account LIST, so they sit beside Add; everything below the divider is
+        // about one account's fields. Icon faces, so each is a square the height
+        // of a button. Edit and Delete need a selection, so they appear only with
+        // one: OMITTED rather than dimmed, since an icon's only disabled state is
         // opacity, and a faint square that still takes the click reads as a
-        // control that ignored you. `narrow` still governs the fallback width —
-        // without an icon set these go back to being word buttons.
-        let sel = state.selected_idx.filter(|&i| i < state.accounts.len());
+        // control that ignored you. Without an icon set they are word buttons,
+        // and `narrow` picks their width. Google sign-in lives inside the add form.
         let icons_ok = cce_ui::upload_icon("plus", 32).is_some();
-        let (sq, bgap) = if icons_ok { (btn_h, 8.0) } else if narrow { (86.0, 6.0) } else { (110.0, 8.0) };
-        stack.add_row(1, gap, btn_h, |c, _, x, _w| {
-            // ONE y for the whole row. `c.ay()` reads the section's running
-            // content_y, and each button emitted advances it past its own
-            // bottom — normally right, because `add_row` resets content_y
-            // between COLUMNS. Three buttons inside a single column get no such
-            // reset, so re-reading `ay()` per button walked them diagonally
-            // down the page, one button-height at a time.
-            let y = c.ay();
-            c.button_icon("plus", "Add Account", x, y, sq, btn_h,
-                add_bg.0, add_bg.1, TEXT_BTN, 1.0,
-                AppAction::Accounts(AccountsMessage::AddAccountStart));
+        let sq = if icons_ok { btn_h } else if narrow { 86.0 } else { 110.0 };
+        col.row(|r| {
+            let icon_button = |r: &mut cce_ui::layout::FormGroup<'_, '_, PageContent>, icon: &'static str, word: &'static str,
+                               colors: ([f32; 4], [f32; 4]), text: [f32; 4], action: AccountsMessage| {
+                r.draw(sq, btn_h, false, move |pc, c, _| {
+                    pc.button_icon(icon, word, c.x, c.y, c.width, c.height, colors.0, colors.1, text, 1.0, AppAction::Accounts(action));
+                });
+            };
+            icon_button(r, "plus", "Add Account", add_bg, TEXT_BTN, AccountsMessage::AddAccountStart);
             if let Some(i) = sel {
-                c.button_icon("pencil", "Edit", x + sq + bgap, y, sq, btn_h,
-                    BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN, 1.0,
-                    AppAction::Accounts(AccountsMessage::EditAccountStart(i)));
-                c.button_icon("trash", "Delete", x + 2.0 * (sq + bgap), y, sq, btn_h,
-                    BTN_DANGER.0, BTN_DANGER.1, TEXT_DANGER, 1.0,
-                    AppAction::Accounts(AccountsMessage::DeleteAccount(i)));
+                icon_button(r, "pencil", "Edit", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::EditAccountStart(i));
+                icon_button(r, "trash", "Delete", BTN_DANGER, TEXT_DANGER, AccountsMessage::DeleteAccount(i));
             }
         });
 
-        section_divider(stack.context);
+        form_divider(&mut col);
 
         // ── Context zone: add form / edit form / selected details ──
+        let heading = [0.35, 0.65, 0.90, 1.0];
+        let kv = |label: &str, value: &str, color: [f32; 4]| (label.to_string(), TEXT_DIM, value.to_string(), color);
         if state.adding_new {
-            stack.context.text("Add New Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-            stack.context.text("Gmail signs in with Google below; iCloud requires an App Password.", 12.0, 0.0, 11.0, TEXT_DIM);
-
-            state.email_box.set_row_rect(rx + m, item_w);
-            stack.add_widget(&mut state.email_box, item_w, widget_h, ctx);
-            state.password_box.set_row_rect(rx + m, item_w);
-            stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
-            state.imap_box.set_row_rect(rx + m, item_w);
-            stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
-            state.smtp_box.set_row_rect(rx + m, item_w);
-            stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
-
-            stack.context.spacing(4.0);
-            stack.add_row(4, gap, btn_h, |c, i, x, w| {
-                let (label, colors, text_col, action) = match i {
-                    0 => ("Save", BTN_PRIMARY, TEXT_BTN, AccountsMessage::AddAccountSave),
-                    1 => ("Cancel", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::AddAccountCancel),
-                    // Four buttons in one row is the tightest cell on the page —
-                    // the full labels clip below ~440px of section width, so they
-                    // ride the same `narrow` switch the header row uses.
-                    2 => (if narrow { "Google" } else { "Login (Google)" }, login_bg, TEXT_BTN, AccountsMessage::GoogleLoginInit),
-                    _ => (if narrow { "iCloud" } else { "Login (iCloud)" }, BTN_NEUTRAL, TEXT_BTN, AccountsMessage::ICloudLoginHelp),
-                };
-                c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
+            col.block(|b| {
+                b.text("Add New Account", 14.0, heading);
+                b.text("Gmail signs in with Google below; iCloud requires an App Password.", 11.0, TEXT_DIM);
+            });
+            col.widget(&mut state.email_box, widget_h)
+                .widget(&mut state.password_box, widget_h)
+                .widget(&mut state.imap_box, widget_h)
+                .widget(&mut state.smtp_box, widget_h);
+            col.row(|r| {
+                form_button(r, "Save", 0.0, (BTN_PRIMARY.0, BTN_PRIMARY.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::AddAccountSave));
+                form_button(r, "Cancel", 0.0, (BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::AddAccountCancel));
+                // Four buttons in one row is the tightest cell on the page — the full
+                // labels clip below ~440px of section width, so they ride `narrow`.
+                form_button(r, if narrow { "Google" } else { "Login (Google)" }, 0.0, (login_bg.0, login_bg.1, TEXT_BTN),
+                    AppAction::Accounts(AccountsMessage::GoogleLoginInit));
+                form_button(r, if narrow { "iCloud" } else { "Login (iCloud)" }, 0.0, (BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN),
+                    AppAction::Accounts(AccountsMessage::ICloudLoginHelp));
             });
         } else if let Some(acc) = state
             .editing_email
@@ -832,99 +790,73 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             .and_then(|e| state.accounts.iter().find(|a| a.email == *e))
             .cloned()
         {
-            stack.context.text("Edit Account", 12.0, 0.0, 14.0, [0.35, 0.65, 0.90, 1.0]);
-            section_kv_row(stack.context, "Email", &acc.email, TEXT_BTN);
-            stack.context.text("The address identifies the account \u{2014} delete and re-add to change it.", 12.0, 0.0, 11.0, TEXT_DIM);
+            col.text("Edit Account", 14.0, heading);
+            form_pairs(&mut col, 12.0, vec![kv("Email", &acc.email, TEXT_BTN)]);
+            col.text("The address identifies the account \u{2014} delete and re-add to change it.", 11.0, TEXT_DIM);
 
             // An OAuth account has no password to edit; a password one has no
             // client credentials. Neither ever shows the other's fields.
             if acc.is_oauth {
-                state.imap_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
-                state.smtp_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
-
-                stack.context.spacing(4.0);
-                stack.context.text("Credentials this account refreshes tokens with, taking effect", 12.0, 0.0, 11.0, TEXT_DIM);
-                stack.context.text("on the next refresh \u{2014} Re-login to re-issue the tokens now.", 12.0, 0.0, 11.0, TEXT_DIM);
-                state.oauth_client_id_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.oauth_client_id_box, item_w, widget_h, ctx);
-                state.oauth_client_secret_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.oauth_client_secret_box, item_w, widget_h, ctx);
+                col.widget(&mut state.imap_box, widget_h).widget(&mut state.smtp_box, widget_h);
+                col.block(|b| {
+                    b.text("Credentials this account refreshes tokens with, taking effect", 11.0, TEXT_DIM);
+                    b.text("on the next refresh \u{2014} Re-login to re-issue the tokens now.", 11.0, TEXT_DIM);
+                });
+                col.widget(&mut state.oauth_client_id_box, widget_h).widget(&mut state.oauth_client_secret_box, widget_h);
             } else {
-                state.password_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.password_box, item_w, widget_h, ctx);
-                state.imap_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.imap_box, item_w, widget_h, ctx);
-                state.smtp_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.smtp_box, item_w, widget_h, ctx);
+                col.widget(&mut state.password_box, widget_h)
+                    .widget(&mut state.imap_box, widget_h)
+                    .widget(&mut state.smtp_box, widget_h);
             }
-
-            stack.context.spacing(4.0);
-            stack.add_row(2, gap, btn_h, |c, i, x, w| {
-                let (label, colors, action) = match i {
-                    0 => ("Save", BTN_PRIMARY, AccountsMessage::EditAccountSave),
-                    _ => ("Cancel", BTN_NEUTRAL, AccountsMessage::EditAccountCancel),
-                };
-                c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, TEXT_BTN, AppAction::Accounts(action));
+            col.row(|r| {
+                form_button(r, "Save", 0.0, (BTN_PRIMARY.0, BTN_PRIMARY.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::EditAccountSave));
+                form_button(r, "Cancel", 0.0, (BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::EditAccountCancel));
             });
-        } else if let Some(selected_idx) = state.selected_idx {
-            if selected_idx < state.accounts.len() {
-                let acc = state.accounts[selected_idx].clone();
+        } else if let Some(selected_idx) = sel {
+            let acc = state.accounts[selected_idx].clone();
+            let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password" };
+            let mut pairs = vec![kv("Email", &acc.email, TEXT_BTN), kv("Authentication", auth_type, TEXT_BTN)];
+            // Where the password actually lives — the row that would have
+            // shown the 08-29 vault stranding at a glance. Only password
+            // accounts carry it; the probe skips OAuth and mock.
+            if let Some(status) = state.keyring.get(&acc.email) {
+                let (text, color) = match status {
+                    KeyringStatus::InKeyring => ("in keyring", TEXT_BTN),
+                    KeyringStatus::OnDiskPlaintext => ("on disk (plaintext) \u{2014} migrates to keyring", TEXT_WARN),
+                    KeyringStatus::Missing => ("MISSING \u{2014} mail cannot sign in; Edit to set it", TEXT_DANGER),
+                };
+                pairs.push(kv("Password", text, color));
+            }
+            pairs.push(kv("IMAP", &acc.imap, TEXT_BTN));
+            pairs.push(kv("SMTP", &acc.smtp, TEXT_BTN));
+            form_pairs(&mut col, 12.0, pairs);
 
-                section_kv_row(stack.context, "Email", &acc.email, TEXT_BTN);
-                let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password" };
-                section_kv_row(stack.context, "Authentication", auth_type, TEXT_BTN);
-                // Where the password actually lives — the row that would have
-                // shown the 08-29 vault stranding at a glance. Only password
-                // accounts carry it; the probe skips OAuth and mock.
-                if let Some(status) = state.keyring.get(&acc.email) {
-                    let (text, color) = match status {
-                        KeyringStatus::InKeyring => ("in keyring", TEXT_BTN),
-                        KeyringStatus::OnDiskPlaintext => {
-                            ("on disk (plaintext) \u{2014} migrates to keyring", TEXT_WARN)
-                        }
-                        KeyringStatus::Missing => {
-                            ("MISSING \u{2014} mail cannot sign in; Edit to set it", TEXT_DANGER)
-                        }
-                    };
-                    section_kv_row(stack.context, "Password", text, color);
-                }
-                section_kv_row(stack.context, "IMAP", &acc.imap, TEXT_BTN);
-                section_kv_row(stack.context, "SMTP", &acc.smtp, TEXT_BTN);
-
-                stack.context.spacing(6.0);
-
-                // What is left of the per-account actions once Edit and Delete
-                // moved up beside Add. The row is sized to what is actually
-                // there — a fixed count left ragged gaps whenever an account
-                // was default or password — and with only these two left it can
-                // now be EMPTY, for a default password account, so it is
-                // skipped rather than drawn as a bare gap.
-                let mut actions: Vec<(&str, ([f32; 4], [f32; 4]), [f32; 4], AccountsMessage)> = Vec::new();
-                if !acc.is_default {
-                    actions.push(("Make Default", BTN_NEUTRAL, TEXT_BTN, AccountsMessage::MakeDefault(selected_idx)));
-                }
-                if acc.is_oauth {
-                    let relogin = if narrow { "Re-login" } else { "Re-login (Browser)" };
-                    actions.push((relogin, login_bg, TEXT_BTN, AccountsMessage::GoogleLoginInit));
-                }
-                if !actions.is_empty() {
-                    stack.add_row(actions.len(), gap, btn_h, |c, i, x, w| {
-                        if let Some((label, colors, text_col, action)) = actions.get(i).cloned() {
-                            c.button(label, x, c.ay(), w, btn_h, colors.0, colors.1, text_col, AppAction::Accounts(action));
-                        }
-                    });
-                }
+            // What is left of the per-account actions once Edit and Delete moved
+            // up beside Add. The row holds only what applies, and for a default
+            // password account that is nothing, so it is skipped.
+            let mut actions: Vec<(&str, ([f32; 4], [f32; 4]), AccountsMessage)> = Vec::new();
+            if !acc.is_default {
+                actions.push(("Make Default", BTN_NEUTRAL, AccountsMessage::MakeDefault(selected_idx)));
+            }
+            if acc.is_oauth {
+                let relogin = if narrow { "Re-login" } else { "Re-login (Browser)" };
+                actions.push((relogin, login_bg, AccountsMessage::GoogleLoginInit));
+            }
+            if !actions.is_empty() {
+                col.row(|r| {
+                    for (label, colors, action) in actions {
+                        form_button(r, label, 0.0, (colors.0, colors.1, TEXT_BTN), AppAction::Accounts(action));
+                    }
+                });
             }
         } else {
-            stack.context.text("Select an account to view details, or add one.", 12.0, 0.0, 12.0, TEXT_DIM);
+            col.text("Select an account to view details, or add one.", 12.0, TEXT_DIM);
         }
 
         if let Some(ref msg) = state.status_msg {
-            stack.context.spacing(6.0);
-            stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
+            col.text(msg.clone(), 12.0, [0.56, 0.83, 0.56, 1.0]);
         }
+        sec.place(form, ctx);
     });
     final_pc
 }
@@ -1361,6 +1293,7 @@ impl crate::pages::AppPage for AccountsState {
 
 #[cfg(test)]
 mod tests {
+    use cce_ui::widget::WidgetHost;
     use super::*;
     use cce_ui::layout::PageFlow;
 

@@ -10,9 +10,9 @@ use std::fs;
 use cce_ui::widget::Owned;
 use cce_ui::layout::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::input::{Dropdown, Toggle};
-use cce_ui::widget::{TextBox, WidgetHost};
+use cce_ui::widget::TextBox;
 
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent};
 use crate::pages::AppPage;
 
 /// config key, menu label — the browser maps the key onto a query URL.
@@ -282,53 +282,44 @@ impl AppPage for BrowserState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Browser Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let sec_w = stack.context.cw;
-            let row_w = sec_w - 28.0;
-
-            self.homepage_box.set_row_rect(stack.context.left + 14.0, row_w);
-            stack.add_widget(&mut self.homepage_box, row_w, 44.0, ctx);
-
             self.search_menu.selected = search_index(&self.search);
-            self.search_menu.set_row_rect(stack.context.left + 14.0, row_w);
-            stack.add_widget(&mut self.search_menu, row_w, 44.0, ctx);
-
             self.bar_position_menu.selected = bar_position_index(&self.bar_position);
-            self.bar_position_menu.set_row_rect(stack.context.left + 14.0, row_w);
-            stack.add_widget(&mut self.bar_position_menu, row_w, 44.0, ctx);
-
             self.color_scheme_menu.selected = color_scheme_index(&self.color_scheme);
-            self.color_scheme_menu.set_row_rect(stack.context.left + 14.0, row_w);
-            stack.add_widget(&mut self.color_scheme_menu, row_w, 44.0, ctx);
-
-            self.download_dir_box.set_row_rect(stack.context.left + 14.0, row_w);
-            stack.add_widget(&mut self.download_dir_box, row_w, 44.0, ctx);
-
             self.history_toggle.set_toggled(self.history);
-            stack.add_widget(&mut self.history_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
-
             // Needs a Raindrop token in the keyring (service=raindrop.io);
             // the browser shows the sync's status on cce://bookmarks.
             self.raindrop_toggle.set_toggled(self.raindrop);
-            stack.add_widget(&mut self.raindrop_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
-
             self.vi_mode_toggle.set_toggled(self.vi_mode);
-            stack.add_widget(&mut self.vi_mode_toggle, row_w, cce_ui::layout::toggle_height(), ctx);
 
-            let btn_h = cce_ui::layout::button_height();
-            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-                ctx.button(
-                    "Apply",
-                    x,
-                    ctx.ay(),
-                    w,
-                    btn_h,
-                    [0.20, 0.40, 0.65, 1.0],
-                    [0.28, 0.50, 0.78, 1.0],
-                    [1.0, 1.0, 1.0, 1.0],
-                    AppAction::Browser(BrowserMessage::Apply),
-                );
-            });
+            let (field_h, menu_h, toggle_h) = (
+                cce_ui::layout::textbox_height(),
+                cce_ui::layout::dropdown_height(),
+                cce_ui::layout::toggle_height(),
+            );
+            let mut form = sec.form();
+            form.column()
+                .widget(&mut self.homepage_box, field_h)
+                .widget(&mut self.search_menu, menu_h)
+                .widget(&mut self.bar_position_menu, menu_h)
+                .widget(&mut self.color_scheme_menu, menu_h)
+                .widget(&mut self.download_dir_box, field_h)
+                .widget(&mut self.history_toggle, toggle_h)
+                .widget(&mut self.raindrop_toggle, toggle_h)
+                .widget(&mut self.vi_mode_toggle, toggle_h)
+                .draw(0.0, cce_ui::layout::button_height(), false, |pc, r, _| {
+                    pc.button(
+                        "Apply",
+                        r.x,
+                        r.y,
+                        r.width,
+                        r.height,
+                        [0.20, 0.40, 0.65, 1.0],
+                        [0.28, 0.50, 0.78, 1.0],
+                        [1.0, 1.0, 1.0, 1.0],
+                        AppAction::Browser(BrowserMessage::Apply),
+                    );
+                });
+            sec.place(form, ctx);
         });
 
         final_pc

@@ -245,188 +245,185 @@ pub async fn fetch_processes_state() -> ProcessesState {
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+/// The least room the table keeps on a short window.
+const LIST_MIN_H: f32 = 120.0;
 
-pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, _ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
     // ── Processes Section (label-less well) ──
     builder.add_section_spanned(&mut final_pc, "", 1, root_focused || sec_focused.first().copied().unwrap_or(false), |sec| {
+        let mut form = sec.form();
         if !state.loaded {
-            sec.text("Loading processes...", 12.0, 0.0, 12.0, TEXT_FG);
-        } else {
-            // The list fills the section's content box across — the box the
-            // section clips everything it draws to. Laid out at `left + 12`
-            // instead, it started 2 * padding outside that clip, which cut
-            // the first letter off the summary line and the left edge off
-            // every row's hover wash. Top and bottom keep the well margin.
-            let inset = crate::app::section_margin();
-            let list_box_x = sec.content_left();
-            let list_box_w = sec.content_width();
-            // Power summary line above the list; the list starts below it.
-            let summary_h = 18.0;
-            sec.pc.text(&summary_line(&state.power), list_box_x, sec.well_top() + inset + 2.0, 11.0, TEXT_DIM);
-            let list_box_y = sec.well_top() + inset + summary_h;
-            // Fill the page: the well's bottom wall lands at the page bottom,
-            // the list keeps its even inset inside the well.
-            let list_box_h = ((cy + ch) - inset - list_box_y).max(120.0);
+            form.column().text("Loading processes...", 12.0, TEXT_FG);
+            sec.place(form, ctx);
+            return;
+        }
+        // The table fills the page: the well's floor lands at the page's bottom.
+        form.fill_height((cy + ch) - form.top() - sec.bottom_inset());
+        let inset = crate::app::section_margin();
+        let cpu_list = &mut state.cpu_list;
+        let processes = &state.processes;
+        let killing = &state.killing;
+        let sort = state.sort;
+        let mut col = form.column();
+        // Power summary line above the table.
+        col.text(summary_line(&state.power), 11.0, TEXT_DIM);
+        col.fill(LIST_MIN_H, move |pc, r, _| {
+            let (list_box_x, list_box_y, list_box_w, list_box_h) = (r.x, r.y, r.width, r.height);
+                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned. The
+                // scrollable viewport starts below the header.
+                //
+                // Columns live in CONTENT space at fixed offsets; every draw
+                // subtracts scroll_x. CONTENT_W > box width = the h-bar appears.
+                // Sized so the default 820px window shows the whole table without
+                // the h-bar: COMMAND gives up the 20px the content box's inset
+                // took.
+                const COL_PID: f32 = 12.0;
+                const COL_COMMAND: f32 = 80.0;
+                const COL_RSS: f32 = 380.0;
+                const COL_MEM: f32 = 460.0;
+                const COL_CPU: f32 = 525.0;
+                const COL_WATTS: f32 = 585.0;
+                const COL_WAKE: f32 = 635.0;
+                const COL_KILL: f32 = 700.0;
+                const CONTENT_W: f32 = 725.0;
 
-            // Dissolved List (Phase 6v): scroll state + frame prims are app-owned. The
-            // scrollable viewport starts below the header.
-            //
-            // Columns live in CONTENT space at fixed offsets; every draw
-            // subtracts scroll_x. CONTENT_W > box width = the h-bar appears.
-            // Sized so the default 820px window shows the whole table without
-            // the h-bar: COMMAND gives up the 20px the content box's inset
-            // took.
-            const COL_PID: f32 = 12.0;
-            const COL_COMMAND: f32 = 80.0;
-            const COL_RSS: f32 = 380.0;
-            const COL_MEM: f32 = 460.0;
-            const COL_CPU: f32 = 525.0;
-            const COL_WATTS: f32 = 585.0;
-            const COL_WAKE: f32 = 635.0;
-            const COL_KILL: f32 = 700.0;
-            const CONTENT_W: f32 = 725.0;
+                // TODO(style): the column offsets, header hit-target nudges and
+                // in-row text centring below are this table's own layout.
+                let header_h = 22.0;
+                cpu_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                cpu_list.set_content_w(CONTENT_W);
+                // No band for the horizontal scrollbar: it rides the rows'
+                // centre line, crossing the vertical one, behind the plate until
+                // a scroll raises it.
+                let rows_h = list_box_h - header_h - 6.0;
+                cpu_list.update_bounds(processes.len(), list_box_y + header_h, rows_h);
+                cpu_list.push_prims(pc);
 
-            // TODO(style): the column offsets, header hit-target nudges and
-            // in-row text centring below are this table's own layout.
-            let header_h = 22.0;
-            state.cpu_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-            state.cpu_list.set_content_w(CONTENT_W);
-            // No band for the horizontal scrollbar: it rides the rows'
-            // centre line, crossing the vertical one, behind the plate until
-            // a scroll raises it.
-            let rows_h = list_box_h - header_h - 6.0;
-            state.cpu_list.update_bounds(state.processes.len(), list_box_y + header_h, rows_h);
-            state.cpu_list.push_prims(sec.pc);
+                let ox = cpu_list.scroll_x;
 
-            let ox = state.cpu_list.scroll_x;
+                // Header row is background-less (the well shows through); only the
+                // divider separates it from the rows.
+                pc.rect([0.18, 0.18, 0.24, 1.0], list_box_x + 1.0, list_box_y + header_h, list_box_w - 2.0, 1.0); // Divider
 
-            // Header row is background-less (the well shows through); only the
-            // divider separates it from the rows.
-            sec.pc.rect([0.18, 0.18, 0.24, 1.0], list_box_x + 1.0, list_box_y + header_h, list_box_w - 2.0, 1.0); // Divider
+                // Header labels pan with the columns, clipped to the box. The
+                // sortable ones (MEM, MEM %, CPU %) are buttons: the active key
+                // shows brighter with a `chevron-down` glyph after it (the sort
+                // is always descending). Both memory headers toggle the same
+                // Mem sort — one bigger target, no distinction to learn.
+                let active = |k: ProcSort| sort == k;
+                let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
+                const HDR_SIZE: f32 = 11.0;
+                const HDR_Y: f32 = 5.0;
+                const CHEVRON: f32 = 9.0;
+                pc.push_clip_rect(list_box_x, list_box_y, list_box_w, header_h);
+                let header = |pc: &mut PageContent, label: &str, col: f32, on: bool| {
+                    let x = list_box_x + col - ox;
+                    pc.text(label, x, list_box_y + HDR_Y, HDR_SIZE, hdr(on));
+                    if on {
+                        let gx = x + crate::app::text_width(label, HDR_SIZE, None) + 3.0;
+                        let gy = list_box_y + (header_h - CHEVRON) / 2.0;
+                        pc.icon("chevron-down", gx, gy, CHEVRON, CHEVRON, hdr(on));
+                    }
+                };
+                pc.text("PID", list_box_x + COL_PID - ox, list_box_y + HDR_Y, HDR_SIZE, TEXT_DIM);
+                pc.text("COMMAND", list_box_x + COL_COMMAND - ox, list_box_y + HDR_Y, HDR_SIZE, TEXT_DIM);
+                header(pc, "MEM", COL_RSS, active(ProcSort::Mem));
+                pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + HDR_Y, HDR_SIZE, hdr(active(ProcSort::Mem)));
+                header(pc, "CPU %", COL_CPU, active(ProcSort::Cpu));
+                header(pc, "W", COL_WATTS, active(ProcSort::Power));
+                header(pc, "WAKE/s", COL_WAKE, active(ProcSort::Wakeups));
 
-            // Header labels pan with the columns, clipped to the box. The
-            // sortable ones (MEM, MEM %, CPU %) are buttons: the active key
-            // shows brighter with a `chevron-down` glyph after it (the sort
-            // is always descending). Both memory headers toggle the same
-            // Mem sort — one bigger target, no distinction to learn.
-            let active = |k: ProcSort| state.sort == k;
-            let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
-            const HDR_SIZE: f32 = 11.0;
-            const HDR_Y: f32 = 5.0;
-            const CHEVRON: f32 = 9.0;
-            sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, header_h);
-            let header = |pc: &mut PageContent, label: &str, col: f32, on: bool| {
-                let x = list_box_x + col - ox;
-                pc.text(label, x, list_box_y + HDR_Y, HDR_SIZE, hdr(on));
-                if on {
-                    let gx = x + crate::app::text_width(label, HDR_SIZE, None) + 3.0;
-                    let gy = list_box_y + (header_h - CHEVRON) / 2.0;
-                    pc.icon("chevron-down", gx, gy, CHEVRON, CHEVRON, hdr(on));
-                }
-            };
-            sec.pc.text("PID", list_box_x + COL_PID - ox, list_box_y + HDR_Y, HDR_SIZE, TEXT_DIM);
-            sec.pc.text("COMMAND", list_box_x + COL_COMMAND - ox, list_box_y + HDR_Y, HDR_SIZE, TEXT_DIM);
-            header(sec.pc, "MEM", COL_RSS, active(ProcSort::Mem));
-            sec.pc.text("MEM %", list_box_x + COL_MEM - ox, list_box_y + HDR_Y, HDR_SIZE, hdr(active(ProcSort::Mem)));
-            header(sec.pc, "CPU %", COL_CPU, active(ProcSort::Cpu));
-            header(sec.pc, "W", COL_WATTS, active(ProcSort::Power));
-            header(sec.pc, "WAKE/s", COL_WAKE, active(ProcSort::Wakeups));
+                // Header hit targets, list-row style like the rows (plateless,
+                // washed on hover), inside the header clip so they pan and cut
+                // with the labels. They share no rect with the row buttons, so
+                // emission order is free here.
+                pc.list_row(list_box_x + COL_RSS - ox - 4.0, list_box_y, 52.0, header_h - 2.0,
+                    AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
+                pc.list_row(list_box_x + COL_MEM - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
+                    AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
+                pc.list_row(list_box_x + COL_CPU - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
+                    AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Cpu)));
+                pc.list_row(list_box_x + COL_WATTS - ox - 4.0, list_box_y, 48.0, header_h - 2.0,
+                    AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Power)));
+                pc.list_row(list_box_x + COL_WAKE - ox - 4.0, list_box_y, 62.0, header_h - 2.0,
+                    AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Wakeups)));
+                pc.pop_clip_rect();
 
-            // Header hit targets, list-row style like the rows (plateless,
-            // washed on hover), inside the header clip so they pan and cut
-            // with the labels. They share no rect with the row buttons, so
-            // emission order is free here.
-            sec.pc.list_row(list_box_x + COL_RSS - ox - 4.0, list_box_y, 52.0, header_h - 2.0,
-                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
-            sec.pc.list_row(list_box_x + COL_MEM - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
-                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Mem)));
-            sec.pc.list_row(list_box_x + COL_CPU - ox - 4.0, list_box_y, 58.0, header_h - 2.0,
-                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Cpu)));
-            sec.pc.list_row(list_box_x + COL_WATTS - ox - 4.0, list_box_y, 48.0, header_h - 2.0,
-                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Power)));
-            sec.pc.list_row(list_box_x + COL_WAKE - ox - 4.0, list_box_y, 62.0, header_h - 2.0,
-                AppAction::Processes(ProcessesMessage::SortBy(ProcSort::Wakeups)));
-            sec.pc.pop_clip_rect();
+                let row_h = 24.0;
 
-            let row_h = 24.0;
-
-            // Visible process rows, clipped to the rows' viewport — not on
-            // into the reserve band below it, where the scroll region still
-            // hands back a row starting there and its Kill button stood alone
-            // under the list.
-            sec.pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, rows_h);
-            for (idx, p) in state.processes.iter().enumerate() {
-                if let Some(draw_y) = state.cpu_list.get_item_draw_y(idx, 4.0) {
-                    // The row itself, in the DE's list style: plateless,
-                    // washed on hover. A transparent plain button here wore a
-                    // control plate per row — the whole list read as a stack
-                    // of carved rings. Viewport-fixed on purpose: the hover
-                    // band spans the visible row whatever the horizontal pan.
-                    sec.pc.list_row(
-                        list_box_x + 2.0,
-                        draw_y,
-                        list_box_w - 16.0,
-                        row_h,
-                        AppAction::Processes(ProcessesMessage::None),
-                    );
-
-                    // A pending kill dims the row until the next refresh
-                    // settles it (gone, or alive again = the kill didn't take).
-                    let dim = state.killing.contains(&p.pid);
-                    let fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.80, 0.80, 0.85, 1.0] };
-                    let mem_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.62, 0.72, 0.88, 1.0] };
-                    let cpu_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.56, 0.83, 0.56, 1.0] };
-                    let watt_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.90, 0.75, 0.45, 1.0] };
-
-                    sec.pc.text(&p.pid, list_box_x + COL_PID - ox, draw_y + 6.0, 12.0, fg);
-                    sec.pc.text(&p.command, list_box_x + COL_COMMAND - ox, draw_y + 6.0, 12.0, fg);
-                    sec.pc.text(&format_rss(p.rss_kb), list_box_x + COL_RSS - ox, draw_y + 6.0, 12.0, mem_fg);
-                    sec.pc.text(&format!("{}%", p.mem_pct), list_box_x + COL_MEM - ox, draw_y + 6.0, 12.0, mem_fg);
-                    sec.pc.text(&format!("{}%", p.cpu), list_box_x + COL_CPU - ox, draw_y + 6.0, 12.0, cpu_fg);
-                    sec.pc.text(&format_watts(p.watts), list_box_x + COL_WATTS - ox, draw_y + 6.0, 12.0, watt_fg);
-                    sec.pc.text(&format_wakeups(p.wakeups), list_box_x + COL_WAKE - ox, draw_y + 6.0, 12.0, fg);
-
-                    // Kill button, in content space like the columns. Emitted
-                    // AFTER the row button on purpose: overlapping page
-                    // buttons all see the click and the LAST take_click wins
-                    // the dispatched action (input_handler's collect loop), so
-                    // the Kill button beats the row's no-op exactly because it comes later.
-                    if !dim {
-                        // The `x` glyph in the danger tint; "Kill" only if
-                        // the icon set is missing.
-                        let kill_h = cce_ui::layout::button_height();
-                        sec.pc.button_icon_tinted(
-                            "x",
-                            "Kill",
-                            list_box_x + COL_KILL - ox,
-                            draw_y + (row_h - kill_h) / 2.0,
-                            kill_h,
-                            kill_h,
-                            [0.0, 0.0, 0.0, 0.0],
-                            [0.75, 0.30, 0.30, 0.45],
-                            [0.85, 0.55, 0.55, 1.0],
-                            AppAction::Processes(ProcessesMessage::Kill(p.pid.clone())),
+                // Visible process rows, clipped to the rows' viewport — not on
+                // into the reserve band below it, where the scroll region still
+                // hands back a row starting there and its Kill button stood alone
+                // under the list.
+                pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, rows_h);
+                for (idx, p) in processes.iter().enumerate() {
+                    if let Some(draw_y) = cpu_list.get_item_draw_y(idx, 4.0) {
+                        // The row itself, in the DE's list style: plateless,
+                        // washed on hover. A transparent plain button here wore a
+                        // control plate per row — the whole list read as a stack
+                        // of carved rings. Viewport-fixed on purpose: the hover
+                        // band spans the visible row whatever the horizontal pan.
+                        pc.list_row(
+                            list_box_x + 2.0,
+                            draw_y,
+                            list_box_w - 16.0,
+                            row_h,
+                            AppAction::Processes(ProcessesMessage::None),
                         );
+
+                        // A pending kill dims the row until the next refresh
+                        // settles it (gone, or alive again = the kill didn't take).
+                        let dim = killing.contains(&p.pid);
+                        let fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.80, 0.80, 0.85, 1.0] };
+                        let mem_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.62, 0.72, 0.88, 1.0] };
+                        let cpu_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.56, 0.83, 0.56, 1.0] };
+                        let watt_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.90, 0.75, 0.45, 1.0] };
+
+                        pc.text(&p.pid, list_box_x + COL_PID - ox, draw_y + 6.0, 12.0, fg);
+                        pc.text(&p.command, list_box_x + COL_COMMAND - ox, draw_y + 6.0, 12.0, fg);
+                        pc.text(&format_rss(p.rss_kb), list_box_x + COL_RSS - ox, draw_y + 6.0, 12.0, mem_fg);
+                        pc.text(&format!("{}%", p.mem_pct), list_box_x + COL_MEM - ox, draw_y + 6.0, 12.0, mem_fg);
+                        pc.text(&format!("{}%", p.cpu), list_box_x + COL_CPU - ox, draw_y + 6.0, 12.0, cpu_fg);
+                        pc.text(&format_watts(p.watts), list_box_x + COL_WATTS - ox, draw_y + 6.0, 12.0, watt_fg);
+                        pc.text(&format_wakeups(p.wakeups), list_box_x + COL_WAKE - ox, draw_y + 6.0, 12.0, fg);
+
+                        // Kill button, in content space like the columns. Emitted
+                        // AFTER the row button on purpose: overlapping page
+                        // buttons all see the click and the LAST take_click wins
+                        // the dispatched action (input_handler's collect loop), so
+                        // the Kill button beats the row's no-op exactly because it comes later.
+                        if !dim {
+                            // The `x` glyph in the danger tint; "Kill" only if
+                            // the icon set is missing.
+                            let kill_h = cce_ui::layout::button_height();
+                            pc.button_icon_tinted(
+                                "x",
+                                "Kill",
+                                list_box_x + COL_KILL - ox,
+                                draw_y + (row_h - kill_h) / 2.0,
+                                kill_h,
+                                kill_h,
+                                [0.0, 0.0, 0.0, 0.0],
+                                [0.75, 0.30, 0.30, 0.45],
+                                [0.85, 0.55, 0.55, 1.0],
+                                AppAction::Processes(ProcessesMessage::Kill(p.pid.clone())),
+                            );
+                        }
                     }
                 }
-            }
-            sec.pc.pop_clip_rect();
-            // The scrollbar's fore copy, over the rows at the raise's fade.
-            state.cpu_list.push_scrollbar_fore(sec.pc);
+                pc.pop_clip_rect();
+                // The scrollbar's fore copy, over the rows at the raise's fade.
+                cpu_list.push_scrollbar_fore(pc);
             
-            if state.processes.is_empty() {
-                sec.pc.text("No active processes", list_box_x + inset, list_box_y + header_h + 16.0, 12.0, TEXT_DIM);
-            }
-
-            // End the section so the well's bottom wall sits one margin below
-            // the list: finish() places the wall at content_y + padding +
-            // margin, so the list's own bottom margin and that one cancel.
-            sec.content_y = list_box_y + list_box_h - sec.padding();
-        }
+                if processes.is_empty() {
+                    pc.text("No active processes", list_box_x + inset, list_box_y + header_h + 16.0, 12.0, TEXT_DIM);
+                }
+        });
+        sec.place(form, ctx);
     });
 
     final_pc

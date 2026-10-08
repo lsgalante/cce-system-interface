@@ -157,6 +157,8 @@ fn wifi_toggle(enable: bool) {
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+/// The Wi-Fi list's own height: a window of rows that scrolls.
+const WIFI_LIST_H: f32 = 160.0;
 const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
@@ -170,98 +172,90 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
     // ── WiFi (label-less well) ──
     builder.add_section_spanned(&mut final_pc, "", 1, root_focused, |sec| {
         let sec_w = sec.cw;
-        let padding = sec.padding();
-        let row_gap = cce_ui::layout::label_margin();
-        let margin = padding.max(12.0);
+        // The list's own inset of its rows inside its frame.
+        let margin = sec.padding().max(12.0);
+        let mut form = sec.form();
+        let mut col = form.column();
 
         if !state.loaded {
-            sec.text("Loading WiFi interfaces...", margin, 0.0, 12.0, TEXT_DIM);
+            col.text("Loading WiFi interfaces...", 12.0, TEXT_DIM);
         } else {
             let wifi_btn_w = if sec_w < 200.0 { 40.0 } else { 60.0 };
-
             state.wifi_toggle.set_toggled(state.wifi_enabled);
             state.wifi_toggle.set_label(if state.wifi_enabled { "ON" } else { "OFF" });
-            // Hand-placed at its real width — sec.widget grid-places at full
-            // column width (the old wide "ON" plate).
-            let yt = sec.ay();
-            let tx = sec.ax(margin);
-            let toggle_h = cce_ui::layout::toggle_height();
-            cce_ui::layout::render_widget(sec.pc, &mut state.wifi_toggle, tx, yt, wifi_btn_w, toggle_h, ctx);
-            sec.content_y = yt + toggle_h + row_gap;
+            // At its own width, not the row's: the old wide "ON" plate.
+            col.row(|r| {
+                r.widget_w(&mut state.wifi_toggle, wifi_btn_w, cce_ui::layout::toggle_height());
+            });
 
             if state.wifi_enabled {
-                // Flowing text rows — sec.text advances content_y itself.
-                if !state.connected_ssid.is_empty() {
-                    let ssid_max_chars = ((sec_w - 2.0 * margin) / 7.0) as usize;
+                let text_w = col.form_width();
+                col.block(|b| {
+                    if state.connected_ssid.is_empty() {
+                        b.text("Not connected", 12.0, TEXT_DIM);
+                        return;
+                    }
+                    let ssid_max_chars = (text_w / 7.0) as usize;
                     let ssid_truncated = if state.connected_ssid.len() > ssid_max_chars {
                         format!("{}...", &state.connected_ssid[..ssid_max_chars.saturating_sub(3)])
                     } else {
                         state.connected_ssid.clone()
                     };
-                    sec.text(&format!("Connected: {}", ssid_truncated), margin, 0.0, 13.0, ACCENT);
-
+                    b.text(format!("Connected: {}", ssid_truncated), 13.0, ACCENT);
                     if sec_w < 220.0 {
-                        sec.text(&format!("Signal: {}%", state.signal_strength), margin, 0.0, 12.0, TEXT_DIM);
+                        b.text(format!("Signal: {}%", state.signal_strength), 12.0, TEXT_DIM);
                     } else {
-                        sec.text(&format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address),
-                            margin, 0.0, 12.0, TEXT_DIM);
+                        b.text(format!("Signal: {}%  IP: {}", state.signal_strength, state.ip_address), 12.0, TEXT_DIM);
                     }
-                } else {
-                    sec.text("Not connected", margin, 0.0, 12.0, TEXT_DIM);
-                }
-                sec.content_y += row_gap;
+                });
             }
 
             if state.wifi_enabled && !state.available.is_empty() {
-                // Across the section's content box — the box the section
-                // clips to. At `left + margin` the framed list ran
-                // 2 * padding past it on both sides, cut off flat there.
-                let list_box_x = sec.content_left();
-                let list_box_y = sec.ay();
-                let list_box_w = sec.content_width();
-                let list_box_h = 160.0;
+                let list = &mut state.wifi_list;
+                let available = &state.available;
+                col.draw(0.0, WIFI_LIST_H, false, move |pc, r, _| {
+                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                    list.set_rect(r.x, r.y, r.width, r.height);
+                    list.update_bounds(available.len(), r.y, r.height);
+                    list.push_prims(pc);
 
-                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-                state.wifi_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                state.wifi_list.update_bounds(state.available.len(), list_box_y, list_box_h);
-                state.wifi_list.push_prims(sec.pc);
+                    let btn_w = r.width - 2.0 * margin;
+                    let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
 
-                let btn_w = list_box_w - 2.0 * margin;
-                let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
-
-                sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                for (idx, net) in state.available.iter().enumerate() {
-                    if let Some(draw_y) = state.wifi_list.get_item_draw_y(idx, 4.0) {
-                        let ssid_truncated = if net.ssid.len() > max_chars {
-                            format!("{}...", &net.ssid[..max_chars.saturating_sub(3)])
-                        } else {
-                            net.ssid.clone()
-                        };
-                        let label = format!("{}  ({}%)", ssid_truncated, net.signal);
-                        let active = net.in_use;
-                        let row_x = list_box_x + margin;
-                        let row_h = 26.0;
-                        sec.pc.button(&label, row_x, draw_y, btn_w, row_h,
-                            if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
-                            if active { ACCENT } else { TEXT_FG },
-                            AppAction::Network(NetworkMessage::ConnectWifi(net.ssid.clone())));
-                        // The network in use wears a `check` glyph at the
-                        // row's left (it was a ">" in the label), in the
-                        // plain text colour: ACCENT is the row's own green
-                        // and a glyph in it all but vanishes there.
-                        if active {
-                            let g = 12.0;
-                            sec.pc.icon("check", row_x + cce_ui::layout::CONTROL_TEXT_INSET,
-                                draw_y + (row_h - g) / 2.0, g, g, TEXT_FG);
+                    pc.push_clip_rect(r.x, r.y, r.width, r.height);
+                    for (idx, net) in available.iter().enumerate() {
+                        if let Some(draw_y) = list.get_item_draw_y(idx, 4.0) {
+                            let ssid_truncated = if net.ssid.len() > max_chars {
+                                format!("{}...", &net.ssid[..max_chars.saturating_sub(3)])
+                            } else {
+                                net.ssid.clone()
+                            };
+                            let label = format!("{}  ({}%)", ssid_truncated, net.signal);
+                            let active = net.in_use;
+                            let row_x = r.x + margin;
+                            let row_h = 26.0;
+                            pc.button(&label, row_x, draw_y, btn_w, row_h,
+                                if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
+                                if active { ACCENT } else { TEXT_FG },
+                                AppAction::Network(NetworkMessage::ConnectWifi(net.ssid.clone())));
+                            // The network in use wears a `check` glyph at the
+                            // row's left (it was a ">" in the label), in the
+                            // plain text colour: ACCENT is the row's own green
+                            // and a glyph in it all but vanishes there.
+                            if active {
+                                let g = 12.0;
+                                pc.icon("check", row_x + cce_ui::layout::CONTROL_TEXT_INSET,
+                                    draw_y + (row_h - g) / 2.0, g, g, TEXT_FG);
+                            }
                         }
                     }
-                }
-                sec.pc.pop_clip_rect();
-                // The scrollbar's fore copy, over the rows at the raise's fade.
-                state.wifi_list.push_scrollbar_fore(sec.pc);
-                sec.content_y += list_box_h + row_gap;
+                    pc.pop_clip_rect();
+                    // The scrollbar's fore copy, over the rows at the raise's fade.
+                    list.push_scrollbar_fore(pc);
+                });
             }
         }
+        sec.place(form, ctx);
     });
 
     final_pc

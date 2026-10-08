@@ -2,9 +2,8 @@ use std::fs;
 use std::io::Write;
 use cce_ui::widget::Owned;
 use cce_ui::widget::input::{Toggle, Dropdown, Spinbox};
-use cce_ui::widget::WidgetHost;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{AppAction, PageContent};
 use crate::pages::AppPage;
 
 
@@ -213,45 +212,35 @@ impl AppPage for NotificationsState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Notifications Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let sec_w = stack.context.cw;
             self.enable_toggle.set_toggled(self.enable);
-            stack.add_widget(&mut self.enable_toggle, sec_w - 28.0, cce_ui::layout::toggle_height(), ctx);
-
-            let selected_idx = match self.bell.as_str() {
-                "none" => 0,
+            self.bell_menu.selected = match self.bell.as_str() {
                 "bell" => 1,
                 "dialog" => 2,
                 "message" => 3,
                 _ => 0,
             };
-            self.bell_menu.selected = selected_idx;
-            self.bell_menu.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut self.bell_menu, sec_w - 28.0, 44.0, ctx);
-
             self.duration_spinbox.value = self.duration;
             self.duration_spinbox.set_label("Notification Duration");
-            self.duration_spinbox.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(&mut self.duration_spinbox, sec_w - 28.0, 44.0, ctx);
 
-            let btn_h = cce_ui::layout::button_height();
-            let white_color = [1.0, 1.0, 1.0, 1.0];
-            let btn_bg = [0.20, 0.40, 0.65, 1.0];
-            let btn_hover = [0.28, 0.50, 0.78, 1.0];
-
-            stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-                ctx.button(
-                    "Send Test Notification",
-                    x,
-                    ctx.ay(),
-                    w,
-                    btn_h,
-                    btn_bg,
-                    btn_hover,
-                    white_color,
-                    AppAction::Notifications(NotificationsMessage::SendTestNotification),
-                );
-            });
+            let mut form = sec.form();
+            form.column()
+                .widget(&mut self.enable_toggle, cce_ui::layout::toggle_height())
+                .widget(&mut self.bell_menu, cce_ui::layout::dropdown_height())
+                .widget(&mut self.duration_spinbox, cce_ui::layout::spinbox_height())
+                .draw(0.0, cce_ui::layout::button_height(), false, |pc, r, _| {
+                    pc.button(
+                        "Send Test Notification",
+                        r.x,
+                        r.y,
+                        r.width,
+                        r.height,
+                        [0.20, 0.40, 0.65, 1.0],
+                        [0.28, 0.50, 0.78, 1.0],
+                        [1.0, 1.0, 1.0, 1.0],
+                        AppAction::Notifications(NotificationsMessage::SendTestNotification),
+                    );
+                });
+            sec.place(form, ctx);
         });
 
         final_pc

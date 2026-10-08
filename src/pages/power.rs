@@ -46,7 +46,7 @@ use crate::app::{AppAction, PageContent};
 use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
 use cce_ui::widget::Owned;
 use cce_ui::layout::{PageFlow, PageLayoutBuilder};
-use cce_ui::widget::{Adapted, Dropdown, WidgetHost};
+use cce_ui::widget::{Adapted, Dropdown};
 use std::path::{Path, PathBuf};
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
@@ -736,7 +736,9 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
     if !state.loaded {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
         builder.add_section_spanned(&mut final_pc, "", 1, focused(0), |sec| {
-            sec.text("Reading power interfaces...", 12.0, 0.0, 12.0, TEXT_DIM);
+            let mut form = sec.form();
+            form.column().text("Reading power interfaces...", 12.0, TEXT_DIM);
+            sec.place(form, ctx);
         });
         return final_pc;
     }
@@ -747,12 +749,18 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
     let show_assign = assignment_shown(facts);
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w)
         .with_section_count(if show_assign { 3 } else { 2 });
+    let menu_h = cce_ui::layout::dropdown_height();
 
     // ── Battery: facts, the charge limit, and whether switching is wired up ──
     builder.add_section(&mut final_pc, "Battery", focused(0), |sec| {
-        let sec_w = sec.cw;
         let f = &*facts;
-        if f.battery_present {
+        let mut form = sec.form();
+        let mut col = form.column();
+        col.block(|b| {
+            if !f.battery_present {
+                b.text("No battery detected", 12.0, TEXT_DIM);
+                return;
+            }
             let status_color = match f.status.as_str() {
                 "Charging" | "Full" => GOOD,
                 "Discharging" => WARN,
@@ -765,7 +773,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             if let Some(true) = f.ac_online {
                 line.push_str("  ·  on AC");
             }
-            sec.text(&line, 12.0, 0.0, 12.0, status_color);
+            b.text(line, 12.0, status_color);
 
             // Folded in from the System page's battery section, which showed
             // the same pack in a second place until 2026-08-23.
@@ -781,52 +789,38 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
                 detail.push_str(&format!("{} {}", humanize_secs(secs), what));
             }
             if !detail.is_empty() {
-                sec.text(&detail, 12.0, 0.0, 12.0, TEXT_DIM);
+                b.text(detail, 12.0, TEXT_DIM);
             }
-
             if let Some(h) = f.health_pct {
-                sec.text(
-                    &format!("Health: {}% of design capacity", h),
-                    12.0,
-                    0.0,
-                    12.0,
-                    if h >= 80 { TEXT_DIM } else { WARN },
-                );
+                b.text(format!("Health: {}% of design capacity", h), 12.0, if h >= 80 { TEXT_DIM } else { WARN });
             }
             let pack = format!("{} {}", f.vendor, f.model);
             if !pack.trim().is_empty() {
-                sec.text(pack.trim(), 11.0, 0.0, 11.0, TEXT_DIM);
+                b.text(pack.trim().to_string(), 11.0, TEXT_DIM);
             }
-        } else {
-            sec.text("No battery detected", 12.0, 0.0, 12.0, TEXT_DIM);
-        }
+        });
 
         if f.charge_limit.is_some() {
-            sec.spacing(10.0);
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            // TODO(style): the dropdown's 14px row inset is this page's own,
-            // two wider than the well margin its neighbours sit on.
-            dd_limit.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-            stack.add_widget(dd_limit, sec_w - 28.0, 44.0, ctx);
+            col.widget(&mut *dd_limit, menu_h);
         }
 
         if f.battery_present {
-            sec.spacing(10.0);
-            match f.automation {
+            col.block(|b| match f.automation {
                 Automation::Ready => {
-                    sec.text("Switches automatically on plug and unplug.", 12.0, 0.0, 11.0, TEXT_DIM);
+                    b.text("Switches automatically on plug and unplug.", 11.0, TEXT_DIM);
                 }
                 Automation::Missing => {
-                    sec.text("Automatic switching is not installed:", 12.0, 0.0, 11.0, WARN);
-                    sec.text("System › System Files installs it.", 12.0, 0.0, 11.0, WARN);
+                    b.text("Automatic switching is not installed:", 11.0, WARN);
+                    b.text("System › System Files installs it.", 11.0, WARN);
                 }
                 Automation::Stale => {
-                    sec.text("Automatic switching is out of date and", 12.0, 0.0, 11.0, WARN);
-                    sec.text("applies nothing on plug or unplug.", 12.0, 0.0, 11.0, WARN);
-                    sec.text("Run: ccebuild install-system", 12.0, 0.0, 11.0, WARN);
+                    b.text("Automatic switching is out of date and", 11.0, WARN);
+                    b.text("applies nothing on plug or unplug.", 11.0, WARN);
+                    b.text("Run: ccebuild install-system", 11.0, WARN);
                 }
-            }
+            });
         }
+        sec.place(form, ctx);
     });
 
     // ── The edited mode's levers, behind the picker that chooses it ──
@@ -839,30 +833,25 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             .map(|s| when_text(*s))
             .collect();
         builder.add_section(&mut final_pc, "Power Mode", focused(1), |sec| {
-            let sec_w = sec.cw;
-            {
-                let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-                dd_mode.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-                stack.add_widget(dd_mode, sec_w - 28.0, 44.0, ctx);
-            }
-            sec.spacing(4.0);
-            if running {
-                sec.text("Running now — picks apply immediately.", 12.0, 0.0, 11.0, GOOD);
-            } else if applies_when.is_empty() {
-                sec.text("Assigned to no adapter state.", 12.0, 0.0, 11.0, TEXT_DIM);
-            } else {
-                sec.text(&format!("Applied when {}.", applies_when.join(" and ")), 12.0, 0.0, 11.0, TEXT_DIM);
-            }
-            sec.text("Not set leaves a lever alone.", 12.0, 0.0, 11.0, TEXT_DIM);
-            sec.spacing(6.0);
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            for i in 0..Lever::ALL.len() {
-                if levers.rows[i].is_empty() {
-                    continue;
+            let mut form = sec.form();
+            let mut col = form.column();
+            col.widget(&mut *dd_mode, menu_h);
+            col.block(|b| {
+                if running {
+                    b.text("Running now — picks apply immediately.", 11.0, GOOD);
+                } else if applies_when.is_empty() {
+                    b.text("Assigned to no adapter state.", 11.0, TEXT_DIM);
+                } else {
+                    b.text(format!("Applied when {}.", applies_when.join(" and ")), 11.0, TEXT_DIM);
                 }
-                levers.dds[i].set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-                stack.add_widget(&mut levers.dds[i], sec_w - 28.0, 44.0, ctx);
+                b.text("Not set leaves a lever alone.", 11.0, TEXT_DIM);
+            });
+            for (row, dd) in levers.rows.iter().zip(levers.dds.iter_mut()) {
+                if !row.is_empty() {
+                    col.widget(dd, menu_h);
+                }
             }
+            sec.place(form, ctx);
         });
     }
 
@@ -870,16 +859,19 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
     if show_assign {
         let f = &*facts;
         builder.add_section(&mut final_pc, "Mode Assignment", focused(2), |sec| {
-            let sec_w = sec.cw;
-            sec.text("Which mode runs in each adapter state.", 12.0, 0.0, 11.0, TEXT_DIM);
-            sec.text(&format!("{} right now.", f.source.label()), 12.0, 0.0, 11.0, GOOD);
-            sec.spacing(6.0);
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            for source in sources.iter().copied() {
-                let dd = &mut dd_assign[source_index(source)];
-                dd.set_row_rect(stack.context.left + 14.0, sec_w - 28.0);
-                stack.add_widget(dd, sec_w - 28.0, 44.0, ctx);
+            let mut form = sec.form();
+            let mut col = form.column();
+            col.block(|b| {
+                b.text("Which mode runs in each adapter state.", 11.0, TEXT_DIM);
+                b.text(format!("{} right now.", f.source.label()), 11.0, GOOD);
+            });
+            let wanted: Vec<usize> = sources.iter().map(|s| source_index(*s)).collect();
+            for (i, dd) in dd_assign.iter_mut().enumerate() {
+                if wanted.contains(&i) {
+                    col.widget(dd, menu_h);
+                }
             }
+            sec.place(form, ctx);
         });
     }
 

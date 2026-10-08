@@ -1,7 +1,7 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{button_need, form_button, form_button_fit, wrap_to_width, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
-use cce_ui::widget::{Label, Button, WidgetHostExt};
+use cce_ui::widget::{Label, WidgetHostExt};
 
 
 #[derive(Debug, Clone)]
@@ -250,79 +250,11 @@ where
     });
 }
 
-/// Width a label needs on a button plate. Feeds `add_row_for`, so a row of
-/// buttons is divided by what is written on them rather than into equal
-/// slices — "Reboot" and "Hibernate" are not the same size and a row that
-/// pretends otherwise clips one and pads the other.
-///
-/// Asks the Button itself (`intrinsic_size`: its label shaped in the button
-/// font, plus its 8px inset each side) rather than measuring here. This used
-/// `measure_text_width` in the control-label font, an inked extent that runs
-/// ~20% short of the shaped run under Berkeley Mono, so the row handed every
-/// button less than its label and "Hibernate" / "Power Off" were cut off.
-fn button_need(label: &str) -> f32 {
-    Button::new(0.0, 0.0, 0.0, 0.0)
-        .with_label(label)
-        .intrinsic_size()
-        .map_or(0.0, |s| s.width)
-}
-
-/// `text` broken into lines no wider than `width` at `size`, measured as the
-/// renderer shapes it (the default UI face, as `PageContent::text` draws).
-/// Breaks after a space or before a `/`, so a path splits on its separators;
-/// a run with neither is cut wherever it overflows. A section's text is
-/// clipped to its content box, so anything that does not fit has to wrap or
-/// it is simply lost — a GPU name, the CPU model, a pending install path.
-fn wrap_to_width(text: &str, width: f32, size: f32) -> Vec<String> {
-    let offsets = cce_ui::geometry_font_system()
-        .lock()
-        .map(|mut fs| cce_ui::backend::text::shaped_cluster_offsets(&mut fs, text, size, None))
-        .unwrap_or_default();
-    if offsets.last().map_or(true, |&(_, total)| total <= width) {
-        return vec![text.to_string()];
-    }
-    let mut lines = Vec::new();
-    let (mut start, mut start_x) = (0usize, 0.0f32);
-    // Where the next line would begin if this one broke at the last chance.
-    let mut chance: Option<(usize, f32)> = None;
-    for pair in offsets.windows(2) {
-        let ((b, x), (next_b, next_x)) = (pair[0], pair[1]);
-        if next_x - start_x > width && b > start {
-            let (cut, cut_x) = chance.filter(|&(c, _)| c > start).unwrap_or((b, x));
-            lines.push(text[start..cut].trim_end().to_string());
-            (start, start_x, chance) = (cut, cut_x, None);
-        }
-        match &text[b..next_b] {
-            " " => chance = Some((next_b, next_x)),
-            "/" if b > start => chance = Some((b, x)),
-            _ => {}
-        }
-    }
-    lines.push(text[start..].trim_end().to_string());
-    lines.retain(|l| !l.is_empty());
-    lines
-}
-
-/// [`SectionContext::text`](cce_ui::layout::SectionContext::text), wrapped
-/// to the content box instead of clipped by it. Continuation lines follow at
-/// the line pitch `text` itself advances by, without the row gap, so one
-/// wrapped item still reads as one item.
-fn wrapped_text(sec: &mut cce_ui::layout::SectionContext<'_, PageContent>, text: &str, size: f32, color: [f32; 4]) {
-    use cce_ui::layout::RenderTarget;
-    let x = sec.content_left();
-    let right = x + sec.content_width();
-    let mut y = sec.content_y;
-    if y > sec.content_start_y {
-        y += sec.row_gap;
-    }
-    for line in wrap_to_width(text, sec.content_width(), size) {
-        sec.pc.text_with_bounds(&line, x, y, size, color, Some([x, y - size, right, y + 2.0 * size]));
-        y += size + 4.0;
-    }
-    sec.content_y = y;
-    for h in &mut sec.grid.col_heights {
-        *h = y;
-    }
+/// A line of text wrapped to the form's width rather than cut at it: its lines one under the
+/// next, so one wrapped item still reads as one item.
+fn wrapped_text(g: &mut cce_ui::layout::FormGroup<'_, '_, PageContent>, text: &str, size: f32, color: [f32; 4]) {
+    let lines = wrap_to_width(text, g.form_width(), size);
+    g.lines(lines, size, color);
 }
 
 fn spawn_systemctl(action: &str) {
@@ -558,7 +490,7 @@ const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, _ctx: &mut cce_ui::context::UiContext) -> PageContent {
+pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     // Six, matching the add_section calls below and the six groups
@@ -570,76 +502,75 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
     // ── 1. System Section ──
     builder.add_section(&mut final_pc, "System", sec_focused.first().copied().unwrap_or(false), |sec| {
-        if !state.loaded {
-            sec.text("Loading system information...", 12.0, 0.0, 14.0, TEXT_FG);
-        } else {
-            wrapped_text(sec, &format!("{}  —  Linux {}", state.hostname, state.kernel), 14.0, TEXT_FG);
-            wrapped_text(sec, &format!("Uptime: {}", state.uptime), 12.0, TEXT_DIM);
-        }
+        let mut form = sec.form();
+        form.column().block(|b| {
+            if !state.loaded {
+                b.text("Loading system information...", 14.0, TEXT_FG);
+            } else {
+                wrapped_text(b, &format!("{}  —  Linux {}", state.hostname, state.kernel), 14.0, TEXT_FG);
+                wrapped_text(b, &format!("Uptime: {}", state.uptime), 12.0, TEXT_DIM);
+            }
+        });
+        sec.place(form, ctx);
     });
 
     // ── 2. System Actions Section ──
     builder.add_section(&mut final_pc, "System Actions", sec_focused.get(1).copied().unwrap_or(false), |sec| {
-        let gap = cce_ui::layout::plate_gap();
-        let mut stack = sec.vstack(gap);
-        // The toolkit's button height, like every other cce-ui button — this
-        // row was a hand-set 32px, a size no other control in the DE wears.
-        let btn_h = cce_ui::layout::button_height();
-
-        const ACTIONS: [&str; 4] = ["Suspend", "Hibernate", "Reboot", "Power Off"];
-        let needs: Vec<f32> = ACTIONS.iter().map(|l| button_need(l)).collect();
-        // All four on one row when their labels fit; otherwise the safe pair
-        // over the destructive pair, rather than squeezing every plate below
-        // its label (`row_layout_for` scales an overfull row down, which is
-        // what clipped the labels).
-        let one_row = needs.iter().sum::<f32>() + gap * (needs.len() - 1) as f32
-            <= stack.context.content_width();
+        const ACTIONS: [(&str, [f32; 4], SystemMessage); 4] = [
+            ("Suspend", SAFE_BG, SystemMessage::Suspend),
+            ("Hibernate", SAFE_BG, SystemMessage::Hibernate),
+            ("Reboot", DANGER_BG, SystemMessage::Reboot),
+            ("Power Off", DANGER_BG, SystemMessage::PowerOff),
+        ];
+        let needs: Vec<f32> = ACTIONS.iter().map(|a| button_need(a.0)).collect();
+        let mut form = sec.form();
+        // All four on one row when their labels fit; otherwise the safe pair over the
+        // destructive pair, rather than squeezing every plate below its label.
+        let gap = cce_ui::layout::control_gap();
+        let one_row = needs.iter().sum::<f32>() + gap * (needs.len() - 1) as f32 <= form.width();
         let rows: &[std::ops::Range<usize>] = if one_row { &[0..4] } else { &[0..2, 2..4] };
-        for r in rows {
-            let first = r.start;
-            stack.add_row_for(&needs[r.clone()], gap, btn_h, |ctx, i, x, w| {
-                let (label, bg, msg) = match first + i {
-                    0 => ("Suspend", SAFE_BG, SystemMessage::Suspend),
-                    1 => ("Hibernate", SAFE_BG, SystemMessage::Hibernate),
-                    2 => ("Reboot", DANGER_BG, SystemMessage::Reboot),
-                    _ => ("Power Off", DANGER_BG, SystemMessage::PowerOff),
-                };
-                ctx.button(label, x, ctx.ay(), w, btn_h, bg, BTN_HOVER, WHITE, AppAction::SystemInfo(msg));
+        let mut col = form.column();
+        for range in rows {
+            col.row(|r| {
+                for i in range.clone() {
+                    let (label, bg, msg) = ACTIONS[i].clone();
+                    form_button_fit(r, label, needs[i], (bg, BTN_HOVER, WHITE), AppAction::SystemInfo(msg));
+                }
             });
         }
-
-        // No trailing gap after the last row: the well's own floor inset is
-        // the space below it, as it is beside and above.
-        stack.spacing = 0.0;
-        stack.add_row(1, 0.0, btn_h, |ctx, _, x, w| {
-            ctx.button("Force Shutdown", x, ctx.ay(), w, btn_h,
-                DANGER_BG, BTN_HOVER, WHITE, AppAction::SystemInfo(SystemMessage::ForceShutdown));
-        });
+        form_button(&mut col, "Force Shutdown", 0.0, (DANGER_BG, BTN_HOVER, WHITE), AppAction::SystemInfo(SystemMessage::ForceShutdown));
+        sec.place(form, ctx);
     });
 
     // ── 3. CPU Section ──
     builder.add_section(&mut final_pc, "CPU", sec_focused.get(2).copied().unwrap_or(false), |sec| {
-        if !state.loaded {
-            sec.text("Loading CPU model and utilization...", 12.0, 0.0, 12.0, TEXT_FG);
-        } else {
-            // Same strings the old Label widgets carried, stacked vertically (the
-            // grid-column widget placement overlapped them at narrow widths).
-            wrapped_text(sec, &format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores), 12.0, TEXT_FG);
-            wrapped_text(sec, &format!("Usage  {:.0}%", state.cpu_usage), 12.0, TEXT_FG);
-            let cpu_temp_text = read_cpu_temp().map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
-            wrapped_text(sec, &cpu_temp_text, 12.0, TEXT_FG);
-        }
+        let mut form = sec.form();
+        form.column().block(|b| {
+            if !state.loaded {
+                b.text("Loading CPU model and utilization...", 12.0, TEXT_FG);
+            } else {
+                wrapped_text(b, &format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores), 12.0, TEXT_FG);
+                wrapped_text(b, &format!("Usage  {:.0}%", state.cpu_usage), 12.0, TEXT_FG);
+                let cpu_temp_text = read_cpu_temp().map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
+                wrapped_text(b, &cpu_temp_text, 12.0, TEXT_FG);
+            }
+        });
+        sec.place(form, ctx);
     });
 
     // ── 4. GPU Section ──
-    builder.add_section(&mut final_pc, "GPU", sec_focused.get(3).copied().unwrap_or(false), |sec_gpu| {
-        if !state.loaded {
-            sec_gpu.text("Loading GPU models...", 12.0, 0.0, 12.0, TEXT_FG);
-        } else {
-            for gpu_text in state.gpu_strings.iter() {
-                wrapped_text(sec_gpu, gpu_text, 12.0, TEXT_FG);
+    builder.add_section(&mut final_pc, "GPU", sec_focused.get(3).copied().unwrap_or(false), |sec| {
+        let mut form = sec.form();
+        form.column().block(|b| {
+            if !state.loaded {
+                b.text("Loading GPU models...", 12.0, TEXT_FG);
+            } else {
+                for gpu_text in state.gpu_strings.iter() {
+                    wrapped_text(b, gpu_text, 12.0, TEXT_FG);
+                }
             }
-        }
+        });
+        sec.place(form, ctx);
     });
 
     // ── 5. System Files Section ──
@@ -650,8 +581,6 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     // the greeter out of a half-built tree.
     builder.add_section(&mut final_pc, "System Files", sec_focused.get(4).copied().unwrap_or(false), |sec| {
         let sf = &state.sysfiles;
-        let mut stack = sec.vstack(6.0);
-
         let (status, color) = if sf.busy {
             ("Checking…".to_string(), TEXT_DIM)
         } else if !sf.scanned {
@@ -669,96 +598,76 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 TEXT_FG,
             )
         };
-        stack.add_row(1, 0.0, 16.0, |c, _, x, _| {
-            let y = c.ay();
-            c.pc.text(&status, x, y + 4.0, 12.0, color);
+        let mut form = sec.form();
+        let wrap_w = form.width();
+        let mut col = form.column();
+        col.block(|b| {
+            b.text(status, 12.0, color);
+            // Name the files. "2 files differ" is not enough to authorize a root
+            // install on — which one is the greeter matters. A path pair is wider
+            // than the well, and the well clips: wrapped, continuation lines
+            // indented past the first, so each file still reads as one entry.
+            let indent = cce_ui::layout::CONTROL_TEXT_INSET;
+            for line in sf.pending.iter().take(8) {
+                let lines = wrap_to_width(line, wrap_w, 11.0);
+                let (first, rest) = lines.split_first().map_or((String::new(), &[][..]), |(f, r)| (f.clone(), r));
+                let rest: Vec<String> = rest.iter().flat_map(|l| wrap_to_width(l, wrap_w - indent, 11.0)).collect();
+                b.text(first, 11.0, TEXT_DIM);
+                if !rest.is_empty() {
+                    b.row(|r| {
+                        r.space(indent, false);
+                        r.lines(rest, 11.0, TEXT_DIM);
+                    });
+                }
+            }
         });
 
-        // Name the files. "2 files differ" is not enough to authorize a root
-        // install on — which one is the greeter matters.
-        // A path pair is wider than the well, and the well clips: wrapped,
-        // continuation lines indented past the first, so each file still
-        // reads as one entry.
-        let wrap_w = stack.context.content_width();
-        for line in sf.pending.iter().take(8) {
-            let lines = wrap_to_width(line, wrap_w - 8.0, 11.0);
-            let (first, rest) = lines.split_first().map_or((String::new(), &[][..]), |(f, r)| (f.clone(), r));
-            let rest: Vec<String> = rest.iter().flat_map(|l| wrap_to_width(l, wrap_w - 20.0, 11.0)).collect();
-            stack.add_row(1, 0.0, 14.0 * (1 + rest.len()) as f32, move |c, _, x, _| {
-                let y = c.ay();
-                c.pc.text(&first, x + 8.0, y + 3.0, 11.0, TEXT_DIM);
-                for (k, l) in rest.iter().enumerate() {
-                    c.pc.text(l, x + 20.0, y + 3.0 + 14.0 * (k + 1) as f32, 11.0, TEXT_DIM);
-                }
-            });
-        }
-
         if let Some(ref res) = sf.result {
-            let (msg, col) = match res {
+            let (msg, color) = match res {
                 Ok(()) => ("Installed — takes effect at next login".to_string(), TEXT_DIM),
                 Err(e) => (format!("Failed: {}", e), DANGER_BG),
             };
-            let lines = wrap_to_width(&msg, stack.context.content_width(), 11.0);
-            stack.add_row(1, 0.0, 16.0 + 14.0 * (lines.len().max(1) - 1) as f32, move |c, _, x, _| {
-                let y = c.ay();
-                for (k, l) in lines.iter().enumerate() {
-                    c.pc.text(l, x, y + 4.0 + 14.0 * k as f32, 11.0, col);
-                }
-            });
+            wrapped_text(&mut col, &msg, 11.0, color);
         }
 
-        let btn_h = cce_ui::layout::button_height();
-        // The buttons close the well: no trailing gap below them.
-        stack.spacing = 0.0;
         let has_work = sf.scanned && !sf.pending.is_empty();
         let busy = sf.busy;
-        let needs = [button_need("Check"), button_need("Install (root)")];
-        stack.add_row_for(&needs, cce_ui::layout::plate_gap(), btn_h, move |c, i, x, w| {
-            match i {
-                0 => {
-                    c.button("Check", x, c.ay(), w, btn_h,
-                        SAFE_BG, BTN_HOVER, WHITE,
-                        AppAction::SystemInfo(SystemMessage::ScanSystemFiles));
-                }
-                1 => {
-                    // Only offered when there is something to install. The
-                    // apply re-plans anyway, so a stale-enabled button would
-                    // be a no-op rather than a hazard — but it would also put
-                    // up a root prompt for nothing.
-                    if has_work && !busy {
-                        c.button("Install (root)", x, c.ay(), w, btn_h,
-                            DANGER_BG, BTN_HOVER, WHITE,
-                            AppAction::SystemInfo(SystemMessage::InstallSystemFiles));
-                    }
-                }
-                _ => {}
+        let (check_need, install_need) = (button_need("Check"), button_need("Install (root)"));
+        col.row(|r| {
+            form_button_fit(r, "Check", check_need, (SAFE_BG, BTN_HOVER, WHITE), AppAction::SystemInfo(SystemMessage::ScanSystemFiles));
+            // Only offered when there is something to install. The apply re-plans anyway,
+            // so a stale-enabled button would be a no-op rather than a hazard — but it
+            // would also put up a root prompt for nothing. Its room is kept either way, so
+            // Check does not change width.
+            if has_work && !busy {
+                form_button_fit(r, "Install (root)", install_need, (DANGER_BG, BTN_HOVER, WHITE), AppAction::SystemInfo(SystemMessage::InstallSystemFiles));
+            } else {
+                r.space(install_need, true);
             }
         });
+        sec.place(form, ctx);
     });
 
     // ── 6. Builds Section ──
     // How long each installed cce binary took to build, slowest first.
     builder.add_section(&mut final_pc, "Builds", sec_focused.get(5).copied().unwrap_or(false), |sec| {
+        let mut form = sec.form();
+        let mut col = form.column();
         if !state.loaded {
-            sec.text("Loading installed builds...", 12.0, 0.0, 12.0, TEXT_FG);
-            return;
-        }
-        if state.builds.is_empty() {
-            sec.text("No cce binaries in ~/.local/bin", 12.0, 0.0, 12.0, TEXT_DIM);
-            return;
-        }
-        let mut stack = sec.vstack(0.0);
-        for b in &state.builds {
+            col.text("Loading installed builds...", 12.0, TEXT_FG);
+        } else if state.builds.is_empty() {
+            col.text("No cce binaries in ~/.local/bin", 12.0, TEXT_DIM);
+        } else {
             // "—" is a binary no ccebuild build has timed (a bare `cargo
             // build`, or one built before the timing was recorded).
-            let took = b.seconds.map(format_build_duration).unwrap_or_else(|| "—".to_string());
-            let name = b.name.clone();
-            stack.add_row(1, 0.0, 16.0, move |c, _, x, _| {
-                let y = c.ay();
-                c.pc.text(&name, x, y + 3.0, 11.0, TEXT_FG);
-                c.pc.text(&took, x + 140.0, y + 3.0, 11.0, TEXT_DIM);
-            });
+            let pairs = state
+                .builds
+                .iter()
+                .map(|b| (b.name.clone(), TEXT_FG, b.seconds.map(format_build_duration).unwrap_or_else(|| "—".to_string()), TEXT_DIM))
+                .collect();
+            crate::app::form_pairs(&mut col, 11.0, pairs);
         }
+        sec.place(form, ctx);
     });
 
     final_pc

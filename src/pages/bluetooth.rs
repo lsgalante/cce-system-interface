@@ -1,6 +1,6 @@
-use crate::app::{AppAction, PageContent, SectionContextExt};
+use crate::app::{form_button, AppAction, PageContent};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
 
 #[derive(Debug, Clone)]
@@ -160,114 +160,79 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let bt_sec_w = sec.cw;
-        let padding = sec.padding();
-        let row_gap = cce_ui::layout::label_margin();
-        let margin = padding.max(12.0);
         let font_size = 12.0;
-        let btn_h = cce_ui::layout::button_height();
+        let mut form = sec.form();
+        let mut col = form.column();
 
         if !state.loaded {
-            sec.text("Loading Bluetooth status...", margin, 0.0, font_size, TEXT_DIM);
-        } else if !state.installed {
-            sec.text("Bluetooth tools (bluez) not installed", margin, 0.0, font_size, TEXT_DIM);
+            col.text("Loading Bluetooth status...", font_size, TEXT_DIM);
+        } else if !state.installed || !state.service_active {
+            let (note, label, msg) = if !state.installed {
+                ("Bluetooth tools (bluez) not installed", "Install Tools", BluetoothMessage::InstallTools)
+            } else {
+                ("Bluetooth service is stopped", "Start Service", BluetoothMessage::StartService)
+            };
+            col.text(note, font_size, TEXT_DIM);
             let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
-            let yt = sec.ay();
-            sec.button("Install Tools", sec.ax(margin), yt, btn_w, btn_h,
-                TOGGLE_ON, BTN_HOVER, WHITE,
-                AppAction::Bluetooth(BluetoothMessage::InstallTools));
-            sec.content_y = yt + btn_h + row_gap;
-        } else if !state.service_active {
-            sec.text("Bluetooth service is stopped", margin, 0.0, font_size, TEXT_DIM);
-            let btn_w = if bt_sec_w < 200.0 { 100.0 } else { 120.0 };
-            let yt = sec.ay();
-            sec.button("Start Service", sec.ax(margin), yt, btn_w, btn_h,
-                TOGGLE_ON, BTN_HOVER, WHITE,
-                AppAction::Bluetooth(BluetoothMessage::StartService));
-            sec.content_y = yt + btn_h + row_gap;
+            col.row(|r| form_button(r, label, btn_w, (TOGGLE_ON, BTN_HOVER, WHITE), AppAction::Bluetooth(msg)));
         } else {
-            let yt = sec.ay();
             let bt_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 60.0 };
             let scan_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 52.0 };
-            let scan_btn_x = margin + bt_btn_w + row_gap;
-
             state.toggle.set_toggled(state.enabled);
             state.toggle.set_label(if state.enabled { "ON" } else { "OFF" });
-            // Hand-placed: sec.widget grid-places at full column width, which
-            // would sit the toggle under the Scan button.
-            let tx = sec.ax(margin);
-            let toggle_h = cce_ui::layout::toggle_height();
-            render_widget(sec.pc, &mut state.toggle, tx, yt, bt_btn_w, toggle_h, ctx);
-            sec.button("Scan", sec.ax(scan_btn_x), yt, scan_btn_w, btn_h,
-                TOGGLE_OFF, BTN_HOVER, WHITE,
-                AppAction::Bluetooth(BluetoothMessage::Scan));
-            sec.content_y = yt + btn_h.max(toggle_h) + row_gap;
+            col.row(|r| {
+                r.widget_w(&mut state.toggle, bt_btn_w, cce_ui::layout::toggle_height());
+                form_button(r, "Scan", scan_btn_w, (TOGGLE_OFF, BTN_HOVER, WHITE), AppAction::Bluetooth(BluetoothMessage::Scan));
+            });
 
             if state.devices.is_empty() {
                 if state.enabled {
                     let no_devices_msg = if bt_sec_w < 200.0 { "No paired devices" } else { "No paired devices found" };
-                    sec.text(no_devices_msg, margin, 0.0, font_size, TEXT_DIM);
+                    col.text(no_devices_msg, font_size, TEXT_DIM);
                 }
             } else {
-                let item_h = btn_h;
                 for dev in &state.devices {
                     let btn_w = if bt_sec_w < 250.0 { 42.0 } else { 70.0 };
-                    let action_label = if dev.connected {
-                        if bt_sec_w < 250.0 { "Disc" } else { "Disconnect" }
-                    } else {
-                        if bt_sec_w < 250.0 { "Conn" } else { "Connect" }
+                    let action_label = match (dev.connected, bt_sec_w < 250.0) {
+                        (true, true) => "Disc",
+                        (true, false) => "Disconnect",
+                        (false, true) => "Conn",
+                        (false, false) => "Connect",
                     };
-
-                    let label_max_w = (bt_sec_w - btn_w - 2.0 * padding - margin - row_gap - (font_size + 6.0)).max(20.0);
-                    let label_max_chars = ((label_max_w / 6.0) as usize).max(5);
-
                     let is_unknown = dev.name.replace('-', ":").eq_ignore_ascii_case(&dev.mac);
-                    let label = if is_unknown {
-                        if bt_sec_w < 350.0 {
-                            dev.mac.clone()
-                        } else {
-                            format!("Unknown Device ({})", dev.mac)
-                        }
-                    } else {
-                        if bt_sec_w < 350.0 {
-                            let name_truncated = if dev.name.len() > label_max_chars {
-                                format!("{}...", &dev.name[..label_max_chars.saturating_sub(3)])
-                            } else {
-                                dev.name.clone()
-                            };
-                            name_truncated
-                        } else {
-                            let full_label = format!("{} ({})", dev.name, dev.mac);
-                            if full_label.len() > label_max_chars {
-                                format!("{}...", &full_label[..label_max_chars.saturating_sub(3)])
-                            } else {
-                                full_label
-                            }
-                        }
+                    let label = match (is_unknown, bt_sec_w < 350.0) {
+                        (true, true) => dev.mac.clone(),
+                        (true, false) => format!("Unknown Device ({})", dev.mac),
+                        (false, true) => dev.name.clone(),
+                        (false, false) => format!("{} ({})", dev.name, dev.mac),
                     };
-
-                    let yt = sec.ay();
-                    let btn_x = margin;
-                    let text_x = margin + btn_w + row_gap;
-                    let text_y_offset = (item_h - font_size) / 2.0;
-                    sec.button(action_label, sec.ax(btn_x), yt, btn_w, item_h,
-                        if dev.connected { TOGGLE_OFF } else { TOGGLE_ON }, BTN_HOVER, WHITE,
-                        if dev.connected {
-                            AppAction::Bluetooth(BluetoothMessage::Disconnect(dev.mac.clone()))
-                        } else {
-                            AppAction::Bluetooth(BluetoothMessage::Connect(dev.mac.clone()))
+                    let (face, action) = if dev.connected {
+                        (TOGGLE_OFF, AppAction::Bluetooth(BluetoothMessage::Disconnect(dev.mac.clone())))
+                    } else {
+                        (TOGGLE_ON, AppAction::Bluetooth(BluetoothMessage::Connect(dev.mac.clone())))
+                    };
+                    let connected = dev.connected;
+                    col.row(|r| {
+                        form_button(r, action_label, btn_w, (face, BTN_HOVER, WHITE), action);
+                        // A connected device wears a `check` glyph ahead of its name (it was
+                        // a ">" in the label); every row keeps the glyph's room so the names
+                        // line up either way. The name is cut where the row ends.
+                        let line_h = cce_ui::layout::form_line_height(font_size);
+                        r.draw(0.0, line_h, true, move |pc, cell, _| {
+                            let g = font_size;
+                            if connected {
+                                pc.icon("check", cell.x, cell.y + (line_h - g) / 2.0, g, g, ACCENT);
+                            }
+                            let tx = cell.x + g + cce_ui::layout::CONTROL_TEXT_INSET;
+                            let color = if connected { ACCENT } else { TEXT_FG };
+                            pc.text_with_bounds(&label, tx, cell.y, font_size, color,
+                                Some([tx, cell.y - font_size, cell.x + cell.width, cell.y + 2.0 * font_size]));
                         });
-                    // A connected device wears a `check` glyph ahead of its
-                    // name (it was a ">" in the label); every row keeps the
-                    // glyph's column so the names line up either way.
-                    let g = font_size;
-                    if dev.connected {
-                        sec.pc.icon("check", sec.ax(text_x), yt + (item_h - g) / 2.0, g, g, ACCENT);
-                    }
-                    sec.text(&label, text_x + g + 6.0, text_y_offset, font_size, if dev.connected { ACCENT } else { TEXT_FG });
-                    sec.content_y = yt + item_h + row_gap;
+                    });
                 }
             }
         }
+        sec.place(form, ctx);
     });
 
     final_pc

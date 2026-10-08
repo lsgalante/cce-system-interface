@@ -1,6 +1,6 @@
 use crate::app::{AppAction, PageContent};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow};
+use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use std::fs;
 
 /// What the background poll produces — the fetched numbers only, never the
@@ -223,6 +223,8 @@ const BTN_BG: [f32; 4] = [0.20, 0.40, 0.65, 1.0];
 const BTN_HOVER: [f32; 4] = [0.28, 0.50, 0.78, 1.0];
 const BTN_DISABLED: [f32; 4] = [0.15, 0.18, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// A usage bar's own height: a thin band under its figures.
+const USAGE_BAR_H: f32 = 8.0;
 
 pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
     let mut final_pc = PageContent::new();
@@ -231,113 +233,77 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
 
     // Section 1: Local Storage
     builder.add_section(&mut final_pc, "Local Storage", sec_focused.first().copied().unwrap_or(false), |sec| {
-        let sec_w = sec.cw;
+        let disk_pct = if state.disk_total > 0.0 { state.disk_used / state.disk_total * 100.0 } else { 0.0 };
+        let mut disk_bar = Owned::new(
+            cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
+                .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]),
+        );
+        let mut form = sec.form();
+        let mut col = form.column();
         if !state.loaded {
-            sec.text("Loading storage usage...", 12.0, 0.0, 12.0, TEXT_FG);
+            col.text("Loading storage usage...", 12.0, TEXT_FG);
         } else {
-            let disk_pct = if state.disk_total > 0.0 {
-                state.disk_used / state.disk_total * 100.0
-            } else {
-                0.0
-            };
-
-            sec.text("Disk", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text(
-                &format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct),
-                100.0, 0.0, 12.0, TEXT_FG,
-            );
-
-            let bar_w = sec_w - 2.0 * crate::app::section_margin();
-            let yt = sec.ay();
-            let disk_bar_x = sec.ax(crate::app::section_margin());
-            let mut disk_bar = Owned::new(cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
-                .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]));
-            render_widget(sec.pc, &mut disk_bar, disk_bar_x, yt, bar_w, 8.0, ctx);
+            let usage = format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct);
+            crate::app::form_pairs(&mut col, 12.0, vec![("Disk".into(), LABEL_FG, usage, TEXT_FG)]);
+            col.widget(&mut disk_bar, USAGE_BAR_H);
         }
+        sec.place(form, ctx);
     });
 
     // Section 2: Memory
     builder.add_section(&mut final_pc, "Memory", sec_focused.get(1).copied().unwrap_or(false), |sec| {
-        let sec_w = sec.cw;
+        let ram_pct = if state.ram_total > 0.0 { state.ram_used / state.ram_total * 100.0 } else { 0.0 };
+        let mut ram_bar = Owned::new(
+            cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
+                .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]),
+        );
+        let mut form = sec.form();
+        let mut col = form.column();
         if !state.loaded {
-            sec.text("Loading memory usage...", 12.0, 0.0, 12.0, TEXT_FG);
+            col.text("Loading memory usage...", 12.0, TEXT_FG);
         } else {
-            let ram_pct = if state.ram_total > 0.0 {
-                state.ram_used / state.ram_total * 100.0
-            } else {
-                0.0
-            };
-
-            sec.text("RAM", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text(
-                &format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct),
-                100.0, 0.0, 12.0, TEXT_FG,
-            );
-
-            let bar_w = sec_w - 2.0 * crate::app::section_margin();
-            let yt = sec.ay();
-            let ram_bar_x = sec.ax(crate::app::section_margin());
-            let mut ram_bar = Owned::new(cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
-                .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]));
-            render_widget(sec.pc, &mut ram_bar, ram_bar_x, yt, bar_w, 8.0, ctx);
+            let usage = format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct);
+            crate::app::form_pairs(&mut col, 12.0, vec![("RAM".into(), LABEL_FG, usage, TEXT_FG)]);
+            col.widget(&mut ram_bar, USAGE_BAR_H);
         }
+        sec.place(form, ctx);
     });
 
-    // Section 2: Full System Backup
+    // Section 3: Full System Backup
     builder.add_section(&mut final_pc, "Full System Backup", sec_focused.get(2).copied().unwrap_or(false), |sec| {
-        if !state.backup_loaded {
-            sec.text("Loading backup state...", 12.0, 0.0, 12.0, TEXT_DIM);
+        // Retained widget rather than an immediate button, so it can hold keyboard focus. Its
+        // label/colours are re-synced each frame from the backup state, the way cce-mail drives
+        // its retained btn_unread.
+        let (btn_label, bg, hover) = if state.backup_in_progress {
+            ("Backing up...", BTN_DISABLED, BTN_DISABLED)
         } else {
-            // Status Row
-            sec.text("Backup Status", 12.0, 0.0, 12.0, LABEL_FG);
-            let status_text = if state.backup_in_progress { "Backing up..." } else { "Idle" };
-            let status_color = if state.backup_in_progress { GREEN } else { TEXT_FG };
-            sec.text(status_text, 120.0, 0.0, 12.0, status_color);
+            ("Run Backup", BTN_BG, BTN_HOVER)
+        };
+        state.backup_button.set_label(btn_label);
+        state.backup_button.bg = Some(bg);
+        state.backup_button.hover_bg = Some(hover);
 
-            // Last Backup Row
-            sec.text("Last Backup", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text(&state.last_backup_time, 120.0, 0.0, 12.0, TEXT_FG);
-
-            // Backup Size Row
-            sec.text("Archive Size", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text(&state.backup_size, 120.0, 0.0, 12.0, TEXT_FG);
-
-            // Target Directories Row
-            sec.text("Backup Targets", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text("Entire Filesystem (/)  [Preserving attributes]", 120.0, 0.0, 12.0, TEXT_DIM);
-
-            // Destination Archive Row
-            sec.text("Destination", 12.0, 0.0, 12.0, LABEL_FG);
-            sec.text("USB Drive (/mnt/usb or /run/media/...)", 120.0, 0.0, 12.0, TEXT_DIM);
-
-            // Error message if present
+        let mut form = sec.form();
+        let mut col = form.column();
+        if !state.backup_loaded {
+            col.text("Loading backup state...", 12.0, TEXT_DIM);
+        } else {
+            let (status_text, status_color) =
+                if state.backup_in_progress { ("Backing up...", GREEN) } else { ("Idle", TEXT_FG) };
+            let mut pairs = vec![
+                ("Backup Status".into(), LABEL_FG, status_text.into(), status_color),
+                ("Last Backup".into(), LABEL_FG, state.last_backup_time.clone(), TEXT_FG),
+                ("Archive Size".into(), LABEL_FG, state.backup_size.clone(), TEXT_FG),
+                ("Backup Targets".into(), LABEL_FG, "Entire Filesystem (/)  [Preserving attributes]".into(), TEXT_DIM),
+                ("Destination".into(), LABEL_FG, "USB Drive (/mnt/usb or /run/media/...)".into(), TEXT_DIM),
+            ];
             if let Some(ref err) = state.error_message {
-                sec.text("Error:", 12.0, 0.0, 12.0, RED);
-                sec.text(err, 60.0, 0.0, 11.0, RED);
+                pairs.push(("Error:".into(), RED, err.clone(), RED));
             }
-
-            // Action Button
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let btn_h = cce_ui::layout::button_height();
-            
-            // Retained widget rather than an immediate `sec.button`, so it can hold
-            // keyboard focus. Its label/colours are re-synced each frame from the
-            // backup state, the way cce-mail drives its retained btn_unread.
-            let (btn_label, bg, hover) = if state.backup_in_progress {
-                ("Backing up...", BTN_DISABLED, BTN_DISABLED)
-            } else {
-                ("Run Backup", BTN_BG, BTN_HOVER)
-            };
-            state.backup_button.set_label(btn_label);
-            state.backup_button.bg = Some(bg);
-            state.backup_button.hover_bg = Some(hover);
-
-            let btn = &mut state.backup_button;
-            stack.add_row(1, 0.0, btn_h, |sctx, _, x, w| {
-                let y = sctx.ay();
-                render_widget(sctx.pc, btn, x, y, w, btn_h, ctx);
-            });
+            crate::app::form_pairs(&mut col, 12.0, pairs);
+            col.widget(&mut state.backup_button, cce_ui::layout::button_height());
         }
+        sec.place(form, ctx);
     });
 
     final_pc

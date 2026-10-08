@@ -1,8 +1,8 @@
-use crate::app::{AppAction, PageContent, SectionContextExt, section_divider};
+use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, SectionContext, RenderTarget};
-use cce_ui::widget::{WidgetHost, TextBox, InteractiveListItem};
+use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::widget::{TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone, Default)]
 pub struct PackageInfo {
@@ -365,11 +365,6 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
-/// A button wide enough for its label in the (monospace) button font.
-fn label_button_w(label: &str) -> f32 {
-    label.chars().count() as f32 * 9.5 + 28.0
-}
-
 /// "3 packages" / "1 package".
 fn count_noun(n: usize) -> String {
     if n == 1 { "1 package".to_string() } else { format!("{n} packages") }
@@ -523,6 +518,8 @@ const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
 const TOGGLE_OFF: [f32; 4] = [0.16, 0.16, 0.24, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
+/// The least room the list keeps on a short window.
+const LIST_MIN_H: f32 = 120.0;
 
 pub fn view(
     state: &mut PackagesState,
@@ -534,65 +531,65 @@ pub fn view(
     layout: &mut PageFlow,
     ctx: &mut cce_ui::context::UiContext,
 ) -> PageContent {
-    let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 260.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
-        let sec_w = sec.cw;
+        let mut form = sec.form();
         if !state.loaded {
-            sec.text("Loading package lists...", 12.0, 0.0, 12.0, TEXT_DIM);
+            form.column().text("Loading package lists...", 12.0, TEXT_DIM);
+            sec.place(form, ctx);
             return;
         }
+        // The list fills the page like the services list: the well's floor lands at the
+        // page's bottom.
+        form.fill_height((cy + ch) - form.top() - sec.bottom_inset());
+        let wrap_w = form.width();
 
-        // ── Tabs (with counts), filter, compact update row ──
-        let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-        let tab_h = cce_ui::layout::button_height();
         let active_bg = [0.20, 0.40, 0.65, 0.4];
         let inactive_bg = [0.10, 0.10, 0.16, 0.3];
         let hover_bg = [0.20, 0.20, 0.25, 0.15];
+        let text_on = [0.90, 0.90, 0.95, 1.0];
+        let busy = state.busy();
 
+        let query = if state.search_box.editing {
+            state.search_box.edit_buffer.to_lowercase()
+        } else {
+            state.search_box.text.to_lowercase()
+        };
+        // What the list shows, worked out before the widgets are lent to the form.
+        let visible_installed = state.visible_installed();
+        if state.installed_items.len() != visible_installed.len() {
+            state.installed_items.clear();
+            for _ in 0..visible_installed.len() {
+                state.installed_items.push(Owned::new(InteractiveListItem::new("")));
+            }
+        }
+        let filtered_updates: Vec<&UpdateInfo> = state.updates.iter().filter(|p| p.name.to_lowercase().contains(&query)).collect();
+        if state.updates_items.len() != filtered_updates.len() {
+            state.updates_items.clear();
+            for _ in 0..filtered_updates.len() {
+                state.updates_items.push(Owned::new(InteractiveListItem::new("")));
+            }
+        }
+
+        let mut col = form.column();
+
+        // ── Tabs (with counts) ──
         let label1 = format!("Installed ({})", state.installed.len());
         let label2 = format!("Updates ({})", state.updates.len());
-
-        stack.add_row(2, cce_ui::layout::plate_gap(), tab_h, |ctx, i, x, w| {
-            if i == 0 {
-                ctx.button(
-                    &label1,
-                    x,
-                    ctx.ay(),
-                    w,
-                    tab_h,
-                    if state.active_tab == PackageTab::Installed { active_bg } else { inactive_bg },
-                    hover_bg,
-                    [0.90, 0.90, 0.95, 1.0],
-                    AppAction::Packages(PackagesMessage::SetTab(PackageTab::Installed)),
-                );
-            } else {
-                ctx.button(
-                    &label2,
-                    x,
-                    ctx.ay(),
-                    w,
-                    tab_h,
-                    if state.active_tab == PackageTab::Updates { active_bg } else { inactive_bg },
-                    hover_bg,
-                    [0.90, 0.90, 0.95, 1.0],
-                    AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)),
-                );
-            }
+        let tab = state.active_tab;
+        col.row(|r| {
+            form_button(r, label1, 0.0, (if tab == PackageTab::Installed { active_bg } else { inactive_bg }, hover_bg, text_on),
+                AppAction::Packages(PackagesMessage::SetTab(PackageTab::Installed)));
+            form_button(r, label2, 0.0, (if tab == PackageTab::Updates { active_bg } else { inactive_bg }, hover_bg, text_on),
+                AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)));
         });
 
-        stack.context.spacing(4.0);
+        col.widget(&mut state.search_box, cce_ui::layout::textbox_height());
 
-        let search_w = sec_w - 2.0 * m;
-        let search_h = 46.0;
-        state.search_box.set_row_rect(stack.context.left + m, search_w);
-        stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
-        stack.context.spacing(4.0);
-
-        // Update System: compact button + status text on one row.
+        // ── Update System: a button as wide as its label, its status beside it ──
         let status_line = if state.updating {
             "Updating system...".to_string()
         } else if state.updates.is_empty() {
@@ -606,29 +603,24 @@ pub fn view(
         } else {
             ("Update System", [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0])
         };
-        stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-            if i == 0 {
-                c.button(btn_lbl, x, c.ay(), w, tab_h, bg, hover, [0.90, 0.90, 0.95, 1.0],
-                    AppAction::Packages(PackagesMessage::StartUpdate));
-            } else if i == 1 {
-                let y = c.ay();
-                c.pc.text(&status_line, x, y + (tab_h - 14.0) / 2.0, 12.0, status_color);
-            }
+        col.row(|r| {
+            form_button(r, btn_lbl, button_need(btn_lbl), (bg, hover, text_on), AppAction::Packages(PackagesMessage::StartUpdate));
+            r.text_fill(status_line, 12.0, status_color);
         });
 
         if let Some(ref res) = state.last_update_res {
             match res {
-                Ok(_) => stack.context.text("Last update succeeded", 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]),
+                Ok(_) => {
+                    col.text("Last update succeeded", 12.0, [0.56, 0.83, 0.56, 1.0]);
+                }
                 Err(err) => {
-                    stack.context.text("Last update failed:", 12.0, 0.0, 12.0, RED);
-                    stack.context.text(err, 12.0, 0.0, 11.0, RED);
+                    col.block(|b| {
+                        b.text("Last update failed:", 12.0, RED);
+                        b.lines(wrap_to_width(err, wrap_w, 11.0), 11.0, RED);
+                    });
                 }
             }
         }
-
-        // Characters per line for wrapped status text at 11px.
-        let wrap_chars = (((sec_w - 2.0 * m - 24.0) / 6.5) as usize).max(20);
-        let busy = state.busy();
 
         // ── Filter row: All / Explicit / Orphans, and the select-mode switch ──
         if state.active_tab == PackageTab::Installed {
@@ -642,55 +634,48 @@ pub fn view(
             let select_label = if state.select_mode { "Done Selecting" } else { "Select..." };
             let filter = state.filter;
             let select_mode = state.select_mode;
-            stack.add_row(4, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-                if let Some((f, label)) = filters.get(i) {
-                    let bg = if filter == *f { active_bg } else { inactive_bg };
-                    c.button(label, x, c.ay(), w, tab_h, bg, hover_bg, [0.90, 0.90, 0.95, 1.0],
-                        AppAction::Packages(PackagesMessage::SetFilter(*f)));
-                } else {
-                    let bg = if select_mode { active_bg } else { inactive_bg };
-                    c.button(select_label, x, c.ay(), w, tab_h, bg, hover_bg, [0.90, 0.90, 0.95, 1.0],
-                        AppAction::Packages(PackagesMessage::ToggleSelectMode));
+            col.row(|r| {
+                for (f, label) in filters {
+                    let face = if filter == f { active_bg } else { inactive_bg };
+                    form_button(r, label, 0.0, (face, hover_bg, text_on), AppAction::Packages(PackagesMessage::SetFilter(f)));
                 }
+                let face = if select_mode { active_bg } else { inactive_bg };
+                form_button(r, select_label, 0.0, (face, hover_bg, text_on), AppAction::Packages(PackagesMessage::ToggleSelectMode));
             });
 
             // ── Bulk actions over the checked rows ──
             if state.select_mode {
                 let n = state.checked.len();
-                let summary = if n == 0 {
-                    "Click rows to select".to_string()
-                } else {
-                    format!("{} selected", count_noun(n))
-                };
+                let summary = if n == 0 { "Click rows to select".to_string() } else { format!("{} selected", count_noun(n)) };
                 let targets: Vec<String> = state.checked.iter().cloned().collect();
                 let can_act = n > 0 && !busy;
-                let (act_bg, act_text) = if can_act { (TOGGLE_OFF, TEXT_FG) } else { (TOGGLE_OFF, TEXT_DIM) };
-                stack.add_row(5, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-                    let y = c.ay();
-                    match i {
-                        0 => c.pc.text(&summary, x, y + (tab_h - 14.0) / 2.0, 12.0, if n > 0 { ACCENT } else { TEXT_DIM }),
-                        1 => c.button("Select Visible", x, y, w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
-                            AppAction::Packages(PackagesMessage::CheckAllVisible)),
-                        2 => c.button("Clear", x, y, w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
-                            AppAction::Packages(PackagesMessage::ClearChecked)),
-                        3 => c.button(if state.marking { "Marking..." } else { "Mark Explicit" }, x, y, w, tab_h,
-                            act_bg, if can_act { BTN_HOVER } else { act_bg }, act_text,
-                            AppAction::Packages(PackagesMessage::SetInstallReason(targets.clone(), true))),
-                        _ => c.button("Remove...", x, y, w, tab_h,
+                let act_text = if can_act { TEXT_FG } else { TEXT_DIM };
+                let mark_label = if state.marking { "Marking..." } else { "Mark Explicit" };
+                col.row(|r| {
+                    r.text_fill(summary, 12.0, if n > 0 { ACCENT } else { TEXT_DIM });
+                    form_button(r, "Select Visible", button_need("Select Visible"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
+                        AppAction::Packages(PackagesMessage::CheckAllVisible));
+                    form_button(r, "Clear", button_need("Clear"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
+                        AppAction::Packages(PackagesMessage::ClearChecked));
+                    form_button(r, mark_label, button_need(mark_label),
+                        (TOGGLE_OFF, if can_act { BTN_HOVER } else { TOGGLE_OFF }, act_text),
+                        AppAction::Packages(PackagesMessage::SetInstallReason(targets.clone(), true)));
+                    form_button(r, "Remove...", button_need("Remove..."),
+                        (
                             if can_act { [0.25, 0.14, 0.14, 1.0] } else { TOGGLE_OFF },
                             if can_act { [0.40, 0.20, 0.20, 1.0] } else { TOGGLE_OFF },
                             if can_act { [0.95, 0.55, 0.55, 1.0] } else { TEXT_DIM },
-                            AppAction::Packages(PackagesMessage::PreviewRemoval(targets.clone()))),
-                    }
+                        ),
+                        AppAction::Packages(PackagesMessage::PreviewRemoval(targets)));
                 });
             }
         }
 
         // ── Removal confirmation: what pacman says it would take ──
         if state.previewing {
-            stack.context.text("Checking what would be removed...", 12.0, 0.0, 12.0, TEXT_DIM);
+            col.text("Checking what would be removed...", 12.0, TEXT_DIM);
         } else if let Some(plan) = state.removal.clone() {
-            section_divider(stack.context);
+            form_divider(&mut col);
             match &plan.outcome {
                 Ok(pkgs) => {
                     let total: u64 = pkgs.iter().map(|(_, s)| *s).sum();
@@ -702,40 +687,36 @@ pub fn view(
                     } else {
                         format!("Remove {} ({}):", count_noun(pkgs.len()), human_size(total))
                     };
-                    stack.context.text(&head, 12.0, 0.0, 12.0, [0.95, 0.75, 0.55, 1.0]);
                     let names = pkgs.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ");
-                    let lines = wrap_text(&names, wrap_chars);
+                    let lines = wrap_to_width(&names, wrap_w, 11.0);
                     const MAX_LINES: usize = 6;
-                    for line in lines.iter().take(MAX_LINES) {
-                        stack.context.text(line, 12.0, 0.0, 11.0, TEXT_FG);
-                    }
-                    if lines.len() > MAX_LINES {
-                        let shown: usize = lines.iter().take(MAX_LINES).map(|l| l.split_whitespace().count()).sum();
-                        stack.context.text(&format!("... and {} more", pkgs.len().saturating_sub(shown)), 12.0, 0.0, 11.0, TEXT_DIM);
-                    }
+                    col.block(|b| {
+                        b.text(head, 12.0, [0.95, 0.75, 0.55, 1.0]);
+                        b.lines(lines.iter().take(MAX_LINES).cloned().collect(), 11.0, TEXT_FG);
+                        if lines.len() > MAX_LINES {
+                            let shown: usize = lines.iter().take(MAX_LINES).map(|l| l.split_whitespace().count()).sum();
+                            b.text(format!("... and {} more", pkgs.len().saturating_sub(shown)), 11.0, TEXT_DIM);
+                        }
+                    });
                     let confirm = if state.uninstalling { "Removing...".to_string() } else { format!("Remove {}", count_noun(pkgs.len())) };
                     let targets = plan.targets.clone();
-                    stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-                        let y = c.ay();
-                        if i == 0 {
-                            c.button(&confirm, x, y, w, tab_h, [0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0],
-                                AppAction::Packages(PackagesMessage::StartUninstall(targets.clone())));
-                        } else if i == 1 {
-                            c.button("Cancel", x, y, w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
-                                AppAction::Packages(PackagesMessage::CancelRemoval));
-                        }
+                    col.row(|r| {
+                        let need = button_need(&confirm);
+                        form_button(r, confirm, need, ([0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0]),
+                            AppAction::Packages(PackagesMessage::StartUninstall(targets)));
+                        form_button(r, "Cancel", button_need("Cancel"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
+                            AppAction::Packages(PackagesMessage::CancelRemoval));
                     });
                 }
                 Err(err) => {
-                    stack.context.text(&format!("Can't remove {}:", plan.targets.join(", ")), 12.0, 0.0, 12.0, RED);
-                    for line in err.lines().flat_map(|l| wrap_text(l, wrap_chars)).take(8) {
-                        stack.context.text(&line, 12.0, 0.0, 11.0, [0.95, 0.55, 0.55, 1.0]);
-                    }
-                    stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-                        if i == 0 {
-                            c.button("Dismiss", x, c.ay(), w, tab_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG,
-                                AppAction::Packages(PackagesMessage::CancelRemoval));
-                        }
+                    let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
+                    col.block(|b| {
+                        b.text(format!("Can't remove {}:", plan.targets.join(", ")), 12.0, RED);
+                        b.lines(lines, 11.0, [0.95, 0.55, 0.55, 1.0]);
+                    });
+                    col.row(|r| {
+                        form_button(r, "Dismiss", button_need("Dismiss"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
+                            AppAction::Packages(PackagesMessage::CancelRemoval));
                     });
                 }
             }
@@ -744,11 +725,12 @@ pub fn view(
         // ── Outcome of the last remove / mark ──
         if let Some(ref res) = state.last_action {
             match res {
-                Ok(msg) => stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]),
+                Ok(msg) => {
+                    col.text(msg.clone(), 12.0, [0.56, 0.83, 0.56, 1.0]);
+                }
                 Err(err) => {
-                    for (i, line) in err.lines().flat_map(|l| wrap_text(l, wrap_chars)).take(8).enumerate() {
-                        stack.context.text(&line, 12.0, 0.0, if i == 0 { 12.0 } else { 11.0 }, RED);
-                    }
+                    let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
+                    col.lines(lines, 11.0, RED);
                 }
             }
         }
@@ -758,12 +740,12 @@ pub fn view(
         // package, and both together push the list off the page.
         let confirming = state.previewing || state.removal.is_some();
         if !confirming && (state.loading_info || state.selected_package.is_some()) {
-            section_divider(stack.context);
+            form_divider(&mut col);
         }
         if confirming {
             // Nothing: the confirmation above stands in for the details.
         } else if state.loading_info {
-            stack.context.text("Loading package details...", 12.0, 0.0, 12.0, TEXT_DIM);
+            col.text("Loading package details...", 12.0, TEXT_DIM);
         } else if let Some(pkg_name) = state.selected_package.clone() {
             if let Some(info_raw) = state.selected_package_info.clone() {
                 let mut parsed = parse_package_info(&info_raw);
@@ -771,235 +753,163 @@ pub fn view(
                     parsed.name = pkg_name.clone();
                 }
 
-                // Heading row: name left, Uninstall (compact, quiet-red) right.
-                {
-                    let sc = &mut *stack.context;
-                    let mut y = sc.content_y;
-                    if y > sc.content_start_y {
-                        y += sc.row_gap;
-                    }
-                    let lx = sc.ax(m);
-                    sc.pc.text(&parsed.name, lx, y, 14.0, [0.35, 0.65, 0.90, 1.0]);
-                    sc.content_y = y + 20.0;
-                    for h in &mut sc.grid.col_heights {
-                        *h = sc.content_y;
-                    }
-                    let is_installed = state.installed.iter().find(|p| p.name == pkg_name);
-                    if let (PackageTab::Installed, Some(info)) = (state.active_tab, is_installed) {
-                        // Right-aligned to the box every button row lays out in
-                        // (`row_layout`); a width derived from cw by hand ran
-                        // a few px past the well and cut the button's edge.
-                        let right = sc.row_layout(1, 0.0).first().map(|&(x, w)| x + w).unwrap_or(lx);
-                        let bw = label_button_w("Uninstall");
-                        let bx = right - bw;
-                        let (btn_lbl, bg, hover, text_col) = if busy {
-                            ("Uninstall", TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
-                        } else {
-                            ("Uninstall", [0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
-                        };
-                        // Centred on the 14px name's line.
-                        let bh = cce_ui::layout::button_height();
-                        let by = y + (17.0 - bh) / 2.0;
-                        sc.button(btn_lbl, bx, by, bw, bh, bg, hover, text_col,
-                            AppAction::Packages(PackagesMessage::PreviewRemoval(vec![pkg_name.clone()])));
-                        // The install-reason flip beside it: an explicit package can
-                        // be handed back as a dependency (so it goes when nothing
-                        // needs it) and a dependency kept for good.
-                        let (mark_lbl, to_explicit) = if info.explicit {
-                            ("Mark as Dependency", false)
-                        } else {
-                            ("Mark Explicit", true)
-                        };
-                        let mw = label_button_w(mark_lbl);
-                        let text_col = if busy { TEXT_DIM } else { TEXT_FG };
-                        sc.button(mark_lbl, bx - 4.0 - mw, by, mw, bh, TOGGLE_OFF, if busy { TOGGLE_OFF } else { BTN_HOVER }, text_col,
+                // Heading row: the name, then the install-reason flip and Uninstall at the
+                // row's end. An explicit package can be handed back as a dependency (so it
+                // goes when nothing needs it) and a dependency kept for good.
+                let installed = state.installed.iter().find(|p| p.name == pkg_name).map(|p| p.explicit);
+                let on_installed = state.active_tab == PackageTab::Installed;
+                col.row(|r| {
+                    r.text_fill(parsed.name.clone(), 14.0, [0.35, 0.65, 0.90, 1.0]);
+                    if let (true, Some(explicit)) = (on_installed, installed) {
+                        let (mark_lbl, to_explicit) = if explicit { ("Mark as Dependency", false) } else { ("Mark Explicit", true) };
+                        form_button(r, mark_lbl, button_need(mark_lbl),
+                            (TOGGLE_OFF, if busy { TOGGLE_OFF } else { BTN_HOVER }, if busy { TEXT_DIM } else { TEXT_FG }),
                             AppAction::Packages(PackagesMessage::SetInstallReason(vec![pkg_name.clone()], to_explicit)));
+                        let colors = if busy {
+                            (TOGGLE_OFF, TOGGLE_OFF, TEXT_DIM)
+                        } else {
+                            ([0.25, 0.14, 0.14, 1.0], [0.40, 0.20, 0.20, 1.0], [0.95, 0.55, 0.55, 1.0])
+                        };
+                        form_button(r, "Uninstall", button_need("Uninstall"), colors,
+                            AppAction::Packages(PackagesMessage::PreviewRemoval(vec![pkg_name.clone()])));
                     }
-                }
+                });
 
-                // Same-line kv rows, values wrapping at the value column.
-                let kv_wrap = |sc: &mut SectionContext<'_, PageContent>, key: &str, val: &str| {
-                    if val.is_empty() {
-                        return;
-                    }
-                    let mut y = sc.content_y + 4.0;
-                    let lx = sc.ax(m);
-                    let vx = lx + 118.0;
-                    let usable_w = sc.cw - 118.0 - 2.0 * (sc.padding() + m);
-                    let max_chars = ((usable_w / 6.0) as usize).max(15);
-                    sc.pc.text(key, lx, y, 11.0, TEXT_DIM);
-                    let lines = wrap_text(val, max_chars);
-                    for line in &lines {
-                        sc.pc.text(line, vx, y, 11.0, TEXT_FG);
-                        y += 15.0;
-                    }
-                    if lines.is_empty() {
-                        y += 15.0;
-                    }
-                    sc.content_y = y + 1.0;
-                    for h in &mut sc.grid.col_heights {
-                        *h = sc.content_y;
-                    }
-                };
-
-                kv_wrap(stack.context, "Version", &parsed.version);
                 let orphan = state.installed.iter().any(|p| p.name == pkg_name && p.orphan);
                 let reason = if orphan {
                     format!("{} (orphan: nothing requires it now)", parsed.install_reason)
                 } else {
                     parsed.install_reason.clone()
                 };
-                kv_wrap(stack.context, "Install Reason", &reason);
-                kv_wrap(stack.context, "Size", &parsed.size);
-                kv_wrap(stack.context, "Licenses", &parsed.licenses);
-                kv_wrap(stack.context, "Website", &parsed.website);
-                kv_wrap(stack.context, "Packager", &parsed.packager);
-                kv_wrap(stack.context, "Built", &parsed.build_date);
-                kv_wrap(stack.context, "Description", &parsed.description);
-                kv_wrap(stack.context, "Commands", &parsed.commands);
+                let pairs = [
+                    ("Version", parsed.version.clone()),
+                    ("Install Reason", reason),
+                    ("Size", parsed.size.clone()),
+                    ("Licenses", parsed.licenses.clone()),
+                    ("Website", parsed.website.clone()),
+                    ("Packager", parsed.packager.clone()),
+                    ("Built", parsed.build_date.clone()),
+                    ("Description", parsed.description.clone()),
+                    ("Commands", parsed.commands.clone()),
+                ]
+                .into_iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| (k.to_string(), TEXT_DIM, v, TEXT_FG))
+                .collect();
+                crate::app::form_pairs(&mut col, 11.0, pairs);
 
                 if !parsed.required_by.is_empty() && parsed.required_by != "None" {
-                    stack.context.text("Required By", 12.0, 0.0, 11.0, TEXT_DIM);
-
-                    let reqs: Vec<&str> = parsed.required_by.split_whitespace().collect();
-                    let cols_count = 4;
-                    let gap = 4.0;
-                    let btn_h = cce_ui::layout::button_height();
+                    let reqs: Vec<String> = parsed.required_by.split_whitespace().map(str::to_string).collect();
+                    const COLUMNS: usize = 4;
                     // A core library is required by hundreds (glibc: ~300). Every
                     // row of buttons pushes the list down, and past the page's
                     // bottom the list loses its box; a few rows say enough.
                     const MAX_REQ_ROWS: usize = 4;
-                    let shown = reqs.len().min(cols_count * MAX_REQ_ROWS);
-
-                    for chunk in reqs[..shown].chunks(cols_count) {
-                        let btn_y = stack.context.ay();
-                        let cols = stack.context.row_layout(cols_count, gap);
-                        for (i, &pkg) in chunk.iter().enumerate() {
-                            if let Some(&(x, w)) = cols.get(i) {
-                                let action = AppAction::Packages(PackagesMessage::SelectAndScrollPackage(pkg.to_string()));
-                                stack.context.button(pkg, x, btn_y, w, btn_h, TOGGLE_OFF, BTN_HOVER, TEXT_FG, action);
+                    let shown = reqs.len().min(COLUMNS * MAX_REQ_ROWS);
+                    col.text("Required By", 11.0, TEXT_DIM);
+                    for chunk in reqs[..shown].chunks(COLUMNS) {
+                        col.row(|r| {
+                            for pkg in chunk {
+                                let action = AppAction::Packages(PackagesMessage::SelectAndScrollPackage(pkg.clone()));
+                                form_button(r, pkg.clone(), 0.0, (TOGGLE_OFF, BTN_HOVER, TEXT_FG), action);
                             }
-                        }
+                            // A short last row keeps the columns of the rows above it.
+                            for _ in chunk.len()..COLUMNS {
+                                r.space(0.0, true);
+                            }
+                        });
                     }
                     if reqs.len() > shown {
-                        stack.context.text(&format!("... and {} more", reqs.len() - shown), 12.0, 0.0, 11.0, TEXT_DIM);
+                        col.text(format!("... and {} more", reqs.len() - shown), 11.0, TEXT_DIM);
                     }
                 }
             } else {
-                stack.context.text("No details available.", 12.0, 0.0, 12.0, TEXT_DIM);
+                col.text("No details available.", 12.0, TEXT_DIM);
             }
         }
 
-        section_divider(stack.context);
+        form_divider(&mut col);
 
-        // ── List fills the rest of the page, across the section's content
-        // box (the box the section clips to) like the services list ──
-        let list_box_x = sec.content_left();
-        let list_box_y = sec.ay();
-        let list_box_w = sec.content_width();
-        let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
-
-        let query = if state.search_box.editing {
-            state.search_box.edit_buffer.to_lowercase()
+        // ── The list fills the rest of the page ──
+        let tab = state.active_tab;
+        let empty_msg = if state.filter == InstalledFilter::Orphans && query.is_empty() {
+            "No orphaned packages"
         } else {
-            state.search_box.text.to_lowercase()
+            "No packages match the query"
         };
+        let select_mode = state.select_mode;
+        let checked = &state.checked;
+        let selected = state.selected_package.clone();
+        let installed = &state.installed;
+        let (installed_list, installed_items) = (&mut state.installed_list, &mut state.installed_items);
+        let (updates_list, updates_items) = (&mut state.updates_list, &mut state.updates_items);
+        col.fill(LIST_MIN_H, move |pc, rect, ctx| {
+            let (list_box_x, list_box_y, list_box_w, list_box_h) = (rect.x, rect.y, rect.width, rect.height);
+            let inset = cce_ui::layout::plate_padding();
+            match tab {
+                PackageTab::Installed => {
+                    let filtered: Vec<&PackageInfo> = visible_installed.iter().map(|&i| &installed[i]).collect();
+                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                    installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    installed_list.update_bounds(filtered.len(), list_box_y, list_box_h);
+                    installed_list.push_prims(pc);
+                    let item_h = installed_list.item_height;
 
-        match state.active_tab {
-            PackageTab::Installed => {
-                let visible = state.visible_installed();
-                let installed = &state.installed;
-                let filtered: Vec<&PackageInfo> = visible.iter().map(|&i| &installed[i]).collect();
-
-                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-                state.installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                state.installed_list.update_bounds(filtered.len(), list_box_y, list_box_h);
-                state.installed_list.push_prims(sec.pc);
-                let item_h = state.installed_list.item_height;
-
-                if state.installed_items.len() != filtered.len() {
-                    state.installed_items.clear();
-                    for _ in 0..filtered.len() {
-                        state.installed_items.push(Owned::new(InteractiveListItem::new("")));
+                    pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    for (idx, pkg) in filtered.iter().enumerate() {
+                        if let Some(draw_y) = installed_list.get_item_draw_y(idx, 4.0) {
+                            // Rows dispatch as extra roots (the dissolved list is no parent).
+                            let item = &mut installed_items[idx];
+                            item.title = pkg.name.clone();
+                            let reason = match (pkg.explicit, pkg.orphan) {
+                                (true, _) => "explicit",
+                                (false, true) => "orphan",
+                                (false, false) => "dependency",
+                            };
+                            item.subtitle = Some(format!("{}  ·  {}", pkg.version, reason));
+                            item.selected = if select_mode {
+                                checked.contains(&pkg.name)
+                            } else {
+                                Some(&pkg.name) == selected.as_ref()
+                            };
+                            render_widget(pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                        }
+                    }
+                    pc.pop_clip_rect();
+                    // The scrollbar's fore copy, over the rows at the raise's fade.
+                    installed_list.push_scrollbar_fore(pc);
+                    if filtered.is_empty() {
+                        pc.text(empty_msg, list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
                     }
                 }
+                PackageTab::Updates => {
+                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                    updates_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    updates_list.update_bounds(filtered_updates.len(), list_box_y, list_box_h);
+                    updates_list.push_prims(pc);
+                    let item_h = updates_list.item_height;
 
-                sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                for (idx, pkg) in filtered.iter().enumerate() {
-                    if let Some(draw_y) = state.installed_list.get_item_draw_y(idx, 4.0) {
-                        // Rows dispatch as extra roots (the dissolved list is no parent).
-                        let item = &mut state.installed_items[idx];
-                        item.title = pkg.name.clone();
-                        let reason = match (pkg.explicit, pkg.orphan) {
-                            (true, _) => "explicit",
-                            (false, true) => "orphan",
-                            (false, false) => "dependency",
-                        };
-                        item.subtitle = Some(format!("{}  ·  {}", pkg.version, reason));
-                        item.selected = if state.select_mode {
-                            state.checked.contains(&pkg.name)
-                        } else {
-                            Some(&pkg.name) == state.selected_package.as_ref()
-                        };
-                        render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                    pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    for (idx, pkg) in filtered_updates.iter().enumerate() {
+                        if let Some(draw_y) = updates_list.get_item_draw_y(idx, 4.0) {
+                            // Rows dispatch as extra roots (the dissolved list is no parent).
+                            let item = &mut updates_items[idx];
+                            item.title = pkg.name.clone();
+                            item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
+                            item.selected = Some(&pkg.name) == selected.as_ref();
+                            render_widget(pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                        }
                     }
-                }
-                sec.pc.pop_clip_rect();
-                // The scrollbar's fore copy, over the rows at the raise's fade.
-                state.installed_list.push_scrollbar_fore(sec.pc);
-
-                if filtered.is_empty() {
-                    let msg = if state.filter == InstalledFilter::Orphans && query.is_empty() {
-                        "No orphaned packages"
-                    } else {
-                        "No packages match the query"
-                    };
-                    sec.pc.text(msg, list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                    pc.pop_clip_rect();
+                    // The scrollbar's fore copy, over the rows at the raise's fade.
+                    updates_list.push_scrollbar_fore(pc);
+                    if filtered_updates.is_empty() {
+                        pc.text("No updates match the query", list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
+                    }
                 }
             }
-            PackageTab::Updates => {
-                let filtered: Vec<&UpdateInfo> = state.updates.iter()
-                    .filter(|p| p.name.to_lowercase().contains(&query))
-                    .collect();
-
-                // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-                state.updates_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                state.updates_list.update_bounds(filtered.len(), list_box_y, list_box_h);
-                state.updates_list.push_prims(sec.pc);
-                let item_h = state.updates_list.item_height;
-
-                if state.updates_items.len() != filtered.len() {
-                    state.updates_items.clear();
-                    for _ in 0..filtered.len() {
-                        state.updates_items.push(Owned::new(InteractiveListItem::new("")));
-                    }
-                }
-
-                sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-                for (idx, pkg) in filtered.iter().enumerate() {
-                    if let Some(draw_y) = state.updates_list.get_item_draw_y(idx, 4.0) {
-                        // Rows dispatch as extra roots (the dissolved list is no parent).
-                        let item = &mut state.updates_items[idx];
-                        item.title = pkg.name.clone();
-                        item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
-                        item.selected = Some(&pkg.name) == state.selected_package.as_ref();
-                        render_widget(sec.pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
-                    }
-                }
-                sec.pc.pop_clip_rect();
-                // The scrollbar's fore copy, over the rows at the raise's fade.
-                state.updates_list.push_scrollbar_fore(sec.pc);
-
-                if filtered.is_empty() {
-                    sec.pc.text("No updates match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
-                }
-            }
-        }
-
-        // End the section so the well's bottom wall sits one margin below
-        // the list: finish() places the wall at content_y + padding + margin,
-        // so the list's own bottom margin and that one cancel.
-        sec.content_y = list_box_y + list_box_h - sec.padding();
+        });
+        sec.place(form, ctx);
     });
 
     final_pc

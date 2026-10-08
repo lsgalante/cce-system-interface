@@ -1,8 +1,8 @@
-use crate::app::{PageContent, SectionContextExt};
+use crate::app::{form_button, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
-use cce_ui::widget::{TextBox, InteractiveListItem, WidgetHost};
+use cce_ui::widget::{TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {
@@ -58,239 +58,202 @@ pub enum ServicesMessage {
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+/// The least room the list keeps on a short window.
+const LIST_MIN_H: f32 = 120.0;
 
 pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
+        let mut form = sec.form();
         if !state.loaded {
-            sec.text("Loading systemd services...", 12.0, 0.0, 12.0, TEXT_DIM);
+            form.column().text("Loading systemd services...", 12.0, TEXT_DIM);
+            sec.place(form, ctx);
+            return;
+        }
+        // The list fills the page: the well's floor lands at the page's bottom.
+        form.fill_height((cy + ch) - form.top() - sec.bottom_inset());
+
+        let tab_colors = |on: bool| {
+            let face = if on { [0.20, 0.40, 0.65, 0.4] } else { [0.10, 0.10, 0.16, 0.3] };
+            (face, [0.20, 0.20, 0.25, 0.15], [0.90, 0.90, 0.95, 1.0])
+        };
+        let (label1, label2) = if sec_w < 250.0 { ("System", "User") } else { ("System Services", "User Services") };
+
+        // Filter services
+        let query = if state.search_box.editing {
+            state.search_box.edit_buffer.to_lowercase()
         } else {
-            // Tab header buttons: System Services, User Services
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let tab_h = cce_ui::layout::button_height();
-            let active_bg = [0.20, 0.40, 0.65, 0.4];
-            let inactive_bg = [0.10, 0.10, 0.16, 0.3];
-            let hover_bg = [0.20, 0.20, 0.25, 0.15];
+            state.search_box.text.to_lowercase()
+        };
+        let filtered_services: Vec<&ServiceInfo> = state.services.iter()
+            .filter(|s| s.is_system == (state.active_tab == ServiceTab::System))
+            .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
+            .collect();
+        if state.items.len() != filtered_services.len() {
+            state.items.clear();
+            for _ in 0..filtered_services.len() {
+                state.items.push(Owned::new(InteractiveListItem::new("")));
+            }
+        }
 
-            let label1 = if stack.context.cw < 250.0 { "System" } else { "System Services" };
-            let label2 = if stack.context.cw < 250.0 { "User" } else { "User Services" };
-
-            stack.add_row(2, cce_ui::layout::plate_gap(), tab_h, |ctx, i, x, w| {
-                if i == 0 {
-                    ctx.button(
-                        label1,
-                        x,
-                        ctx.ay(),
-                        w,
-                        tab_h,
-                        if state.active_tab == ServiceTab::System { active_bg } else { inactive_bg },
-                        hover_bg,
-                        [0.90, 0.90, 0.95, 1.0],
-                        crate::app::AppAction::Services(ServicesMessage::SetTab(ServiceTab::System)),
-                    );
-                } else {
-                    ctx.button(
-                        label2,
-                        x,
-                        ctx.ay(),
-                        w,
-                        tab_h,
-                        if state.active_tab == ServiceTab::User { active_bg } else { inactive_bg },
-                        hover_bg,
-                        [0.90, 0.90, 0.95, 1.0],
-                        crate::app::AppAction::Services(ServicesMessage::SetTab(ServiceTab::User)),
-                    );
-                }
-            });
-
-            stack.context.spacing(4.0);
-
-            // Search textbox
-            let search_w = sec_w - 2.0 * m;
-            let search_h = 46.0;
-
-            state.search_box.set_row_rect(stack.context.left + m, search_w);
-            stack.add_widget(&mut state.search_box, search_w, search_h, ctx);
-            stack.context.spacing(cce_ui::layout::plate_gap());
-
-            // Scroll box list, across the section's content box — the box
-            // the section clips to. At `left + m` the list ran 2 * padding
-            // past it on both sides, and the clip cut its edges off flat.
-            let list_box_x = sec.content_left();
-            let list_box_y = sec.ay();
-            let list_box_w = sec.content_width();
-            // Fill the page: the well's bottom wall lands at the page bottom,
-            // the list keeps one margin above it.
-            let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
-
-            // Filter services
-            let query = if state.search_box.editing {
-                state.search_box.edit_buffer.to_lowercase()
-            } else {
-                state.search_box.text.to_lowercase()
-            };
-            let filtered_services: Vec<&ServiceInfo> = state.services.iter()
-                .filter(|s| s.is_system == (state.active_tab == ServiceTab::System))
-                .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
-                .collect();
-
+        let active_tab = state.active_tab;
+        let list = &mut state.list;
+        let items = &mut state.items;
+        let mut col = form.column();
+        col.row(|r| {
+            form_button(r, label1, 0.0, tab_colors(active_tab == ServiceTab::System),
+                AppAction::Services(ServicesMessage::SetTab(ServiceTab::System)));
+            form_button(r, label2, 0.0, tab_colors(active_tab == ServiceTab::User),
+                AppAction::Services(ServicesMessage::SetTab(ServiceTab::User)));
+        });
+        col.widget(&mut state.search_box, cce_ui::layout::textbox_height());
+        col.fill(LIST_MIN_H, move |pc, rect, ctx| {
+            let (list_box_x, list_box_y, list_box_w, list_box_h) = (rect.x, rect.y, rect.width, rect.height);
             // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
-            state.list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-            state.list.update_bounds(filtered_services.len(), list_box_y, list_box_h);
-            state.list.push_prims(sec.pc);
+            list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+            list.update_bounds(filtered_services.len(), list_box_y, list_box_h);
+            list.push_prims(pc);
+            let item_h = list.item_height;
 
-            let item_h = state.list.item_height;
+            pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                for (idx, service) in filtered_services.iter().enumerate() {
+                    if let Some(draw_y) = list.get_item_draw_y(idx, 4.0) {
+                        // Transport + Restart, on the LEFT where the status dot
+                        // used to be: the dot was reporting what the transport icon
+                        // already says (play = stopped, stop = running), so the
+                        // controls take the column it was using and the name/
+                        // description run from there to the row's right inset.
+                        //
+                        // Sized on whether the icon set is actually THERE:
+                        // `button_icon` falls back to the labels when it isn't, and
+                        // a square button doesn't clip a label so much as replace it
+                        // — the text centers, so both ends cut and "Restart" reads
+                        // "sta". `upload_icon` caches per (name, px), so asking
+                        // every row costs one hash lookup.
+                        let icons_ok = cce_ui::upload_icon("play", 32).is_some();
+                        let is_small = sec_w < 350.0;
+                        let btn_h = cce_ui::layout::button_height();
+                        let (btn_w, r_btn_w) = if icons_ok { (btn_h, btn_h) } else { (46.0, 54.0) };
+                        let btn_gap = if is_small { 4.0 } else { 6.0 };
 
-            if state.items.len() != filtered_services.len() {
-                state.items.clear();
-                for _ in 0..filtered_services.len() {
-                    state.items.push(Owned::new(InteractiveListItem::new("")));
+                        // TODO(style): the row's control run and text column
+                        // below are this list row's own layout.
+                        let toggle_x = list_box_x + 10.0;
+                        let restart_x = toggle_x + btn_w + btn_gap;
+                        // The row's text starts after the controls and ends the
+                        // controls' inset short of the right wall: no gutter for
+                        // the scrollbar, which rides the list's centre line.
+                        let item_x = restart_x + r_btn_w + 10.0;
+                        let item_w = (list_box_x + list_box_w - 10.0) - item_x;
+
+                        let btn_y = draw_y + (item_h - btn_h) / 2.0;
+
+                        // Service description, truncated to the room the row's text
+                        // column actually has (the item insets its labels by 8px).
+                        let text_max_w = item_w - 16.0;
+                        let max_chars = ((text_max_w / 6.0) as usize).max(10);
+                        // `failed` was the status dot's third state and has nowhere
+                        // else to show: a failed unit offers the same play button a
+                        // cleanly stopped one does, so without this the row gives no
+                        // sign it died. It leads the line, and it goes in BEFORE the
+                        // truncation so a long description can't be what pushes the
+                        // marker off the end.
+                        let failed = service.active_state == "failed" || service.sub_state == "failed";
+                        // Char-boundary safe: the byte slice this replaced would
+                        // panic whenever the cut landed inside a multi-byte
+                        // character, and unit descriptions are free text.
+                        let desc_truncated = cce_ui::widget::display::truncate_tail(
+                            &description_line(failed, &service.description),
+                            max_chars,
+                        );
+
+                        // Render InteractiveListItem background and text labels
+                        // Rows dispatch as extra roots (the dissolved list is no parent).
+                        let item_btn = &mut items[idx];
+                        item_btn.title = service.name.clone();
+                        item_btn.subtitle = Some(desc_truncated);
+                        render_widget(pc, item_btn, item_x, draw_y, item_w, item_h, ctx);
+
+                        let active_txt = [0.90, 0.90, 0.95, 1.0];
+                        // No per-action tints: both controls wear the DE's themed
+                        // button face, and what they DO is carried by the icon.
+                        // (The toolkit picks these itself for a `Button` with no
+                        // override; this host paints buttons from its own collected
+                        // colours, so it has to ask for them.)
+                        let face = cce_ui::colors::button_background_color();
+                        let face_hover = cce_ui::colors::button_hover_color();
+
+                        // ONE transport button, showing the action it will take:
+                        // play on a stopped service, stop on a running one. The two
+                        // dimmed half-buttons this replaced were never both live —
+                        // exactly one of them did anything on any given row.
+                        //
+                        // `running` is NOT the `is_active` the status dot reads.
+                        // `update` sets a transitional state the instant the button
+                        // is clicked (activating/starting, deactivating/stopping),
+                        // and counting those as the state they are heading for is
+                        // what flips this icon under the pointer instead of leaving
+                        // it stale until the next refresh lands. The dot keeps
+                        // reporting the confirmed state: the button says what it
+                        // will do, the dot says what is true.
+                        let running = transport_running(&service.active_state, &service.sub_state);
+
+                        // Fallback labels only — an icon face never draws them.
+                        // Without the icons a row says it in WORDS, narrow or
+                        // not: a symbol drawn as a character is exactly what the
+                        // icon set exists to replace, so the buttons keep the
+                        // width a word needs instead.
+                        let (start_lbl, stop_lbl, restart_lbl) = ("Start", "Stop", "Restart");
+
+                        // Start/Stop, collapsed
+                        pc.button_icon(
+                            if running { "stop" } else { "play" },
+                            if running { stop_lbl } else { start_lbl },
+                            toggle_x,
+                            btn_y,
+                            btn_w,
+                            btn_h,
+                            face,
+                            face_hover,
+                            active_txt,
+                            1.0,
+                            crate::app::AppAction::Services(if running {
+                                ServicesMessage::Stop(service.name.clone(), service.is_system)
+                            } else {
+                                ServicesMessage::Start(service.name.clone(), service.is_system)
+                            }),
+                        );
+
+                        // Restart button
+                        pc.button_icon(
+                            "refresh",
+                            restart_lbl,
+                            restart_x,
+                            btn_y,
+                            r_btn_w,
+                            btn_h,
+                            face,
+                            face_hover,
+                            active_txt,
+                            1.0,
+                            crate::app::AppAction::Services(ServicesMessage::Restart(service.name.clone(), service.is_system)),
+                        );
+                    }
                 }
-            }
-
-            sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-            for (idx, service) in filtered_services.iter().enumerate() {
-                if let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) {
-                    // Transport + Restart, on the LEFT where the status dot
-                    // used to be: the dot was reporting what the transport icon
-                    // already says (play = stopped, stop = running), so the
-                    // controls take the column it was using and the name/
-                    // description run from there to the row's right inset.
-                    //
-                    // Sized on whether the icon set is actually THERE:
-                    // `button_icon` falls back to the labels when it isn't, and
-                    // a square button doesn't clip a label so much as replace it
-                    // — the text centers, so both ends cut and "Restart" reads
-                    // "sta". `upload_icon` caches per (name, px), so asking
-                    // every row costs one hash lookup.
-                    let icons_ok = cce_ui::upload_icon("play", 32).is_some();
-                    let is_small = sec_w < 350.0;
-                    let btn_h = cce_ui::layout::button_height();
-                    let (btn_w, r_btn_w) = if icons_ok { (btn_h, btn_h) } else { (46.0, 54.0) };
-                    let btn_gap = if is_small { 4.0 } else { 6.0 };
-
-                    // TODO(style): the row's control run and text column
-                    // below are this list row's own layout.
-                    let toggle_x = list_box_x + 10.0;
-                    let restart_x = toggle_x + btn_w + btn_gap;
-                    // The row's text starts after the controls and ends the
-                    // controls' inset short of the right wall: no gutter for
-                    // the scrollbar, which rides the list's centre line.
-                    let item_x = restart_x + r_btn_w + 10.0;
-                    let item_w = (list_box_x + list_box_w - 10.0) - item_x;
-
-                    let btn_y = draw_y + (item_h - btn_h) / 2.0;
-
-                    // Service description, truncated to the room the row's text
-                    // column actually has (the item insets its labels by 8px).
-                    let text_max_w = item_w - 16.0;
-                    let max_chars = ((text_max_w / 6.0) as usize).max(10);
-                    // `failed` was the status dot's third state and has nowhere
-                    // else to show: a failed unit offers the same play button a
-                    // cleanly stopped one does, so without this the row gives no
-                    // sign it died. It leads the line, and it goes in BEFORE the
-                    // truncation so a long description can't be what pushes the
-                    // marker off the end.
-                    let failed = service.active_state == "failed" || service.sub_state == "failed";
-                    // Char-boundary safe: the byte slice this replaced would
-                    // panic whenever the cut landed inside a multi-byte
-                    // character, and unit descriptions are free text.
-                    let desc_truncated = cce_ui::widget::display::truncate_tail(
-                        &description_line(failed, &service.description),
-                        max_chars,
-                    );
-
-                    // Render InteractiveListItem background and text labels
-                    // Rows dispatch as extra roots (the dissolved list is no parent).
-                    let item_btn = &mut state.items[idx];
-                    item_btn.title = service.name.clone();
-                    item_btn.subtitle = Some(desc_truncated);
-                    render_widget(sec.pc, item_btn, item_x, draw_y, item_w, item_h, ctx);
-
-                    let active_txt = [0.90, 0.90, 0.95, 1.0];
-                    // No per-action tints: both controls wear the DE's themed
-                    // button face, and what they DO is carried by the icon.
-                    // (The toolkit picks these itself for a `Button` with no
-                    // override; this host paints buttons from its own collected
-                    // colours, so it has to ask for them.)
-                    let face = cce_ui::colors::button_background_color();
-                    let face_hover = cce_ui::colors::button_hover_color();
-
-                    // ONE transport button, showing the action it will take:
-                    // play on a stopped service, stop on a running one. The two
-                    // dimmed half-buttons this replaced were never both live —
-                    // exactly one of them did anything on any given row.
-                    //
-                    // `running` is NOT the `is_active` the status dot reads.
-                    // `update` sets a transitional state the instant the button
-                    // is clicked (activating/starting, deactivating/stopping),
-                    // and counting those as the state they are heading for is
-                    // what flips this icon under the pointer instead of leaving
-                    // it stale until the next refresh lands. The dot keeps
-                    // reporting the confirmed state: the button says what it
-                    // will do, the dot says what is true.
-                    let running = transport_running(&service.active_state, &service.sub_state);
-
-                    // Fallback labels only — an icon face never draws them.
-                    // Without the icons a row says it in WORDS, narrow or
-                    // not: a symbol drawn as a character is exactly what the
-                    // icon set exists to replace, so the buttons keep the
-                    // width a word needs instead.
-                    let (start_lbl, stop_lbl, restart_lbl) = ("Start", "Stop", "Restart");
-
-                    // Start/Stop, collapsed
-                    sec.pc.button_icon(
-                        if running { "stop" } else { "play" },
-                        if running { stop_lbl } else { start_lbl },
-                        toggle_x,
-                        btn_y,
-                        btn_w,
-                        btn_h,
-                        face,
-                        face_hover,
-                        active_txt,
-                        1.0,
-                        crate::app::AppAction::Services(if running {
-                            ServicesMessage::Stop(service.name.clone(), service.is_system)
-                        } else {
-                            ServicesMessage::Start(service.name.clone(), service.is_system)
-                        }),
-                    );
-
-                    // Restart button
-                    sec.pc.button_icon(
-                        "refresh",
-                        restart_lbl,
-                        restart_x,
-                        btn_y,
-                        r_btn_w,
-                        btn_h,
-                        face,
-                        face_hover,
-                        active_txt,
-                        1.0,
-                        crate::app::AppAction::Services(ServicesMessage::Restart(service.name.clone(), service.is_system)),
-                    );
-                }
-            }
-            sec.pc.pop_clip_rect();
+            pc.pop_clip_rect();
             // The scrollbar's fore copy, over the rows at the raise's fade.
-            state.list.push_scrollbar_fore(sec.pc);
+            list.push_scrollbar_fore(pc);
 
             if filtered_services.is_empty() {
-                sec.pc.text("No services match the query", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                let inset = cce_ui::layout::plate_padding();
+                pc.text("No services match the query", list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
             }
-
-            // End the section so the well's bottom wall sits one margin below
-            // the list: finish() places the wall at content_y + padding +
-            // margin, so the list's own bottom margin and that one cancel.
-            sec.content_y = list_box_y + list_box_h - sec.padding();
-        }
+        });
+        sec.place(form, ctx);
     });
 
     final_pc

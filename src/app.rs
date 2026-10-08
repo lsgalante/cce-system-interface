@@ -502,69 +502,115 @@ pub fn section_margin() -> f32 {
     cce_ui::layout::SectionContext::<PageContent>::DEFAULT_MARGIN_X
 }
 
-/// A dim label / bright value pair on one line (the shared details idiom).
-pub fn section_kv_row(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>, label: &str, value: &str, value_color: [f32; 4]) {
-    let mut y = sc.content_y;
-    if y > sc.content_start_y {
-        y += sc.row_gap;
-    }
-    let lx = sc.ax(section_margin());
-    sc.pc.text(label, lx, y, 12.0, [0.53, 0.53, 0.60, 1.0]);
-    sc.pc.text(value, lx + 130.0, y, 12.0, value_color);
-    sc.content_y = y + 18.0;
-    for h in &mut sc.grid.col_heights {
-        *h = sc.content_y;
-    }
+/// Width a label needs on a button plate. Feeds [`form_button_fit`], so a row of
+/// buttons is divided by what is written on them rather than into equal
+/// slices — "Reboot" and "Hibernate" are not the same size and a row that
+/// pretends otherwise clips one and pads the other.
+///
+/// Asks the Button itself (`intrinsic_size`: its label shaped in the button
+/// font, plus its 8px inset each side) rather than measuring here. This used
+/// `measure_text_width` in the control-label font, an inked extent that runs
+/// ~20% short of the shaped run under Berkeley Mono, so the row handed every
+/// button less than its label and "Hibernate" / "Power Off" were cut off.
+pub fn button_need(label: &str) -> f32 {
+    cce_ui::widget::Button::new(0.0, 0.0, 0.0, 0.0)
+        .with_label(label)
+        .intrinsic_size()
+        .map_or(0.0, |s| s.width)
 }
 
-/// A hairline separating a well's zones.
-pub fn section_divider(sc: &mut cce_ui::layout::SectionContext<'_, PageContent>) {
-    let y = sc.content_y + sc.row_gap + 4.0;
-    let x = sc.ax(section_margin());
-    let w = sc.cw - 2.0 * (sc.padding() + section_margin());
-    sc.pc.rect([1.0, 1.0, 1.0, 0.06], x, y, w, 1.0);
-    sc.content_y = y + 5.0;
-    for h in &mut sc.grid.col_heights {
-        *h = sc.content_y;
+/// A page button (`PageContent::button`) as a form piece, a button's height: `w` wide, or
+/// the width of its column (and, in a row, the row's slack) when `w` is 0. `colors` are the
+/// face, the hover face and the label.
+pub fn form_button<'w>(
+    g: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    label: impl Into<String>,
+    w: f32,
+    colors: ([f32; 4], [f32; 4], [f32; 4]),
+    action: AppAction,
+) {
+    let label = label.into();
+    g.draw(w, cce_ui::layout::button_height(), w == 0.0, move |pc, r, _| {
+        pc.button(&label, r.x, r.y, r.width, r.height, colors.0, colors.1, colors.2, action);
+    });
+}
+
+/// A page button as a row cell that asks for `need` (its label's own width) and shares the
+/// row's slack with the other cells — a row of buttons sized to their labels.
+pub fn form_button_fit<'w>(
+    g: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    label: impl Into<String>,
+    need: f32,
+    colors: ([f32; 4], [f32; 4], [f32; 4]),
+    action: AppAction,
+) {
+    let label = label.into();
+    g.draw(need, cce_ui::layout::button_height(), true, move |pc, r, _| {
+        pc.button(&label, r.x, r.y, r.width, r.height, colors.0, colors.1, colors.2, action);
+    });
+}
+
+/// `text` broken into lines no wider than `width` at `size`, measured as the
+/// renderer shapes it (the default UI face, as `PageContent::text` draws).
+/// Breaks after a space or before a `/`, so a path splits on its separators;
+/// a run with neither is cut wherever it overflows. A section's text is
+/// clipped to its content box, so anything that does not fit has to wrap or
+/// it is simply lost — a GPU name, the CPU model, a pending install path.
+pub fn wrap_to_width(text: &str, width: f32, size: f32) -> Vec<String> {
+    let offsets = cce_ui::geometry_font_system()
+        .lock()
+        .map(|mut fs| cce_ui::backend::text::shaped_cluster_offsets(&mut fs, text, size, None))
+        .unwrap_or_default();
+    if offsets.last().map_or(true, |&(_, total)| total <= width) {
+        return vec![text.to_string()];
     }
-}
-
-pub trait SectionContextExt {
-    fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
-    fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction);
-    /// [`PageContent::button_icon`] inside a section — `label` is the fallback
-    /// for a missing icon set, `alpha` dims the glyph.
-    #[allow(clippy::too_many_arguments)]
-    fn button_icon(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], alpha: f32, action: AppAction);
-}
-
-impl<'a> SectionContextExt for cce_ui::layout::SectionContext<'a, PageContent> {
-    fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
-        self.pc.button(label, x, y, w, h, bg, hover_bg, label_color, action);
-        self.content_y = self.content_y.max(y + h);
-        for height in &mut self.grid.col_heights {
-            *height = height.max(self.content_y);
+    let mut lines = Vec::new();
+    let (mut start, mut start_x) = (0usize, 0.0f32);
+    // Where the next line would begin if this one broke at the last chance.
+    let mut chance: Option<(usize, f32)> = None;
+    for pair in offsets.windows(2) {
+        let ((b, x), (next_b, next_x)) = (pair[0], pair[1]);
+        if next_x - start_x > width && b > start {
+            let (cut, cut_x) = chance.filter(|&(c, _)| c > start).unwrap_or((b, x));
+            lines.push(text[start..cut].trim_end().to_string());
+            (start, start_x, chance) = (cut, cut_x, None);
+        }
+        match &text[b..next_b] {
+            " " => chance = Some((next_b, next_x)),
+            "/" if b > start => chance = Some((b, x)),
+            _ => {}
         }
     }
-    
-    fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: AppAction) {
-        self.pc.button_left(label, x, y, w, h, bg, hover_bg, label_color, action);
-        self.content_y = self.content_y.max(y + h);
-        for height in &mut self.grid.col_heights {
-            *height = height.max(self.content_y);
-        }
-    }
-
-    fn button_icon(&mut self, icon: &str, label: &str, x: f32, y: f32, w: f32, h: f32, bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], alpha: f32, action: AppAction) {
-        self.pc.button_icon(icon, label, x, y, w, h, bg, hover_bg, label_color, alpha, action);
-        self.content_y = self.content_y.max(y + h);
-        for height in &mut self.grid.col_heights {
-            *height = height.max(self.content_y);
-        }
-    }
+    lines.push(text[start..].trim_end().to_string());
+    lines.retain(|l| !l.is_empty());
+    lines
 }
 
+/// Label / value pairs as one block of text: the labels in a column as wide as the widest of
+/// them, each value beside its label and wrapped to the room left of the content box, the
+/// label on the value's first line. Each pair is (label, label colour, value, value colour).
+pub fn form_pairs<'w>(
+    col: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    size: f32,
+    pairs: Vec<(String, [f32; 4], String, [f32; 4])>,
+) {
+    use cce_ui::scene::layout::{CrossAlign, Style};
+    let label_w = pairs.iter().map(|p| cce_ui::layout::form_text_width(&p.0, size)).fold(0.0, f32::max);
+    let line_h = cce_ui::layout::form_line_height(size);
+    let value_w = (col.form_width() - label_w - cce_ui::layout::control_gap()).max(1.0);
+    // Lines of text, not controls: they stand a line apart, with no control gap between.
+    col.group(Style::column().cross_align(CrossAlign::Stretch), false, |lines| {
+        for (label, label_color, value, value_color) in pairs {
+            lines.group(Style::controls_row(), true, |row| {
+                row.draw(label_w, line_h, false, move |pc, r, _| pc.text(&label, r.x, r.y, size, label_color));
+                row.lines(wrap_to_width(&value, value_w, size), size, value_color);
+            });
+        }
+    });
+}
 
-
-
+/// The hairline that parts a well's zones, as a form piece.
+pub fn form_divider(g: &mut cce_ui::layout::FormGroup<'_, '_, PageContent>) {
+    g.rule([1.0, 1.0, 1.0, 0.06]);
+}
 

@@ -2,11 +2,11 @@
 //! schedules, trigger the activated service immediately, and enable/disable
 //! timer units (system scope through pkexec).
 
-use crate::app::{PageContent, SectionContextExt};
+use crate::app::{button_need, form_button, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
-use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox, WidgetHost};
+use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerTab {
@@ -82,6 +82,8 @@ pub enum TimersMessage {
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+/// The least room the list keeps on a short window.
+const LIST_MIN_H: f32 = 120.0;
 
 /// "46min" / "3h" / "5d 3h" — coarse two-unit humanization.
 fn humanize(secs: u64) -> String {
@@ -402,272 +404,227 @@ fn button_glyph(pc: &mut PageContent, compact: bool, icon: &str, word: &str, x: 
 }
 
 pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let m = crate::app::section_margin();
     let mut final_pc = PageContent::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let sec_w = sec.cw;
+        let mut form = sec.form();
         if !state.loaded {
-            sec.text("Loading systemd timers...", 12.0, 0.0, 12.0, TEXT_DIM);
-        } else {
-            // Tab header buttons: System Timers, User Timers
-            let mut stack = sec.vstack(cce_ui::layout::plate_gap());
-            let tab_h = cce_ui::layout::button_height();
-            let active_bg = [0.20, 0.40, 0.65, 0.4];
-            let inactive_bg = [0.10, 0.10, 0.16, 0.3];
-            let hover_bg = [0.20, 0.20, 0.25, 0.15];
+            form.column().text("Loading systemd timers...", 12.0, TEXT_DIM);
+            sec.place(form, ctx);
+            return;
+        }
+        // The list fills the page like the services list: the well's floor lands at the
+        // page's bottom.
+        form.fill_height((cy + ch) - form.top() - sec.bottom_inset());
 
-            let label1 = if stack.context.cw < 250.0 { "System" } else { "System Timers" };
-            let label2 = if stack.context.cw < 250.0 { "User" } else { "User Timers" };
+        let active_bg = [0.20, 0.40, 0.65, 0.4];
+        let tab_colors = |on: bool| {
+            let face = if on { active_bg } else { [0.10, 0.10, 0.16, 0.3] };
+            (face, [0.20, 0.20, 0.25, 0.15], [0.90, 0.90, 0.95, 1.0])
+        };
+        let (label1, label2) = if sec_w < 250.0 { ("System", "User") } else { ("System Timers", "User Timers") };
+        let text_on = [0.90, 0.90, 0.95, 1.0];
 
-            stack.add_row(2, cce_ui::layout::plate_gap(), tab_h, |ctx, i, x, w| {
-                if i == 0 {
-                    ctx.button(
-                        label1,
-                        x,
-                        ctx.ay(),
-                        w,
-                        tab_h,
-                        if state.active_tab == TimerTab::System { active_bg } else { inactive_bg },
-                        hover_bg,
-                        [0.90, 0.90, 0.95, 1.0],
-                        crate::app::AppAction::Timers(TimersMessage::SetTab(TimerTab::System)),
-                    );
-                } else {
-                    ctx.button(
-                        label2,
-                        x,
-                        ctx.ay(),
-                        w,
-                        tab_h,
-                        if state.active_tab == TimerTab::User { active_bg } else { inactive_bg },
-                        hover_bg,
-                        [0.90, 0.90, 0.95, 1.0],
-                        crate::app::AppAction::Timers(TimersMessage::SetTab(TimerTab::User)),
-                    );
-                }
+        let now = now_usec();
+        let filtered: Vec<&TimerInfo> = state.timers.iter()
+            .filter(|t| t.is_system == (state.active_tab == TimerTab::System))
+            .collect();
+        if state.items.len() != filtered.len() {
+            state.items.clear();
+            for _ in 0..filtered.len() {
+                state.items.push(Owned::new(InteractiveListItem::new("")));
+            }
+        }
+
+        let active_tab = state.active_tab;
+        let list = &mut state.list;
+        let items = &mut state.items;
+        let mut col = form.column();
+        col.row(|r| {
+            form_button(r, label1, 0.0, tab_colors(active_tab == TimerTab::System),
+                AppAction::Timers(TimersMessage::SetTab(TimerTab::System)));
+            form_button(r, label2, 0.0, tab_colors(active_tab == TimerTab::User),
+                AppAction::Timers(TimersMessage::SetTab(TimerTab::User)));
+        });
+
+        // New Timer (user scope) — a button as wide as its label; the form unfolds below.
+        let new_bg = if state.creating { active_bg } else { [0.13, 0.18, 0.14, 1.0] };
+        col.row(|r| {
+            form_button(r, "New Timer", button_need("New Timer"), (new_bg, [0.25, 0.30, 0.26, 1.0], text_on),
+                AppAction::Timers(TimersMessage::CreateStart));
+        });
+
+        if state.creating || state.editing.is_some() {
+            let field_h = cce_ui::layout::spinbox_height();
+            let note = match &state.editing {
+                Some(base) => format!("Editing {}.timer \u{2014} command and schedule rewrite in place.", base),
+                None => "New user timer \u{2014} runs the command on the schedule.".to_string(),
+            };
+            col.text(note, 11.0, TEXT_DIM);
+            if state.creating {
+                col.widget(&mut state.name_box, field_h);
+            }
+            col.widget(&mut state.command_box, field_h);
+            col.widget(&mut state.schedule_box, field_h);
+            let save_label = if state.editing.is_some() { "Save" } else { "Create" };
+            col.row(|r| {
+                form_button(r, save_label, button_need(save_label), ([0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], text_on),
+                    AppAction::Timers(TimersMessage::CreateSave));
+                form_button(r, "Cancel", button_need("Cancel"), ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], text_on),
+                    AppAction::Timers(TimersMessage::CreateCancel));
             });
+        }
 
-            stack.context.spacing(4.0);
+        if let Some(ref msg) = state.status_msg {
+            col.text(msg.clone(), 12.0, [0.56, 0.83, 0.56, 1.0]);
+        }
 
-            // New Timer (user scope) — compact button; the form unfolds below.
-            let new_bg = if state.creating { active_bg } else { [0.13, 0.18, 0.14, 1.0] };
-            stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-                if i == 0 {
-                    c.button("New Timer", x, c.ay(), w, tab_h,
-                        new_bg, [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
-                        crate::app::AppAction::Timers(TimersMessage::CreateStart));
-                }
-            });
+        col.fill(LIST_MIN_H, move |pc, rect, ctx| {
+            let (list_box_x, list_box_y, list_box_w, list_box_h) = (rect.x, rect.y, rect.width, rect.height);
+            list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+            list.update_bounds(filtered.len(), list_box_y, list_box_h);
+            list.push_prims(pc);
+            let item_h = list.item_height;
 
-            if state.creating || state.editing.is_some() {
-                let item_w = sec_w - 2.0 * (stack.context.padding() + m);
-                let rx = stack.context.left;
-                let widget_h = cce_ui::layout::spinbox_height();
+            pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                for (idx, timer) in filtered.iter().enumerate() {
+                    if let Some(draw_y) = list.get_item_draw_y(idx, 4.0) {
+                        let is_small = sec_w < 350.0;
+                        // A narrow row's buttons are cce-icons glyphs (pencil,
+                        // play, stop, circle) — but only when the icon set is
+                        // THERE: without it they fall back to words, and a word
+                        // needs the wide button. `upload_icon` caches per
+                        // (name, px), so asking every row is one hash lookup.
+                        let compact = is_small && cce_ui::upload_icon("play", 32).is_some();
+                        // Glyph buttons are square at the control height.
+                        let btn_h = cce_ui::layout::button_height();
+                        let run_w = if compact { btn_h } else { 76.0 };
+                        let en_w = if compact { btn_h } else { 66.0 };
+                        let edit_w = if compact { btn_h } else { 50.0 };
+                        let btn_gap = if is_small { 4.0 } else { 6.0 };
+                        // TODO(style): the row's button run, dot and text
+                        // column below are this list row's own layout.
+                        let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
 
-                if let Some(base) = &state.editing {
-                    stack.context.text(&format!("Editing {}.timer \u{2014} command and schedule rewrite in place.", base), 12.0, 0.0, 11.0, TEXT_DIM);
-                } else {
-                    stack.context.text("New user timer \u{2014} runs the command on the schedule.", 12.0, 0.0, 11.0, TEXT_DIM);
-                }
+                        let en_x = right_edge - en_w;
+                        let run_x = en_x - btn_gap - run_w;
+                        let edit_x = run_x - btn_gap - edit_w;
 
-                if state.creating {
-                    state.name_box.set_row_rect(rx + m, item_w);
-                    stack.add_widget(&mut state.name_box, item_w, widget_h, ctx);
-                }
-                state.command_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.command_box, item_w, widget_h, ctx);
-                state.schedule_box.set_row_rect(rx + m, item_w);
-                stack.add_widget(&mut state.schedule_box, item_w, widget_h, ctx);
+                        let btn_y = draw_y + (item_h - btn_h) / 2.0;
 
-                stack.context.spacing(4.0);
-                let save_label = if state.editing.is_some() { "Save" } else { "Create" };
-                stack.add_row(3, cce_ui::layout::plate_gap(), tab_h, |c, i, x, w| {
-                    match i {
-                        0 => c.button(save_label, x, c.ay(), w, tab_h,
-                            [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], [0.90, 0.90, 0.95, 1.0],
-                            crate::app::AppAction::Timers(TimersMessage::CreateSave)),
-                        1 => c.button("Cancel", x, c.ay(), w, tab_h,
-                            [0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], [0.90, 0.90, 0.95, 1.0],
-                            crate::app::AppAction::Timers(TimersMessage::CreateCancel)),
-                        _ => {}
-                    }
-                });
-            }
+                        // Title + schedule subtitle (truncated to the space before the buttons).
+                        let text_left_edge = if timer.editable { edit_x } else { run_x };
+                        let text_max_w = (text_left_edge - 8.0) - (list_box_x + 32.0);
+                        let max_chars = ((text_max_w / 6.0) as usize).max(10);
+                        let subtitle_full = schedule_line(timer, now);
+                        let subtitle = if subtitle_full.len() > max_chars {
+                            format!("{}...", &subtitle_full[..subtitle_full.char_indices().take(max_chars.saturating_sub(3)).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)])
+                        } else {
+                            subtitle_full
+                        };
 
-            if let Some(ref msg) = state.status_msg {
-                stack.context.text(msg, 12.0, 0.0, 12.0, [0.56, 0.83, 0.56, 1.0]);
-            }
+                        let item_btn = &mut items[idx];
+                        item_btn.title = timer.unit.clone();
+                        item_btn.subtitle = Some(subtitle);
+                        render_widget(pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
 
-            stack.context.spacing(cce_ui::layout::plate_gap());
+                        let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
+                        let mut dot = Owned::new(StatusDot::new(dot_state));
+                        render_widget(pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
 
-            // Scroll box list, filling the page like the services list, and
-            // across the section's content box like it (the box the section
-            // clips to).
-            let list_box_x = sec.content_left();
-            let list_box_y = sec.ay();
-            let list_box_w = sec.content_width();
-            let list_box_h = ((cy + ch) - m - list_box_y).max(120.0);
+                        let active_txt = [0.90, 0.90, 0.95, 1.0];
 
-            let now = now_usec();
-            let filtered: Vec<&TimerInfo> = state.timers.iter()
-                .filter(|t| t.is_system == (state.active_tab == TimerTab::System))
-                .collect();
-
-            state.list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-            state.list.update_bounds(filtered.len(), list_box_y, list_box_h);
-            state.list.push_prims(sec.pc);
-
-            let item_h = state.list.item_height;
-
-            if state.items.len() != filtered.len() {
-                state.items.clear();
-                for _ in 0..filtered.len() {
-                    state.items.push(Owned::new(InteractiveListItem::new("")));
-                }
-            }
-
-            sec.pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
-            for (idx, timer) in filtered.iter().enumerate() {
-                if let Some(draw_y) = state.list.get_item_draw_y(idx, 4.0) {
-                    let is_small = sec_w < 350.0;
-                    // A narrow row's buttons are cce-icons glyphs (pencil,
-                    // play, stop, circle) — but only when the icon set is
-                    // THERE: without it they fall back to words, and a word
-                    // needs the wide button. `upload_icon` caches per
-                    // (name, px), so asking every row is one hash lookup.
-                    let compact = is_small && cce_ui::upload_icon("play", 32).is_some();
-                    // Glyph buttons are square at the control height.
-                    let btn_h = cce_ui::layout::button_height();
-                    let run_w = if compact { btn_h } else { 76.0 };
-                    let en_w = if compact { btn_h } else { 66.0 };
-                    let edit_w = if compact { btn_h } else { 50.0 };
-                    let btn_gap = if is_small { 4.0 } else { 6.0 };
-                    // TODO(style): the row's button run, dot and text
-                    // column below are this list row's own layout.
-                    let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
-
-                    let en_x = right_edge - en_w;
-                    let run_x = en_x - btn_gap - run_w;
-                    let edit_x = run_x - btn_gap - edit_w;
-
-                    let btn_y = draw_y + (item_h - btn_h) / 2.0;
-
-                    // Title + schedule subtitle (truncated to the space before the buttons).
-                    let text_left_edge = if timer.editable { edit_x } else { run_x };
-                    let text_max_w = (text_left_edge - 8.0) - (list_box_x + 32.0);
-                    let max_chars = ((text_max_w / 6.0) as usize).max(10);
-                    let subtitle_full = schedule_line(timer, now);
-                    let subtitle = if subtitle_full.len() > max_chars {
-                        format!("{}...", &subtitle_full[..subtitle_full.char_indices().take(max_chars.saturating_sub(3)).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)])
-                    } else {
-                        subtitle_full
-                    };
-
-                    let item_btn = &mut state.items[idx];
-                    item_btn.title = timer.unit.clone();
-                    item_btn.subtitle = Some(subtitle);
-                    render_widget(sec.pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
-
-                    let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
-                    let mut dot = Owned::new(StatusDot::new(dot_state));
-                    render_widget(sec.pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
-
-                    let active_txt = [0.90, 0.90, 0.95, 1.0];
-
-                    // Edit: only for user units living in ~/.config/systemd/user.
-                    if timer.editable {
-                        // `button_glyph` below: the glyph when compact,
-                        // else (or with no icon set) the word.
-                        button_glyph(
-                            sec.pc,
-                            compact,
-                            "pencil",
-                            "Edit",
-                            edit_x,
-                            btn_y,
-                            edit_w,
-                            btn_h,
-                            [0.15, 0.15, 0.20, 1.0],
-                            [0.22, 0.22, 0.28, 1.0],
-                            active_txt,
-                            crate::app::AppAction::Timers(TimersMessage::EditStart(timer.unit.clone())),
-                        );
-                    }
-
-                    // Run Now: start the activated service immediately.
-                    button_glyph(
-                        sec.pc,
-                        compact,
-                        "play",
-                        if is_small { "Run" } else { "Run Now" },
-                        run_x,
-                        btn_y,
-                        run_w,
-                        btn_h,
-                        [0.16, 0.35, 0.18, 0.4],
-                        [0.22, 0.45, 0.25, 0.6],
-                        active_txt,
-                        crate::app::AppAction::Timers(TimersMessage::RunNow(timer.activates.clone(), timer.is_system)),
-                    );
-
-                    // Enable/Disable the timer unit; static units have no toggle.
-                    match timer.file_state.as_str() {
-                        "enabled" | "enabled-runtime" => {
+                        // Edit: only for user units living in ~/.config/systemd/user.
+                        if timer.editable {
+                            // `button_glyph` below: the glyph when compact,
+                            // else (or with no icon set) the word.
                             button_glyph(
-                                sec.pc,
+                                pc,
                                 compact,
-                                "stop",
-                                "Disable",
-                                en_x,
+                                "pencil",
+                                "Edit",
+                                edit_x,
                                 btn_y,
-                                en_w,
-                                btn_h,
-                                [0.25, 0.14, 0.14, 1.0],
-                                [0.40, 0.20, 0.20, 1.0],
-                                [0.95, 0.55, 0.55, 1.0],
-                                crate::app::AppAction::Timers(TimersMessage::Disable(timer.unit.clone(), timer.is_system)),
-                            );
-                        }
-                        "disabled" => {
-                            // `circle`, the filled dot the narrow row
-                            // always used: `play` is Run Now's beside it.
-                            button_glyph(
-                                sec.pc,
-                                compact,
-                                "circle",
-                                "Enable",
-                                en_x,
-                                btn_y,
-                                en_w,
+                                edit_w,
                                 btn_h,
                                 [0.15, 0.15, 0.20, 1.0],
                                 [0.22, 0.22, 0.28, 1.0],
                                 active_txt,
-                                crate::app::AppAction::Timers(TimersMessage::Enable(timer.unit.clone(), timer.is_system)),
+                                crate::app::AppAction::Timers(TimersMessage::EditStart(timer.unit.clone())),
                             );
                         }
-                        _ => {
-                            sec.pc.text("static", en_x + 8.0, btn_y + (btn_h - 12.0) / 2.0, 11.0, TEXT_DIM);
+
+                        // Run Now: start the activated service immediately.
+                        button_glyph(
+                            pc,
+                            compact,
+                            "play",
+                            if is_small { "Run" } else { "Run Now" },
+                            run_x,
+                            btn_y,
+                            run_w,
+                            btn_h,
+                            [0.16, 0.35, 0.18, 0.4],
+                            [0.22, 0.45, 0.25, 0.6],
+                            active_txt,
+                            crate::app::AppAction::Timers(TimersMessage::RunNow(timer.activates.clone(), timer.is_system)),
+                        );
+
+                        // Enable/Disable the timer unit; static units have no toggle.
+                        match timer.file_state.as_str() {
+                            "enabled" | "enabled-runtime" => {
+                                button_glyph(
+                                    pc,
+                                    compact,
+                                    "stop",
+                                    "Disable",
+                                    en_x,
+                                    btn_y,
+                                    en_w,
+                                    btn_h,
+                                    [0.25, 0.14, 0.14, 1.0],
+                                    [0.40, 0.20, 0.20, 1.0],
+                                    [0.95, 0.55, 0.55, 1.0],
+                                    crate::app::AppAction::Timers(TimersMessage::Disable(timer.unit.clone(), timer.is_system)),
+                                );
+                            }
+                            "disabled" => {
+                                // `circle`, the filled dot the narrow row
+                                // always used: `play` is Run Now's beside it.
+                                button_glyph(
+                                    pc,
+                                    compact,
+                                    "circle",
+                                    "Enable",
+                                    en_x,
+                                    btn_y,
+                                    en_w,
+                                    btn_h,
+                                    [0.15, 0.15, 0.20, 1.0],
+                                    [0.22, 0.22, 0.28, 1.0],
+                                    active_txt,
+                                    crate::app::AppAction::Timers(TimersMessage::Enable(timer.unit.clone(), timer.is_system)),
+                                );
+                            }
+                            _ => {
+                                pc.text("static", en_x + 8.0, btn_y + (btn_h - 12.0) / 2.0, 11.0, TEXT_DIM);
+                            }
                         }
                     }
                 }
-            }
-            sec.pc.pop_clip_rect();
+            pc.pop_clip_rect();
             // The scrollbar's fore copy, over the rows at the raise's fade.
-            state.list.push_scrollbar_fore(sec.pc);
+            list.push_scrollbar_fore(pc);
 
             if filtered.is_empty() {
-                sec.pc.text("No timers in this scope", list_box_x + 16.0, list_box_y + 16.0, 12.0, TEXT_DIM);
+                let inset = cce_ui::layout::plate_padding();
+                pc.text("No timers in this scope", list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
             }
-
-            // End the section so the well's bottom wall sits one margin below
-            // the list: finish() places the wall at content_y + padding +
-            // margin, so the list's own bottom margin and that one cancel.
-            sec.content_y = list_box_y + list_box_h - sec.padding();
-        }
+        });
+        sec.place(form, ctx);
     });
 
     final_pc
