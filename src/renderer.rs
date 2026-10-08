@@ -1,3 +1,4 @@
+use cce_ui::widget::WidgetHostExt;
 use crate::{SystemInterface, AppWidget, make_text_buffer_with_font};
 use cce_settings::app::{ControlCarve, PageContent};
 use cce_settings::pages::Page;

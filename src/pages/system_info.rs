@@ -1,7 +1,7 @@
 use crate::app::{AppAction, PageContent, SectionContextExt};
 use cce_ui::widget::Owned;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
-use cce_ui::widget::{Label, WidgetHost, Button};
+use cce_ui::widget::{Label, Button, WidgetHostExt};
 
 
 #[derive(Debug, Clone)]
