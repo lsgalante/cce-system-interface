@@ -1,7 +1,8 @@
 use crate::app::{form_button, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, render_widget, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone)]
@@ -135,26 +136,24 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         // "sta". `upload_icon` caches per (name, px), so asking
                         // every row costs one hash lookup.
                         let icons_ok = cce_ui::upload_icon("play", 32).is_some();
-                        let is_small = sec_w < 350.0;
                         let btn_h = cce_ui::layout::button_height();
-                        let (btn_w, r_btn_w) = if icons_ok { (btn_h, btn_h) } else { (46.0, 54.0) };
-                        let btn_gap = if is_small { 4.0 } else { 6.0 };
-
-                        // TODO(style): the row's control run and text column
-                        // below are this list row's own layout.
-                        let toggle_x = list_box_x + 10.0;
-                        let restart_x = toggle_x + btn_w + btn_gap;
-                        // The row's text starts after the controls and ends the
-                        // controls' inset short of the right wall: no gutter for
-                        // the scrollbar, which rides the list's centre line.
-                        let item_x = restart_x + r_btn_w + 10.0;
-                        let item_w = (list_box_x + list_box_w - 10.0) - item_x;
-
-                        let btn_y = draw_y + (item_h - btn_h) / 2.0;
+                        // Without the icon set the controls are word buttons, as wide as
+                        // their words.
+                        let (btn_w, r_btn_w) = if icons_ok {
+                            (btn_h, btn_h)
+                        } else {
+                            (crate::app::button_need("Start").max(crate::app::button_need("Stop")), crate::app::button_need("Restart"))
+                        };
+                        // The controls, then the name and description to the row's end
+                        // (no gutter for the scrollbar, which rides the list's centre line).
+                        let row = Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h };
+                        let cells = lay_row(row, &[Cell::fixed(btn_w, btn_h), Cell::fixed(r_btn_w, btn_h), Cell::grow(item_h)]);
+                        let (toggle_x, restart_x, btn_y) = (cells[0].x, cells[1].x, cells[0].y);
+                        let (item_x, item_w) = (cells[2].x, cells[2].width);
 
                         // Service description, truncated to the room the row's text
-                        // column actually has (the item insets its labels by 8px).
-                        let text_max_w = item_w - 16.0;
+                        // column actually has (the item insets its labels from its walls).
+                        let text_max_w = item_w - 2.0 * cce_ui::layout::CONTROL_TEXT_INSET;
                         let max_chars = ((text_max_w / 6.0) as usize).max(10);
                         // `failed` was the status dot's third state and has nowhere
                         // else to show: a failed unit offers the same play button a

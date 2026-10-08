@@ -5,7 +5,8 @@
 use crate::app::{button_need, form_button, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, render_widget, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +85,8 @@ pub enum TimersMessage {
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 /// The least room the list keeps on a short window.
 const LIST_MIN_H: f32 = 120.0;
+/// A row's status dot: a small LED, not a control.
+const DOT: f32 = 10.0;
 
 /// "46min" / "3h" / "5d 3h" — coarse two-unit humanization.
 fn humanize(secs: u64) -> String {
@@ -501,23 +504,31 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                         let compact = is_small && cce_ui::upload_icon("play", 32).is_some();
                         // Glyph buttons are square at the control height.
                         let btn_h = cce_ui::layout::button_height();
-                        let run_w = if compact { btn_h } else { 76.0 };
-                        let en_w = if compact { btn_h } else { 66.0 };
-                        let edit_w = if compact { btn_h } else { 50.0 };
-                        let btn_gap = if is_small { 4.0 } else { 6.0 };
-                        // TODO(style): the row's button run, dot and text
-                        // column below are this list row's own layout.
-                        let right_edge = list_box_x + list_box_w - 24.0 - 8.0;
+                        // Word buttons are as wide as their words.
+                        let run_label = if is_small { "Run" } else { "Run Now" };
+                        let word_w = |words: &[&str]| words.iter().map(|w| crate::app::button_need(w)).fold(0.0, f32::max);
+                        let run_w = if compact { btn_h } else { word_w(&[run_label]) };
+                        let en_w = if compact { btn_h } else { word_w(&["Disable", "Enable", "static"]) };
+                        let edit_w = if compact { btn_h } else { word_w(&["Edit"]) };
 
-                        let en_x = right_edge - en_w;
-                        let run_x = en_x - btn_gap - run_w;
-                        let edit_x = run_x - btn_gap - edit_w;
+                        // The status dot, the name and schedule, then the buttons at the
+                        // row's end (Edit only for an editable unit).
+                        let row = Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h };
+                        let mut layout = vec![Cell::fixed(DOT, DOT), Cell::grow(item_h)];
+                        if timer.editable {
+                            layout.push(Cell::fixed(edit_w, btn_h));
+                        }
+                        layout.push(Cell::fixed(run_w, btn_h));
+                        layout.push(Cell::fixed(en_w, btn_h));
+                        let cells = lay_row(row, &layout);
+                        let (dot_rect, item_rect) = (cells[0], cells[1]);
+                        let en_x = cells[cells.len() - 1].x;
+                        let run_x = cells[cells.len() - 2].x;
+                        let edit_x = if timer.editable { cells[2].x } else { run_x };
+                        let btn_y = cells[cells.len() - 1].y;
 
-                        let btn_y = draw_y + (item_h - btn_h) / 2.0;
-
-                        // Title + schedule subtitle (truncated to the space before the buttons).
-                        let text_left_edge = if timer.editable { edit_x } else { run_x };
-                        let text_max_w = (text_left_edge - 8.0) - (list_box_x + 32.0);
+                        // Title + schedule subtitle, truncated to the item's text room.
+                        let text_max_w = item_rect.width - 2.0 * cce_ui::layout::CONTROL_TEXT_INSET;
                         let max_chars = ((text_max_w / 6.0) as usize).max(10);
                         let subtitle_full = schedule_line(timer, now);
                         let subtitle = if subtitle_full.len() > max_chars {
@@ -529,11 +540,14 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                         let item_btn = &mut items[idx];
                         item_btn.title = timer.unit.clone();
                         item_btn.subtitle = Some(subtitle);
-                        render_widget(pc, item_btn, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                        // Cut at its cell, so a long schedule stops short of the buttons.
+                        pc.push_clip_rect(item_rect.x, item_rect.y, item_rect.width, item_rect.height);
+                        render_widget(pc, item_btn, item_rect.x, item_rect.y, item_rect.width, item_rect.height, ctx);
+                        pc.pop_clip_rect();
 
                         let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
                         let mut dot = Owned::new(StatusDot::new(dot_state));
-                        render_widget(pc, &mut dot, list_box_x + 10.0, draw_y + (item_h - 10.0) / 2.0, 10.0, 10.0, ctx);
+                        render_widget(pc, &mut dot, dot_rect.x, dot_rect.y, dot_rect.width, dot_rect.height, ctx);
 
                         let active_txt = [0.90, 0.90, 0.95, 1.0];
 
@@ -610,7 +624,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                                 );
                             }
                             _ => {
-                                pc.text("static", en_x + 8.0, btn_y + (btn_h - 12.0) / 2.0, 11.0, TEXT_DIM);
+                                pc.text("static", en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, 11.0, None), 11.0, TEXT_DIM);
                             }
                         }
                     }

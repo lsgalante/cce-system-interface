@@ -1,7 +1,8 @@
 use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{render_widget, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, render_widget, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
 #[derive(Debug, Clone, Default)]
@@ -872,7 +873,8 @@ pub fn view(
                             } else {
                                 Some(&pkg.name) == selected.as_ref()
                             };
-                            render_widget(pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                            let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
+                            render_widget(pc, item, cell.x, cell.y, cell.width, cell.height, ctx);
                         }
                     }
                     pc.pop_clip_rect();
@@ -897,7 +899,8 @@ pub fn view(
                             item.title = pkg.name.clone();
                             item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
                             item.selected = Some(&pkg.name) == selected.as_ref();
-                            render_widget(pc, item, list_box_x + 24.0, draw_y, list_box_w - 44.0, item_h, ctx);
+                            let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
+                            render_widget(pc, item, cell.x, cell.y, cell.width, cell.height, ctx);
                         }
                     }
                     pc.pop_clip_rect();

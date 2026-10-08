@@ -1,7 +1,8 @@
 use crate::app::{AppAction, PageContent};
 use cce_ui::widget::Owned;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{Adapted, Toggle};
 
 #[derive(Debug, Clone)]
@@ -172,8 +173,6 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
     // ── WiFi (label-less well) ──
     builder.add_section_spanned(&mut final_pc, "", 1, root_focused, |sec| {
         let sec_w = sec.cw;
-        // The list's own inset of its rows inside its frame.
-        let margin = sec.padding().max(12.0);
         let mut form = sec.form();
         let mut col = form.column();
 
@@ -219,7 +218,8 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                     list.update_bounds(available.len(), r.y, r.height);
                     list.push_prims(pc);
 
-                    let btn_w = r.width - 2.0 * margin;
+                    let row_h = list.item_height;
+                    let btn_w = r.width - 2.0 * cce_ui::layout::list_gap();
                     let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
 
                     pc.push_clip_rect(r.x, r.y, r.width, r.height);
@@ -232,8 +232,8 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                             };
                             let label = format!("{}  ({}%)", ssid_truncated, net.signal);
                             let active = net.in_use;
-                            let row_x = r.x + margin;
-                            let row_h = 26.0;
+                            let cell = lay_row(Rect { x: r.x, y: draw_y, width: r.width, height: row_h }, &[Cell::grow(row_h)])[0];
+                            let row_x = cell.x;
                             pc.button(&label, row_x, draw_y, btn_w, row_h,
                                 if active { ACT_BTN } else { NET_BTN }, BTN_HOVER,
                                 if active { ACCENT } else { TEXT_FG },

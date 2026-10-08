@@ -1,6 +1,7 @@
 use crate::app::{form_button, form_divider, form_pairs, AppAction, PageContent};
 use cce_ui::widget::Owned;
-use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::scene::layout::Rect;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::widget::TextBox;
 
@@ -616,8 +617,8 @@ const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 const TEXT_WARN: [f32; 4] = [0.90, 0.75, 0.40, 1.0];
 
 /// Gap between account rows. style: deliberate — list rows pack tighter
-/// than the pane gap, like every list on this app's pages (the inset from
-/// the region's edges is the well margin, `section_margin()`).
+/// than the pane gap, like every list on this app's pages (what stands
+/// inside a row is `list_gap()` apart and in from the region's edges).
 const LIST_GAP: f32 = 4.0;
 /// Rows shown before the region starts scrolling. The list sits ABOVE the
 /// actions and the edit form, so it cannot fill the page the way services'
@@ -662,8 +663,6 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             let item_h = state.list.item_height;
             let rows_shown = state.accounts.len().min(LIST_MAX_ROWS);
             let list_h = rows_shown as f32 * (item_h + LIST_GAP) + 8.0;
-            // The list's own inset of its rows inside its frame.
-            let m = crate::app::section_margin();
             let list = &mut state.list;
             let accounts = &state.accounts;
             let keyring = &state.keyring;
@@ -674,7 +673,6 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 list.set_rect(list_x, list_y, list_w, list_h);
                 list.update_bounds(accounts.len(), list_y, list_h);
                 list.push_prims(pc);
-                let btn_w = list_w - 2.0 * m;
                 pc.push_clip_rect(list_x, list_y, list_w, list_h);
                 for (idx, acc) in accounts.iter().enumerate() {
                     // Same predicate the region virtualizes on — a row scrolled out
@@ -690,12 +688,13 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     } else {
                         ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
                     };
+                    let cell = lay_row(Rect { x: list_x, y: draw_y, width: list_w, height: item_h }, &[Cell::grow(item_h)])[0];
                     pc.button_left(
                         &acc.email,
-                        list_x + m,
-                        draw_y,
-                        btn_w,
-                        item_h,
+                        cell.x,
+                        cell.y,
+                        cell.width,
+                        cell.height,
                         bg,
                         hover,
                         TEXT_BTN,
@@ -717,12 +716,14 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                         let size = 12.0;
                         let ty = crate::app::label_y_in(draw_y, item_h, size, Some(&font));
                         let g = 11.0;
-                        let mut mx = list_x + m + cce_ui::layout::CONTROL_TEXT_INSET
+                        // A list gap before each mark; a glyph and its word, half that.
+                        let gap = cce_ui::layout::list_gap();
+                        let mut mx = cell.x + cce_ui::layout::CONTROL_TEXT_INSET
                             + crate::app::text_width(&acc.email, size, Some(&font));
                         for (icon, word, color) in marks {
-                            mx += 18.0;
+                            mx += gap;
                             if pc.icon(icon, mx, draw_y + (item_h - g) / 2.0, g, g, *color) {
-                                mx += g + 4.0;
+                                mx += g + gap / 2.0;
                             }
                             pc.text_with_font(word, mx, ty, size, TEXT_BTN, &font);
                             mx += crate::app::text_width(word, size, Some(&font));

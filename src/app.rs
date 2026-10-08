@@ -490,18 +490,6 @@ impl RenderTarget for PageContent {
 }
 
 
-/// The inset from a section well's rim to the app's own content, on top of
-/// `section_padding()`. cce-ui's `SectionContext` lays its title tab, its
-/// grid and a VStack's widgets out `2 * padding + DEFAULT_MARGIN_X` in, and
-/// `finish()` lands the well's wall `padding + DEFAULT_MARGIN_X` past the
-/// content — a rect the app places inside a well has to match that number or
-/// sit off the toolkit's own geometry. A well is this app's pane, so this is
-/// where the pane rung belongs; TODO(style): become `plate_padding()` once
-/// SectionContext reads the rung instead of its literal.
-pub fn section_margin() -> f32 {
-    cce_ui::layout::SectionContext::<PageContent>::DEFAULT_MARGIN_X
-}
-
 /// Width a label needs on a button plate. Feeds [`form_button_fit`], so a row of
 /// buttons is divided by what is written on them rather than into equal
 /// slices — "Reboot" and "Hibernate" are not the same size and a row that
