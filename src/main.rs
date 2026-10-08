@@ -170,7 +170,6 @@ struct SystemInterface {
     popover_icon_images: Vec<PlacedIcon>,
     /// Glyphs of the window chrome (the page dropdown's arrow), window
     /// coordinates, drawn over the chrome outside the page clip.
-    window_icon_images: Vec<PlacedIcon>,
     // root plate container + StatusBar DISSOLVED (Phase 6s): the window plate and the status
     // bar are emitted as tuples in rebuild_layout.
     sans_serif_family: String,
@@ -312,7 +311,6 @@ impl cce_ui::engine::Application for SystemInterface {
             page_control_relief_marks: Vec::new(),
             page_icon_images: Vec::new(),
             popover_icon_images: Vec::new(),
-            window_icon_images: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -602,8 +600,11 @@ impl cce_ui::engine::Application for SystemInterface {
             });
         }
 
-        for icon in &self.window_icon_images {
-            draw_placed_icon(&mut pc, icon);
+        // The window chrome, as it paints itself: the page dropdown in the status bar
+        // and, while open, the search box in its band.
+        cce_ui::scene::painter::paint_root_into(&self.ui_context, &*self.page_dropdown, &mut pc);
+        if self.search_open {
+            cce_ui::scene::painter::paint_root_into(&self.ui_context, &*self.search_box, &mut pc);
         }
 
         // The page scrollbar's fore copy: over the page content at the

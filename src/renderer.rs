@@ -4,90 +4,6 @@ use cce_settings::app::{ControlCarve, PageContent};
 use cce_settings::pages::Page;
 use cce_ui::widget::WidgetHost;
 
-type RectTuple = ([f32; 4], f32, f32, f32, f32, f32, (bool, bool, bool, bool));
-type TextTuple = (String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>);
-
-/// One child's contribution to the dissolved root's window assembly, replicating the
-/// legacy `render_widget(root plate container)` aggregate exactly: plain quads are skipped
-/// when they are a rounded child's own bg (the rounded pass carries it), clipped to
-/// the window, and corner-resolved against the root's rounded rect (a quad flush with
-/// a window corner picks up the plate radius there); rounded quads are clipped;
-/// text bounds are clamped to the window (unbounded labels become window-bounded).
-fn collect_window_child(
-    w: &dyn WidgetHost,
-    ctx: &cce_ui::context::UiContext,
-    win_w: f32,
-    win_h: f32,
-    plate_radius: f32,
-    plain: &mut Vec<RectTuple>,
-    rounded: &mut Vec<RectTuple>,
-    texts: &mut Vec<TextTuple>,
-) {
-    let (cx, cy, cw, ch) = w.rect();
-    let child_rounded = w.corner_style().1 != (false, false, false, false);
-    for (qx, qy, qw, qh, qc) in w.all_quads(ctx) {
-        if child_rounded && (qx - cx).abs() < 0.1 && (qy - cy).abs() < 0.1 && (qw - cw).abs() < 0.1 && (qh - ch).abs() < 0.1 {
-            continue;
-        }
-        let x0 = qx.max(0.0);
-        let y0 = qy.max(0.0);
-        let x1 = (qx + qw).min(win_w);
-        let y1 = (qy + qh).min(win_h);
-        if x1 <= x0 || y1 <= y0 {
-            continue;
-        }
-        let corners = (
-            x0 <= 1.5 && y0 <= 1.5,
-            x1 >= win_w - 1.5 && y0 <= 1.5,
-            x1 >= win_w - 1.5 && y1 >= win_h - 1.5,
-            x0 <= 1.5 && y1 >= win_h - 1.5,
-        );
-        if corners == (false, false, false, false) {
-            plain.push((qc, x0, y0, x1 - x0, y1 - y0, 0.0, (false, false, false, false)));
-        } else {
-            plain.push((qc, x0, y0, x1 - x0, y1 - y0, plate_radius, corners));
-        }
-    }
-    for (qx, qy, qw, qh, qr, qc, qcorners) in w.all_rounded_quads(ctx) {
-        let x0 = qx.max(0.0);
-        let y0 = qy.max(0.0);
-        let x1 = (qx + qw).min(win_w);
-        let y1 = (qy + qh).min(win_h);
-        if x1 <= x0 || y1 <= y0 {
-            continue;
-        }
-        rounded.push((qc, x0, y0, x1 - x0, y1 - y0, qr, qcorners));
-    }
-    // Text via the paint walk (not the legacy text_labels* getters): same labels, with the
-    // widget's content font and any container clip composed into the prim bounds; clamped
-    // to the window exactly as before.
-    let mut scratch = cce_ui::scene::paint::PaintCtx::new();
-    cce_ui::scene::painter::append_widget_text(ctx, w, &mut scratch);
-    for item in scratch.finish().items {
-        if let cce_ui::scene::paint::Prim::Text { text, x, y, font_size, color, font, bounds, .. } = item.prim {
-            let cb = match bounds {
-                Some(b) => {
-                    let bx0 = b[0].max(0.0);
-                    let by0 = b[1].max(0.0);
-                    let bx1 = b[2].min(win_w);
-                    let by1 = b[3].min(win_h);
-                    if bx1 <= bx0 || by1 <= by0 {
-                        continue;
-                    }
-                    Some([bx0, by0, bx1, by1])
-                }
-                None => Some([0.0, 0.0, win_w, win_h]),
-            };
-            let colorf = [
-                color[0] as f32 / 255.0,
-                color[1] as f32 / 255.0,
-                color[2] as f32 / 255.0,
-                1.0,
-            ];
-            texts.push((text, font_size, x, y, colorf, font, cb));
-        }
-    }
-}
 
 impl SystemInterface {
 
@@ -171,15 +87,8 @@ impl SystemInterface {
         // root plate container dissolved, hand it the plate frame for its concentric-corner cut.
         self.page_dropdown.set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
         cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
-        // The chrome is collected below through `all_quads` and the text walk,
-        // which carry no images — so the closed dropdown's `chevron-down`
-        // comes from this pass, which `render_widget` hands to
-        // `RenderTarget::icon`. Window coordinates: no scroll applies.
-        let window_icon_images: Vec<crate::PlacedIcon> = dummy_pc
-            .icons
-            .iter()
-            .map(|ic| crate::PlacedIcon { image: ic.image, x: ic.x, y: ic.y, w: ic.w, h: ic.h, alpha: ic.alpha, clip: ic.clip })
-            .collect();
+        // The dropdown is laid out by this pass and painted live in display_list
+        // (`paint_root_into`), chevron and all.
         let switcher_h = if self.search_open {
             logical_sh - self.header_height - 42.0 - self.status_height
         } else {
@@ -204,43 +113,11 @@ impl SystemInterface {
         }
         self.page_scroll_bar.update(self.scroll_y, self.content_h, switcher_h);
 
-        // Assemble the window exactly as the legacy `render_widget(root plate container)`
-        // aggregate did: every child plain quad (clipped to the window, with the root's
-        // corner resolution against its rounded rect), then the translucent window
-        // plate, then every child rounded quad, then the root-clamped text — in the old
-        // child order [switcher, statusbar, dropdown, search box]. The StatusBar widget
-        // is dissolved outright: its theming was root plate container-parent-coupled (statusbar
-        // theme color falling back to STATUS_BG, bottom corners rounded at the root's
-        // radius, statusbar text color/font), replicated here as tuples.
-        let plate_radius = 12.0f32;
-        let mut window_pc = PageContent::new();
-        {
-            let mut plain: Vec<RectTuple> = Vec::new();
-            let mut rounded: Vec<RectTuple> = Vec::new();
-            let mut wtexts: Vec<TextTuple> = Vec::new();
-
-            // The page scrollbar is NOT collected here: baked into the rebuilt
-            // layout, its thumb froze for every wheel tick the scroll fast path
-            // absorbed (the fast path shifts cached geometry without a rebuild,
-            // so the bar only moved once scrolling stopped and something else
-            // rebuilt). display_list emits it fresh each frame instead — under
-            // the window plate while sunk, over the page content while raised.
-
-            // The status bar has no background of its own anymore: the beveled window
-            // plate shows through and display_list carves its recess (data-editor's
-            // with_recess idiom).
-
-            collect_window_child(&self.page_dropdown, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
-            if self.search_open {
-                collect_window_child(&self.search_box, &self.ui_context, logical_sw, logical_sh, plate_radius, &mut plain, &mut rounded, &mut wtexts);
-            }
-
-            // The window plate itself is emitted by display_list as a beveled
-            // pc.plate() prim, under everything collected here.
-            window_pc.rects.extend(plain);
-            window_pc.rects.extend(rounded);
-            window_pc.texts.extend(wtexts);
-        }
+        // The window chrome — the page dropdown and, while open, the search box — is
+        // painted live in display_list, each as it paints itself (`paint_root_into`).
+        // Until 2026-10-08 it was flattened here through the legacy tuple views (plain
+        // quads, rounded quads, then the text walk) into the cached frame, which drew
+        // the dropdown without its relief and the search box twice.
 
         let mut search_pc = PageContent::new();
         if self.search_open {
@@ -266,8 +143,10 @@ impl SystemInterface {
             // The toolkit's textbox height, centred in the 42px band.
             let inset = cce_ui::layout::root_plate_inset();
             let box_h = cce_ui::layout::textbox_height();
+            // Laid out here; painted live in display_list.
+            let mut layout_only = PageContent::new();
             cce_ui::layout::render_widget(
-                &mut search_pc,
+                &mut layout_only,
                 &mut self.search_box,
                 self.sidebar_width + inset,
                 sh - 42.0 + (42.0 - box_h) / 2.0,
@@ -278,25 +157,6 @@ impl SystemInterface {
         }
 
         // CSD Titlebar removed
-
-        for pc_part in &[window_pc] {
-            for (c, x, y, w, h, r, corners) in pc_part.rects.iter() {
-                let wx = *x * s;
-                let wy = *y * s;
-                let ww = *w * s;
-                let wh = *h * s;
-                widgets.push(AppWidget {
-                    x: wx, y: wy, w: ww, h: wh,
-                    color: *c, hover_color: *c,
-                    hovering: check_hover(wx, wy, ww, wh),
-                    radius: *r * s,
-                    corners: *corners,
-                });
-            }
-            for (t, size, x, y, tc, font_opt, bounds) in pc_part.texts.iter() {
-                texts.push((t.clone(), *size, *x, *y, *tc, font_opt.clone(), *bounds));
-            }
-        }
 
         self.scrollable_widgets_start_idx = widgets.len();
         self.scrollable_text_items_start_idx = texts.len();
@@ -788,7 +648,6 @@ impl SystemInterface {
         self.texts = texts;
         self.page_buttons = page_buttons;
         self.page_icon_images = page_icon_images;
-        self.window_icon_images = window_icon_images;
 
         // The id-rooted router (`propagate_event(event, WidgetId)`) resolves roots
         // through the registry, and `clear_hierarchy` above wiped it. The view pass
