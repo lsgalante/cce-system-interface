@@ -216,7 +216,9 @@ fn emit_control_carve(pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCar
 impl cce_ui::engine::Application for SystemInterface {
     type Message = AppAction;
 
-    fn new(_qh: &wayland_client::QueueHandle<cce_ui::engine::EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
+    fn create(sender: cce_ui::engine::AppSender<Self::Message>) -> Self {
+        // The app keeps calloop's sender; `AppSender` converts into it.
+        let sender: calloop::channel::Sender<Self::Message> = sender.into();
         cce_ui::scale::set_scale_factor(1.0);
         let app = AppState::default();
 
