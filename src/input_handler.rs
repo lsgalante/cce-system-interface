@@ -190,7 +190,7 @@ impl SystemInterface {
             if self.page_dropdown.take_change() {
                 let idx = self.page_dropdown.selected;
                 if idx < Page::ALL.len() {
-                    cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
+                    self.ui_context.clear_focus();
                     self.focused_section = None;
                     let new_page = Page::ALL[idx];
                     self.app.current_page = new_page;
@@ -247,9 +247,9 @@ impl SystemInterface {
 
         self.propagate_widget_changes(&mut actions);
 
-        // Single-slot focus (Phase 6w): if a widget click took the global focus, the
-        // section-level highlight yields — exactly as when both lived in FOCUSED_WIDGET.
-        if state == cce_ui::widget::ElementState::Pressed && cce_ui::widget::focus::has_focus() {
+        // Single-slot focus (Phase 6w): if a widget click took the window's focus, the
+        // section-level highlight yields.
+        if state == cce_ui::widget::ElementState::Pressed && self.ui_context.has_focus() {
             self.focused_section = None;
         }
 
@@ -541,7 +541,7 @@ impl SystemInterface {
                     let n = Page::ALL.len();
                     let cur = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
                     let idx = if next { (cur + 1) % n } else { (cur + n - 1) % n };
-                    cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
+                    self.ui_context.clear_focus();
                     self.focused_section = None;
                     self.app.current_page = Page::ALL[idx];
                     self.current_page_shared.send_replace(idx as u8);
@@ -563,18 +563,18 @@ impl SystemInterface {
             );
             if forward || backward || ascend || descend {
                 // SectionContainer dissolved (Phase 6w): section-level focus is the
-                // app-side index, widget-level focus stays in the global focus module,
+                // app-side index, widget-level focus is the window's (`UiContext`),
                 // and the two are single-slot (as when sections and widgets shared the
                 // one FOCUSED_WIDGET). Nav within a section walks the page's widget
                 // group where the container's child list used to be walked.
-                if cce_ui::widget::focus::has_focus() {
+                if self.ui_context.has_focus() {
                     // (`focus::navigate_focus` is gone — it walked an empty dummy context
                     // and always returned false here; the section machinery below is the
                     // real ctrl-nav.)
                     let groups = self.app.get_current_page_mut().section_widgets();
                     let focused_pos = groups.iter().enumerate().find_map(|(si, g)| {
                         g.iter()
-                            .position(|&id| cce_ui::widget::focus::is_focused_id(id))
+                            .position(|&id| self.ui_context.is_focused_id(id))
                             .map(|wi| (si, wi))
                     });
                     if let Some((si, wi)) = focused_pos {
@@ -588,15 +588,13 @@ impl SystemInterface {
                                 wi - 1
                             };
                             let next_id = group[next];
-                            cce_ui::widget::focus::set_focused_id(next_id, Some(&mut self.ui_context));
-                            if let Some(w) = self.ui_context.get_widget_mut(next_id) {
-                                w.focus();
-                            }
+                            // The context tells the widget (FocusIn), as the Tab walk does.
+                            self.ui_context.set_focused_id(next_id);
                             self.needs_rebuild = true;
                             return true;
                         }
                         if ascend {
-                            cce_ui::widget::focus::clear_focus(Some(&mut self.ui_context));
+                            self.ui_context.clear_focus();
                             self.focused_section = Some(si);
                             self.needs_rebuild = true;
                             return true;
@@ -619,10 +617,7 @@ impl SystemInterface {
                         }
                         if descend {
                             if let Some(&first) = groups[idx].first() {
-                                cce_ui::widget::focus::set_focused_id(first, Some(&mut self.ui_context));
-                                if let Some(w) = self.ui_context.get_widget_mut(first) {
-                                    w.focus();
-                                }
+                                self.ui_context.set_focused_id(first);
                                 self.focused_section = None;
                                 self.needs_rebuild = true;
                                 return true;
