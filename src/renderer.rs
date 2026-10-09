@@ -65,7 +65,7 @@ impl SystemInterface {
         }
 
         let page_idx = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-        self.page_dropdown.selected = page_idx;
+        self.ui_context[self.page_dropdown].selected = page_idx;
 
         // root plate container DISSOLVED (Phase 6s): top-level widgets stay parentless
         // (render_widget registers them); the window plate, the root aggregate's
@@ -75,7 +75,7 @@ impl SystemInterface {
         // Position sidebar and switcher below the titlebar
         let mut dummy_pc = PageContent::new();
         let dropdown_h = cce_ui::layout::dropdown_height();
-        let size = self.page_dropdown.measure(
+        let size = self.ui_context[self.page_dropdown].measure(
             cce_ui::widget::LayoutConstraints::new(0.0, 500.0, dropdown_h, dropdown_h),
             &self.ui_context,
         );
@@ -85,8 +85,8 @@ impl SystemInterface {
         let dropdown_y = logical_sh - self.status_height + dropdown_gap;
         // The dropdown sits flush against the window's rounded bottom-right corner; with the
         // root plate container dissolved, hand it the plate frame for its concentric-corner cut.
-        self.page_dropdown.set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
-        cce_ui::layout::render_widget(&mut dummy_pc, &mut self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
+        self.ui_context[self.page_dropdown].set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
+        cce_ui::layout::render_widget_h(&mut dummy_pc, self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
         // The dropdown is laid out by this pass and painted live in display_list
         // (`paint_root_into`), chevron and all.
         let switcher_h = if self.search_open {
@@ -102,16 +102,16 @@ impl SystemInterface {
         let sb_w = crate::scroll_bar::ScrollBar::width();
         // TODO(style): the bar's 4px vertical stand-off is the toolkit
         // track's own end inset, not a rung of the ladder.
-        self.page_scroll_bar.set_rect(
+        self.ui_context[self.page_scroll_bar].set_rect(
             lcx + (lcw - sb_w) * 0.5,
             self.header_height + 4.0,
             sb_w,
             switcher_h - 8.0,
         );
-        if self.page_scroll_bar.dragging {
-            self.scroll_y = self.page_scroll_bar.scroll_y;
+        if self.ui_context[self.page_scroll_bar].dragging {
+            self.scroll_y = self.ui_context[self.page_scroll_bar].scroll_y;
         }
-        self.page_scroll_bar.update(self.scroll_y, self.content_h, switcher_h);
+        self.ui_context[self.page_scroll_bar].update(self.scroll_y, self.content_h, switcher_h);
 
         // The window chrome — the page dropdown and, while open, the search box — is
         // painted live in display_list, each as it paints itself (`paint_root_into`).
@@ -145,9 +145,9 @@ impl SystemInterface {
             let box_h = cce_ui::layout::textbox_height();
             // Laid out here; painted live in display_list.
             let mut layout_only = PageContent::new();
-            cce_ui::layout::render_widget(
+            cce_ui::layout::render_widget_h(
                 &mut layout_only,
-                &mut self.search_box,
+                self.search_box,
                 self.sidebar_width + inset,
                 sh - 42.0 + (42.0 - box_h) / 2.0,
                 sw - self.sidebar_width - 2.0 * inset,
@@ -170,7 +170,7 @@ impl SystemInterface {
 
 
 
-        if self.search_open && !self.search_query.is_empty() && !self.page_scroll_bar.dragging {
+        if self.search_open && !self.search_query.is_empty() && !self.ui_context[self.page_scroll_bar].dragging {
             let query_lower = self.search_query.to_lowercase();
             let mut first_match_y = None;
             for (t, _, _, y, _, _, _) in &pc.texts {
@@ -216,13 +216,13 @@ impl SystemInterface {
             }
         }
 
-        if self.page_scroll_bar.dragging {
-            self.scroll_y = self.page_scroll_bar.scroll_y;
+        if self.ui_context[self.page_scroll_bar].dragging {
+            self.scroll_y = self.ui_context[self.page_scroll_bar].scroll_y;
         } else {
-            self.page_scroll_bar.scroll_y = self.scroll_y;
+            self.ui_context[self.page_scroll_bar].scroll_y = self.scroll_y;
         }
         self.content_h = max_y;
-        self.page_scroll_bar.update(self.scroll_y, max_y, lch);
+        self.ui_context[self.page_scroll_bar].update(self.scroll_y, max_y, lch);
 
         let scroll_offset_y = self.scroll_y;
 
@@ -350,7 +350,7 @@ impl SystemInterface {
             // The button's own idle and hover faces: the page's colours when
             // it passed them, else the toolkit's for the button's kind — a
             // list row's transparent-until-hover wash (`PageContent::list_row`).
-            let mut probe = (***btn).clone();
+            let mut probe = (**btn).clone();
             probe.set_hovered(false);
             let bg = cce_ui::widget::Paint::color(&probe);
             probe.set_hovered(true);
@@ -646,22 +646,14 @@ impl SystemInterface {
 
         self.widgets = widgets;
         self.texts = texts;
-        self.page_buttons = page_buttons;
+        // The dispatch copies are the context's: last frame's go back, this frame's go in.
+        for (h, _) in std::mem::take(&mut self.page_buttons) {
+            self.ui_context.remove(h);
+        }
+        let ctx = &mut self.ui_context;
+        self.page_buttons = page_buttons.into_iter().map(|(b, a)| (ctx.insert(b), a)).collect();
         self.page_icon_images = page_icon_images;
 
-        // The id-rooted router (`propagate_event(event, WidgetId)`) resolves roots
-        // through the registry, and `clear_hierarchy` above wiped it. The view pass
-        // re-registers page widgets through `render_widget`; the chrome dispatch roots
-        // never go through it, so re-register them here. The page buttons are
-        // per-rebuild clones — registration follows the fresh allocations.
-        {
-            self.ui_context.register_host(&mut self.search_box);
-            self.ui_context.register_host(&mut self.page_dropdown);
-            self.ui_context.register_host(&mut self.page_scroll_bar);
-            for (btn, _) in self.page_buttons.iter_mut() {
-                self.ui_context.register_host(btn);
-            }
-        }
         // A Tab step's focus, handed to the fresh clone at the same rect (the
         // page buttons above are per-rebuild allocations; see `focus_stepped`).
         if let Some((fx, fy, fw, fh)) = self.refocus_rect.take() {

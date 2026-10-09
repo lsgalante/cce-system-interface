@@ -11,7 +11,8 @@
 //! entries, and startcce exports as `$TERMINAL` for everything else.
 
 use crate::app::{AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use cce_ui::widget::Dropdown;
 use std::collections::HashMap;
@@ -61,7 +62,7 @@ pub struct CategoryEntry {
     /// Applied value per dropdown option (desktop id for MIME categories, a
     /// command for Terminal; None = the "not set" placeholder row).
     pub option_ids: Vec<Option<String>>,
-    pub dropdown: Owned<cce_ui::widget::Adapted<Dropdown>>,
+    pub dropdown: Handle<cce_ui::widget::Adapted<Dropdown>>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,8 +71,9 @@ pub struct DefaultAppsState {
     pub categories: Vec<CategoryEntry>,
 }
 
-impl Default for DefaultAppsState {
-    fn default() -> Self {
+impl DefaultAppsState {
+    /// The page's state, its dropdowns inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
         Self {
             loaded: false,
             categories: CATEGORIES
@@ -81,7 +83,7 @@ impl Default for DefaultAppsState {
                     kind,
                     info: CategoryInfo { candidates: Vec::new(), current: None },
                     option_ids: vec![None],
-                    dropdown: Owned::new(Dropdown::new(vec![NOT_SET.to_string()], 0).with_label(label)),
+                    dropdown: ctx.insert(Dropdown::new(vec![NOT_SET.to_string()], 0).with_label(label)),
                 })
                 .collect(),
         }
@@ -97,7 +99,7 @@ pub enum DefaultAppsMessage {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 
-fn rebuild_entry_options(entry: &mut CategoryEntry) {
+fn rebuild_entry_options(entry: &mut CategoryEntry, ctx: &mut UiContext) {
     let mut options = Vec::new();
     let mut ids = Vec::new();
     let current_idx = entry
@@ -119,8 +121,9 @@ fn rebuild_entry_options(entry: &mut CategoryEntry) {
         .as_ref()
         .and_then(|cur| ids.iter().position(|i| i.as_deref() == Some(cur)))
         .unwrap_or(0);
-    entry.dropdown.options = options;
-    entry.dropdown.selected = selected;
+    let dropdown = &mut ctx[entry.dropdown];
+    dropdown.options = options;
+    dropdown.selected = selected;
     entry.option_ids = ids;
 }
 
@@ -136,7 +139,7 @@ pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _r
             col.text("Scanning installed applications...", 12.0, TEXT_DIM);
         } else {
             for entry in state.categories.iter_mut() {
-                col.widget(&mut entry.dropdown, cce_ui::layout::dropdown_height());
+                col.widget_h(ctx, entry.dropdown, cce_ui::layout::dropdown_height());
             }
         }
         sec.place(form, ctx);
@@ -145,17 +148,17 @@ pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _r
     final_pc
 }
 
-pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage) {
+pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage, ctx: &mut UiContext) {
     match msg {
         DefaultAppsMessage::Refreshed(info) => {
             state.loaded = true;
             for (entry, cat) in state.categories.iter_mut().zip(info.0.into_iter()) {
                 // Leave an open dropdown alone — the next refresh normalizes it.
-                if entry.info == cat || entry.dropdown.open {
+                if entry.info == cat || ctx[entry.dropdown].open {
                     continue;
                 }
                 entry.info = cat;
-                rebuild_entry_options(entry);
+                rebuild_entry_options(entry, ctx);
             }
         }
         DefaultAppsMessage::Set(cat_idx, opt_idx) => {
@@ -194,7 +197,7 @@ pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage) {
                 CategoryKind::Terminal => set_default_terminal(&id),
             }
             entry.info.current = Some(id);
-            rebuild_entry_options(entry);
+            rebuild_entry_options(entry, ctx);
         }
     }
 }
@@ -447,10 +450,10 @@ impl crate::pages::AppPage for DefaultAppsState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
         for (i, entry) in self.categories.iter_mut().enumerate() {
-            if entry.dropdown.take_change() {
-                actions.push(AppAction::DefaultApps(DefaultAppsMessage::Set(i, entry.dropdown.selected)));
+            if ctx[entry.dropdown].take_change() {
+                actions.push(AppAction::DefaultApps(DefaultAppsMessage::Set(i, ctx[entry.dropdown].selected)));
             }
         }
     }
@@ -463,7 +466,8 @@ mod tests {
     #[test]
     fn section_widgets_mirror_load_gate() {
         use crate::pages::AppPage;
-        let mut st = DefaultAppsState::default();
+        let mut ui = UiContext::new();
+        let mut st = DefaultAppsState::new(&mut ui);
         // Still scanning: the dropdowns are not in the stack yet, so none of
         // them may be reported as a dispatch root.
         assert_eq!(st.section_widgets(), vec![Vec::new()]);
@@ -490,7 +494,8 @@ mod tests {
 
     #[test]
     fn rebuild_options_maps_current() {
-        let mut st = DefaultAppsState::default();
+        let mut ui = UiContext::new();
+        let mut st = DefaultAppsState::new(&mut ui);
         let e = &mut st.categories[0];
         e.info = CategoryInfo {
             candidates: vec![
@@ -499,16 +504,16 @@ mod tests {
             ],
             current: Some("b.desktop".into()),
         };
-        rebuild_entry_options(e);
-        assert_eq!(e.dropdown.options, vec!["Alpha".to_string(), "Beta".to_string()]);
-        assert_eq!(e.dropdown.selected, 1);
+        rebuild_entry_options(e, &mut ui);
+        assert_eq!(ui[e.dropdown].options, vec!["Alpha".to_string(), "Beta".to_string()]);
+        assert_eq!(ui[e.dropdown].selected, 1);
         assert_eq!(e.option_ids[1].as_deref(), Some("b.desktop"));
 
         // No current: placeholder row leads and is selected.
         e.info.current = None;
-        rebuild_entry_options(e);
-        assert_eq!(e.dropdown.options[0], NOT_SET);
-        assert_eq!(e.dropdown.selected, 0);
+        rebuild_entry_options(e, &mut ui);
+        assert_eq!(ui[e.dropdown].options[0], NOT_SET);
+        assert_eq!(ui[e.dropdown].selected, 0);
         assert!(e.option_ids[0].is_none());
     }
 }

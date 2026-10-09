@@ -1,7 +1,8 @@
 use crate::app::{form_button, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, render_widget, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
@@ -31,9 +32,9 @@ pub struct ServicesState {
     pub loaded: bool,
     pub services: Vec<ServiceInfo>,
     pub active_tab: ServiceTab,
-    pub search_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub search_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub list: ScrollRegion,
-    pub items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
+    pub items: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
 }
 
 impl Default for ServicesState {
@@ -42,9 +43,19 @@ impl Default for ServicesState {
             loaded: false,
             services: Vec::new(),
             active_tab: ServiceTab::System,
-            search_box: Owned::new(TextBox::new(String::new()).with_label("Filter Services")),
+            search_box: Handle::none(),
             list: ScrollRegion::new(36.0, 6.0).with_frame(false).with_sink_behind(true),
             items: Vec::new(),
+        }
+    }
+}
+
+impl ServicesState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self {
+            search_box: ctx.insert(TextBox::new(String::new()).with_label("Filter Services")),
+            ..Self::default()
         }
     }
 }
@@ -85,25 +96,27 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
         let (label1, label2) = if sec_w < 250.0 { ("System", "User") } else { ("System Services", "User Services") };
 
         // Filter services
-        let query = if state.search_box.editing {
-            state.search_box.edit_buffer.to_lowercase()
+        let query = if ctx[state.search_box].editing {
+            ctx[state.search_box].edit_buffer.to_lowercase()
         } else {
-            state.search_box.text.to_lowercase()
+            ctx[state.search_box].text.to_lowercase()
         };
         let filtered_services: Vec<&ServiceInfo> = state.services.iter()
             .filter(|s| s.is_system == (state.active_tab == ServiceTab::System))
             .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
             .collect();
         if state.items.len() != filtered_services.len() {
-            state.items.clear();
+            for h in state.items.drain(..) {
+                ctx.remove(h);
+            }
             for _ in 0..filtered_services.len() {
-                state.items.push(Owned::new(InteractiveListItem::new("")));
+                state.items.push(ctx.insert(InteractiveListItem::new("")));
             }
         }
 
         let active_tab = state.active_tab;
         let list = &mut state.list;
-        let items = &mut state.items;
+        let items = &state.items;
         let mut col = form.column();
         col.row(|r| {
             form_button(r, label1, 0.0, tab_colors(active_tab == ServiceTab::System),
@@ -111,7 +124,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             form_button(r, label2, 0.0, tab_colors(active_tab == ServiceTab::User),
                 AppAction::Services(ServicesMessage::SetTab(ServiceTab::User)));
         });
-        col.widget(&mut state.search_box, cce_ui::layout::textbox_height());
+        col.widget_h(ctx, state.search_box, cce_ui::layout::textbox_height());
         col.fill(LIST_MIN_H, move |pc, rect, ctx| {
             let (list_box_x, list_box_y, list_box_w, list_box_h) = (rect.x, rect.y, rect.width, rect.height);
             // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
@@ -172,10 +185,11 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
 
                         // Render InteractiveListItem background and text labels
                         // Rows dispatch as extra roots (the dissolved list is no parent).
-                        let item_btn = &mut items[idx];
+                        let item = items[idx];
+                        let item_btn = &mut ctx[item];
                         item_btn.title = service.name.clone();
                         item_btn.subtitle = Some(desc_truncated);
-                        render_widget(pc, item_btn, item_x, draw_y, item_w, item_h, ctx);
+                        render_widget_h(pc, item, item_x, draw_y, item_w, item_h, ctx);
 
                         let active_txt = [0.90, 0.90, 0.95, 1.0];
                         // No per-action tints: both controls wear the DE's themed
@@ -301,17 +315,21 @@ pub fn transport_running(active_state: &str, sub_state: &str) -> bool {
     }
 }
 
-pub fn update(state: &mut ServicesState, msg: ServicesMessage) {
+pub fn update(state: &mut ServicesState, msg: ServicesMessage, ctx: &mut UiContext) {
     match msg {
         ServicesMessage::Refreshed(new_services) => {
             state.loaded = true;
             state.services = new_services;
-            state.items.clear();
+            for h in state.items.drain(..) {
+                ctx.remove(h);
+            }
         }
         ServicesMessage::SetTab(tab) => {
             state.active_tab = tab;
             state.list.set_scroll_y(0.0);
-            state.items.clear();
+            for h in state.items.drain(..) {
+                ctx.remove(h);
+            }
         }
         ServicesMessage::Start(name, is_system) => {
             if let Some(srv) = state.services.iter_mut().find(|s| s.name == name && s.is_system == is_system) {
@@ -439,7 +457,7 @@ impl crate::pages::AppPage for ServicesState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut UiContext) {}
 
     // Filtered by `get_item_draw_y`, the same predicate the view's paint loop virtualizes
     // on — a scrolled-out row keeps its last-drawn rect and would otherwise win the
@@ -454,15 +472,6 @@ impl crate::pages::AppPage for ServicesState {
             .collect()
     }
 
-    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        let (list, items) = (&self.list, &mut self.items);
-        for (idx, i) in items.iter_mut().enumerate() {
-            if list.get_item_draw_y(idx, 4.0).is_none() {
-                continue;
-            }
-            ctx.register_host(i);
-        }
-    }
 
     fn handle_pointer_move(
         &mut self,

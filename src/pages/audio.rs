@@ -1,5 +1,6 @@
 use crate::app::{form_button, form_divider, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::{Spinbox, Slider};
 
@@ -26,10 +27,10 @@ pub struct AudioState {
     pub loaded: bool,
     pub sinks: Vec<AudioSink>,
     pub sources: Vec<AudioSource>,
-    pub sink_spinboxes: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>>,
-    pub source_spinboxes: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>>,
-    pub sink_sliders: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>>,
-    pub source_sliders: Vec<Box<Owned<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>>,
+    pub sink_spinboxes: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>,
+    pub source_spinboxes: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>>,
+    pub sink_sliders: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
+    pub source_sliders: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::Slider>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -235,8 +236,9 @@ fn device_row<'w>(
     active: bool,
     muted: bool,
     volume: f32,
-    slider: &'w mut Owned<cce_ui::widget::Adapted<Slider>>,
-    spin: &'w mut Owned<cce_ui::widget::Adapted<Spinbox>>,
+    ctx: &mut UiContext,
+    slider: Handle<cce_ui::widget::Adapted<Slider>>,
+    spin: Handle<cce_ui::widget::Adapted<Spinbox>>,
     mute_action: AppAction,
 ) {
     let line_h = cce_ui::layout::form_line_height(12.0);
@@ -248,8 +250,8 @@ fn device_row<'w>(
         return;
     }
 
-    slider.set_value(volume);
-    spin.value = (volume * 100.0).round() as i32;
+    ctx[slider].set_value(volume);
+    ctx[spin].value = (volume * 100.0).round() as i32;
     let (mute_label, colors, mute_text) = if muted {
         ("Unmute", BTN_DANGER, TEXT_DANGER)
     } else {
@@ -259,8 +261,8 @@ fn device_row<'w>(
         r.draw(name_w, line_h, false, move |pc, c, _| {
             pc.text_with_bounds(&name, c.x, c.y, 12.0, TEXT_FG, Some([c.x, c.y - 12.0, c.x + c.width, c.y + 24.0]));
         });
-        r.widget(slider, cce_ui::layout::slider_height());
-        r.widget_w(spin, SPIN_W, cce_ui::layout::spinbox_height());
+        r.widget_h(ctx, slider, cce_ui::layout::slider_height());
+        r.widget_w_h(ctx, spin, SPIN_W, cce_ui::layout::spinbox_height());
         form_button(r, mute_label, MUTE_W, (colors.0, colors.1, mute_text), mute_action);
     });
 }
@@ -298,10 +300,10 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         if state.sinks.is_empty() {
             col.text("No output devices found", 12.0, TEXT_DIM);
         }
-        let devices = state.sinks.iter().zip(state.sink_sliders.iter_mut()).zip(state.sink_spinboxes.iter_mut());
+        let devices = state.sinks.iter().zip(state.sink_sliders.iter().copied()).zip(state.sink_spinboxes.iter().copied());
         for ((sink, slider), spin) in devices {
             let action = AppAction::Audio(AudioMessage::SinkMute(sink.id));
-            device_row(&mut col, sink.name.clone(), name_w, sink.active, sink.muted, sink.volume, slider, spin, action);
+            device_row(&mut col, sink.name.clone(), name_w, sink.active, sink.muted, sink.volume, ctx, slider, spin, action);
         }
 
         form_divider(&mut col);
@@ -310,10 +312,10 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         if state.sources.is_empty() {
             col.text("No input devices found", 12.0, TEXT_DIM);
         }
-        let devices = state.sources.iter().zip(state.source_sliders.iter_mut()).zip(state.source_spinboxes.iter_mut());
+        let devices = state.sources.iter().zip(state.source_sliders.iter().copied()).zip(state.source_spinboxes.iter().copied());
         for ((src, slider), spin) in devices {
             let action = AppAction::Audio(AudioMessage::SourceMute(src.id));
-            device_row(&mut col, src.name.clone(), name_w, src.active, src.muted, src.volume, slider, spin, action);
+            device_row(&mut col, src.name.clone(), name_w, src.active, src.muted, src.volume, ctx, slider, spin, action);
         }
         sec.place(form, ctx);
     });
@@ -322,16 +324,27 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 }
 
 
-pub fn update(state: &mut AudioState, msg: AudioMessage) {
+/// `rows` resized to `n` widgets, one per device: the context takes the new ones in and
+/// gives the surplus back.
+fn fit<W: cce_ui::widget::WidgetHost + 'static>(rows: &mut Vec<Handle<W>>, n: usize, ctx: &mut UiContext, make: impl Fn() -> W) {
+    for h in rows.drain(n.min(rows.len())..) {
+        ctx.remove(h);
+    }
+    while rows.len() < n {
+        rows.push(ctx.insert(make()));
+    }
+}
+
+pub fn update(state: &mut AudioState, msg: AudioMessage, ctx: &mut UiContext) {
     match msg {
         AudioMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.sinks = new.sinks;
             state.sources = new.sources;
-            state.sink_spinboxes.resize_with(state.sinks.len(), || Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))));
-            state.source_spinboxes.resize_with(state.sources.len(), || Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))));
-            state.sink_sliders.resize_with(state.sinks.len(), || Box::new(Owned::new(Slider::new().with_range(0.0, 1.0).with_scroll(true))));
-            state.source_sliders.resize_with(state.sources.len(), || Box::new(Owned::new(Slider::new().with_range(0.0, 1.0).with_scroll(true))));
+            fit(&mut state.sink_spinboxes, state.sinks.len(), ctx, || Spinbox::new(50, 0, 100, 1));
+            fit(&mut state.source_spinboxes, state.sources.len(), ctx, || Spinbox::new(50, 0, 100, 1));
+            fit(&mut state.sink_sliders, state.sinks.len(), ctx, || Slider::new().with_range(0.0, 1.0).with_scroll(true));
+            fit(&mut state.source_sliders, state.sources.len(), ctx, || Slider::new().with_range(0.0, 1.0).with_scroll(true));
         }
         AudioMessage::SinkVolume(id, vol) => {
             if let Some(sink) = state.sinks.iter_mut().find(|s| s.id == id) {
@@ -404,36 +417,40 @@ impl crate::pages::AppPage for AudioState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
-        for (i, sb) in self.sink_spinboxes.iter_mut().enumerate() {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
+        for (i, &sb) in self.sink_spinboxes.iter().enumerate() {
+            let sb = &mut ctx[sb];
             if sb.take_change() {
                 let id = self.sinks[i].id;
                 actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
             }
         }
-        for (i, sb) in self.source_spinboxes.iter_mut().enumerate() {
+        for (i, &sb) in self.source_spinboxes.iter().enumerate() {
+            let sb = &mut ctx[sb];
             if sb.take_change() {
                 let id = self.sources[i].id;
                 actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
             }
         }
-        for (i, slider) in self.sink_sliders.iter_mut().enumerate() {
-            if slider.take_change() {
+        for (i, &slider) in self.sink_sliders.iter().enumerate() {
+            if ctx[slider].take_change() {
+                let value = ctx[slider].value();
                 let id = self.sinks[i].id;
                 // Keep the paired spinbox display in step, as the old drag path did.
-                if let Some(sb) = self.sink_spinboxes.get_mut(i) {
-                    sb.value = slider.value();
+                if let Some(&sb) = self.sink_spinboxes.get(i) {
+                    ctx[sb].value = value;
                 }
-                actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, slider.value() as f32 / 100.0)));
+                actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, value as f32 / 100.0)));
             }
         }
-        for (i, slider) in self.source_sliders.iter_mut().enumerate() {
-            if slider.take_change() {
+        for (i, &slider) in self.source_sliders.iter().enumerate() {
+            if ctx[slider].take_change() {
+                let value = ctx[slider].value();
                 let id = self.sources[i].id;
-                if let Some(sb) = self.source_spinboxes.get_mut(i) {
-                    sb.value = slider.value();
+                if let Some(&sb) = self.source_spinboxes.get(i) {
+                    ctx[sb].value = value;
                 }
-                actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, slider.value() as f32 / 100.0)));
+                actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, value as f32 / 100.0)));
             }
         }
     }
@@ -452,6 +469,7 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         use cce_ui::widget::{Spinbox, Slider};
+        let mut ui = UiContext::new();
         let mut state = AudioState {
             loaded: true,
             sinks: vec![
@@ -462,24 +480,24 @@ mod tests {
             ],
             sources: vec![],
             sink_spinboxes: vec![
-                Box::new(Owned::new(Spinbox::new(57, 0, 100, 1))),
-                Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))),
-                Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))),
-                Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))),
+                ui.insert(Spinbox::new(57, 0, 100, 1)),
+                ui.insert(Spinbox::new(50, 0, 100, 1)),
+                ui.insert(Spinbox::new(50, 0, 100, 1)),
+                ui.insert(Spinbox::new(50, 0, 100, 1)),
             ],
             source_spinboxes: vec![],
             sink_sliders: vec![
-                Box::new(Owned::new(Slider::new())),
-                Box::new(Owned::new(Slider::new())),
-                Box::new(Owned::new(Slider::new())),
-                Box::new(Owned::new(Slider::new())),
+                ui.insert(Slider::new()),
+                ui.insert(Slider::new()),
+                ui.insert(Slider::new()),
+                ui.insert(Slider::new()),
             ],
             source_sliders: vec![],
         };
         let mut layout = PageFlow::new();
         // One flag: section_widgets() returns a single group (the output ids
         // with input appended), so the view draws one section and reads [0].
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         for (i, (c, x, y, w, h, r, _)) in pc.rects.iter().enumerate() {
             println!("TEST_PC_RECT {}: color={:?}, x={}, y={}, w={}, h={}, r={}", i, c, x, y, w, h, r);
         }
@@ -489,30 +507,25 @@ mod tests {
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 
+    /// A device's spinbox with its context menu open, given back by the context when a
+    /// refresh drops the device: the menu goes with it rather than outliving its widget.
     #[test]
-    #[allow(unused_assignments)]
-    fn test_boxed_spinbox_right_click_crash() {
+    fn a_removed_spinbox_takes_its_menu_with_it() {
         use cce_ui::widget::{WidgetHost, Spinbox};
+        let mut ui = UiContext::new();
         let mut state = AudioState::default();
-        state.sink_spinboxes.push(Box::new(Owned::new(Spinbox::new(50, 0, 100, 1))));
-        let mut ctx = cce_ui::context::UiContext::new();
-        let sb = &mut state.sink_spinboxes[0];
-        sb.set_rect(0.0, 0.0, 100.0, 44.0);
-        let res = sb.mouse_input(
-            cce_ui::widget::MouseButton::Right,
-            cce_ui::widget::ElementState::Pressed,
-            50.0,
-            20.0,
-            &mut ctx,
-        );
-        assert!(res);
+        fit(&mut state.sink_spinboxes, 1, &mut ui, || Spinbox::new(50, 0, 100, 1));
+        let sb = state.sink_spinboxes[0];
+        ui[sb].set_rect(0.0, 0.0, 100.0, 44.0);
+        let res = ui.lend_h(sb, |w, ctx| {
+            w.mouse_input(cce_ui::widget::MouseButton::Right, cce_ui::widget::ElementState::Pressed, 50.0, 20.0, ctx)
+        });
+        assert_eq!(res, Some(true));
         assert!(cce_ui::widget::context_menu::is_visible());
 
-        // Now replace the state simulating config reload/refresh
-        let new_state = AudioState::default();
-        state = new_state;
-
-        // Assert that the context menu is hidden (cleared)
+        // The device is gone on the next refresh: its spinbox leaves the context.
+        fit(&mut state.sink_spinboxes, 0, &mut ui, || Spinbox::new(50, 0, 100, 1));
+        assert!(ui.get(sb).is_none());
         assert!(!cce_ui::widget::context_menu::is_visible());
     }
 }

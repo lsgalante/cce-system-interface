@@ -1,7 +1,8 @@
 use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, render_widget, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
@@ -69,11 +70,11 @@ pub struct PackagesState {
     pub installed: Vec<PackageInfo>,
     pub updates: Vec<UpdateInfo>,
     pub active_tab: PackageTab,
-    pub search_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub search_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub installed_list: ScrollRegion,
-    pub installed_items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
+    pub installed_items: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
     pub updates_list: ScrollRegion,
-    pub updates_items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
+    pub updates_items: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
     pub updating: bool,
     pub last_update_res: Option<Result<(), String>>,
     pub selected_package: Option<String>,
@@ -99,7 +100,7 @@ impl Default for PackagesState {
             installed: Vec::new(),
             updates: Vec::new(),
             active_tab: PackageTab::Installed,
-            search_box: Owned::new(TextBox::new(String::new()).with_placeholder("Filter Packages...")),
+            search_box: Handle::none(),
             installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
             installed_items: Vec::new(),
             updates_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
@@ -117,6 +118,16 @@ impl Default for PackagesState {
             previewing: false,
             marking: false,
             last_action: None,
+        }
+    }
+}
+
+impl PackagesState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self {
+            search_box: ctx.insert(TextBox::new(String::new()).with_placeholder("Filter Packages...")),
+            ..Self::default()
         }
     }
 }
@@ -554,24 +565,28 @@ pub fn view(
         let text_on = [0.90, 0.90, 0.95, 1.0];
         let busy = state.busy();
 
-        let query = if state.search_box.editing {
-            state.search_box.edit_buffer.to_lowercase()
+        let query = if ctx[state.search_box].editing {
+            ctx[state.search_box].edit_buffer.to_lowercase()
         } else {
-            state.search_box.text.to_lowercase()
+            ctx[state.search_box].text.to_lowercase()
         };
         // What the list shows, worked out before the widgets are lent to the form.
-        let visible_installed = state.visible_installed();
+        let visible_installed = state.visible_installed(ctx);
         if state.installed_items.len() != visible_installed.len() {
-            state.installed_items.clear();
+            for h in state.installed_items.drain(..) {
+                ctx.remove(h);
+            }
             for _ in 0..visible_installed.len() {
-                state.installed_items.push(Owned::new(InteractiveListItem::new("")));
+                state.installed_items.push(ctx.insert(InteractiveListItem::new("")));
             }
         }
         let filtered_updates: Vec<&UpdateInfo> = state.updates.iter().filter(|p| p.name.to_lowercase().contains(&query)).collect();
         if state.updates_items.len() != filtered_updates.len() {
-            state.updates_items.clear();
+            for h in state.updates_items.drain(..) {
+                ctx.remove(h);
+            }
             for _ in 0..filtered_updates.len() {
-                state.updates_items.push(Owned::new(InteractiveListItem::new("")));
+                state.updates_items.push(ctx.insert(InteractiveListItem::new("")));
             }
         }
 
@@ -588,7 +603,7 @@ pub fn view(
                 AppAction::Packages(PackagesMessage::SetTab(PackageTab::Updates)));
         });
 
-        col.widget(&mut state.search_box, cce_ui::layout::textbox_height());
+        col.widget_h(ctx, state.search_box, cce_ui::layout::textbox_height());
 
         // ── Update System: a button as wide as its label, its status beside it ──
         let status_line = if state.updating {
@@ -842,8 +857,8 @@ pub fn view(
         let checked = &state.checked;
         let selected = state.selected_package.clone();
         let installed = &state.installed;
-        let (installed_list, installed_items) = (&mut state.installed_list, &mut state.installed_items);
-        let (updates_list, updates_items) = (&mut state.updates_list, &mut state.updates_items);
+        let (installed_list, installed_items) = (&mut state.installed_list, &state.installed_items);
+        let (updates_list, updates_items) = (&mut state.updates_list, &state.updates_items);
         col.fill(LIST_MIN_H, move |pc, rect, ctx| {
             let (list_box_x, list_box_y, list_box_w, list_box_h) = (rect.x, rect.y, rect.width, rect.height);
             let inset = cce_ui::layout::plate_padding();
@@ -860,7 +875,8 @@ pub fn view(
                     for (idx, pkg) in filtered.iter().enumerate() {
                         if let Some(draw_y) = installed_list.get_item_draw_y(idx, 4.0) {
                             // Rows dispatch as extra roots (the dissolved list is no parent).
-                            let item = &mut installed_items[idx];
+                            let row = installed_items[idx];
+                            let item = &mut ctx[row];
                             item.title = pkg.name.clone();
                             let reason = match (pkg.explicit, pkg.orphan) {
                                 (true, _) => "explicit",
@@ -874,7 +890,7 @@ pub fn view(
                                 Some(&pkg.name) == selected.as_ref()
                             };
                             let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
-                            render_widget(pc, item, cell.x, cell.y, cell.width, cell.height, ctx);
+                            render_widget_h(pc, row, cell.x, cell.y, cell.width, cell.height, ctx);
                         }
                     }
                     pc.pop_clip_rect();
@@ -895,12 +911,13 @@ pub fn view(
                     for (idx, pkg) in filtered_updates.iter().enumerate() {
                         if let Some(draw_y) = updates_list.get_item_draw_y(idx, 4.0) {
                             // Rows dispatch as extra roots (the dissolved list is no parent).
-                            let item = &mut updates_items[idx];
+                            let row = updates_items[idx];
+                            let item = &mut ctx[row];
                             item.title = pkg.name.clone();
                             item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
                             item.selected = Some(&pkg.name) == selected.as_ref();
                             let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
-                            render_widget(pc, item, cell.x, cell.y, cell.width, cell.height, ctx);
+                            render_widget_h(pc, row, cell.x, cell.y, cell.width, cell.height, ctx);
                         }
                     }
                     pc.pop_clip_rect();
@@ -918,7 +935,7 @@ pub fn view(
     final_pc
 }
 
-pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
+pub fn update(state: &mut PackagesState, msg: PackagesMessage, ctx: &mut UiContext) {
     match msg {
         PackagesMessage::Refreshed(new) => {
             state.loaded = new.loaded;
@@ -943,8 +960,12 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
             state.active_tab = tab;
             state.installed_list.set_scroll_y(0.0);
             state.updates_list.set_scroll_y(0.0);
-            state.installed_items.clear();
-            state.updates_items.clear();
+            for h in state.installed_items.drain(..) {
+                ctx.remove(h);
+            }
+            for h in state.updates_items.drain(..) {
+                ctx.remove(h);
+            }
             state.selected_package = None;
             state.selected_package_info = None;
             state.loading_info = false;
@@ -981,7 +1002,9 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
             if state.filter != filter {
                 state.filter = filter;
                 state.installed_list.set_scroll_y(0.0);
-                state.installed_items.clear();
+                for h in state.installed_items.drain(..) {
+                    ctx.remove(h);
+                }
             }
         }
         PackagesMessage::ToggleSelectMode => {
@@ -1001,7 +1024,7 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
             }
         }
         PackagesMessage::CheckAllVisible => {
-            for i in state.visible_installed() {
+            for i in state.visible_installed(ctx) {
                 state.checked.insert(state.installed[i].name.clone());
             }
         }
@@ -1074,7 +1097,7 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage) {
             });
         }
         PackagesMessage::SelectAndScrollPackage(name) => {
-            state.select_and_scroll_to(&name);
+            state.select_and_scroll_to(&name, ctx);
         }
     }
 }
@@ -1087,19 +1110,19 @@ impl PackagesState {
     }
 
     /// The search query as typed so far (the box commits only on Enter).
-    fn query(&self) -> String {
-        if self.search_box.editing {
-            self.search_box.edit_buffer.to_lowercase()
+    fn query(&self, ctx: &UiContext) -> String {
+        if ctx[self.search_box].editing {
+            ctx[self.search_box].edit_buffer.to_lowercase()
         } else {
-            self.search_box.text.to_lowercase()
+            ctx[self.search_box].text.to_lowercase()
         }
     }
 
     /// Indices into `installed` of the rows the Installed tab shows, in order:
     /// the filter, then the search. The view paints exactly these and the click
     /// mapping resolves against them, so the two can never disagree.
-    pub fn visible_installed(&self) -> Vec<usize> {
-        let query = self.query();
+    pub fn visible_installed(&self, ctx: &UiContext) -> Vec<usize> {
+        let query = self.query(ctx);
         self.installed
             .iter()
             .enumerate()
@@ -1109,17 +1132,19 @@ impl PackagesState {
             .collect()
     }
 
-    pub fn select_and_scroll_to(&mut self, pkg_name: &str) {
+    pub fn select_and_scroll_to(&mut self, pkg_name: &str, ctx: &mut UiContext) {
         self.active_tab = PackageTab::Installed;
         // The scroll target below is an index into the whole list, so the
         // list must be unfiltered for it to land on the package.
         self.filter = InstalledFilter::All;
         self.select_mode = false;
         self.checked.clear();
-        self.installed_items.clear();
-        self.search_box.text.clear();
-        self.search_box.edit_buffer.clear();
-        self.search_box.editing = false;
+        for h in self.installed_items.drain(..) {
+            ctx.remove(h);
+        }
+        ctx[self.search_box].text.clear();
+        ctx[self.search_box].edit_buffer.clear();
+        ctx[self.search_box].editing = false;
         self.selected_package = Some(pkg_name.to_string());
         self.selected_package_info = None;
         self.loading_info = true;
@@ -1170,17 +1195,18 @@ impl crate::pages::AppPage for PackagesState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
-        let query = if self.search_box.editing {
-            self.search_box.edit_buffer.to_lowercase()
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
+        let query = if ctx[self.search_box].editing {
+            ctx[self.search_box].edit_buffer.to_lowercase()
         } else {
-            self.search_box.text.to_lowercase()
+            ctx[self.search_box].text.to_lowercase()
         };
 
         match self.active_tab {
             PackageTab::Installed => {
-                let visible = self.visible_installed();
-                for (idx, item) in self.installed_items.iter_mut().enumerate() {
+                let visible = self.visible_installed(ctx);
+                for (idx, &row) in self.installed_items.iter().enumerate() {
+                    let item = &mut ctx[row];
                     if item.just_clicked {
                         item.just_clicked = false;
                         if let Some(&i) = visible.get(idx) {
@@ -1198,7 +1224,8 @@ impl crate::pages::AppPage for PackagesState {
                 let filtered: Vec<&UpdateInfo> = self.updates.iter()
                     .filter(|p| p.name.to_lowercase().contains(&query))
                     .collect();
-                for (idx, item) in self.updates_items.iter_mut().enumerate() {
+                for (idx, &row) in self.updates_items.iter().enumerate() {
+                    let item = &mut ctx[row];
                     if item.just_clicked {
                         item.just_clicked = false;
                         if idx < filtered.len() {
@@ -1230,18 +1257,6 @@ impl crate::pages::AppPage for PackagesState {
             .collect()
     }
 
-    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        let (list, items) = match self.active_tab {
-            PackageTab::Installed => (&self.installed_list, &mut self.installed_items),
-            PackageTab::Updates => (&self.updates_list, &mut self.updates_items),
-        };
-        for (idx, i) in items.iter_mut().enumerate() {
-            if list.get_item_draw_y(idx, 4.0).is_none() {
-                continue;
-            }
-            ctx.register_host(i);
-        }
-    }
 
     fn handle_pointer_move(
         &mut self,
@@ -1288,7 +1303,8 @@ mod tests {
 
     #[test]
     fn refresh_preserves_selection_and_flags() {
-        let mut st = PackagesState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = PackagesState::new(&mut ui);
         st.loaded = true;
         st.installed = vec![PackageInfo { name: "foo".into(), version: "1".into(), ..Default::default() }];
         st.selected_package = Some("foo".into());
@@ -1300,14 +1316,14 @@ mod tests {
             installed: vec![PackageInfo { name: "foo".into(), version: "2".into(), ..Default::default() }],
             ..Default::default()
         };
-        update(&mut st, PackagesMessage::Refreshed(fresh));
+        update(&mut st, PackagesMessage::Refreshed(fresh), &mut ui);
         assert_eq!(st.selected_package.as_deref(), Some("foo"), "refresh must keep the selection");
         assert!(st.selected_package_info.is_some(), "refresh must keep fetched info");
         assert!(st.updating, "refresh must not clear the in-flight update flag");
 
         // A package that vanished from both lists does clear the selection.
         let fresh2 = PackagesState { loaded: true, ..Default::default() };
-        update(&mut st, PackagesMessage::Refreshed(fresh2));
+        update(&mut st, PackagesMessage::Refreshed(fresh2), &mut ui);
         assert!(st.selected_package.is_none());
         assert!(st.selected_package_info.is_none());
     }
@@ -1316,8 +1332,8 @@ mod tests {
         PackageInfo { name: name.into(), version: "1".into(), explicit, orphan }
     }
 
-    fn loaded_state() -> PackagesState {
-        let mut st = PackagesState::default();
+    fn loaded_state(ui: &mut UiContext) -> PackagesState {
+        let mut st = PackagesState::new(ui);
         st.loaded = true;
         st.installed = vec![
             pkg("alpha", true, false),
@@ -1340,40 +1356,41 @@ mod tests {
 
     #[test]
     fn filter_and_search_compose() {
-        let mut st = loaded_state();
-        assert_eq!(st.visible_installed().len(), 4);
-        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
-        assert_eq!(st.visible_installed(), vec![1, 3]);
-        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Explicit));
-        assert_eq!(st.visible_installed(), vec![0]);
-        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
-        st.search_box.text = "gamma".into();
-        assert_eq!(st.visible_installed(), vec![3]);
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        assert_eq!(st.visible_installed(&ui).len(), 4);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans), &mut ui);
+        assert_eq!(st.visible_installed(&ui), vec![1, 3]);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Explicit), &mut ui);
+        assert_eq!(st.visible_installed(&ui), vec![0]);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans), &mut ui);
+        ui[st.search_box].text = "gamma".into();
+        assert_eq!(st.visible_installed(&ui), vec![3]);
     }
 
     /// A click on visible row N must name the package painted at row N, under
     /// a filter too — the view and the click mapping share `visible_installed`.
     #[test]
     fn row_click_resolves_through_the_filter() {
-        let mut st = loaded_state();
-        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans), &mut ui);
         let mut layout = cce_ui::layout::PageFlow::new();
-        let mut ctx = cce_ui::context::UiContext::new();
-        view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ctx);
+        view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         assert_eq!(st.installed_items.len(), 2);
-        st.installed_items[1].just_clicked = true;
+        ui[st.installed_items[1]].just_clicked = true;
         let mut actions = Vec::new();
-        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions);
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions, &mut ui);
         match actions.as_slice() {
             [AppAction::Packages(PackagesMessage::SelectPackage(Some(n)))] => assert_eq!(n, "gamma-orphan"),
             other => panic!("unexpected actions: {other:?}"),
         }
 
         // In select mode the same click toggles the row instead.
-        update(&mut st, PackagesMessage::ToggleSelectMode);
-        st.installed_items[1].just_clicked = true;
+        update(&mut st, PackagesMessage::ToggleSelectMode, &mut ui);
+        ui[st.installed_items[1]].just_clicked = true;
         let mut actions = Vec::new();
-        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions);
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions, &mut ui);
         match actions.as_slice() {
             [AppAction::Packages(PackagesMessage::ToggleChecked(n))] => assert_eq!(n, "gamma-orphan"),
             other => panic!("unexpected actions: {other:?}"),
@@ -1382,21 +1399,22 @@ mod tests {
 
     #[test]
     fn select_mode_checks_and_clears() {
-        let mut st = loaded_state();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
         st.selected_package = Some("alpha".into());
-        update(&mut st, PackagesMessage::ToggleSelectMode);
+        update(&mut st, PackagesMessage::ToggleSelectMode, &mut ui);
         assert!(st.selected_package.is_none(), "select mode frees the details pane");
-        update(&mut st, PackagesMessage::ToggleChecked("beta".into()));
-        update(&mut st, PackagesMessage::ToggleChecked("beta".into()));
+        update(&mut st, PackagesMessage::ToggleChecked("beta".into()), &mut ui);
+        update(&mut st, PackagesMessage::ToggleChecked("beta".into()), &mut ui);
         assert!(st.checked.is_empty(), "a second click unchecks");
-        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
-        update(&mut st, PackagesMessage::CheckAllVisible);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans), &mut ui);
+        update(&mut st, PackagesMessage::CheckAllVisible, &mut ui);
         assert_eq!(st.checked.iter().cloned().collect::<Vec<_>>(), ["beta", "gamma-orphan"]);
         // A refresh drops checked names that are gone.
         let fresh = PackagesState { loaded: true, installed: vec![pkg("beta", false, true)], ..Default::default() };
-        update(&mut st, PackagesMessage::Refreshed(fresh));
+        update(&mut st, PackagesMessage::Refreshed(fresh), &mut ui);
         assert_eq!(st.checked.iter().cloned().collect::<Vec<_>>(), ["beta"]);
-        update(&mut st, PackagesMessage::ToggleSelectMode);
+        update(&mut st, PackagesMessage::ToggleSelectMode, &mut ui);
         assert!(st.checked.is_empty(), "leaving select mode clears the selection");
     }
 
@@ -1405,35 +1423,37 @@ mod tests {
     /// where the info parser found no known key and showed nothing at all.
     #[test]
     fn refused_removal_stays_visible() {
-        let mut st = loaded_state();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
         let err = "error: failed to prepare transaction (could not satisfy dependencies)\n\
                    :: removing beta breaks dependency 'beta' required by alpha".to_string();
-        update(&mut st, PackagesMessage::PreviewRemoval(vec!["beta".into()]));
+        update(&mut st, PackagesMessage::PreviewRemoval(vec!["beta".into()]), &mut ui);
         assert!(st.previewing);
-        update(&mut st, PackagesMessage::RemovalPreviewed(vec!["beta".into()], Err(err.clone())));
+        update(&mut st, PackagesMessage::RemovalPreviewed(vec!["beta".into()], Err(err.clone())), &mut ui);
         assert!(!st.previewing);
         let mut layout = cce_ui::layout::PageFlow::new();
-        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         let texts: Vec<String> = pc.texts.iter().map(|t| t.0.clone()).collect();
         assert!(texts.iter().any(|t| t.contains("required by alpha")), "the reason is painted: {texts:?}");
 
         // And a failed transaction reports into last_action, not the details.
-        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]));
-        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Err(err)));
+        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]), &mut ui);
+        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Err(err)), &mut ui);
         assert!(!st.uninstalling);
         assert!(matches!(&st.last_action, Some(Err(e)) if e.contains("required by alpha")));
     }
 
     #[test]
     fn successful_removal_reports_the_whole_plan() {
-        let mut st = loaded_state();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
         st.checked.insert("beta".into());
         update(&mut st, PackagesMessage::RemovalPreviewed(
             vec!["beta".into()],
             Ok(parse_removal_preview("beta 1024\nlibbeta 2048\n")),
-        ));
-        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]));
-        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Ok(())));
+        ), &mut ui);
+        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]), &mut ui);
+        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Ok(())), &mut ui);
         assert!(st.removal.is_none());
         assert!(st.checked.is_empty());
         assert!(matches!(&st.last_action, Some(Ok(m)) if m == "Removed 2 packages"));
@@ -1441,10 +1461,11 @@ mod tests {
 
     #[test]
     fn marking_explicit_updates_rows_at_once() {
-        let mut st = loaded_state();
-        update(&mut st, PackagesMessage::SetInstallReason(vec!["beta".into()], true));
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        update(&mut st, PackagesMessage::SetInstallReason(vec!["beta".into()], true), &mut ui);
         assert!(st.busy());
-        update(&mut st, PackagesMessage::InstallReasonSet(vec!["beta".into()], true, Ok(())));
+        update(&mut st, PackagesMessage::InstallReasonSet(vec!["beta".into()], true, Ok(())), &mut ui);
         assert!(!st.busy());
         assert!(st.installed[1].explicit && !st.installed[1].orphan);
         assert!(matches!(&st.last_action, Some(Ok(m)) if m == "Marked beta as explicitly installed"));
@@ -1452,9 +1473,10 @@ mod tests {
 
     #[test]
     fn jump_to_package_clears_the_filter() {
-        let mut st = loaded_state();
-        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans));
-        update(&mut st, PackagesMessage::SelectAndScrollPackage("alpha".into()));
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans), &mut ui);
+        update(&mut st, PackagesMessage::SelectAndScrollPackage("alpha".into()), &mut ui);
         assert_eq!(st.filter, InstalledFilter::All);
         assert_eq!(st.selected_package.as_deref(), Some("alpha"));
     }
@@ -1491,9 +1513,10 @@ mod tests {
 
     #[test]
     fn test_view_layout_grid() {
-        let mut state = PackagesState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = PackagesState::new(&mut ui);
         let mut layout = cce_ui::layout::PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 }

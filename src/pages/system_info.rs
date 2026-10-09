@@ -1,5 +1,6 @@
 use crate::app::{button_need, form_button, form_button_fit, wrap_to_width, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use cce_ui::widget::{Label, WidgetHostExt};
 
@@ -51,9 +52,9 @@ pub struct SystemState {
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
     pub builds: Vec<InstalledBuild>,
-    pub cpu_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
-    pub cpu_usage_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
-    pub cpu_temp_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub cpu_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub cpu_usage_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub cpu_temp_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
 
     // Power-related fields
 
@@ -61,8 +62,8 @@ pub struct SystemState {
     pub initialized: bool,
     pub sender: Option<calloop::channel::Sender<AppAction>>,
     pub sysfiles: SysFiles,
-    pub hostname_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
-    pub uptime_label: Owned<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub hostname_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
+    pub uptime_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
 }
 
 impl std::fmt::Debug for SystemState {
@@ -90,16 +91,30 @@ impl Default for SystemState {
             gpus: Vec::new(),
             gpu_strings: Vec::new(),
             builds: Vec::new(),
-            cpu_label: Owned::new(Label::new("CPU Info")),
-            cpu_usage_label: Owned::new(Label::new("CPU Usage")),
-            cpu_temp_label: Owned::new(Label::new("CPU Temp")),
+            cpu_label: Handle::none(),
+            cpu_usage_label: Handle::none(),
+            cpu_temp_label: Handle::none(),
 
 
             initialized: false,
             sender: None,
             sysfiles: SysFiles::default(),
-            hostname_label: Owned::new(Label::new("")),
-            uptime_label: Owned::new(Label::new("")),
+            hostname_label: Handle::none(),
+            uptime_label: Handle::none(),
+        }
+    }
+}
+
+impl SystemState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self {
+            cpu_label: ctx.insert(Label::new("CPU Info")),
+            cpu_usage_label: ctx.insert(Label::new("CPU Usage")),
+            cpu_temp_label: ctx.insert(Label::new("CPU Temp")),
+            hostname_label: ctx.insert(Label::new("")),
+            uptime_label: ctx.insert(Label::new("")),
+            ..Self::default()
         }
     }
 }
@@ -689,20 +704,20 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
             state.builds = new.builds;
 
             if state.loaded {
-                state.hostname_label.set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
-                state.uptime_label.set_text(&format!("Uptime: {}", state.uptime));
+                ctx[state.hostname_label].set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
+                ctx[state.uptime_label].set_text(&format!("Uptime: {}", state.uptime));
 
                 let cpu_label_text = format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores);
                 let cpu_usage_text = format!("Usage  {:.0}%", state.cpu_usage);
                 let cpu_temp_text = read_cpu_temp().map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
 
-                state.cpu_label.set_text(&cpu_label_text);
-                state.cpu_usage_label.set_text(&cpu_usage_text);
-                state.cpu_temp_label.set_text(&cpu_temp_text);
+                ctx[state.cpu_label].set_text(&cpu_label_text);
+                ctx[state.cpu_usage_label].set_text(&cpu_usage_text);
+                ctx[state.cpu_temp_label].set_text(&cpu_temp_text);
 
 
 
-                state.hostname_label.mark_dirty(ctx);
+                ctx.lend_h(state.hostname_label, |w, ctx| w.mark_dirty(ctx));
             }
 
             // First refresh doubles as the first system-files scan, so the
@@ -809,7 +824,7 @@ impl crate::pages::AppPage for SystemState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut UiContext) {
     }
 }
 
@@ -863,11 +878,11 @@ mod tests {
 
     #[test]
     fn test_view_layout_grid() {
-        let mut state = SystemState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = SystemState::new(&mut ui);
         let mut layout = cce_ui::layout::PageFlow::new();
         let sec_focused = vec![false, false, false, false, false, false, false];
-        let mut ctx = cce_ui::context::UiContext::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 }

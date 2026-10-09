@@ -1,5 +1,6 @@
 use crate::app::{AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::scene::layout::Rect;
@@ -23,7 +24,7 @@ pub struct NetworkState {
     pub device: String,
     pub available: Vec<WifiNetwork>,
     pub wifi_list: ScrollRegion,
-    pub wifi_toggle: Owned<Adapted<Toggle>>,
+    pub wifi_toggle: Handle<Adapted<Toggle>>,
 }
 
 impl Default for NetworkState {
@@ -37,8 +38,15 @@ impl Default for NetworkState {
             device: String::new(),
             available: Vec::new(),
             wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
-            wifi_toggle: Owned::new(Toggle::new()),
+            wifi_toggle: Handle::none(),
         }
+    }
+}
+
+impl NetworkState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self { wifi_toggle: ctx.insert(Toggle::new()), ..Self::default() }
     }
 }
 
@@ -101,7 +109,7 @@ pub async fn fetch_network_state() -> NetworkState {
         wifi_enabled, connected_ssid, signal_strength: signal,
         ip_address, device, available,
         wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
-        wifi_toggle: Owned::new(Toggle::new()),
+        wifi_toggle: Handle::none(),
     }
 }
 
@@ -180,11 +188,11 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
             col.text("Loading WiFi interfaces...", 12.0, TEXT_DIM);
         } else {
             let wifi_btn_w = if sec_w < 200.0 { 40.0 } else { 60.0 };
-            state.wifi_toggle.set_toggled(state.wifi_enabled);
-            state.wifi_toggle.set_label(if state.wifi_enabled { "ON" } else { "OFF" });
+            ctx[state.wifi_toggle].set_toggled(state.wifi_enabled);
+            ctx[state.wifi_toggle].set_label(if state.wifi_enabled { "ON" } else { "OFF" });
             // At its own width, not the row's: the old wide "ON" plate.
             col.row(|r| {
-                r.widget_w(&mut state.wifi_toggle, wifi_btn_w, cce_ui::layout::toggle_height());
+                r.widget_w_h(ctx, state.wifi_toggle, wifi_btn_w, cce_ui::layout::toggle_height());
             });
 
             if state.wifi_enabled {
@@ -261,7 +269,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
     final_pc
 }
 
-pub fn update(state: &mut NetworkState, msg: NetworkMessage) {
+pub fn update(state: &mut NetworkState, msg: NetworkMessage, _ctx: &mut UiContext) {
     match msg {
         NetworkMessage::Refreshed(new) => {
             state.loaded = new.loaded;
@@ -317,8 +325,8 @@ impl crate::pages::AppPage for NetworkState {
         view(self, cx, cy, cw, ch, focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
-        if self.wifi_toggle.take_change() {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
+        if ctx[self.wifi_toggle].take_change() {
             actions.push(crate::app::AppAction::Network(NetworkMessage::ToggleWifi));
         }
     }
@@ -360,31 +368,34 @@ mod tests {
 
     #[test]
     fn test_view_layout_grid() {
-        let mut state = NetworkState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = NetworkState::new(&mut ui);
         state.loaded = true;
         state.wifi_enabled = true;
         let mut layout = cce_ui::layout::PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 
     #[test]
     fn test_view_layout_connected() {
-        let mut state = NetworkState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = NetworkState::new(&mut ui);
         state.loaded = true;
         state.wifi_enabled = true;
         state.connected_ssid = "MyHomeWiFi".to_string();
         state.signal_strength = 80;
         state.ip_address = "192.168.1.50".to_string();
         let mut layout = cce_ui::layout::PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
 
     #[test]
     fn section_widgets_mirror_load_gate() {
+        let mut ui = cce_ui::context::UiContext::new();
         use crate::pages::AppPage;
-        let mut st = NetworkState::default();
+        let mut st = NetworkState::new(&mut ui);
         // Not loaded: the view paints only "Loading WiFi interfaces...", so
         // reporting the toggle would be a root nothing registered this frame.
         assert_eq!(st.section_widgets(), vec![Vec::new()]);

@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Write;
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::widget::input::{Toggle, Dropdown, Spinbox};
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use crate::app::{AppAction, PageContent};
@@ -18,11 +19,11 @@ pub struct NotificationsConfig {
 pub struct NotificationsState {
     pub loaded: bool,
     pub enable: bool,
-    pub enable_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
+    pub enable_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
     pub bell: String,
-    pub bell_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
+    pub bell_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
     pub duration: i32,
-    pub duration_spinbox: Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>,
+    pub duration_spinbox: Handle<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>,
 }
 
 impl Default for NotificationsState {
@@ -30,14 +31,26 @@ impl Default for NotificationsState {
         Self {
             loaded: false,
             enable: true,
+            enable_toggle: Handle::none(),
+            bell: "none".to_string(),
+            bell_menu: Handle::none(),
+            duration: 5,
+            duration_spinbox: Handle::none(),
+        }
+    }
+}
+
+impl NotificationsState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self {
             // Left-aligned: centred, the label straddled the seam at the
             // toggle's midpoint (see the Browser page's toggles).
-            enable_toggle: Owned::new(Toggle::new()
+            enable_toggle: ctx.insert(Toggle::new()
                 .with_label("Enable Notifications")
                 .with_left_align(true)
                 .with_config(&get_config_path(), "enable")),
-            bell: "none".to_string(),
-            bell_menu: Owned::new(Dropdown::new(
+            bell_menu: ctx.insert(Dropdown::new(
                 vec![
                     "None".to_string(),
                     "Bell".to_string(),
@@ -46,11 +59,11 @@ impl Default for NotificationsState {
                 ],
                 0,
             ).with_label("Notification Sound")),
-            duration: 5,
-            duration_spinbox: Owned::new(Spinbox::new(5, 1, 60, 1)
+            duration_spinbox: ctx.insert(Spinbox::new(5, 1, 60, 1)
                 .with_label("Notification Duration")
                 .with_unit("s")
                 .with_config(&get_config_path(), "duration")),
+            ..Self::default()
         }
     }
 }
@@ -64,7 +77,7 @@ pub enum NotificationsMessage {
     Refreshed(NotificationsConfig),
 }
 
-pub fn update(state: &mut NotificationsState, msg: NotificationsMessage) {
+pub fn update(state: &mut NotificationsState, msg: NotificationsMessage, _ctx: &mut UiContext) {
     match msg {
         NotificationsMessage::ToggleNotificationsEnable => {
             state.enable = !state.enable;
@@ -212,21 +225,21 @@ impl AppPage for NotificationsState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Notifications Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            self.enable_toggle.set_toggled(self.enable);
-            self.bell_menu.selected = match self.bell.as_str() {
+            ctx[self.enable_toggle].set_toggled(self.enable);
+            ctx[self.bell_menu].selected = match self.bell.as_str() {
                 "bell" => 1,
                 "dialog" => 2,
                 "message" => 3,
                 _ => 0,
             };
-            self.duration_spinbox.value = self.duration;
-            self.duration_spinbox.set_label("Notification Duration");
+            ctx[self.duration_spinbox].value = self.duration;
+            ctx[self.duration_spinbox].set_label("Notification Duration");
 
             let mut form = sec.form();
             form.column()
-                .widget(&mut self.enable_toggle, cce_ui::layout::toggle_height())
-                .widget(&mut self.bell_menu, cce_ui::layout::dropdown_height())
-                .widget(&mut self.duration_spinbox, cce_ui::layout::spinbox_height())
+                .widget_h(ctx, self.enable_toggle, cce_ui::layout::toggle_height())
+                .widget_h(ctx, self.bell_menu, cce_ui::layout::dropdown_height())
+                .widget_h(ctx, self.duration_spinbox, cce_ui::layout::spinbox_height())
                 .draw(0.0, cce_ui::layout::button_height(), false, |pc, r, _| {
                     pc.button(
                         "Send Test Notification",
@@ -246,12 +259,12 @@ impl AppPage for NotificationsState {
         final_pc
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
-        if self.enable_toggle.take_change() {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
+        if ctx[self.enable_toggle].take_change() {
             actions.push(AppAction::Notifications(NotificationsMessage::ToggleNotificationsEnable));
         }
-        if self.bell_menu.take_change() {
-            let sound = match self.bell_menu.selected {
+        if ctx[self.bell_menu].take_change() {
+            let sound = match ctx[self.bell_menu].selected {
                 0 => "none",
                 1 => "bell",
                 2 => "dialog",
@@ -260,8 +273,8 @@ impl AppPage for NotificationsState {
             }.to_string();
             actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsBell(sound)));
         }
-        if self.duration_spinbox.take_change() {
-            actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsDuration(self.duration_spinbox.value)));
+        if ctx[self.duration_spinbox].take_change() {
+            actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsDuration(ctx[self.duration_spinbox].value)));
         }
     }
 }
@@ -272,11 +285,11 @@ pub(crate) mod tests {
 
     #[test]
     fn test_view_layout_grid() {
-        let mut state = NotificationsState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = NotificationsState::new(&mut ui);
         let mut layout = cce_ui::layout::PageFlow::new();
         let sec_focused = vec![false];
-        let mut ctx = cce_ui::context::UiContext::new();
-        let pc = state.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+        let pc = state.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
     }
 

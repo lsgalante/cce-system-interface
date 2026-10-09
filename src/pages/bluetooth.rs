@@ -1,5 +1,6 @@
 use crate::app::{form_button, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
 
@@ -19,7 +20,7 @@ pub struct BluetoothState {
     pub enabled: bool,
     pub devices: Vec<BluetoothDevice>,
     pub scanning: bool,
-    pub toggle: Owned<Adapted<Toggle>>,
+    pub toggle: Handle<Adapted<Toggle>>,
 }
 
 impl Default for BluetoothState {
@@ -31,8 +32,15 @@ impl Default for BluetoothState {
             enabled: false,
             devices: Vec::new(),
             scanning: false,
-            toggle: Owned::new(Toggle::new()),
+            toggle: Handle::none(),
         }
+    }
+}
+
+impl BluetoothState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self { toggle: ctx.insert(Toggle::new()), ..Self::default() }
     }
 }
 
@@ -81,7 +89,7 @@ pub async fn fetch_bluetooth_page_state() -> BluetoothState {
         .unwrap_or(false);
 
     let devices = if enabled { fetch_devices().await } else { Vec::new() };
-    BluetoothState { loaded: true, installed, service_active, enabled, devices, scanning: false, toggle: Owned::new(Toggle::new()) }
+    BluetoothState { loaded: true, installed, service_active, enabled, devices, scanning: false, toggle: Handle::none() }
 }
 
 async fn fetch_devices() -> Vec<BluetoothDevice> {
@@ -178,10 +186,10 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
         } else {
             let bt_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 60.0 };
             let scan_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 52.0 };
-            state.toggle.set_toggled(state.enabled);
-            state.toggle.set_label(if state.enabled { "ON" } else { "OFF" });
+            ctx[state.toggle].set_toggled(state.enabled);
+            ctx[state.toggle].set_label(if state.enabled { "ON" } else { "OFF" });
             col.row(|r| {
-                r.widget_w(&mut state.toggle, bt_btn_w, cce_ui::layout::toggle_height());
+                r.widget_w_h(ctx, state.toggle, bt_btn_w, cce_ui::layout::toggle_height());
                 form_button(r, "Scan", scan_btn_w, (TOGGLE_OFF, BTN_HOVER, WHITE), AppAction::Bluetooth(BluetoothMessage::Scan));
             });
 
@@ -238,7 +246,7 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
     final_pc
 }
 
-pub fn update(state: &mut BluetoothState, msg: BluetoothMessage) {
+pub fn update(state: &mut BluetoothState, msg: BluetoothMessage, _ctx: &mut UiContext) {
     match msg {
         BluetoothMessage::Refreshed(new) => {
             state.loaded = new.loaded;
@@ -297,8 +305,8 @@ impl crate::pages::AppPage for BluetoothState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
-        if self.toggle.take_change() {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
+        if ctx[self.toggle].take_change() {
             actions.push(crate::app::AppAction::Bluetooth(BluetoothMessage::Toggle));
         }
     }
@@ -311,7 +319,8 @@ mod tests {
 
     #[test]
     fn section_widgets_mirror_branch_chain() {
-        let mut st = BluetoothState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = BluetoothState::new(&mut ui);
         // Each of the three early branches paints a message (and maybe a plain
         // PageContent button) but never `toggle` — the widget lives only in the
         // innermost `else`. Unlike a load gate, the middle two are steady

@@ -7,7 +7,8 @@
 
 use std::fs;
 
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::input::{Dropdown, Toggle};
 use cce_ui::widget::TextBox;
@@ -62,27 +63,20 @@ pub struct BrowserState {
     pub vi_mode: bool,
     pub bar_position: String,
     pub color_scheme: String,
-    pub homepage_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub search_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
-    pub bar_position_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
-    pub color_scheme_menu: Owned<cce_ui::widget::Adapted<Dropdown>>,
-    pub download_dir_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub history_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
-    pub raindrop_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
-    pub vi_mode_toggle: Owned<cce_ui::widget::Adapted<Toggle>>,
+    pub homepage_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub search_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
+    pub bar_position_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
+    pub color_scheme_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
+    pub download_dir_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub history_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
+    pub raindrop_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
+    pub vi_mode_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
 }
 
 impl Default for BrowserState {
+    /// The data half, read from the config; the widgets are `new`'s.
     fn default() -> Self {
         let config = read_browser_config();
-        let mut homepage_box = TextBox::new(config.homepage.clone())
-            .with_draw_bg_border(true)
-            .with_label("Homepage");
-        homepage_box.edit_buffer = config.homepage.clone();
-        let mut download_dir_box = TextBox::new(config.download_dir.clone())
-            .with_draw_bg_border(true)
-            .with_label("Download Directory");
-        download_dir_box.edit_buffer = config.download_dir.clone();
         Self {
             loaded: true,
             homepage: config.homepage,
@@ -93,30 +87,56 @@ impl Default for BrowserState {
             vi_mode: config.vi_mode,
             bar_position: config.bar_position.clone(),
             color_scheme: config.color_scheme.clone(),
-            homepage_box: Owned::new(homepage_box),
-            search_menu: Owned::new(Dropdown::new(
+            homepage_box: Handle::none(),
+            search_menu: Handle::none(),
+            bar_position_menu: Handle::none(),
+            color_scheme_menu: Handle::none(),
+            download_dir_box: Handle::none(),
+            history_toggle: Handle::none(),
+            raindrop_toggle: Handle::none(),
+            vi_mode_toggle: Handle::none(),
+        }
+    }
+}
+
+impl BrowserState {
+    /// The page's state, its widgets inserted into `ctx` and filled from the config.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        let s = Self::default();
+        let mut homepage_box = TextBox::new(s.homepage.clone())
+            .with_draw_bg_border(true)
+            .with_label("Homepage");
+        homepage_box.edit_buffer = s.homepage.clone();
+        let mut download_dir_box = TextBox::new(s.download_dir.clone())
+            .with_draw_bg_border(true)
+            .with_label("Download Directory");
+        download_dir_box.edit_buffer = s.download_dir.clone();
+        Self {
+            homepage_box: ctx.insert(homepage_box),
+            search_menu: ctx.insert(Dropdown::new(
                 SEARCH_ENGINES.iter().map(|(_, label)| label.to_string()).collect(),
-                search_index(&config.search),
+                search_index(&s.search),
             )
             .with_label("Search Engine")),
-            bar_position_menu: Owned::new(Dropdown::new(
+            bar_position_menu: ctx.insert(Dropdown::new(
                 BAR_POSITIONS.iter().map(|(_, label)| label.to_string()).collect(),
-                bar_position_index(&config.bar_position),
+                bar_position_index(&s.bar_position),
             )
             .with_label("Navigation Bar Position")),
-            color_scheme_menu: Owned::new(Dropdown::new(
+            color_scheme_menu: ctx.insert(Dropdown::new(
                 COLOR_SCHEMES.iter().map(|(_, label)| label.to_string()).collect(),
-                color_scheme_index(&config.color_scheme),
+                color_scheme_index(&s.color_scheme),
             )
             .with_label("Page Color Scheme")),
-            download_dir_box: Owned::new(download_dir_box),
+            download_dir_box: ctx.insert(download_dir_box),
             // Left-aligned, as the designer's parameter pane sets its toggles:
             // a toggle's run is half its width, so the seam where run meets
             // well sits at the midpoint, and a centred label on a row-wide
             // toggle had it drawn straight through the text.
-            history_toggle: Owned::new(Toggle::new().with_label("Record History").with_left_align(true)),
-            raindrop_toggle: Owned::new(Toggle::new().with_label("Sync Bookmarks with Raindrop").with_left_align(true)),
-            vi_mode_toggle: Owned::new(Toggle::new().with_label("Vi Keys (qutebrowser-style)").with_left_align(true)),
+            history_toggle: ctx.insert(Toggle::new().with_label("Record History").with_left_align(true)),
+            raindrop_toggle: ctx.insert(Toggle::new().with_label("Sync Bookmarks with Raindrop").with_left_align(true)),
+            vi_mode_toggle: ctx.insert(Toggle::new().with_label("Vi Keys (qutebrowser-style)").with_left_align(true)),
+            ..s
         }
     }
 }
@@ -156,7 +176,7 @@ fn live_text(tb: &cce_ui::widget::Adapted<TextBox>) -> String {
     }
 }
 
-pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
+pub fn update(state: &mut BrowserState, msg: BrowserMessage, ctx: &mut UiContext) {
     match msg {
         BrowserMessage::SetSearch(key) => {
             state.search = key.clone();
@@ -183,13 +203,13 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             write_config_value("vi-mode", &state.vi_mode.to_string());
         }
         BrowserMessage::Apply => {
-            state.homepage = live_text(&state.homepage_box);
+            state.homepage = live_text(&ctx[state.homepage_box]);
             if state.homepage.is_empty() {
                 state.homepage = DEFAULT_HOMEPAGE.to_string();
-                state.homepage_box.text = state.homepage.clone();
-                state.homepage_box.edit_buffer = state.homepage.clone();
+                ctx[state.homepage_box].text = state.homepage.clone();
+                ctx[state.homepage_box].edit_buffer = state.homepage.clone();
             }
-            state.download_dir = live_text(&state.download_dir_box);
+            state.download_dir = live_text(&ctx[state.download_dir_box]);
             write_config_value("homepage", &state.homepage);
             write_config_value("download-dir", &state.download_dir);
         }
@@ -202,15 +222,15 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage) {
             state.bar_position = new.bar_position;
             state.color_scheme = new.color_scheme;
             // Don't clobber fields mid-edit with watcher refreshes.
-            if !state.homepage_box.editing && state.homepage != new.homepage {
+            if !ctx[state.homepage_box].editing && state.homepage != new.homepage {
                 state.homepage = new.homepage.clone();
-                state.homepage_box.text = new.homepage.clone();
-                state.homepage_box.edit_buffer = new.homepage;
+                ctx[state.homepage_box].text = new.homepage.clone();
+                ctx[state.homepage_box].edit_buffer = new.homepage;
             }
-            if !state.download_dir_box.editing && state.download_dir != new.download_dir {
+            if !ctx[state.download_dir_box].editing && state.download_dir != new.download_dir {
                 state.download_dir = new.download_dir.clone();
-                state.download_dir_box.text = new.download_dir.clone();
-                state.download_dir_box.edit_buffer = new.download_dir;
+                ctx[state.download_dir_box].text = new.download_dir.clone();
+                ctx[state.download_dir_box].edit_buffer = new.download_dir;
             }
         }
     }
@@ -282,14 +302,14 @@ impl AppPage for BrowserState {
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
         builder.add_section(&mut final_pc, "Browser Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
-            self.search_menu.selected = search_index(&self.search);
-            self.bar_position_menu.selected = bar_position_index(&self.bar_position);
-            self.color_scheme_menu.selected = color_scheme_index(&self.color_scheme);
-            self.history_toggle.set_toggled(self.history);
+            ctx[self.search_menu].selected = search_index(&self.search);
+            ctx[self.bar_position_menu].selected = bar_position_index(&self.bar_position);
+            ctx[self.color_scheme_menu].selected = color_scheme_index(&self.color_scheme);
+            ctx[self.history_toggle].set_toggled(self.history);
             // Needs a Raindrop token in the keyring (service=raindrop.io);
             // the browser shows the sync's status on cce://bookmarks.
-            self.raindrop_toggle.set_toggled(self.raindrop);
-            self.vi_mode_toggle.set_toggled(self.vi_mode);
+            ctx[self.raindrop_toggle].set_toggled(self.raindrop);
+            ctx[self.vi_mode_toggle].set_toggled(self.vi_mode);
 
             let (field_h, menu_h, toggle_h) = (
                 cce_ui::layout::textbox_height(),
@@ -298,14 +318,14 @@ impl AppPage for BrowserState {
             );
             let mut form = sec.form();
             form.column()
-                .widget(&mut self.homepage_box, field_h)
-                .widget(&mut self.search_menu, menu_h)
-                .widget(&mut self.bar_position_menu, menu_h)
-                .widget(&mut self.color_scheme_menu, menu_h)
-                .widget(&mut self.download_dir_box, field_h)
-                .widget(&mut self.history_toggle, toggle_h)
-                .widget(&mut self.raindrop_toggle, toggle_h)
-                .widget(&mut self.vi_mode_toggle, toggle_h)
+                .widget_h(ctx, self.homepage_box, field_h)
+                .widget_h(ctx, self.search_menu, menu_h)
+                .widget_h(ctx, self.bar_position_menu, menu_h)
+                .widget_h(ctx, self.color_scheme_menu, menu_h)
+                .widget_h(ctx, self.download_dir_box, field_h)
+                .widget_h(ctx, self.history_toggle, toggle_h)
+                .widget_h(ctx, self.raindrop_toggle, toggle_h)
+                .widget_h(ctx, self.vi_mode_toggle, toggle_h)
                 .draw(0.0, cce_ui::layout::button_height(), false, |pc, r, _| {
                     pc.button(
                         "Apply",
@@ -325,39 +345,39 @@ impl AppPage for BrowserState {
         final_pc
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
-        if self.search_menu.take_change() {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
+        if ctx[self.search_menu].take_change() {
             let key = SEARCH_ENGINES
-                .get(self.search_menu.selected)
+                .get(ctx[self.search_menu].selected)
                 .map(|(k, _)| k.to_string())
                 .unwrap_or_else(|| "duckduckgo".to_string());
             actions.push(AppAction::Browser(BrowserMessage::SetSearch(key)));
         }
-        if self.bar_position_menu.take_change() {
+        if ctx[self.bar_position_menu].take_change() {
             let key = BAR_POSITIONS
-                .get(self.bar_position_menu.selected)
+                .get(ctx[self.bar_position_menu].selected)
                 .map(|(k, _)| k.to_string())
                 .unwrap_or_else(|| "top".to_string());
             actions.push(AppAction::Browser(BrowserMessage::SetBarPosition(key)));
         }
-        if self.color_scheme_menu.take_change() {
+        if ctx[self.color_scheme_menu].take_change() {
             let key = COLOR_SCHEMES
-                .get(self.color_scheme_menu.selected)
+                .get(ctx[self.color_scheme_menu].selected)
                 .map(|(k, _)| k.to_string())
                 .unwrap_or_else(|| "dark".to_string());
             actions.push(AppAction::Browser(BrowserMessage::SetColorScheme(key)));
         }
-        if self.history_toggle.take_change() {
+        if ctx[self.history_toggle].take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));
         }
-        if self.raindrop_toggle.take_change() {
+        if ctx[self.raindrop_toggle].take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleRaindrop));
         }
-        if self.vi_mode_toggle.take_change() {
+        if ctx[self.vi_mode_toggle].take_change() {
             actions.push(AppAction::Browser(BrowserMessage::ToggleViMode));
         }
         // Enter in either text field commits both.
-        if self.homepage_box.take_change() || self.download_dir_box.take_change() {
+        if ctx[self.homepage_box].take_change() || ctx[self.download_dir_box].take_change() {
             actions.push(AppAction::Browser(BrowserMessage::Apply));
         }
     }

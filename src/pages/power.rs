@@ -44,7 +44,8 @@
 
 use crate::app::{AppAction, PageContent};
 use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::{Adapted, Dropdown};
 use std::path::{Path, PathBuf};
@@ -130,7 +131,7 @@ pub struct PowerFacts {
 #[derive(Debug, Clone)]
 pub struct LeverSet {
     /// One dropdown per [`Lever::ALL`] entry, in that order.
-    pub dds: Vec<Owned<Adapted<Dropdown>>>,
+    pub dds: Vec<Handle<Adapted<Dropdown>>>,
     /// The plan value behind each row of each dropdown (options are display
     /// text). Row 0 is always the "Not set" row and holds the empty string;
     /// an empty Vec means the interface is absent on this host and the
@@ -138,12 +139,13 @@ pub struct LeverSet {
     pub rows: Vec<Vec<String>>,
 }
 
-impl Default for LeverSet {
-    fn default() -> Self {
+impl LeverSet {
+    /// The set, its dropdowns inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
         Self {
             dds: Lever::ALL
                 .iter()
-                .map(|l| Owned::new(Dropdown::new(vec!["—".to_string()], 0).with_label(l.label())))
+                .map(|l| ctx.insert(Dropdown::new(vec!["—".to_string()], 0).with_label(l.label())))
                 .collect(),
             rows: vec![Vec::new(); Lever::ALL.len()],
         }
@@ -158,32 +160,33 @@ fn lever_index(lever: Lever) -> usize {
 pub struct PowerState {
     pub loaded: bool,
     pub facts: PowerFacts,
-    pub dd_limit: Owned<Adapted<Dropdown>>,
+    pub dd_limit: Handle<Adapted<Dropdown>>,
     /// The charge window per charge-limit dropdown row (options are display
     /// text).
     pub limit_values: Vec<ChargeLimit>,
     /// Which mode the lever section is editing. Page state, not plan state:
     /// it says what is on screen, never what the machine runs.
     pub editing: Mode,
-    pub dd_mode: Owned<Adapted<Dropdown>>,
+    pub dd_mode: Handle<Adapted<Dropdown>>,
     pub levers: LeverSet,
     /// One mode picker per [`Source::ALL`] entry, in that order.
-    pub dd_assign: Vec<Owned<Adapted<Dropdown>>>,
+    pub dd_assign: Vec<Handle<Adapted<Dropdown>>>,
 }
 
-impl Default for PowerState {
-    fn default() -> Self {
+impl PowerState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
         Self {
             loaded: false,
             facts: PowerFacts::default(),
-            dd_limit: Owned::new(Dropdown::new(vec!["—".to_string()], 0).with_label("Battery Charge Limit")),
+            dd_limit: ctx.insert(Dropdown::new(vec!["—".to_string()], 0).with_label("Battery Charge Limit")),
             limit_values: Vec::new(),
             editing: Mode::default(),
-            dd_mode: Owned::new(Dropdown::new(mode_options(), 0).with_label("Mode")),
-            levers: LeverSet::default(),
+            dd_mode: ctx.insert(Dropdown::new(mode_options(), 0).with_label("Mode")),
+            levers: LeverSet::new(ctx),
             dd_assign: Source::ALL
                 .iter()
-                .map(|s| Owned::new(Dropdown::new(mode_options(), 0).with_label(s.label())))
+                .map(|s| ctx.insert(Dropdown::new(mode_options(), 0).with_label(s.label())))
                 .collect(),
         }
     }
@@ -619,17 +622,17 @@ fn set_live(lever: Lever, value: &str, f: &mut PowerFacts) {
 /// value missing from the host's list gets appended as its own row. Skipped
 /// per dropdown while it is open (the default_apps rule: never yank an open
 /// menu out from under the pointer — the next refresh normalizes it).
-fn fill_levers(levers: &mut LeverSet, f: &PowerFacts, mode: Mode) {
+fn fill_levers(levers: &mut LeverSet, f: &PowerFacts, mode: Mode, ctx: &mut UiContext) {
     let running = mode == f.plan.assigned(f.source);
     for (i, lever) in Lever::ALL.iter().enumerate() {
-        if levers.dds[i].open {
+        if ctx[levers.dds[i]].open {
             continue;
         }
         let mut rows = choices(*lever, f);
         if rows.is_empty() {
             levers.rows[i].clear();
-            levers.dds[i].options = vec!["—".to_string()];
-            levers.dds[i].selected = 0;
+            ctx[levers.dds[i]].options = vec!["—".to_string()];
+            ctx[levers.dds[i]].selected = 0;
             continue;
         }
         let planned: Option<String> = f.plan.get(mode, *lever).map(str::to_string);
@@ -649,8 +652,8 @@ fn fill_levers(levers: &mut LeverSet, f: &PowerFacts, mode: Mode) {
             values.push(v);
             options.push(d);
         }
-        levers.dds[i].selected = planned.and_then(|s| values.iter().position(|v| *v == s)).unwrap_or(0);
-        levers.dds[i].options = options;
+        ctx[levers.dds[i]].selected = planned.and_then(|s| values.iter().position(|v| *v == s)).unwrap_or(0);
+        ctx[levers.dds[i]].options = options;
         levers.rows[i] = values;
     }
 }
@@ -698,26 +701,26 @@ fn charge_rows(f: &PowerFacts) -> (Vec<ChargeLimit>, Vec<String>, usize) {
 }
 
 /// Rebuild every dropdown's options/selection from fresh facts.
-fn rebuild_options(state: &mut PowerState) {
+fn rebuild_options(state: &mut PowerState, ctx: &mut UiContext) {
     let f = &state.facts;
-    if !state.dd_limit.open {
+    if !ctx[state.dd_limit].open {
         let (values, options, selected) = charge_rows(f);
-        state.dd_limit.options = options;
-        state.dd_limit.selected = selected;
+        ctx[state.dd_limit].options = options;
+        ctx[state.dd_limit].selected = selected;
         state.limit_values = values;
     }
-    if !state.dd_mode.open {
-        state.dd_mode.options = mode_options();
-        state.dd_mode.selected = mode_index(state.editing);
+    if !ctx[state.dd_mode].open {
+        ctx[state.dd_mode].options = mode_options();
+        ctx[state.dd_mode].selected = mode_index(state.editing);
     }
-    fill_levers(&mut state.levers, &state.facts, state.editing);
+    fill_levers(&mut state.levers, &state.facts, state.editing, ctx);
     for source in Source::ALL {
         let i = source_index(source);
-        if state.dd_assign[i].open {
+        if ctx[state.dd_assign[i]].open {
             continue;
         }
-        state.dd_assign[i].options = mode_options();
-        state.dd_assign[i].selected = mode_index(state.facts.plan.assigned(source));
+        ctx[state.dd_assign[i]].options = mode_options();
+        ctx[state.dd_assign[i]].selected = mode_index(state.facts.plan.assigned(source));
     }
 }
 
@@ -744,6 +747,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
     }
 
     let PowerState { facts, dd_limit, editing, dd_mode, levers, dd_assign, .. } = state;
+    let (dd_limit, dd_mode) = (*dd_limit, *dd_mode);
     let editing = *editing;
     let sources = sources_shown(facts);
     let show_assign = assignment_shown(facts);
@@ -801,7 +805,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         });
 
         if f.charge_limit.is_some() {
-            col.widget(&mut *dd_limit, menu_h);
+            col.widget_h(ctx, dd_limit, menu_h);
         }
 
         if f.battery_present {
@@ -835,7 +839,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         builder.add_section(&mut final_pc, "Power Mode", focused(1), |sec| {
             let mut form = sec.form();
             let mut col = form.column();
-            col.widget(&mut *dd_mode, menu_h);
+            col.widget_h(ctx, dd_mode, menu_h);
             col.block(|b| {
                 if running {
                     b.text("Running now — picks apply immediately.", 11.0, GOOD);
@@ -846,9 +850,9 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
                 }
                 b.text("Not set leaves a lever alone.", 11.0, TEXT_DIM);
             });
-            for (row, dd) in levers.rows.iter().zip(levers.dds.iter_mut()) {
+            for (row, &dd) in levers.rows.iter().zip(levers.dds.iter()) {
                 if !row.is_empty() {
-                    col.widget(dd, menu_h);
+                    col.widget_h(ctx, dd, menu_h);
                 }
             }
             sec.place(form, ctx);
@@ -866,9 +870,9 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
                 b.text(format!("{} right now.", f.source.label()), 11.0, GOOD);
             });
             let wanted: Vec<usize> = sources.iter().map(|s| source_index(*s)).collect();
-            for (i, dd) in dd_assign.iter_mut().enumerate() {
+            for (i, &dd) in dd_assign.iter().enumerate() {
                 if wanted.contains(&i) {
-                    col.widget(dd, menu_h);
+                    col.widget_h(ctx, dd, menu_h);
                 }
             }
             sec.place(form, ctx);
@@ -878,7 +882,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
     final_pc
 }
 
-pub fn update(state: &mut PowerState, msg: PowerMessage) {
+pub fn update(state: &mut PowerState, msg: PowerMessage, ctx: &mut UiContext) {
     match msg {
         PowerMessage::Refreshed(facts) => {
             // The page opens on the mode the machine is actually running, so
@@ -891,7 +895,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
             state.loaded = true;
             if state.facts != facts {
                 state.facts = facts;
-                rebuild_options(state);
+                rebuild_options(state, ctx);
             }
         }
         PowerMessage::SetLimit(idx) => {
@@ -922,14 +926,14 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
             if limit.start.is_some() {
                 state.facts.charge_start = limit.start;
             }
-            rebuild_options(state);
+            rebuild_options(state, ctx);
         }
         PowerMessage::EditMode(idx) => {
             // Page-local: switching which mode is on screen writes nothing
             // and applies nothing, so it needs no privileged call.
             if let Some(mode) = Mode::ALL.get(idx).copied() {
                 state.editing = mode;
-                rebuild_options(state);
+                rebuild_options(state, ctx);
             }
         }
         PowerMessage::Set { lever, idx } => {
@@ -967,7 +971,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                     set_live(lever, v, &mut state.facts);
                 }
             }
-            rebuild_options(state);
+            rebuild_options(state, ctx);
         }
         PowerMessage::Assign { source, idx } => {
             let Some(mode) = Mode::ALL.get(idx).copied() else {
@@ -994,7 +998,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage) {
                     set_live(lever, &value, &mut state.facts);
                 }
             }
-            rebuild_options(state);
+            rebuild_options(state, ctx);
         }
     }
 }
@@ -1044,27 +1048,27 @@ impl crate::pages::AppPage for PowerState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
-        if self.dd_limit.take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetLimit(self.dd_limit.selected)));
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
+        if ctx[self.dd_limit].take_change() {
+            actions.push(AppAction::Power(PowerMessage::SetLimit(ctx[self.dd_limit].selected)));
         }
-        if self.dd_mode.take_change() {
-            actions.push(AppAction::Power(PowerMessage::EditMode(self.dd_mode.selected)));
+        if ctx[self.dd_mode].take_change() {
+            actions.push(AppAction::Power(PowerMessage::EditMode(ctx[self.dd_mode].selected)));
         }
         for (i, lever) in Lever::ALL.iter().enumerate() {
-            if self.levers.dds[i].take_change() {
+            if ctx[self.levers.dds[i]].take_change() {
                 actions.push(AppAction::Power(PowerMessage::Set {
                     lever: *lever,
-                    idx: self.levers.dds[i].selected,
+                    idx: ctx[self.levers.dds[i]].selected,
                 }));
             }
         }
         for source in Source::ALL {
             let i = source_index(source);
-            if self.dd_assign[i].take_change() {
+            if ctx[self.dd_assign[i]].take_change() {
                 actions.push(AppAction::Power(PowerMessage::Assign {
                     source,
-                    idx: self.dd_assign[i].selected,
+                    idx: ctx[self.dd_assign[i]].selected,
                 }));
             }
         }
@@ -1120,12 +1124,12 @@ mod tests {
 
     /// Loaded, editing whichever mode the machine is running — which is what
     /// the page opens on.
-    fn loaded() -> PowerState {
-        let mut st = PowerState::default();
+    fn loaded(ui: &mut UiContext) -> PowerState {
+        let mut st = PowerState::new(ui);
         st.loaded = true;
         st.facts = facts();
         st.editing = st.facts.plan.assigned(st.facts.source);
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, ui);
         st
     }
 
@@ -1137,59 +1141,63 @@ mod tests {
 
     #[test]
     fn the_lever_section_shows_the_edited_mode_behind_not_set() {
-        let st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let st = loaded(&mut ui);
         // On battery, so Power Saver is running; its plan says low-power.
         assert_eq!(st.editing, Mode::PowerSaver);
-        assert_eq!(st.dd_mode.options, ["Performance", "Balanced", "Power Saver"]);
-        assert_eq!(st.dd_mode.selected, 2);
+        assert_eq!(ui[st.dd_mode].options, ["Performance", "Balanced", "Power Saver"]);
+        assert_eq!(ui[st.dd_mode].selected, 2);
         assert_eq!(st.levers.rows[PROFILE], ["", "low-power", "balanced", "performance"]);
-        assert_eq!(st.levers.dds[PROFILE].selected, 1);
+        assert_eq!(ui[st.levers.dds[PROFILE]].selected, 1);
         // Nothing planned for turbo in this mode → Not set.
-        assert_eq!(st.levers.dds[TURBO].selected, 0);
+        assert_eq!(ui[st.levers.dds[TURBO]].selected, 0);
         assert_eq!(st.levers.rows[TURBO], ["", "on", "off"]);
     }
 
     #[test]
     fn the_running_mode_reports_the_live_value_on_its_not_set_row() {
-        let mut st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
         // Power Saver is running: sysfs says balanced and turbo on, and the
         // Not set row is where the page says so.
-        assert_eq!(st.levers.dds[PROFILE].options[0], "Not set — now Balanced");
-        assert_eq!(st.levers.dds[TURBO].options[0], "Not set — now Enabled");
+        assert_eq!(ui[st.levers.dds[PROFILE]].options[0], "Not set — now Balanced");
+        assert_eq!(ui[st.levers.dds[TURBO]].options[0], "Not set — now Enabled");
         // A mode that is not running has no live value to report.
         st.editing = Mode::Balanced;
-        rebuild_options(&mut st);
-        assert_eq!(st.levers.dds[PROFILE].options[0], "Not set");
-        assert_eq!(st.levers.dds[PROFILE].selected, 0);
+        rebuild_options(&mut st, &mut ui);
+        assert_eq!(ui[st.levers.dds[PROFILE]].options[0], "Not set");
+        assert_eq!(ui[st.levers.dds[PROFILE]].selected, 0);
     }
 
     #[test]
     fn the_page_opens_on_the_mode_the_machine_is_running() {
-        let mut st = PowerState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = PowerState::new(&mut ui);
         // Default state edits Balanced; the first read is on battery, which
         // runs Power Saver.
         assert_eq!(st.editing, Mode::Balanced);
-        update(&mut st, PowerMessage::Refreshed(facts()));
+        update(&mut st, PowerMessage::Refreshed(facts()), &mut ui);
         assert_eq!(st.editing, Mode::PowerSaver);
-        assert_eq!(st.dd_mode.selected, mode_index(Mode::PowerSaver));
+        assert_eq!(ui[st.dd_mode].selected, mode_index(Mode::PowerSaver));
         // A later read does not yank the section away from the user's pick.
-        update(&mut st, PowerMessage::EditMode(mode_index(Mode::Performance)));
+        update(&mut st, PowerMessage::EditMode(mode_index(Mode::Performance)), &mut ui);
         let mut plugged = facts();
         plugged.source = Source::Ac;
-        update(&mut st, PowerMessage::Refreshed(plugged));
+        update(&mut st, PowerMessage::Refreshed(plugged), &mut ui);
         assert_eq!(st.editing, Mode::Performance);
     }
 
     #[test]
     fn switching_the_edited_mode_swaps_the_lever_values() {
-        let mut st = loaded();
-        assert_eq!(st.levers.dds[PROFILE].selected, 1); // low-power
-        update(&mut st, PowerMessage::EditMode(mode_index(Mode::Performance)));
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
+        assert_eq!(ui[st.levers.dds[PROFILE]].selected, 1); // low-power
+        update(&mut st, PowerMessage::EditMode(mode_index(Mode::Performance)), &mut ui);
         assert_eq!(st.editing, Mode::Performance);
-        assert_eq!(st.dd_mode.selected, 0);
-        assert_eq!(st.levers.dds[PROFILE].selected, 3); // performance
-        update(&mut st, PowerMessage::EditMode(mode_index(Mode::Balanced)));
-        assert_eq!(st.levers.dds[PROFILE].selected, 0); // nothing planned
+        assert_eq!(ui[st.dd_mode].selected, 0);
+        assert_eq!(ui[st.levers.dds[PROFILE]].selected, 3); // performance
+        update(&mut st, PowerMessage::EditMode(mode_index(Mode::Balanced)), &mut ui);
+        assert_eq!(ui[st.levers.dds[PROFILE]].selected, 0); // nothing planned
         // Editing is page state: it changes no assignment and no plan.
         assert_eq!(st.facts.plan.assigned(Source::Battery), Mode::PowerSaver);
         assert_eq!(st.facts.plan.get(Mode::Balanced, Lever::Profile), None);
@@ -1197,79 +1205,81 @@ mod tests {
 
     #[test]
     fn assignment_dropdowns_follow_the_plan_and_pick_a_mode_per_state() {
-        let mut st = loaded();
-        assert_eq!(st.dd_assign[source_index(Source::Ac)].selected, mode_index(Mode::Performance));
-        assert_eq!(st.dd_assign[source_index(Source::Battery)].selected, mode_index(Mode::PowerSaver));
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
+        assert_eq!(ui[st.dd_assign[source_index(Source::Ac)]].selected, mode_index(Mode::Performance));
+        assert_eq!(ui[st.dd_assign[source_index(Source::Battery)]].selected, mode_index(Mode::PowerSaver));
         // Reassigning the live state hands the machine to that mode, and the
         // lever section — still editing Power Saver — stops claiming to run.
         update(
             &mut st,
-            PowerMessage::Assign { source: Source::Battery, idx: mode_index(Mode::Balanced) },
-        );
+            PowerMessage::Assign { source: Source::Battery, idx: mode_index(Mode::Balanced) },&mut ui);
         assert_eq!(st.facts.plan.assigned(Source::Battery), Mode::Balanced);
-        assert_eq!(st.dd_assign[source_index(Source::Battery)].selected, mode_index(Mode::Balanced));
+        assert_eq!(ui[st.dd_assign[source_index(Source::Battery)]].selected, mode_index(Mode::Balanced));
         assert_eq!(st.editing, Mode::PowerSaver);
-        assert_eq!(st.levers.dds[PROFILE].options[0], "Not set");
+        assert_eq!(ui[st.levers.dds[PROFILE]].options[0], "Not set");
         // Both states may run the same mode.
         update(
             &mut st,
-            PowerMessage::Assign { source: Source::Ac, idx: mode_index(Mode::Balanced) },
-        );
+            PowerMessage::Assign { source: Source::Ac, idx: mode_index(Mode::Balanced) },&mut ui);
         assert_eq!(st.facts.plan.assigned(Source::Ac), Mode::Balanced);
     }
 
     #[test]
     fn charge_limit_rows_are_windows_and_map_current_and_off_list_values() {
+        let mut ui = cce_ui::context::UiContext::new();
         let w = |start, end| ChargeLimit { start: Some(start), end: Some(end) };
-        let mut st = loaded();
+        let mut st = loaded(&mut ui);
         // Nothing planned: the battery's own 75/80 is the longevity preset.
         assert_eq!(st.limit_values, [w(0, 100), w(75, 80), w(55, 60)]);
-        assert_eq!(st.dd_limit.selected, 1);
+        assert_eq!(ui[st.dd_limit].selected, 1);
         // An off-list window gets its own row instead of a wrong match.
         st.facts.charge_limit = Some(70);
         st.facts.charge_start = Some(65);
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(st.limit_values[3], w(65, 70));
-        assert_eq!(st.dd_limit.selected, 3);
-        assert_eq!(st.dd_limit.options[3], "70% — current, from 65%");
+        assert_eq!(ui[st.dd_limit].selected, 3);
+        assert_eq!(ui[st.dd_limit].options[3], "70% — current, from 65%");
         // Once planned, the plan is what the row shows — the firmware
         // having forgotten it (0/100) is what the helper puts right.
         st.facts.plan.set_charge_limit(w(55, 60)).unwrap();
         st.facts.charge_limit = Some(100);
         st.facts.charge_start = Some(0);
-        rebuild_options(&mut st);
-        assert_eq!(st.dd_limit.selected, 2);
+        rebuild_options(&mut st, &mut ui);
+        assert_eq!(ui[st.dd_limit].selected, 2);
         // A battery with no start threshold is offered the ends alone.
         st.facts.plan = PowerPlan::default();
         st.facts.charge_start = None;
         st.facts.charge_limit = Some(80);
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(st.limit_values[1], ChargeLimit { start: None, end: Some(80) });
-        assert_eq!(st.dd_limit.selected, 1);
+        assert_eq!(ui[st.dd_limit].selected, 1);
     }
 
     #[test]
     fn a_charge_limit_pick_is_recorded_in_the_plan() {
-        let mut st = loaded();
-        update(&mut st, PowerMessage::SetLimit(0));
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
+        update(&mut st, PowerMessage::SetLimit(0), &mut ui);
         assert_eq!(st.facts.plan.charge_limit(), ChargeLimit { start: Some(0), end: Some(100) });
         assert_eq!((st.facts.charge_start, st.facts.charge_limit), (Some(0), Some(100)));
-        assert_eq!(st.dd_limit.selected, 0);
+        assert_eq!(ui[st.dd_limit].selected, 0);
         // No mode gained a lever from it.
         assert!(Mode::ALL.iter().all(|m| st.facts.plan.levers(*m).all(|(l, _)| l == Lever::Profile)));
     }
 
     #[test]
     fn open_dropdown_is_left_alone_on_refresh() {
-        let mut st = loaded();
-        st.levers.dds[PROFILE].open = true;
-        st.levers.dds[PROFILE].selected = 2;
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
+        ui[st.levers.dds[PROFILE]].open = true;
+        ui[st.levers.dds[PROFILE]].selected = 2;
         let mut newer = facts();
         newer.profile = "low-power".to_string();
         st.facts = newer;
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         // Open menu untouched; the others refreshed.
-        assert_eq!(st.levers.dds[PROFILE].selected, 2);
+        assert_eq!(ui[st.levers.dds[PROFILE]].selected, 2);
     }
 
     #[test]
@@ -1310,13 +1320,14 @@ mod tests {
 
     #[test]
     fn section_widgets_mirror_presence_gates() {
-        let mut st = PowerState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = PowerState::new(&mut ui);
         // Not loaded: one section, nothing reported (the view paints only the
         // loading line).
         assert_eq!(st.section_widgets(), vec![Vec::new()]);
         st.loaded = true;
         st.facts = facts();
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         let counts = |st: &mut PowerState| st.section_widgets().iter().map(Vec::len).collect::<Vec<_>>();
         // Every interface present: the charge limit, the mode picker plus all
         // eleven levers, and one assignment per adapter state.
@@ -1324,14 +1335,14 @@ mod tests {
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(counts(&mut st), [0, 11, 2]);
         // No cpufreq governors and no NVIDIA driver: both drop out too.
         st.facts.governors.clear();
         st.facts.gpu_limit_w = None;
         st.facts.gpu_default_w = None;
         st.facts.gpu_min_w = None;
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(counts(&mut st), [0, 9, 2]);
         // No Intel render clocks, an ASPM-less kernel and no snd_hda_intel is
         // down to profile, epp, animations and the two idle timeouts — which
@@ -1340,120 +1351,125 @@ mod tests {
         st.facts.igpu_min_mhz = None;
         st.facts.aspm_policies.clear();
         st.facts.hda_idle_secs = None;
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(counts(&mut st), [0, 6, 2]);
         // A desktop: one adapter state, so there is nothing to assign.
         st.facts.battery_present = false;
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(counts(&mut st), [0, 6]);
     }
 
     #[test]
     fn igpu_rows_come_from_the_hardware_range() {
-        let mut st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
         // RP0, the rounded midpoint, RPn — no invented numbers, behind the
         // Not set row.
         assert_eq!(st.levers.rows[IGPU], ["", "1500", "800", "100"]);
-        assert_eq!(st.levers.dds[IGPU].selected, 0);
+        assert_eq!(ui[st.levers.dds[IGPU]].selected, 0);
         // A planned cap that is none of the three earns its own row.
         st.facts.plan.put(Mode::PowerSaver, Lever::IgpuMaxMhz, Some("1300")).unwrap();
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(st.levers.rows[IGPU], ["", "1500", "800", "100", "1300"]);
-        assert_eq!(st.levers.dds[IGPU].selected, 4);
-        assert_eq!(st.levers.dds[IGPU].options[4], "1300 MHz");
+        assert_eq!(ui[st.levers.dds[IGPU]].selected, 4);
+        assert_eq!(ui[st.levers.dds[IGPU]].options[4], "1300 MHz");
         // And a live cap off the list still shows on the Not set row.
         st.facts.igpu_mhz = Some(1200);
-        rebuild_options(&mut st);
-        assert_eq!(st.levers.dds[IGPU].options[0], "Not set — now 1200 MHz");
+        rebuild_options(&mut st, &mut ui);
+        assert_eq!(ui[st.levers.dds[IGPU]].options[0], "Not set — now 1200 MHz");
     }
 
     #[test]
     fn audio_rows_are_the_three_timeouts_behind_not_set() {
-        let mut st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
         assert_eq!(st.levers.rows[AUDIO], ["", "0", "1", "10"]);
-        assert_eq!(st.levers.dds[AUDIO].options[1], "Never suspend");
-        assert_eq!(st.levers.dds[AUDIO].selected, 0);
+        assert_eq!(ui[st.levers.dds[AUDIO]].options[1], "Never suspend");
+        assert_eq!(ui[st.levers.dds[AUDIO]].selected, 0);
         st.facts.plan.put(Mode::PowerSaver, Lever::AudioIdleSecs, Some("30")).unwrap();
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(st.levers.rows[AUDIO], ["", "0", "1", "10", "30"]);
-        assert_eq!(st.levers.dds[AUDIO].options[4], "After 30 s idle");
+        assert_eq!(ui[st.levers.dds[AUDIO]].options[4], "After 30 s idle");
     }
 
     #[test]
     fn aspm_rows_come_from_the_kernels_own_list() {
-        let mut st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
         let i = lever_index(Lever::Aspm);
         st.facts.plan.put(Mode::PowerSaver, Lever::Aspm, Some("powersave")).unwrap();
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         // fetch strips the brackets; the selection lands behind Not set.
         assert_eq!(st.levers.rows[i], ["", "default", "performance", "powersave"]);
-        assert_eq!(st.levers.dds[i].selected, 3);
-        assert_eq!(st.levers.dds[i].options[3], "Powersave");
+        assert_eq!(ui[st.levers.dds[i]].selected, 3);
+        assert_eq!(ui[st.levers.dds[i]].options[3], "Powersave");
     }
 
     #[test]
     fn gpu_rows_are_default_and_min_with_an_off_list_live_value() {
-        let mut st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
         let i = lever_index(Lever::GpuLimitW);
         // Current == default: two rows, no duplicate.
         assert_eq!(st.levers.rows[i], ["", "80", "5"]);
-        assert_eq!(st.levers.dds[i].selected, 0);
+        assert_eq!(ui[st.levers.dds[i]].selected, 0);
         // A live limit that is neither default nor minimum is reported on the
         // Not set row rather than silently selecting the wrong one.
         st.facts.gpu_limit_w = Some(60);
-        rebuild_options(&mut st);
+        rebuild_options(&mut st, &mut ui);
         assert_eq!(st.levers.rows[i], ["", "80", "5"]);
-        assert_eq!(st.levers.dds[i].selected, 0);
-        assert_eq!(st.levers.dds[i].options[0], "Not set — now 60 W");
+        assert_eq!(ui[st.levers.dds[i]].selected, 0);
+        assert_eq!(ui[st.levers.dds[i]].options[0], "Not set — now 60 W");
     }
 
     #[test]
     fn the_three_sections_paint_and_the_assignment_one_drops_on_a_desktop() {
-        let mut ctx = cce_ui::context::UiContext::new();
-        let mut paint = |st: &mut PowerState, sections: usize| {
+        let mut ui = cce_ui::context::UiContext::new();
+        let paint = |st: &mut PowerState, sections: usize, ui: &mut UiContext| {
             let mut layout = cce_ui::layout::PageFlow::new();
             let sec_focused = vec![false; sections];
-            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui);
             assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
         };
-        let mut st = loaded();
-        paint(&mut st, 3);
+        let mut st = loaded(&mut ui);
+        paint(&mut st, 3, &mut ui);
         // A desktop has one adapter state and so nothing to assign.
         st.facts.battery_present = false;
-        rebuild_options(&mut st);
-        paint(&mut st, 2);
+        rebuild_options(&mut st, &mut ui);
+        paint(&mut st, 2, &mut ui);
         // And the loading gate paints its one line.
-        let mut empty = PowerState::default();
-        paint(&mut empty, 1);
+        let mut empty = PowerState::new(&mut ui);
+        paint(&mut empty, 1, &mut ui);
     }
 
     #[test]
     fn a_stale_root_helper_is_named_on_the_page() {
-        let mut ctx = cce_ui::context::UiContext::new();
-        let mut lines = |st: &mut PowerState| -> Vec<String> {
+        let mut ui = cce_ui::context::UiContext::new();
+        let lines = |st: &mut PowerState, ui: &mut UiContext| -> Vec<String> {
             let mut layout = cce_ui::layout::PageFlow::new();
             let sec_focused = vec![false; 3];
-            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui);
             pc.texts.iter().map(|t| t.0.clone()).collect()
         };
-        let mut st = loaded();
-        assert!(lines(&mut st).iter().any(|l| l.contains("Switches automatically")));
+        let mut st = loaded(&mut ui);
+        assert!(lines(&mut st, &mut ui).iter().any(|l| l.contains("Switches automatically")));
         // A helper too old to read a plan with modes applies nothing on plug
         // or unplug, and the page says so rather than claiming it switches.
         st.facts.automation = Automation::Stale;
-        let out = lines(&mut st);
+        let out = lines(&mut st, &mut ui);
         assert!(out.iter().any(|l| l.contains("out of date")), "{out:?}");
         assert!(out.iter().any(|l| l.contains("ccebuild install-system")), "{out:?}");
         st.facts.automation = Automation::Missing;
-        assert!(lines(&mut st).iter().any(|l| l.contains("not installed")));
+        assert!(lines(&mut st, &mut ui).iter().any(|l| l.contains("not installed")));
     }
 
     #[test]
     fn animations_is_offered_everywhere_and_reports_the_live_state() {
-        let mut st = loaded();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded(&mut ui);
         assert_eq!(st.levers.rows[ANIMATIONS], ["", "on", "off"]);
-        assert_eq!(st.levers.dds[ANIMATIONS].options, ["Not set — now Enabled", "Enabled", "Disabled"]);
-        assert_eq!(st.levers.dds[ANIMATIONS].selected, 0);
+        assert_eq!(ui[st.levers.dds[ANIMATIONS]].options, ["Not set — now Enabled", "Enabled", "Disabled"]);
+        assert_eq!(ui[st.levers.dds[ANIMATIONS]].selected, 0);
         // A host with none of the hardware levers still has animations.
         st.facts = PowerFacts {
             plan: st.facts.plan.clone(),
@@ -1463,12 +1479,12 @@ mod tests {
             idle_sleep_secs: None,
             ..PowerFacts::default()
         };
-        rebuild_options(&mut st);
-        assert_eq!(st.levers.dds[ANIMATIONS].options[0], "Not set — now Disabled");
+        rebuild_options(&mut st, &mut ui);
+        assert_eq!(ui[st.levers.dds[ANIMATIONS]].options[0], "Not set — now Disabled");
         // A planned value is selected like any other lever's.
         st.facts.plan.put(Mode::PowerSaver, Lever::Animations, Some("off")).unwrap();
-        rebuild_options(&mut st);
-        assert_eq!(st.levers.dds[ANIMATIONS].selected, 2);
+        rebuild_options(&mut st, &mut ui);
+        assert_eq!(ui[st.levers.dds[ANIMATIONS]].selected, 2);
     }
 
     #[test]

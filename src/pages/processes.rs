@@ -500,7 +500,7 @@ impl crate::pages::AppPage for ProcessesState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut cce_ui::context::UiContext) {}
 
     fn handle_pointer_move(
         &mut self,

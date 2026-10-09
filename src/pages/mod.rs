@@ -97,7 +97,7 @@ pub trait AppPage {
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent;
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>);
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut cce_ui::context::UiContext);
 
     fn handle_pointer_move(
         &mut self,
@@ -171,10 +171,9 @@ mod list_clip_tests {
     use super::*;
     use cce_ui::widget::ScrollRegion;
 
-    fn render(page: &mut dyn AppPage) -> crate::app::PageContent {
+    fn render(page: &mut dyn AppPage, ui: &mut cce_ui::context::UiContext) -> crate::app::PageContent {
         let mut layout = cce_ui::layout::PageFlow::new();
-        let mut ctx = cce_ui::context::UiContext::new();
-        page.view(10.0, 20.0, 820.0, 640.0, false, &[false; 4], &mut layout, &mut ctx)
+        page.view(10.0, 20.0, 820.0, 640.0, false, &[false; 4], &mut layout, ui)
     }
 
     /// A list sits inside its section's clip exactly when the clip it
@@ -208,7 +207,8 @@ mod list_clip_tests {
     /// are carved into; a framed one lays its own under its bg.
     #[test]
     fn every_inner_list_rides_its_centre_line_behind_the_plate() {
-        let app = crate::app::AppState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let app = crate::app::AppState::new(&mut ui);
         let lists: [(&str, &ScrollRegion); 7] = [
             ("accounts", &app.accounts.list),
             ("network", &app.network.wifi_list),
@@ -231,7 +231,8 @@ mod list_clip_tests {
 
     #[test]
     fn services_list_inside_its_section() {
-        let mut s = services::ServicesState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut s = services::ServicesState::new(&mut ui);
         s.loaded = true;
         s.services = (0..5)
             .map(|i| services::ServiceInfo {
@@ -242,13 +243,14 @@ mod list_clip_tests {
                 is_system: true,
             })
             .collect();
-        let pc = render(&mut s);
+        let pc = render(&mut s, &mut ui);
         assert_list_inside("services", &pc, &s.list);
     }
 
     #[test]
     fn timers_list_inside_its_section() {
-        let mut s = timers::TimersState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut s = timers::TimersState::new(&mut ui);
         s.loaded = true;
         s.timers = (0..5)
             .map(|i| timers::TimerInfo {
@@ -262,47 +264,51 @@ mod list_clip_tests {
                 editable: false,
             })
             .collect();
-        let pc = render(&mut s);
+        let pc = render(&mut s, &mut ui);
         assert_list_inside("timers", &pc, &s.list);
     }
 
     #[test]
     fn packages_list_inside_its_section() {
-        let mut s = packages::PackagesState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut s = packages::PackagesState::new(&mut ui);
         s.loaded = true;
         s.installed = (0..5)
             .map(|i| packages::PackageInfo { name: format!("p{i}"), version: "1.0".into(), ..Default::default() })
             .collect();
-        let pc = render(&mut s);
+        let pc = render(&mut s, &mut ui);
         assert_list_inside("packages", &pc, &s.installed_list);
     }
 
     #[test]
     fn network_list_inside_its_section() {
-        let mut s = network::NetworkState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut s = network::NetworkState::new(&mut ui);
         s.loaded = true;
         s.wifi_enabled = true;
         s.available = (0..3)
             .map(|i| network::WifiNetwork { ssid: format!("net{i}"), signal: 50, secured: true, in_use: i == 0 })
             .collect();
-        let pc = render(&mut s);
+        let pc = render(&mut s, &mut ui);
         assert_list_inside("network", &pc, &s.wifi_list);
     }
 
     #[test]
     fn accounts_list_inside_its_section() {
-        let mut s = accounts::AccountsState::default_mock();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut s = accounts::AccountsState::new(&mut ui);
         s.loaded = true;
         s.accounts = vec![serde_json::from_str(
             r#"{"email":"a@example.org","imap":"imap.example.org:993","smtp":"smtp.example.org:465","is_default":true,"password":""}"#,
         )
         .unwrap()];
-        let pc = render(&mut s);
+        let pc = render(&mut s, &mut ui);
         assert_list_inside("accounts", &pc, &s.list);
     }
 
     #[test]
     fn processes_list_inside_its_section() {
+        let mut ui = cce_ui::context::UiContext::new();
         let mut s = processes::ProcessesState { loaded: true, ..Default::default() };
         s.processes = (0..5)
             .map(|i| processes::ProcessRow {
@@ -315,7 +321,7 @@ mod list_clip_tests {
                 wakeups: None,
             })
             .collect();
-        let pc = render(&mut s);
+        let pc = render(&mut s, &mut ui);
         assert_list_inside("processes", &pc, &s.cpu_list);
     }
 }

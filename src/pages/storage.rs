@@ -1,5 +1,6 @@
 use crate::app::{AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{PageLayoutBuilder, PageFlow};
 use std::fs;
 
@@ -35,7 +36,7 @@ pub struct StorageState {
     pub error_message: Option<String>,
     /// Retained so it can hold keyboard focus: ctrl+i descends into the Full
     /// System Backup section and lands here, and Enter/Space runs the backup.
-    pub backup_button: Owned<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
+    pub backup_button: Handle<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
 }
 
 impl Default for StorageState {
@@ -51,16 +52,28 @@ impl Default for StorageState {
             last_backup_time: "Never".to_string(),
             backup_size: "0 B".to_string(),
             error_message: None,
-            backup_button: Owned::new(cce_ui::widget::Button::new(0.0, 0.0, 0.0, 32.0)
-                // Flat fill + border, not the SDF bevel: PageContent's RenderTarget
-                // has no `bevel`, so a raised plate silently draws nothing here
-                // (the label renders, the plate does not). The border path is also
-                // what carries the keyboard focus ring.
-                .with_raised(false)
-                .with_label("Run Backup")
-                .with_bg(BTN_BG)
-                .with_hover_bg(BTN_HOVER)
-                .with_label_color(WHITE)),
+            backup_button: Handle::none(),
+        }
+    }
+}
+
+impl StorageState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self {
+            backup_button: ctx.insert(
+                cce_ui::widget::Button::new(0.0, 0.0, 0.0, 32.0)
+                    // Flat fill + border, not the SDF bevel: PageContent's RenderTarget
+                    // has no `bevel`, so a raised plate silently draws nothing here
+                    // (the label renders, the plate does not). The border path is also
+                    // what carries the keyboard focus ring.
+                    .with_raised(false)
+                    .with_label("Run Backup")
+                    .with_bg(BTN_BG)
+                    .with_hover_bg(BTN_HOVER)
+                    .with_label_color(WHITE),
+            ),
+            ..Self::default()
         }
     }
 }
@@ -234,7 +247,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
     // Section 1: Local Storage
     builder.add_section(&mut final_pc, "Local Storage", sec_focused.first().copied().unwrap_or(false), |sec| {
         let disk_pct = if state.disk_total > 0.0 { state.disk_used / state.disk_total * 100.0 } else { 0.0 };
-        let mut disk_bar = Owned::new(
+        let disk_bar = ctx.insert(
             cce_ui::widget::UsageBar::new((disk_pct as f32 / 100.0).min(1.0))
                 .with_colors([0.36, 0.60, 0.36, 1.0], [0.15, 0.15, 0.25, 1.0]),
         );
@@ -245,15 +258,17 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
         } else {
             let usage = format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct);
             crate::app::form_pairs(&mut col, 12.0, vec![("Disk".into(), LABEL_FG, usage, TEXT_FG)]);
-            col.widget(&mut disk_bar, USAGE_BAR_H);
+            col.widget_h(ctx, disk_bar, USAGE_BAR_H);
         }
         sec.place(form, ctx);
+        // Drawn this frame only: out of the context once it is placed.
+        ctx.remove(disk_bar);
     });
 
     // Section 2: Memory
     builder.add_section(&mut final_pc, "Memory", sec_focused.get(1).copied().unwrap_or(false), |sec| {
         let ram_pct = if state.ram_total > 0.0 { state.ram_used / state.ram_total * 100.0 } else { 0.0 };
-        let mut ram_bar = Owned::new(
+        let ram_bar = ctx.insert(
             cce_ui::widget::UsageBar::new((ram_pct as f32 / 100.0).min(1.0))
                 .with_colors([0.50, 0.50, 0.65, 1.0], [0.15, 0.15, 0.25, 1.0]),
         );
@@ -264,9 +279,11 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
         } else {
             let usage = format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct);
             crate::app::form_pairs(&mut col, 12.0, vec![("RAM".into(), LABEL_FG, usage, TEXT_FG)]);
-            col.widget(&mut ram_bar, USAGE_BAR_H);
+            col.widget_h(ctx, ram_bar, USAGE_BAR_H);
         }
         sec.place(form, ctx);
+        // Drawn this frame only: out of the context once it is placed.
+        ctx.remove(ram_bar);
     });
 
     // Section 3: Full System Backup
@@ -279,9 +296,9 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
         } else {
             ("Run Backup", BTN_BG, BTN_HOVER)
         };
-        state.backup_button.set_label(btn_label);
-        state.backup_button.bg = Some(bg);
-        state.backup_button.hover_bg = Some(hover);
+        ctx[state.backup_button].set_label(btn_label);
+        ctx[state.backup_button].bg = Some(bg);
+        ctx[state.backup_button].hover_bg = Some(hover);
 
         let mut form = sec.form();
         let mut col = form.column();
@@ -301,7 +318,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
                 pairs.push(("Error:".into(), RED, err.clone(), RED));
             }
             crate::app::form_pairs(&mut col, 12.0, pairs);
-            col.widget(&mut state.backup_button, cce_ui::layout::button_height());
+            col.widget_h(ctx, state.backup_button, cce_ui::layout::button_height());
         }
         sec.place(form, ctx);
     });
@@ -309,7 +326,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
     final_pc
 }
 
-pub fn update(state: &mut StorageState, msg: StorageMessage) {
+pub fn update(state: &mut StorageState, msg: StorageMessage, _ctx: &mut UiContext) {
     match msg {
         StorageMessage::Refreshed(new) => {
             // Field-wise, so the retained button and an in-flight backup survive.
@@ -373,9 +390,9 @@ impl crate::pages::AppPage for StorageState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>) {
+    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
         // Mouse click and Enter/Space on the focused button both land here.
-        if self.backup_button.take_click() && !self.backup_in_progress {
+        if ctx[self.backup_button].take_click() && !self.backup_in_progress {
             actions.push(AppAction::Storage(StorageMessage::StartBackup));
         }
     }

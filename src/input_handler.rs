@@ -165,7 +165,7 @@ impl SystemInterface {
         if self.search_open && state == cce_ui::widget::ElementState::Pressed && ly_no_scroll < (sh_logical - 42.0) {
             self.search_open = false;
             self.search_query.clear();
-            self.search_box.set_value_string("");
+            self.ui_context[self.search_box].set_value_string("");
             self.ui_context.clear_focus();
             self.needs_rebuild = true;
         }
@@ -187,8 +187,8 @@ impl SystemInterface {
         let dd_ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
         let dd_root = self.page_dropdown.id();
         if self.ui_context.propagate_event(&dd_ev, dd_root) {
-            if self.page_dropdown.take_change() {
-                let idx = self.page_dropdown.selected;
+            if self.ui_context[self.page_dropdown].take_change() {
+                let idx = self.ui_context[self.page_dropdown].selected;
                 if idx < Page::ALL.len() {
                     self.ui_context.clear_focus();
                     self.focused_section = None;
@@ -216,8 +216,8 @@ impl SystemInterface {
                 button_handled = true;
             }
         }
-        for (btn, action) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
-            if btn.take_click() {
+        for (btn, action) in &self.page_buttons[self.scrollable_buttons_start_idx..] {
+            if self.ui_context[*btn].take_click() {
                 clicked_action = Some(action.clone());
                 button_handled = true;
                 self.needs_rebuild = true;
@@ -265,7 +265,7 @@ impl SystemInterface {
     }
 
     pub(crate) fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
-        self.app.get_current_page_mut().propagate_widget_changes(actions);
+        self.app.get_current_page_mut().propagate_widget_changes(actions, &mut self.ui_context);
     }
 
     pub(crate) fn handle_mouse_wheel_internal(&mut self, delta: &cce_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
@@ -312,7 +312,7 @@ impl SystemInterface {
             let moved = self.page_scroll_motion.apply(delta, (LINE_PX, LINE_PX), Bounds::max(0.0), Bounds::max(self.max_scroll_y));
             if moved {
                 self.shift_page_to(self.page_scroll_motion.y.pos());
-                self.page_scroll_bar.on_scroll();
+                self.ui_context[self.page_scroll_bar].on_scroll();
                 return true;
             }
         }
@@ -340,8 +340,8 @@ impl SystemInterface {
                 b[3] -= actual_dy;
             }
         }
-        for (btn, _) in &mut self.page_buttons[self.scrollable_buttons_start_idx..] {
-            btn.base_mut().y -= actual_dy;
+        for (btn, _) in &self.page_buttons[self.scrollable_buttons_start_idx..] {
+            self.ui_context[*btn].base_mut().y -= actual_dy;
         }
         // The glyphs ride with the page too — a button's icon face and the
         // page's own icons — or they stand still while their rows scroll
@@ -353,7 +353,7 @@ impl SystemInterface {
             }
         }
         self.last_scroll_y = self.scroll_y;
-        self.page_scroll_bar.scroll_y = self.scroll_y;
+        self.ui_context[self.page_scroll_bar].scroll_y = self.scroll_y;
         true
     }
 
@@ -393,7 +393,7 @@ impl SystemInterface {
             event,
             Event::PointerMove { .. } | Event::MouseButton { .. } | Event::MouseWheel { .. }
         );
-        if is_pointer_event && !self.page_scroll_bar.dragging && !self.ui_context.is_dragging {
+        if is_pointer_event && !self.ui_context[self.page_scroll_bar].dragging && !self.ui_context.is_dragging {
             if let Event::PointerMove { x, y, .. }
             | Event::MouseButton { x, y, .. }
             | Event::MouseWheel { x, y, .. } = event
@@ -428,7 +428,7 @@ impl SystemInterface {
             }
         }
 
-        if self.page_scroll_bar.content_h > self.page_scroll_bar.viewport_h {
+        if self.ui_context[self.page_scroll_bar].content_h > self.ui_context[self.page_scroll_bar].viewport_h {
             let mut sb_event = event.clone();
             if let Event::PointerMove { y, local_y, .. }
             | Event::MouseButton { y, local_y, .. }
@@ -508,7 +508,7 @@ impl SystemInterface {
             {
                 self.search_open = false;
                 self.search_query.clear();
-                self.search_box.set_value_string("");
+                self.ui_context[self.search_box].set_value_string("");
                 self.ui_context.clear_focus();
                 self.needs_rebuild = true;
                 return true;
@@ -527,10 +527,10 @@ impl SystemInterface {
             if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
                 if cce_ui::widget::match_key_shortcut(event, &settings_keys().open_search) {
                     self.search_open = true;
-                    self.search_box.set_value_string("");
+                    self.ui_context[self.search_box].set_value_string("");
                     self.search_query.clear();
-                    cce_ui::widget::WidgetHost::focus(&mut self.search_box);
-                    self.ui_context.set_focused(&mut self.search_box);
+                    cce_ui::widget::WidgetHost::focus(&mut self.ui_context[self.search_box]);
+                    self.ui_context.set_focused_id(self.search_box.id());
                     self.needs_rebuild = true;
                     return true;
                 }
@@ -687,7 +687,7 @@ impl SystemInterface {
                     // With smoothing off the axis jumped: land the page now.
                     self.shift_page_to(self.page_scroll_motion.y.pos());
                     // Keyboard scrolling raises the bar like the wheel does.
-                    self.page_scroll_bar.on_scroll();
+                    self.ui_context[self.page_scroll_bar].on_scroll();
                     self.needs_rebuild = true;
                     key_handled = true;
                 }
@@ -695,14 +695,14 @@ impl SystemInterface {
         }
 
         if self.search_open {
-            if self.search_box.take_change() {
-                self.search_query = self.search_box.text.clone();
+            if self.ui_context[self.search_box].take_change() {
+                self.search_query = self.ui_context[self.search_box].text.clone();
                 self.needs_rebuild = true;
             }
-            if !self.ui_context.is_focused(&self.search_box) {
+            if !self.ui_context.is_focused(&self.ui_context[self.search_box]) {
                 self.search_open = false;
                 self.search_query.clear();
-                self.search_box.set_value_string("");
+                self.ui_context[self.search_box].set_value_string("");
                 self.needs_rebuild = true;
             }
         }

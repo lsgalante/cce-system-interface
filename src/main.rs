@@ -1,4 +1,4 @@
-use cce_ui::widget::Owned;
+use cce_ui::widget::Handle;
 use cce_ui::widget::hover_animation;
 use cce_ui::cosmic_text::{Buffer, FontSystem};
 
@@ -75,7 +75,7 @@ struct SystemInterface {
     /// (`PageContent::control_relief_marks`) — display_list slots each carve
     /// back between the rects the widget drew before and after it.
     popover_control_relief_marks: Vec<usize>,
-    page_buttons: Vec<(Owned<cce_ui::widget::Adapted<cce_ui::widget::Button>>, AppAction)>,
+    page_buttons: Vec<(Handle<cce_ui::widget::Adapted<cce_ui::widget::Button>>, AppAction)>,
 
     sidebar_width: f32,
     header_height: f32,
@@ -139,12 +139,12 @@ struct SystemInterface {
     /// a frame that only replays the cached layout paints no widget, and
     /// would otherwise read as the field closing.
     text_claim: Option<[f32; 4]>,
-    page_dropdown: Owned<cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>>,
+    page_dropdown: Handle<cce_ui::widget::Adapted<cce_ui::widget::input::Dropdown>>,
     // Switcher + Page DISSOLVED (Phase 6u): the current page is app.current_page, page
     // scroll is scroll_y/max_scroll_y, and the page scrollbar is this app-owned widget
     // (rendered into the window assembly, evented directly). content_h feeds it — the
     // window pass reads last frame's value, exactly as the legacy Page did.
-    page_scroll_bar: Owned<cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>>,
+    page_scroll_bar: Handle<cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>>,
     content_h: f32,
     // Section wells: body box + title tab (page coords, pre-scroll) — carved by
     // display_list.
@@ -185,7 +185,7 @@ struct SystemInterface {
     scroll_logs: Vec<String>,
     search_open: bool,
     search_query: String,
-    search_box: Owned<cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>>,
+    search_box: Handle<cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>>,
 
 }
 
@@ -219,7 +219,9 @@ impl cce_ui::engine::Application for SystemInterface {
         // The app keeps calloop's sender; `AppSender` converts into it.
         let sender: calloop::channel::Sender<Self::Message> = sender.into();
         cce_ui::scale::set_scale_factor(1.0);
-        let app = AppState::default();
+        // The context owns the widgets; the app keeps their handles.
+        let mut ui_context = cce_ui::context::UiContext::new();
+        let app = AppState::new(&mut ui_context);
 
         // ── Background refresh channels ──
         let initial_page_idx = INITIAL_PAGE_INDEX.load(std::sync::atomic::Ordering::SeqCst);
@@ -251,6 +253,11 @@ impl cce_ui::engine::Application for SystemInterface {
 
         let font_system = cce_ui::create_font_system();
 
+        let search_box = ui_context.insert(
+            cce_ui::widget::input::TextBox::new(String::new())
+                .with_placeholder("Search sections & parameters...")
+                .with_draw_bg_border(false),
+        );
         let mut this = Self {
             app: app_state,
             font_system,
@@ -303,8 +310,8 @@ impl cce_ui::engine::Application for SystemInterface {
             laid_out_page: None,
             refocus_rect: None,
             text_claim: None,
-            page_dropdown: Owned::new(page_dropdown),
-            page_scroll_bar: Owned::new(crate::scroll_bar::ScrollBar::new()),
+            page_dropdown: ui_context.insert(page_dropdown),
+            page_scroll_bar: ui_context.insert(crate::scroll_bar::ScrollBar::new()),
             content_h: 0.0,
             page_reliefs: Vec::new(),
             page_control_reliefs: Vec::new(),
@@ -317,13 +324,11 @@ impl cce_ui::engine::Application for SystemInterface {
             current_page_shared,
             seen_snapshots: std::collections::HashMap::new(),
             sender,
-            ui_context: cce_ui::context::UiContext::new(),
+            ui_context,
             scroll_logs: Vec::new(),
             search_open: false,
             search_query: String::new(),
-            search_box: Owned::new(cce_ui::widget::input::TextBox::new(String::new())
-                .with_placeholder("Search sections & parameters...")
-                .with_draw_bg_border(false)),
+            search_box,
         };
         this.app.system_info.sender = Some(this.sender.clone());
 
@@ -398,15 +403,15 @@ impl cce_ui::engine::Application for SystemInterface {
         // path's scrolls, which shift cached geometry without a rebuild and
         // used to leave the bar frozen until scrolling stopped. Sync first:
         // a thumb drag drives the page, anything else drives the thumb.
-        if self.page_scroll_bar.dragging {
-            self.scroll_y = self.page_scroll_bar.scroll_y;
+        if self.ui_context[self.page_scroll_bar].dragging {
+            self.scroll_y = self.ui_context[self.page_scroll_bar].scroll_y;
         } else {
-            self.page_scroll_bar.scroll_y = self.scroll_y;
+            self.ui_context[self.page_scroll_bar].scroll_y = self.scroll_y;
         }
         let page_bar = {
             use cce_ui::widget::WidgetHost;
-            let (bx, by, bw, bh) = self.page_scroll_bar.rect();
-            self.page_scroll_bar
+            let (bx, by, bw, bh) = self.ui_context[self.page_scroll_bar].rect();
+            self.ui_context[self.page_scroll_bar]
                 .layer_quads(Rect { x: bx, y: by, width: bw, height: bh })
         };
         // The idle copy: under the translucent window plate, every frame, so
@@ -602,15 +607,15 @@ impl cce_ui::engine::Application for SystemInterface {
 
         // The window chrome, as it paints itself: the page dropdown in the status bar
         // and, while open, the search box in its band.
-        cce_ui::scene::painter::paint_root_into(&self.ui_context, &*self.page_dropdown, &mut pc);
+        cce_ui::scene::painter::paint_root_into(&self.ui_context, &self.ui_context[self.page_dropdown], &mut pc);
         if self.search_open {
-            cce_ui::scene::painter::paint_root_into(&self.ui_context, &*self.search_box, &mut pc);
+            cce_ui::scene::painter::paint_root_into(&self.ui_context, &self.ui_context[self.search_box], &mut pc);
         }
 
         // The page scrollbar's fore copy: over the page content at the
         // raise's fade, while a scroll or drag holds it up and as it sinks
         // (popovers still stack above it).
-        let fade = self.page_scroll_bar.fade();
+        let fade = self.ui_context[self.page_scroll_bar].fade();
         if fade > 0.001 {
             for &(r, mut c) in &page_bar {
                 c[3] *= fade;
@@ -773,7 +778,7 @@ impl SystemInterface {
         // hold runs (keeps frames coming so the sink actually renders) and on
         // the raised flip itself. A redraw re-emits the bar at its new depth —
         // no layout rebuild needed, display_list draws it fresh each frame.
-        if self.page_scroll_bar.tick_activity(dt) {
+        if self.ui_context[self.page_scroll_bar].tick_activity(dt) {
             needs_redraw = true;
         }
         // The page's own wheel glide / flick coast: shifts the cached
@@ -831,7 +836,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("audio", &s) {
                 continue;
             }
-            audio::update(&mut self.app.audio, audio::AudioMessage::Refreshed(s));
+            audio::update(&mut self.app.audio, audio::AudioMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Audio {
                 self.needs_rebuild = true;
             }
@@ -840,7 +845,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("network", &s) {
                 continue;
             }
-            network::update(&mut self.app.network, network::NetworkMessage::Refreshed(s));
+            network::update(&mut self.app.network, network::NetworkMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Network {
                 self.needs_rebuild = true;
             }
@@ -849,7 +854,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("timers", &s) {
                 continue;
             }
-            pages::timers::update(&mut self.app.timers, pages::timers::TimersMessage::Refreshed(s));
+            pages::timers::update(&mut self.app.timers, pages::timers::TimersMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Timers {
                 self.needs_rebuild = true;
             }
@@ -858,7 +863,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("bluetooth", &s) {
                 continue;
             }
-            pages::bluetooth::update(&mut self.app.bluetooth, pages::bluetooth::BluetoothMessage::Refreshed(s));
+            pages::bluetooth::update(&mut self.app.bluetooth, pages::bluetooth::BluetoothMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Bluetooth {
                 self.needs_rebuild = true;
             }
@@ -867,7 +872,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("power", &s) {
                 continue;
             }
-            pages::power::update(&mut self.app.power, pages::power::PowerMessage::Refreshed(s));
+            pages::power::update(&mut self.app.power, pages::power::PowerMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Power {
                 self.needs_rebuild = true;
             }
@@ -891,7 +896,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("storage", &s) {
                 continue;
             }
-            storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s));
+            storage::update(&mut self.app.storage, storage::StorageMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Storage {
                 self.needs_rebuild = true;
             }
@@ -900,7 +905,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("notifications", &s) {
                 continue;
             }
-            pages::notifications::update(&mut self.app.notifications, pages::notifications::NotificationsMessage::Refreshed(s));
+            pages::notifications::update(&mut self.app.notifications, pages::notifications::NotificationsMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Notifications {
                 self.needs_rebuild = true;
             }
@@ -909,7 +914,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("browser", &s) {
                 continue;
             }
-            pages::browser::update(&mut self.app.browser, pages::browser::BrowserMessage::Refreshed(s));
+            pages::browser::update(&mut self.app.browser, pages::browser::BrowserMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Browser {
                 self.needs_rebuild = true;
             }
@@ -918,7 +923,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("default_apps", &s) {
                 continue;
             }
-            pages::default_apps::update(&mut self.app.default_apps, pages::default_apps::DefaultAppsMessage::Refreshed(s));
+            pages::default_apps::update(&mut self.app.default_apps, pages::default_apps::DefaultAppsMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::DefaultApps {
                 self.needs_rebuild = true;
             }
@@ -927,7 +932,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("services", &s) {
                 continue;
             }
-            services::update(&mut self.app.services, services::ServicesMessage::Refreshed(s));
+            services::update(&mut self.app.services, services::ServicesMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Services {
                 self.needs_rebuild = true;
             }
@@ -937,7 +942,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("accounts", &s) {
                 continue;
             }
-            accounts::update(&mut self.app.accounts, accounts::AccountsMessage::Refreshed(s));
+            accounts::update(&mut self.app.accounts, accounts::AccountsMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Accounts {
                 self.needs_rebuild = true;
             }
@@ -952,7 +957,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("packages", &s) {
                 continue;
             }
-            pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::Refreshed(s));
+            pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::Refreshed(s), &mut self.ui_context);
             if self.app.current_page == Page::Packages {
                 self.needs_rebuild = true;
             }
@@ -979,20 +984,20 @@ impl SystemInterface {
         }
         match action {
             AppAction::Exit | AppAction::Wake => {}
-            AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone()),
-            AppAction::Network(m) => network::update(&mut self.app.network, m.clone()),
-            AppAction::Bluetooth(m) => pages::bluetooth::update(&mut self.app.bluetooth, m.clone()),
-            AppAction::Power(m) => pages::power::update(&mut self.app.power, m.clone()),
-            AppAction::Timers(m) => pages::timers::update(&mut self.app.timers, m.clone()),
+            AppAction::Audio(m) => audio::update(&mut self.app.audio, m.clone(), &mut self.ui_context),
+            AppAction::Network(m) => network::update(&mut self.app.network, m.clone(), &mut self.ui_context),
+            AppAction::Bluetooth(m) => pages::bluetooth::update(&mut self.app.bluetooth, m.clone(), &mut self.ui_context),
+            AppAction::Power(m) => pages::power::update(&mut self.app.power, m.clone(), &mut self.ui_context),
+            AppAction::Timers(m) => pages::timers::update(&mut self.app.timers, m.clone(), &mut self.ui_context),
             AppAction::SystemInfo(m) => system_info::update(&mut self.app.system_info, m.clone(), &mut self.ui_context),
             AppAction::Processes(m) => processes::update(&mut self.app.processes, m.clone()),
-            AppAction::Services(m) => services::update(&mut self.app.services, m.clone()),
-            AppAction::DefaultApps(m) => pages::default_apps::update(&mut self.app.default_apps, m.clone()),
-            AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone()),
-            AppAction::Browser(m) => pages::browser::update(&mut self.app.browser, m.clone()),
+            AppAction::Services(m) => services::update(&mut self.app.services, m.clone(), &mut self.ui_context),
+            AppAction::DefaultApps(m) => pages::default_apps::update(&mut self.app.default_apps, m.clone(), &mut self.ui_context),
+            AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone(), &mut self.ui_context),
+            AppAction::Browser(m) => pages::browser::update(&mut self.app.browser, m.clone(), &mut self.ui_context),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {
-                    pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup);
+                    pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup, &mut self.ui_context);
                     let tx = self.tx_backup.clone();
                     let wake = self.sender.clone();
                     tokio::spawn(async move {
@@ -1001,7 +1006,7 @@ impl SystemInterface {
                         let _ = wake.send(AppAction::Wake);
                     });
                 }
-                _ => pages::storage::update(&mut self.app.storage, m.clone()),
+                _ => pages::storage::update(&mut self.app.storage, m.clone(), &mut self.ui_context),
             },
 
 
@@ -1016,23 +1021,24 @@ impl SystemInterface {
                             pages::accounts::AccountsMessage::StatusMessage(
                                 "A Google sign-in is already waiting on the browser.".to_string(),
                             ),
+                            &mut self.ui_context,
                         );
                     } else {
-                        pages::accounts::update(&mut self.app.accounts, m.clone());
+                        pages::accounts::update(&mut self.app.accounts, m.clone(), &mut self.ui_context);
                         let sender = self.sender.clone();
                         tokio::spawn(async move {
                             pages::accounts::run_google_login(sender).await;
                         });
                     }
                 }
-                _ => pages::accounts::update(&mut self.app.accounts, m.clone()),
+                _ => pages::accounts::update(&mut self.app.accounts, m.clone(), &mut self.ui_context),
             },
             AppAction::Packages(m) => match m {
                 pages::packages::PackagesMessage::StartUpdate => {
                     if self.app.packages.busy() {
                         return;
                     }
-                    pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::StartUpdate);
+                    pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::StartUpdate, &mut self.ui_context);
                     let tx = self.tx_update.clone();
                     let wake = self.sender.clone();
                     tokio::spawn(async move {
@@ -1042,7 +1048,7 @@ impl SystemInterface {
                     });
                 }
                 pages::packages::PackagesMessage::UpdateFinished(res) => {
-                    pages::packages::update(&mut self.app.packages, m.clone());
+                    pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                     if res.is_ok() {
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
@@ -1056,7 +1062,7 @@ impl SystemInterface {
                 pages::packages::PackagesMessage::SelectPackage(Some(ref name)) => {
                     let name_clone = name.clone();
                     let is_installed = self.app.packages.active_tab == pages::packages::PackageTab::Installed;
-                    pages::packages::update(&mut self.app.packages, m.clone());
+                    pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                     let tx = self.tx_update.clone();
                     let wake = self.sender.clone();
                     tokio::spawn(async move {
@@ -1067,7 +1073,7 @@ impl SystemInterface {
                 }
                 pages::packages::PackagesMessage::SelectAndScrollPackage(ref name) => {
                     let name_clone = name.clone();
-                    pages::packages::update(&mut self.app.packages, m.clone());
+                    pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                     let tx = self.tx_update.clone();
                     let wake = self.sender.clone();
                     tokio::spawn(async move {
@@ -1078,7 +1084,7 @@ impl SystemInterface {
                 }
                 pages::packages::PackagesMessage::PreviewRemoval(ref targets) => {
                     if !targets.is_empty() && !self.app.packages.busy() {
-                        pages::packages::update(&mut self.app.packages, m.clone());
+                        pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                         let targets = targets.clone();
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
@@ -1091,7 +1097,7 @@ impl SystemInterface {
                 }
                 pages::packages::PackagesMessage::StartUninstall(ref targets) => {
                     if !targets.is_empty() && !self.app.packages.busy() {
-                        pages::packages::update(&mut self.app.packages, m.clone());
+                        pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                         let targets = targets.clone();
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
@@ -1104,7 +1110,7 @@ impl SystemInterface {
                 }
                 pages::packages::PackagesMessage::SetInstallReason(ref targets, explicit) => {
                     if !targets.is_empty() && !self.app.packages.busy() {
-                        pages::packages::update(&mut self.app.packages, m.clone());
+                        pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                         let (targets, explicit) = (targets.clone(), *explicit);
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
@@ -1119,7 +1125,7 @@ impl SystemInterface {
                 // orphan set, which either can change) is pacman's to report.
                 pages::packages::PackagesMessage::UninstallFinished(..)
                 | pages::packages::PackagesMessage::InstallReasonSet(..) => {
-                    pages::packages::update(&mut self.app.packages, m.clone());
+                    pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
                     let tx = self.tx_update.clone();
                     let wake = self.sender.clone();
                     // The details pane shows the install reason; re-read it.
@@ -1134,7 +1140,7 @@ impl SystemInterface {
                         let _ = wake.send(AppAction::Wake);
                     });
                 }
-                _ => pages::packages::update(&mut self.app.packages, m.clone()),
+                _ => pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context),
             },
         }
     }

@@ -3,9 +3,10 @@
 //! timer units (system scope through pkexec).
 
 use crate::app::{button_need, form_button, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, render_widget, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::layout::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox};
 
@@ -36,13 +37,13 @@ pub struct TimersState {
     pub timers: Vec<TimerInfo>,
     pub active_tab: TimerTab,
     pub list: ScrollRegion,
-    pub items: Vec<Owned<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
+    pub items: Vec<Handle<cce_ui::widget::Adapted<cce_ui::widget::InteractiveListItem>>>,
     pub creating: bool,
     /// Base unit name (without .timer) being edited, form shared with create.
     pub editing: Option<String>,
-    pub name_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub command_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub schedule_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub name_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub command_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub schedule_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub status_msg: Option<String>,
 }
 
@@ -56,13 +57,25 @@ impl Default for TimersState {
             items: Vec::new(),
             creating: false,
             editing: None,
-            name_box: Owned::new(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Name")
-                .with_placeholder("backup")),
-            command_box: Owned::new(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Command")
-                .with_placeholder("/home/me/bin/backup.sh --fast")),
-            schedule_box: Owned::new(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Schedule (OnCalendar)")
-                .with_placeholder("daily \u{2022} Mon 09:00 \u{2022} *-*-* 03:00:00")),
+            name_box: Handle::none(),
+            command_box: Handle::none(),
+            schedule_box: Handle::none(),
             status_msg: None,
+        }
+    }
+}
+
+impl TimersState {
+    /// The page's state, its widgets inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
+        Self {
+            name_box: ctx.insert(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Name")
+                .with_placeholder("backup")),
+            command_box: ctx.insert(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Command")
+                .with_placeholder("/home/me/bin/backup.sh --fast")),
+            schedule_box: ctx.insert(TextBox::new(String::new()).with_draw_bg_border(true).with_label("Schedule (OnCalendar)")
+                .with_placeholder("daily \u{2022} Mon 09:00 \u{2022} *-*-* 03:00:00")),
+            ..Self::default()
         }
     }
 }
@@ -436,15 +449,17 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             .filter(|t| t.is_system == (state.active_tab == TimerTab::System))
             .collect();
         if state.items.len() != filtered.len() {
-            state.items.clear();
+            for h in state.items.drain(..) {
+                ctx.remove(h);
+            }
             for _ in 0..filtered.len() {
-                state.items.push(Owned::new(InteractiveListItem::new("")));
+                state.items.push(ctx.insert(InteractiveListItem::new("")));
             }
         }
 
         let active_tab = state.active_tab;
         let list = &mut state.list;
-        let items = &mut state.items;
+        let items = &state.items;
         let mut col = form.column();
         col.row(|r| {
             form_button(r, label1, 0.0, tab_colors(active_tab == TimerTab::System),
@@ -468,10 +483,10 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             };
             col.text(note, 11.0, TEXT_DIM);
             if state.creating {
-                col.widget(&mut state.name_box, field_h);
+                col.widget_h(ctx, state.name_box, field_h);
             }
-            col.widget(&mut state.command_box, field_h);
-            col.widget(&mut state.schedule_box, field_h);
+            col.widget_h(ctx, state.command_box, field_h);
+            col.widget_h(ctx, state.schedule_box, field_h);
             let save_label = if state.editing.is_some() { "Save" } else { "Create" };
             col.row(|r| {
                 form_button(r, save_label, button_need(save_label), ([0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], text_on),
@@ -537,17 +552,20 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                             subtitle_full
                         };
 
-                        let item_btn = &mut items[idx];
+                        let item = items[idx];
+                        let item_btn = &mut ctx[item];
                         item_btn.title = timer.unit.clone();
                         item_btn.subtitle = Some(subtitle);
                         // Cut at its cell, so a long schedule stops short of the buttons.
                         pc.push_clip_rect(item_rect.x, item_rect.y, item_rect.width, item_rect.height);
-                        render_widget(pc, item_btn, item_rect.x, item_rect.y, item_rect.width, item_rect.height, ctx);
+                        render_widget_h(pc, item, item_rect.x, item_rect.y, item_rect.width, item_rect.height, ctx);
                         pc.pop_clip_rect();
 
                         let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
-                        let mut dot = Owned::new(StatusDot::new(dot_state));
-                        render_widget(pc, &mut dot, dot_rect.x, dot_rect.y, dot_rect.width, dot_rect.height, ctx);
+                        // Drawn this frame only: out of the context once it is placed.
+                        let dot = ctx.insert(StatusDot::new(dot_state));
+                        render_widget_h(pc, dot, dot_rect.x, dot_rect.y, dot_rect.width, dot_rect.height, ctx);
+                        ctx.remove(dot);
 
                         let active_txt = [0.90, 0.90, 0.95, 1.0];
 
@@ -644,17 +662,21 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
     final_pc
 }
 
-pub fn update(state: &mut TimersState, msg: TimersMessage) {
+pub fn update(state: &mut TimersState, msg: TimersMessage, ctx: &mut UiContext) {
     match msg {
         TimersMessage::Refreshed(timers) => {
             state.loaded = true;
             state.timers = timers;
-            state.items.clear();
+            for h in state.items.drain(..) {
+                ctx.remove(h);
+            }
         }
         TimersMessage::SetTab(tab) => {
             state.active_tab = tab;
             state.list.set_scroll_y(0.0);
-            state.items.clear();
+            for h in state.items.drain(..) {
+                ctx.remove(h);
+            }
         }
         TimersMessage::RunNow(service, is_system) => {
             if !service.is_empty() {
@@ -677,7 +699,8 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
             state.creating = true;
             state.editing = None;
             state.status_msg = None;
-            for tb in [&mut state.name_box, &mut state.command_box, &mut state.schedule_box] {
+            for tb in [state.name_box, state.command_box, state.schedule_box] {
+                let tb = &mut ctx[tb];
                 tb.text = String::new();
                 tb.edit_buffer = String::new();
             }
@@ -700,20 +723,20 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
             state.creating = false;
             state.editing = Some(base.clone());
             state.status_msg = None;
-            state.name_box.text = base.clone();
-            state.name_box.edit_buffer = base;
-            state.command_box.text = command.clone();
-            state.command_box.edit_buffer = command;
-            state.schedule_box.text = schedule.clone();
-            state.schedule_box.edit_buffer = schedule;
+            ctx[state.name_box].text = base.clone();
+            ctx[state.name_box].edit_buffer = base;
+            ctx[state.command_box].text = command.clone();
+            ctx[state.command_box].edit_buffer = command;
+            ctx[state.schedule_box].text = schedule.clone();
+            ctx[state.schedule_box].edit_buffer = schedule;
         }
         TimersMessage::CreateSave => {
-            let command = live_text(&state.command_box);
-            let schedule = live_text(&state.schedule_box);
+            let command = live_text(&ctx[state.command_box]);
+            let schedule = live_text(&ctx[state.schedule_box]);
             let result = if let Some(base) = state.editing.clone() {
                 update_user_timer(&base, &command, &schedule)
             } else {
-                create_user_timer(&live_text(&state.name_box), &command, &schedule)
+                create_user_timer(&live_text(&ctx[state.name_box]), &command, &schedule)
             };
             match result {
                 Ok(msg) => {
@@ -722,7 +745,9 @@ pub fn update(state: &mut TimersState, msg: TimersMessage) {
                     state.status_msg = Some(msg);
                     // Show the unit where it (re)appears on the next refresh.
                     state.active_tab = TimerTab::User;
-                    state.items.clear();
+                    for h in state.items.drain(..) {
+                        ctx.remove(h);
+                    }
                 }
                 Err(e) => {
                     state.status_msg = Some(e);
@@ -766,7 +791,7 @@ impl crate::pages::AppPage for TimersState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {}
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut UiContext) {}
 
     // Filtered by `get_item_draw_y`, the same predicate the view's paint loop virtualizes
     // on — a scrolled-out row keeps its last-drawn rect and would otherwise win the
@@ -781,15 +806,6 @@ impl crate::pages::AppPage for TimersState {
             .collect()
     }
 
-    fn register_extra_dispatch_roots(&mut self, ctx: &mut cce_ui::context::UiContext) {
-        let (list, items) = (&self.list, &mut self.items);
-        for (idx, i) in items.iter_mut().enumerate() {
-            if list.get_item_draw_y(idx, 4.0).is_none() {
-                continue;
-            }
-            ctx.register_host(i);
-        }
-    }
 
     fn handle_pointer_move(
         &mut self,

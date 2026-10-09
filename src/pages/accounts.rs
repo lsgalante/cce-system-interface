@@ -1,5 +1,6 @@
 use crate::app::{form_button, form_divider, form_pairs, AppAction, PageContent};
-use cce_ui::widget::Owned;
+use cce_ui::context::UiContext;
+use cce_ui::widget::Handle;
 use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::ScrollRegion;
@@ -81,10 +82,10 @@ pub struct AccountsState {
     pub accounts: Vec<AccountInfo>,
     pub selected_idx: Option<usize>,
     pub adding_new: bool,
-    pub email_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub password_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub imap_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub smtp_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub email_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub password_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub imap_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub smtp_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub status_msg: Option<String>,
     pub status_msg_timer: f32,
     pub oauth_listener_running: bool,
@@ -94,8 +95,8 @@ pub struct AccountsState {
     pub editing_email: Option<String>,
     /// Per-account OAuth credentials — the copy in `accounts.json` that
     /// cce-mail actually refreshes with, not the global template.
-    pub oauth_client_id_box: Owned<cce_ui::widget::Adapted<TextBox>>,
-    pub oauth_client_secret_box: Owned<cce_ui::widget::Adapted<TextBox>>,
+    pub oauth_client_id_box: Handle<cce_ui::widget::Adapted<TextBox>>,
+    pub oauth_client_secret_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     /// Per-address keyring status from the last snapshot, plus optimistic
     /// updates from Save/Delete (the 3s watcher pass corrects them).
     pub keyring: std::collections::HashMap<String, KeyringStatus>,
@@ -108,21 +109,22 @@ pub struct AccountsState {
 }
 
 impl AccountsState {
-    pub fn default_mock() -> Self {
+    /// The page's state, its form fields inserted into `ctx`.
+    pub fn new(ctx: &mut UiContext) -> Self {
         let mut state = Self::default();
-        state.email_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Email Address"));
+        state.email_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Email Address"));
         state.password_box = {
             let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Password / App Password");
             tb.is_password = true;
-            Owned::new(tb)
+            ctx.insert(tb)
         };
-        state.imap_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server"));
-        state.smtp_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server"));
-        state.oauth_client_id_box = Owned::new(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID"));
+        state.imap_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server"));
+        state.smtp_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server"));
+        state.oauth_client_id_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID"));
         state.oauth_client_secret_box = {
             let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client Secret");
             tb.is_password = true;
-            Owned::new(tb)
+            ctx.insert(tb)
         };
         state.list = ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_sink_behind(true);
         state
@@ -771,10 +773,10 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 b.text("Add New Account", 14.0, heading);
                 b.text("Gmail signs in with Google below; iCloud requires an App Password.", 11.0, TEXT_DIM);
             });
-            col.widget(&mut state.email_box, widget_h)
-                .widget(&mut state.password_box, widget_h)
-                .widget(&mut state.imap_box, widget_h)
-                .widget(&mut state.smtp_box, widget_h);
+            col.widget_h(ctx, state.email_box, widget_h)
+                .widget_h(ctx, state.password_box, widget_h)
+                .widget_h(ctx, state.imap_box, widget_h)
+                .widget_h(ctx, state.smtp_box, widget_h);
             col.row(|r| {
                 form_button(r, "Save", 0.0, (BTN_PRIMARY.0, BTN_PRIMARY.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::AddAccountSave));
                 form_button(r, "Cancel", 0.0, (BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::AddAccountCancel));
@@ -798,16 +800,16 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             // An OAuth account has no password to edit; a password one has no
             // client credentials. Neither ever shows the other's fields.
             if acc.is_oauth {
-                col.widget(&mut state.imap_box, widget_h).widget(&mut state.smtp_box, widget_h);
+                col.widget_h(ctx, state.imap_box, widget_h).widget_h(ctx, state.smtp_box, widget_h);
                 col.block(|b| {
                     b.text("Credentials this account refreshes tokens with, taking effect", 11.0, TEXT_DIM);
                     b.text("on the next refresh \u{2014} Re-login to re-issue the tokens now.", 11.0, TEXT_DIM);
                 });
-                col.widget(&mut state.oauth_client_id_box, widget_h).widget(&mut state.oauth_client_secret_box, widget_h);
+                col.widget_h(ctx, state.oauth_client_id_box, widget_h).widget_h(ctx, state.oauth_client_secret_box, widget_h);
             } else {
-                col.widget(&mut state.password_box, widget_h)
-                    .widget(&mut state.imap_box, widget_h)
-                    .widget(&mut state.smtp_box, widget_h);
+                col.widget_h(ctx, state.password_box, widget_h)
+                    .widget_h(ctx, state.imap_box, widget_h)
+                    .widget_h(ctx, state.smtp_box, widget_h);
             }
             col.row(|r| {
                 form_button(r, "Save", 0.0, (BTN_PRIMARY.0, BTN_PRIMARY.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::EditAccountSave));
@@ -882,7 +884,7 @@ fn fill_box(tb: &mut cce_ui::widget::Adapted<TextBox>, value: &str) {
     tb.edit_buffer = value.to_string();
 }
 
-pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
+pub fn update(state: &mut AccountsState, msg: AccountsMessage, ctx: &mut UiContext) {
     match msg {
         AccountsMessage::Refreshed(snap) => {
             state.loaded = true;
@@ -893,7 +895,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             if let Some(ref e) = state.editing_email {
                 if !state.accounts.iter().any(|a| a.email == *e) {
                     state.editing_email = None;
-                    state.password_box.placeholder = None;
+                    ctx[state.password_box].placeholder = None;
                 }
             }
             if state.selected_idx.is_none() && !state.accounts.is_empty() {
@@ -912,22 +914,22 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
         AccountsMessage::AddAccountStart => {
             state.adding_new = true;
             state.editing_email = None;
-            fill_box(&mut state.email_box, "");
-            fill_box(&mut state.password_box, "");
-            fill_box(&mut state.imap_box, "");
-            fill_box(&mut state.smtp_box, "");
+            fill_box(&mut ctx[state.email_box], "");
+            fill_box(&mut ctx[state.password_box], "");
+            fill_box(&mut ctx[state.imap_box], "");
+            fill_box(&mut ctx[state.smtp_box], "");
             // Adding needs a real password; only editing may leave it blank.
-            state.password_box.placeholder = None;
+            ctx[state.password_box].placeholder = None;
         }
         AccountsMessage::AddAccountCancel => {
             state.adding_new = false;
             state.selected_idx = if state.accounts.is_empty() { None } else { Some(0) };
         }
         AccountsMessage::AddAccountSave => {
-            let email = live_text(&state.email_box);
-            let password = live_text(&state.password_box);
-            let imap = live_text(&state.imap_box);
-            let smtp = live_text(&state.smtp_box);
+            let email = live_text(&ctx[state.email_box]);
+            let password = live_text(&ctx[state.password_box]);
+            let imap = live_text(&ctx[state.imap_box]);
+            let smtp = live_text(&ctx[state.smtp_box]);
 
             if email.is_empty() || password.is_empty() || imap.is_empty() || smtp.is_empty() {
                 state.status_msg = Some("All fields must be filled!".to_string());
@@ -1067,8 +1069,8 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             state.adding_new = false;
             state.selected_idx = Some(idx);
 
-            fill_box(&mut state.imap_box, &acc.imap);
-            fill_box(&mut state.smtp_box, &acc.smtp);
+            fill_box(&mut ctx[state.imap_box], &acc.imap);
+            fill_box(&mut ctx[state.smtp_box], &acc.smtp);
             if acc.is_oauth {
                 // Show what this account actually authenticates with: its own
                 // pinned copy, or the global template it would fall back to.
@@ -1081,13 +1083,13 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                         (id.unwrap_or(fallback.client_id), secret.unwrap_or(fallback.client_secret))
                     }
                 };
-                fill_box(&mut state.oauth_client_id_box, &id);
-                fill_box(&mut state.oauth_client_secret_box, &secret);
+                fill_box(&mut ctx[state.oauth_client_id_box], &id);
+                fill_box(&mut ctx[state.oauth_client_secret_box], &secret);
             } else {
                 // The password lives in the keyring. Never read a secret back
                 // just to prefill a field — blank means "keep what is stored".
-                fill_box(&mut state.password_box, "");
-                state.password_box.set_placeholder("unchanged \u{2014} type to replace");
+                fill_box(&mut ctx[state.password_box], "");
+                ctx[state.password_box].set_placeholder("unchanged \u{2014} type to replace");
             }
         }
         AccountsMessage::EditAccountSave => {
@@ -1100,16 +1102,16 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
 
             // Validate everything BEFORE touching state.accounts: a mid-way
             // bail would otherwise leave memory disagreeing with the file.
-            let imap = live_text(&state.imap_box);
-            let smtp = live_text(&state.smtp_box);
+            let imap = live_text(&ctx[state.imap_box]);
+            let smtp = live_text(&ctx[state.smtp_box]);
             if imap.is_empty() || smtp.is_empty() {
                 state.status_msg = Some("IMAP and SMTP must be filled!".to_string());
                 return;
             }
             let is_oauth = state.accounts[idx].is_oauth;
             let creds = if is_oauth {
-                let id = live_text(&state.oauth_client_id_box);
-                let secret = live_text(&state.oauth_client_secret_box);
+                let id = live_text(&ctx[state.oauth_client_id_box]);
+                let secret = live_text(&ctx[state.oauth_client_secret_box]);
                 if id.is_empty() || secret.is_empty() {
                     state.status_msg = Some("Both Client ID and Client Secret are required!".to_string());
                     return;
@@ -1118,7 +1120,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
             } else {
                 None
             };
-            let password = if is_oauth { String::new() } else { live_text(&state.password_box) };
+            let password = if is_oauth { String::new() } else { live_text(&ctx[state.password_box]) };
 
             let mut msg = "Account updated".to_string();
             let mut new_password = None;
@@ -1160,12 +1162,12 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage) {
                 return;
             }
             state.editing_email = None;
-            state.password_box.placeholder = None;
+            ctx[state.password_box].placeholder = None;
             state.status_msg = Some(msg);
         }
         AccountsMessage::EditAccountCancel => {
             state.editing_email = None;
-            state.password_box.placeholder = None;
+            ctx[state.password_box].placeholder = None;
         }
         AccountsMessage::ICloudLoginHelp => {
             let mut cmd = std::process::Command::new("xdg-open");
@@ -1235,24 +1237,24 @@ impl crate::pages::AppPage for AccountsState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>) {
-        if self.adding_new && self.email_box.take_change() {
-            let email_val = self.email_box.text.trim().to_lowercase();
+    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
+        if self.adding_new && ctx[self.email_box].take_change() {
+            let email_val = ctx[self.email_box].text.trim().to_lowercase();
             if email_val.ends_with("@gmail.com") {
-                self.imap_box.text = "imap.gmail.com:993".to_string();
-                self.imap_box.edit_buffer = "imap.gmail.com:993".to_string();
-                self.smtp_box.text = "smtp.gmail.com:465".to_string();
-                self.smtp_box.edit_buffer = "smtp.gmail.com:465".to_string();
+                ctx[self.imap_box].text = "imap.gmail.com:993".to_string();
+                ctx[self.imap_box].edit_buffer = "imap.gmail.com:993".to_string();
+                ctx[self.smtp_box].text = "smtp.gmail.com:465".to_string();
+                ctx[self.smtp_box].edit_buffer = "smtp.gmail.com:465".to_string();
             } else if email_val.ends_with("@icloud.com") {
-                self.imap_box.text = "imap.mail.me.com:993".to_string();
-                self.imap_box.edit_buffer = "imap.mail.me.com:993".to_string();
-                self.smtp_box.text = "smtp.mail.me.com:587".to_string();
-                self.smtp_box.edit_buffer = "smtp.mail.me.com:587".to_string();
+                ctx[self.imap_box].text = "imap.mail.me.com:993".to_string();
+                ctx[self.imap_box].edit_buffer = "imap.mail.me.com:993".to_string();
+                ctx[self.smtp_box].text = "smtp.mail.me.com:587".to_string();
+                ctx[self.smtp_box].edit_buffer = "smtp.mail.me.com:587".to_string();
             } else if email_val.ends_with("@outlook.com") || email_val.ends_with("@hotmail.com") {
-                self.imap_box.text = "outlook.office365.com:993".to_string();
-                self.imap_box.edit_buffer = "outlook.office365.com:993".to_string();
-                self.smtp_box.text = "smtp.office365.com:587".to_string();
-                self.smtp_box.edit_buffer = "smtp.office365.com:587".to_string();
+                ctx[self.imap_box].text = "outlook.office365.com:993".to_string();
+                ctx[self.imap_box].edit_buffer = "outlook.office365.com:993".to_string();
+                ctx[self.smtp_box].text = "smtp.office365.com:587".to_string();
+                ctx[self.smtp_box].edit_buffer = "smtp.office365.com:587".to_string();
             }
         }
     }
@@ -1300,10 +1302,11 @@ mod tests {
 
     #[test]
     fn test_accounts_page_view() {
-        let mut state = AccountsState::default_mock();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = AccountsState::new(&mut ui);
         state.loaded = true;
         let mut layout = PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         println!("PC BUTTONS COUNT: {}", pc.buttons.len());
         for (i, (btn, _, _)) in pc.buttons.iter().enumerate() {
             let base = btn.base();
@@ -1317,17 +1320,18 @@ mod tests {
 
     #[test]
     fn list_reserves_its_height_so_later_rows_clear_it() {
+        let mut ui = cce_ui::context::UiContext::new();
         // The scroll region advances the section by hand. SectionContext keeps a
         // parallel per-column Grid and its `spacing` recomputes
         // `content_y = grid.max_height()`, so reserving the height by bumping
         // `content_y` alone is silently discarded and every following row draws
         // back on top of the list. Caught live: "Add Account" and the detail
         // rows were painted over the account rows.
-        let mut state = AccountsState::default_mock();
+        let mut state = AccountsState::new(&mut ui);
         state.loaded = true;
         state.accounts = (0..12).map(|i| acct(&format!("a{i}@example.org"), false)).collect();
         let mut layout = PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
 
         let list_bottom = state.list.y + state.list.h;
         let add = pc
@@ -1346,14 +1350,15 @@ mod tests {
 
     #[test]
     fn list_emits_only_the_rows_the_region_virtualizes_on() {
+        let mut ui = cce_ui::context::UiContext::new();
         // Row buttons are emitted under the same `get_item_draw_y` predicate the
         // region scrolls by, so a list longer than the cap paints the visible
         // window rather than all of its rows.
-        let mut state = AccountsState::default_mock();
+        let mut state = AccountsState::new(&mut ui);
         state.loaded = true;
         state.accounts = (0..40).map(|i| acct(&format!("a{i}@example.org"), false)).collect();
         let mut layout = PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut cce_ui::context::UiContext::new());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
 
         let rows = pc
             .buttons
@@ -1406,30 +1411,32 @@ mod tests {
     /// XDG_CONFIG_HOME. Only the early-return paths are exercised here.
     #[test]
     fn edit_prefills_the_account_but_never_the_password() {
-        let mut state = AccountsState::default_mock();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = AccountsState::new(&mut ui);
         state.accounts = vec![acct("a@example.org", false)];
 
-        update(&mut state, AccountsMessage::EditAccountStart(0));
+        update(&mut state, AccountsMessage::EditAccountStart(0), &mut ui);
 
         assert_eq!(state.editing_email.as_deref(), Some("a@example.org"));
-        assert_eq!(state.imap_box.text, "imap.example.org:993");
-        assert_eq!(state.smtp_box.text, "smtp.example.org:465");
+        assert_eq!(ui[state.imap_box].text, "imap.example.org:993");
+        assert_eq!(ui[state.smtp_box].text, "smtp.example.org:465");
         // The secret is in the keyring; a blank box plus a placeholder is how
         // "keep the stored one" is expressed.
-        assert!(state.password_box.text.is_empty());
-        assert!(state.password_box.placeholder.is_some());
+        assert!(ui[state.password_box].text.is_empty());
+        assert!(ui[state.password_box].placeholder.is_some());
     }
 
     #[test]
     fn editing_an_oauth_account_shows_its_pinned_credentials() {
-        let mut state = AccountsState::default_mock();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = AccountsState::new(&mut ui);
         state.accounts = vec![acct("g@gmail.com", true)];
 
-        update(&mut state, AccountsMessage::EditAccountStart(0));
+        update(&mut state, AccountsMessage::EditAccountStart(0), &mut ui);
 
-        assert_eq!(state.oauth_client_id_box.text, "pinned-id");
-        assert_eq!(state.oauth_client_secret_box.text, "pinned-secret");
-        assert!(state.oauth_client_secret_box.is_password, "the secret stays masked");
+        assert_eq!(ui[state.oauth_client_id_box].text, "pinned-id");
+        assert_eq!(ui[state.oauth_client_secret_box].text, "pinned-secret");
+        assert!(ui[state.oauth_client_secret_box].is_password, "the secret stays masked");
     }
 
     /// The form keys on the address, so a background refresh that reorders the
@@ -1438,34 +1445,35 @@ mod tests {
     /// the right row after the reorder.
     #[test]
     fn edit_follows_the_account_across_a_reorder() {
-        let mut state = AccountsState::default_mock();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = AccountsState::new(&mut ui);
         state.accounts = vec![acct("first@example.org", false), acct("second@example.org", false)];
 
-        update(&mut state, AccountsMessage::EditAccountStart(1));
+        update(&mut state, AccountsMessage::EditAccountStart(1), &mut ui);
         assert_eq!(state.editing_email.as_deref(), Some("second@example.org"));
 
         update(
             &mut state,
-            AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("second@example.org", false), acct("first@example.org", false)], keyring: Vec::new() }),
-        );
+            AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("second@example.org", false), acct("first@example.org", false)], keyring: Vec::new() }),&mut ui);
         assert_eq!(state.editing_email.as_deref(), Some("second@example.org"), "the refresh keeps the form open");
 
-        fill_box(&mut state.imap_box, "");
-        update(&mut state, AccountsMessage::EditAccountSave);
+        fill_box(&mut ui[state.imap_box], "");
+        update(&mut state, AccountsMessage::EditAccountSave, &mut ui);
         assert_eq!(state.status_msg.as_deref(), Some("IMAP and SMTP must be filled!"));
         assert!(state.editing_email.is_some(), "a failed save keeps the form open");
     }
 
     #[test]
     fn a_vanished_account_closes_the_edit_form() {
-        let mut state = AccountsState::default_mock();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = AccountsState::new(&mut ui);
         state.accounts = vec![acct("gone@example.org", false)];
-        update(&mut state, AccountsMessage::EditAccountStart(0));
+        update(&mut state, AccountsMessage::EditAccountStart(0), &mut ui);
 
-        update(&mut state, AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("other@example.org", false)], keyring: Vec::new() }));
+        update(&mut state, AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("other@example.org", false)], keyring: Vec::new() }), &mut ui);
 
         assert!(state.editing_email.is_none());
-        assert!(state.password_box.placeholder.is_none(), "the placeholder does not leak into the add form");
+        assert!(ui[state.password_box].placeholder.is_none(), "the placeholder does not leak into the add form");
     }
 
     fn get(target: &str) -> String {
@@ -1541,13 +1549,14 @@ mod tests {
     /// process, which is worse than the double-bind it prevents.
     #[test]
     fn oauth_listener_flag_tracks_the_flow() {
-        let mut state = AccountsState::default();
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut state = AccountsState::new(&mut ui);
         assert!(!state.oauth_listener_running);
 
-        update(&mut state, AccountsMessage::GoogleLoginInit);
+        update(&mut state, AccountsMessage::GoogleLoginInit, &mut ui);
         assert!(state.oauth_listener_running, "starting a login marks the port busy");
 
-        update(&mut state, AccountsMessage::GoogleLoginFinished);
+        update(&mut state, AccountsMessage::GoogleLoginFinished, &mut ui);
         assert!(!state.oauth_listener_running, "a finished flow frees the button");
     }
 }
