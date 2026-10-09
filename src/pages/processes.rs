@@ -729,13 +729,17 @@ mod tests {
         };
         let pc0 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx);
         let x0 = header_x(&pc0, "MEM %");
-        // Content (650) is wider than the ~500px page, so the list is
-        // h-scrollable; pan and every column shifts left by exactly that.
+        // The columns are wider than the ~500px page, so the list is
+        // h-scrollable; pan within its range (the columns are as wide as
+        // their content, so the range is the table's, not a fixed figure)
+        // and every column shifts left by exactly that.
         assert!(state.cpu_list.h_scroll_active());
-        state.cpu_list.scroll_x = 40.0;
+        let pan = state.cpu_list.max_scroll_x() / 2.0;
+        assert!(pan > 0.0);
+        state.cpu_list.scroll_x = pan;
         let pc1 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx);
-        assert_eq!(header_x(&pc1, "MEM %"), x0 - 40.0);
-        assert_eq!(header_x(&pc1, "CPU %"), header_x(&pc0, "CPU %") - 40.0);
+        assert_eq!(header_x(&pc1, "MEM %"), x0 - pan);
+        assert_eq!(header_x(&pc1, "CPU %"), header_x(&pc0, "CPU %") - pan);
     }
 
     #[test]
