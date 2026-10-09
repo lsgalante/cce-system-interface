@@ -28,8 +28,8 @@ impl SystemInterface {
         self.refocus_rect = self
             .ui_context
             .focused_widget
-            .and_then(|id| self.ui_context.tree.get_ptr(id))
-            .map(|ptr| unsafe { (*ptr).rect() });
+            .and_then(|id| self.ui_context.get_widget(id))
+            .map(|w| w.rect());
         // SectionContainer dissolved (Phase 6w): no per-rebuild section clones to
         // relink — the page's widgets dispatch directly (registration happens in
         // render_widget during the view pass below).
@@ -592,13 +592,11 @@ impl SystemInterface {
             let chrome_id = self.page_dropdown.id();
             let mut page_pop_pc = PageContent::new();
             for &pop_id in &self.ui_context.active_popovers {
-                let Some(pop_ptr) = self.ui_context.tree.get_ptr(pop_id) else { continue };
-                unsafe {
-                    if pop_id == chrome_id {
-                        (*pop_ptr).render_popover(&mut popover_pc);
-                    } else {
-                        (*pop_ptr).render_popover(&mut page_pop_pc);
-                    }
+                let Some(popover) = self.ui_context.get_widget(pop_id) else { continue };
+                if pop_id == chrome_id {
+                    popover.render_popover(&mut popover_pc);
+                } else {
+                    popover.render_popover(&mut page_pop_pc);
                 }
             }
             // The chrome popover's rects are already in place: the page
@@ -658,11 +656,7 @@ impl SystemInterface {
         // page buttons above are per-rebuild allocations; see `focus_stepped`).
         if let Some((fx, fy, fw, fh)) = self.refocus_rect.take() {
             let near = |a: f32, b: f32| (a - b).abs() < 0.5;
-            let heir = self.ui_context.tree.iter_registered().find_map(|(id, ptr)| {
-                if ptr.is_null() {
-                    return None;
-                }
-                let w = unsafe { &*ptr };
+            let heir = self.ui_context.widgets().find_map(|(id, w)| {
                 let (x, y, ww, hh) = w.rect();
                 (w.focus_role() != cce_ui::widget::FocusRole::None && near(x, fx) && near(y, fy) && near(ww, fw) && near(hh, fh))
                     .then_some(id)

@@ -515,13 +515,11 @@ impl SystemInterface {
             }
         }
 
-        let is_text_box_focused = if let Some(focused) =
-            self.ui_context.focused_widget.and_then(|id| self.ui_context.tree.get_ptr(id))
-        {
-            unsafe { (*focused).as_any().is::<cce_ui::widget::input::TextBox>() }
-        } else {
-            false
-        };
+        let is_text_box_focused = self
+            .ui_context
+            .focused_widget
+            .and_then(|id| self.ui_context.get_widget(id))
+            .is_some_and(|focused| focused.as_any().is::<cce_ui::widget::input::TextBox>());
 
         if !self.search_open && !is_text_box_focused {
             if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
