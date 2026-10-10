@@ -607,9 +607,9 @@ impl cce_ui::engine::Application for SystemInterface {
 
         // The window chrome, as it paints itself: the page dropdown in the status bar
         // and, while open, the search box in its band.
-        cce_ui::scene::painter::paint_root_into(&self.ui_context, &self.ui_context[self.page_dropdown], &mut pc);
+        cce_ui::widget::painter::paint_root_into(&self.ui_context, &self.ui_context[self.page_dropdown], &mut pc);
         if self.search_open {
-            cce_ui::scene::painter::paint_root_into(&self.ui_context, &self.ui_context[self.search_box], &mut pc);
+            cce_ui::widget::painter::paint_root_into(&self.ui_context, &self.ui_context[self.search_box], &mut pc);
         }
 
         // The page scrollbar's fore copy: over the page content at the
