@@ -193,8 +193,8 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         // (The toolkit picks these itself for a `Button` with no
                         // override; this host paints buttons from its own collected
                         // colours, so it has to ask for them.)
-                        let face = cce_ui::colors::button_background_color();
-                        let face_hover = cce_ui::colors::button_hover_color();
+                        let face = cce_ui::color::button_background_color();
+                        let face_hover = cce_ui::color::button_hover_color();
 
                         // ONE transport button, showing the action it will take:
                         // play on a stopped service, stop on a running one. The two
