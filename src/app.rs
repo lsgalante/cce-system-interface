@@ -1,4 +1,4 @@
-use cce_ui::layout::RenderTarget;
+use cce_ui::scene::paint::RenderTarget;
 
 use crate::pages::audio;
 use crate::pages::bluetooth;
@@ -141,7 +141,7 @@ pub enum ControlCarve {
     /// A step carve straight from the toolkit (TextBox well, a Toggle's well
     /// and glider) — it already carries its own rect, per-corner radii,
     /// depth and wall mask, so nothing here re-derives them.
-    Step(cce_ui::layout::ReliefCarve),
+    Step(cce_ui::scene::paint::ReliefCarve),
 }
 
 impl ControlCarve {
@@ -462,12 +462,12 @@ impl RenderTarget for PageContent {
     /// plate at another rect: a trough is a seam about the boundary with the
     /// face left level, a well drops the whole interior, a boss raises it.
     /// Collapsing them would give this app controls no other relief host has.
-    fn relief_carve(&mut self, carve: &cce_ui::layout::ReliefCarve) {
+    fn relief_carve(&mut self, carve: &cce_ui::scene::paint::ReliefCarve) {
         self.control_relief_marks.push(self.rects.len());
         self.control_reliefs.push(ControlCarve::Step(*carve));
     }
 
-    fn section_relief(&mut self, f: &cce_ui::layout::SectionFrame) -> bool {
+    fn section_relief(&mut self, f: &cce_ui::scene::paint::SectionFrame) -> bool {
         // Focused sections keep the legacy green outline (the ctrl-nav feedback);
         // relief-off styling keeps the outline everywhere.
         if f.focused || !cce_ui::layout::control_relief() {
@@ -517,7 +517,7 @@ pub fn button_need(label: &str) -> f32 {
 /// the width of its column (and, in a row, the row's slack) when `w` is 0. `colors` are the
 /// face, the hover face and the label.
 pub fn form_button<'w>(
-    g: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    g: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
     label: impl Into<String>,
     w: f32,
     colors: ([f32; 4], [f32; 4], [f32; 4]),
@@ -532,7 +532,7 @@ pub fn form_button<'w>(
 /// A page button as a row cell that asks for `need` (its label's own width) and shares the
 /// row's slack with the other cells — a row of buttons sized to their labels.
 pub fn form_button_fit<'w>(
-    g: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    g: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
     label: impl Into<String>,
     need: f32,
     colors: ([f32; 4], [f32; 4], [f32; 4]),
@@ -584,13 +584,13 @@ pub fn wrap_to_width(text: &str, width: f32, size: f32) -> Vec<String> {
 /// them, each value beside its label and wrapped to the room left of the content box, the
 /// label on the value's first line. Each pair is (label, label colour, value, value colour).
 pub fn form_pairs<'w>(
-    col: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    col: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
     size: f32,
     pairs: Vec<(String, [f32; 4], String, [f32; 4])>,
 ) {
     use cce_ui::scene::layout::{CrossAlign, Style};
-    let label_w = pairs.iter().map(|p| cce_ui::layout::form_text_width(&p.0, size)).fold(0.0, f32::max);
-    let line_h = cce_ui::layout::form_line_height(size);
+    let label_w = pairs.iter().map(|p| cce_ui::compose::form_text_width(&p.0, size)).fold(0.0, f32::max);
+    let line_h = cce_ui::compose::form_line_height(size);
     let value_w = (col.form_width() - label_w - cce_ui::layout::control_gap()).max(1.0);
     // Lines of text, not controls: they stand a line apart, with no control gap between.
     col.group(Style::column().cross_align(CrossAlign::Stretch), false, |lines| {
@@ -604,7 +604,7 @@ pub fn form_pairs<'w>(
 }
 
 /// The hairline that parts a well's zones, as a form piece.
-pub fn form_divider(g: &mut cce_ui::layout::FormGroup<'_, '_, PageContent>) {
+pub fn form_divider(g: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>) {
     g.rule([1.0, 1.0, 1.0, 0.06]);
 }
 

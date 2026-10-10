@@ -6,7 +6,8 @@ use crate::app::{button_need, form_button, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox};
 

@@ -1,7 +1,8 @@
 use crate::app::{form_button, form_divider, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::widget::{Spinbox, Slider};
 
 #[derive(Debug, Clone)]
@@ -230,7 +231,7 @@ const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 /// stay index-aligned with the device vecs.
 #[allow(clippy::too_many_arguments)]
 fn device_row<'w>(
-    col: &mut cce_ui::layout::FormGroup<'_, 'w, PageContent>,
+    col: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
     name: String,
     name_w: f32,
     active: bool,
@@ -241,7 +242,7 @@ fn device_row<'w>(
     spin: Handle<cce_ui::widget::Adapted<Spinbox>>,
     mute_action: AppAction,
 ) {
-    let line_h = cce_ui::layout::form_line_height(12.0);
+    let line_h = cce_ui::compose::form_line_height(12.0);
     if !active {
         col.row(|r| {
             r.draw(name_w, line_h, false, move |pc, c, _| pc.text(&name, c.x, c.y, 12.0, TEXT_DIM));
@@ -292,7 +293,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
             .iter()
             .map(|d| d.name.as_str())
             .chain(state.sources.iter().map(|d| d.name.as_str()))
-            .map(|n| cce_ui::layout::form_text_width(n, 12.0))
+            .map(|n| cce_ui::compose::form_text_width(n, 12.0))
             .fold(0.0, f32::max)
             .min(col.form_width() / 3.0);
 
@@ -411,7 +412,7 @@ impl crate::pages::AppPage for AudioState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut cce_ui::layout::PageFlow,
+        layout: &mut cce_ui::compose::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
@@ -464,7 +465,7 @@ impl crate::pages::AppPage for AudioState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cce_ui::layout::PageFlow;
+    use cce_ui::compose::PageFlow;
 
     #[test]
     fn test_view_layout_grid() {

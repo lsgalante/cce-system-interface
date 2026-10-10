@@ -1,7 +1,7 @@
 use crate::app::{button_need, form_button, form_button_fit, wrap_to_width, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{PageLayoutBuilder, PageFlow};
+use cce_ui::compose::{PageLayoutBuilder, PageFlow};
 use cce_ui::widget::{Label, WidgetHostExt};
 
 
@@ -261,7 +261,7 @@ where
 
 /// A line of text wrapped to the form's width rather than cut at it: its lines one under the
 /// next, so one wrapped item still reads as one item.
-fn wrapped_text(g: &mut cce_ui::layout::FormGroup<'_, '_, PageContent>, text: &str, size: f32, color: [f32; 4]) {
+fn wrapped_text(g: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>, text: &str, size: f32, color: [f32; 4]) {
     let lines = wrap_to_width(text, g.form_width(), size);
     g.lines(lines, size, color);
 }
@@ -876,7 +876,7 @@ mod tests {
     fn test_view_layout_grid() {
         let mut ui = cce_ui::context::UiContext::new();
         let mut state = SystemState::new(&mut ui);
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false, false, false, false, false, false, false];
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());

@@ -86,7 +86,7 @@ impl SystemInterface {
         // The dropdown sits flush against the window's rounded bottom-right corner; with the
         // root plate container dissolved, hand it the plate frame for its concentric-corner cut.
         self.ui_context[self.page_dropdown].set_corner_frame(Some(((0.0, 0.0, logical_sw, logical_sh), 12.0, (true, true, true, true))));
-        cce_ui::layout::render_widget_h(&mut dummy_pc, self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
+        cce_ui::compose::render_widget_h(&mut dummy_pc, self.page_dropdown, dropdown_x, dropdown_y, dropdown_w, dropdown_h, &mut self.ui_context);
         // The dropdown is laid out by this pass and painted live in display_list
         // (`paint_root_into`), chevron and all.
         let switcher_h = if self.search_open {
@@ -145,7 +145,7 @@ impl SystemInterface {
             let box_h = cce_ui::layout::textbox_height();
             // Laid out here; painted live in display_list.
             let mut layout_only = PageContent::new();
-            cce_ui::layout::render_widget_h(
+            cce_ui::compose::render_widget_h(
                 &mut layout_only,
                 self.search_box,
                 self.sidebar_width + inset,
@@ -672,7 +672,7 @@ impl SystemInterface {
     }
 
     pub(crate) fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
-        use cce_ui::layout::PageFlow;
+        use cce_ui::compose::PageFlow;
         // The sections are wells carved straight into the root plate (no
         // sidebar, no pane between), so the page's edge is the window's edge:
         // the root rung's inset, and the grid's gap the root rung's gap (set

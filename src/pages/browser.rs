@@ -9,7 +9,7 @@ use std::fs;
 
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{PageFlow, PageLayoutBuilder};
+use cce_ui::compose::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::input::{Dropdown, Toggle};
 use cce_ui::widget::TextBox;
 

@@ -1,7 +1,8 @@
 use crate::app::{form_button, form_divider, form_pairs, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::widget::TextBox;
@@ -751,7 +752,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         let icons_ok = cce_ui::upload_icon("plus", 32).is_some();
         let sq = if icons_ok { btn_h } else if narrow { 86.0 } else { 110.0 };
         col.row(|r| {
-            let icon_button = |r: &mut cce_ui::layout::FormGroup<'_, '_, PageContent>, icon: &'static str, word: &'static str,
+            let icon_button = |r: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>, icon: &'static str, word: &'static str,
                                colors: ([f32; 4], [f32; 4]), text: [f32; 4], action: AccountsMessage| {
                 r.draw(sq, btn_h, false, move |pc, c, _| {
                     pc.button_icon(icon, word, c.x, c.y, c.width, c.height, colors.0, colors.1, text, 1.0, AppAction::Accounts(action));
@@ -1232,7 +1233,7 @@ impl crate::pages::AppPage for AccountsState {
         ch: f32,
         _root_focused: bool,
         sec_focused: &[bool],
-        layout: &mut cce_ui::layout::PageFlow,
+        layout: &mut cce_ui::compose::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
@@ -1299,7 +1300,7 @@ impl crate::pages::AppPage for AccountsState {
 mod tests {
     use cce_ui::widget::WidgetHost;
     use super::*;
-    use cce_ui::layout::PageFlow;
+    use cce_ui::compose::PageFlow;
 
     #[test]
     fn test_accounts_page_view() {

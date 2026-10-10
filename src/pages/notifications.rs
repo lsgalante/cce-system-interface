@@ -3,7 +3,7 @@ use std::io::Write;
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::input::{Toggle, Dropdown, Spinbox};
-use cce_ui::layout::{PageLayoutBuilder, PageFlow};
+use cce_ui::compose::{PageLayoutBuilder, PageFlow};
 use crate::app::{AppAction, PageContent};
 use crate::pages::AppPage;
 
@@ -287,7 +287,7 @@ pub(crate) mod tests {
     fn test_view_layout_grid() {
         let mut ui = cce_ui::context::UiContext::new();
         let mut state = NotificationsState::new(&mut ui);
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let pc = state.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty());

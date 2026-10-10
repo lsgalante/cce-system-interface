@@ -2,7 +2,8 @@ use crate::app::{AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{Adapted, Toggle};
 
@@ -374,7 +375,7 @@ mod tests {
         let mut state = NetworkState::new(&mut ui);
         state.loaded = true;
         state.wifi_enabled = true;
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
@@ -388,7 +389,7 @@ mod tests {
         state.connected_ssid = "MyHomeWiFi".to_string();
         state.signal_strength = 80;
         state.ip_address = "192.168.1.50".to_string();
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }

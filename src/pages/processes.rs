@@ -1,7 +1,8 @@
 use crate::app::{AppAction, PageContent};
 use crate::power_meter::{self, Meter, Mode};
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use std::sync::Mutex;
 
@@ -546,7 +547,7 @@ mod tests {
     #[test]
     fn test_view_layout_grid() {
         let mut state = ProcessesState::default();
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
@@ -585,7 +586,7 @@ mod tests {
         let mut state = ProcessesState { loaded: true, ..Default::default() };
         state.processes = (1..=3).map(|i| row(&i.to_string())).collect();
         state.killing.insert("2".to_string());
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
@@ -692,7 +693,7 @@ mod tests {
     fn header_sort_buttons_emitted() {
         let mut state = ProcessesState { loaded: true, ..Default::default() };
         state.processes = vec![sized_row("1", "1.0", 1)];
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
@@ -721,7 +722,7 @@ mod tests {
     fn columns_pan_with_horizontal_scroll() {
         let mut state = ProcessesState { loaded: true, ..Default::default() };
         state.processes = (0..3).map(|i| row(&i.to_string())).collect();
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
 
@@ -768,7 +769,7 @@ mod tests {
         // letter and every row's hover wash its left edge.
         let mut state = ProcessesState { loaded: true, ..Default::default() };
         state.processes = (0..40).map(|i| row(&i.to_string())).collect();
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx);
         for t in &pc.texts {
@@ -790,7 +791,7 @@ mod tests {
         // stood alone in the reserve band under the last row.
         let mut state = ProcessesState { loaded: true, ..Default::default() };
         state.processes = (0..40).map(|i| row(&i.to_string())).collect();
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx);
         let rows_bottom = state.cpu_list.viewport_y + state.cpu_list.viewport_h;
@@ -839,7 +840,7 @@ mod tests {
         };
         update(&mut state, ProcessesMessage::Refreshed(Box::new(fresh)));
         assert_eq!(state.power.mode, Mode::Battery);
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 900.0, 600.0, false, &[false], &mut layout, &mut ctx);
         let all: Vec<&str> = pc.texts.iter().map(|t| t.0.as_str()).collect();

@@ -46,7 +46,7 @@ use crate::app::{AppAction, PageContent};
 use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{PageFlow, PageLayoutBuilder};
+use cce_ui::compose::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::{Adapted, Dropdown};
 use std::path::{Path, PathBuf};
 
@@ -1426,7 +1426,7 @@ mod tests {
     fn the_three_sections_paint_and_the_assignment_one_drops_on_a_desktop() {
         let mut ui = cce_ui::context::UiContext::new();
         let paint = |st: &mut PowerState, sections: usize, ui: &mut UiContext| {
-            let mut layout = cce_ui::layout::PageFlow::new();
+            let mut layout = cce_ui::compose::PageFlow::new();
             let sec_focused = vec![false; sections];
             let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui);
             assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
@@ -1446,7 +1446,7 @@ mod tests {
     fn a_stale_root_helper_is_named_on_the_page() {
         let mut ui = cce_ui::context::UiContext::new();
         let lines = |st: &mut PowerState, ui: &mut UiContext| -> Vec<String> {
-            let mut layout = cce_ui::layout::PageFlow::new();
+            let mut layout = cce_ui::compose::PageFlow::new();
             let sec_focused = vec![false; 3];
             let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui);
             pc.texts.iter().map(|t| t.0.clone()).collect()

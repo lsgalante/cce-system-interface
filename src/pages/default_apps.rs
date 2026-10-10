@@ -13,7 +13,7 @@
 use crate::app::{AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{PageLayoutBuilder, PageFlow};
+use cce_ui::compose::{PageLayoutBuilder, PageFlow};
 use cce_ui::widget::Dropdown;
 use std::collections::HashMap;
 use std::path::PathBuf;

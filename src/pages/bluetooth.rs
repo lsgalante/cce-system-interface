@@ -1,7 +1,8 @@
 use crate::app::{form_button, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
-use cce_ui::layout::{PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
 
 #[derive(Debug, Clone)]
@@ -225,7 +226,7 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                         // A connected device wears a `check` glyph ahead of its name (it was
                         // a ">" in the label); every row keeps the glyph's room so the names
                         // line up either way. The name is cut where the row ends.
-                        let line_h = cce_ui::layout::form_line_height(font_size);
+                        let line_h = cce_ui::compose::form_line_height(font_size);
                         r.draw(0.0, line_h, true, move |pc, cell, _| {
                             let g = font_size;
                             if connected {

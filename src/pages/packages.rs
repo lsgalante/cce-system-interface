@@ -2,7 +2,8 @@ use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppActio
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::layout::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow, RenderTarget};
+use cce_ui::compose::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow};
+use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
@@ -1370,7 +1371,7 @@ mod tests {
         let mut ui = cce_ui::context::UiContext::new();
         let mut st = loaded_state(&mut ui);
         update(&mut st, PackagesMessage::SetFilter(InstalledFilter::Orphans), &mut ui);
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         assert_eq!(st.installed_items.len(), 2);
         ui[st.installed_items[1]].just_clicked = true;
@@ -1426,7 +1427,7 @@ mod tests {
         assert!(st.previewing);
         update(&mut st, PackagesMessage::RemovalPreviewed(vec!["beta".into()], Err(err.clone())), &mut ui);
         assert!(!st.previewing);
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         let texts: Vec<String> = pc.texts.iter().map(|t| t.0.clone()).collect();
         assert!(texts.iter().any(|t| t.contains("required by alpha")), "the reason is painted: {texts:?}");
@@ -1510,7 +1511,7 @@ mod tests {
     fn test_view_layout_grid() {
         let mut ui = cce_ui::context::UiContext::new();
         let mut state = PackagesState::new(&mut ui);
-        let mut layout = cce_ui::layout::PageFlow::new();
+        let mut layout = cce_ui::compose::PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut ui);
         assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
     }
