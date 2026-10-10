@@ -833,10 +833,8 @@ pub fn apply_charge_limit(limit: ChargeLimit) -> Result<(), String> {
 /// Where the idle-timeout levers land, in seconds (0 = never). The
 /// compositor's idle manager polls both and lets a present file override
 /// its `idle { }` block; a missing file means "the config's value". The
-/// paths are repeated in `cce-fx`'s `idle.rs` (it cannot depend on this
-/// crate), so a rename must land on both sides.
-pub const IDLE_DISPLAY_OFF_PATH: &str = "/run/cce/idle_display_off";
-pub const IDLE_SLEEP_PATH: &str = "/run/cce/idle_sleep";
+/// paths are cce-core's `plan`, which the compositor reads them from too.
+pub use cce_ui::plan::{IDLE_DISPLAY_OFF_PATH, IDLE_SLEEP_PATH};
 
 /// Record a session-wide switch where every session reads it: the
 /// animations file ([`cce_ui::motion::STATE_PATH`]) and the idle-timeout
