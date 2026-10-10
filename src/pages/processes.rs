@@ -472,7 +472,9 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
             // Parsed, not passed through: `kill 0` signals the whole process
             // group (this app included), and negative pids kill groups too.
             if pid.parse::<u32>().is_ok_and(|n| n > 0) {
-                let _ = std::process::Command::new("kill").arg(&pid).spawn();
+                let mut kill = std::process::Command::new("kill");
+                kill.arg(&pid);
+                let _ = crate::spawn_detached(kill);
                 state.killing.insert(pid);
             }
         }

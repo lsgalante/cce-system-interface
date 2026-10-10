@@ -914,12 +914,12 @@ pub fn update(state: &mut PowerState, msg: PowerMessage, ctx: &mut UiContext) {
             let arg = |pct: Option<u32>| pct.map_or_else(|| "unset".to_string(), |p| p.to_string());
             // Through the helper rather than a one-off sysfs write: it records
             // the window in the plan, which every later run re-applies.
-            let _ = std::process::Command::new("pkexec")
-                .arg(&helper)
+            let mut cmd = std::process::Command::new("pkexec");
+            cmd.arg(&helper)
                 .arg("charge-limit")
                 .arg(arg(limit.start))
-                .arg(arg(limit.end))
-                .spawn();
+                .arg(arg(limit.end));
+            let _ = crate::spawn_detached(cmd);
             // Optimistic mirror of what the helper will make true.
             let _ = state.facts.plan.set_charge_limit(limit);
             state.facts.charge_limit = limit.end;
@@ -957,13 +957,13 @@ pub fn update(state: &mut PowerState, msg: PowerMessage, ctx: &mut UiContext) {
             // blocks. The helper records the pick and, when this mode is the
             // running one, applies it; the watcher's next read reports what
             // actually happened.
-            let _ = std::process::Command::new("pkexec")
-                .arg(&helper)
+            let mut cmd = std::process::Command::new("pkexec");
+            cmd.arg(&helper)
                 .arg("set")
                 .arg(mode.key())
                 .arg(lever.key())
-                .arg(value.unwrap_or("unset"))
-                .spawn();
+                .arg(value.unwrap_or("unset"));
+            let _ = crate::spawn_detached(cmd);
             // Optimistic mirror of what the helper will make true.
             let _ = state.facts.plan.put(mode, lever, value);
             if mode == state.facts.plan.assigned(state.facts.source) {
@@ -981,12 +981,12 @@ pub fn update(state: &mut PowerState, msg: PowerMessage, ctx: &mut UiContext) {
                 log::error!("[power] cce-power-apply not found at {} or beside this binary", power_plan::HELPER_SYSTEM_PATH);
                 return;
             };
-            let _ = std::process::Command::new("pkexec")
-                .arg(&helper)
+            let mut cmd = std::process::Command::new("pkexec");
+            cmd.arg(&helper)
                 .arg("assign")
                 .arg(source.key())
-                .arg(mode.key())
-                .spawn();
+                .arg(mode.key());
+            let _ = crate::spawn_detached(cmd);
             state.facts.plan.assign(source, mode);
             // Reassigning the live state hands the machine to a different
             // mode; mirror its levers so the page agrees with what the helper
