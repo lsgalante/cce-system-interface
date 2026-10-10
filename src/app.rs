@@ -395,6 +395,12 @@ impl PageContent {
     }
 }
 
+impl Default for PageContent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RenderTarget for PageContent {
     fn icon(&mut self, name: &str, rect: cce_ui::scene::layout::Rect, color: [f32; 4]) {
         PageContent::icon(self, name, rect.x, rect.y, rect.width, rect.height, color);
@@ -549,7 +555,7 @@ pub fn wrap_to_width(text: &str, width: f32, size: f32) -> Vec<String> {
         .lock()
         .map(|mut fs| cce_ui::backend::text::shaped_cluster_offsets(&mut fs, text, size, None))
         .unwrap_or_default();
-    if offsets.last().map_or(true, |&(_, total)| total <= width) {
+    if offsets.last().is_none_or(|&(_, total)| total <= width) {
         return vec![text.to_string()];
     }
     let mut lines = Vec::new();

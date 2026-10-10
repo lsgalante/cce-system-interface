@@ -180,7 +180,7 @@ fn write_enable_notifications(enabled: bool) {
 }
 
 thread_local! {
-    static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+    static TEST_CONFIG_PATH: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 fn get_config_path() -> String {

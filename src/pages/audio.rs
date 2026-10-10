@@ -166,7 +166,7 @@ async fn fetch_sinks(connected_ports: &[String]) -> Vec<AudioSink> {
             active: is_hdmi_active(&name, connected_ports),
         });
     }
-    sinks.sort_by(|a, b| b.id.cmp(&a.id));
+    sinks.sort_by_key(|a| std::cmp::Reverse(a.id));
     sinks
 }
 
@@ -205,7 +205,7 @@ async fn fetch_sources(connected_ports: &[String]) -> Vec<AudioSource> {
             active: is_hdmi_active(&name, connected_ports),
         });
     }
-    sources.sort_by(|a, b| b.id.cmp(&a.id));
+    sources.sort_by_key(|a| std::cmp::Reverse(a.id));
     sources
 }
 

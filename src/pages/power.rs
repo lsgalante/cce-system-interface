@@ -211,7 +211,7 @@ fn assignment_shown(f: &PowerFacts) -> bool {
 
 #[derive(Debug, Clone)]
 pub enum PowerMessage {
-    Refreshed(PowerFacts),
+    Refreshed(Box<PowerFacts>),
     /// Charge-limit pick, by option index.
     SetLimit(usize),
     /// Which mode the lever section edits, by option index. Page-local: it
@@ -893,8 +893,8 @@ pub fn update(state: &mut PowerState, msg: PowerMessage, ctx: &mut UiContext) {
                 state.editing = facts.plan.assigned(facts.source);
             }
             state.loaded = true;
-            if state.facts != facts {
-                state.facts = facts;
+            if state.facts != *facts {
+                state.facts = *facts;
                 rebuild_options(state, ctx);
             }
         }
@@ -1176,14 +1176,14 @@ mod tests {
         // Default state edits Balanced; the first read is on battery, which
         // runs Power Saver.
         assert_eq!(st.editing, Mode::Balanced);
-        update(&mut st, PowerMessage::Refreshed(facts()), &mut ui);
+        update(&mut st, PowerMessage::Refreshed(Box::new(facts())), &mut ui);
         assert_eq!(st.editing, Mode::PowerSaver);
         assert_eq!(ui[st.dd_mode].selected, mode_index(Mode::PowerSaver));
         // A later read does not yank the section away from the user's pick.
         update(&mut st, PowerMessage::EditMode(mode_index(Mode::Performance)), &mut ui);
         let mut plugged = facts();
         plugged.source = Source::Ac;
-        update(&mut st, PowerMessage::Refreshed(plugged), &mut ui);
+        update(&mut st, PowerMessage::Refreshed(Box::new(plugged)), &mut ui);
         assert_eq!(st.editing, Mode::Performance);
     }
 

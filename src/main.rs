@@ -477,7 +477,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 .zip(self.page_control_relief_marks.iter().copied())
                 .peekable();
             let mut emit_pending = |pc: &mut cce_ui::scene::paint::PaintCtx, upto: usize| {
-                while carves.peek().map_or(false, |&(_, mark)| mark <= upto) {
+                while carves.peek().is_some_and(|&(_, mark)| mark <= upto) {
                     let ((carve, clip), _) = carves.next().unwrap();
                     pc.clip(view, |pc| match clip {
                         Some([x, y, w, h]) => pc.clip(Rect { x, y: y - scroll_y, width: w, height: h }, |pc| {
@@ -640,7 +640,7 @@ impl cce_ui::engine::Application for SystemInterface {
                 .zip(self.popover_control_relief_marks.iter().copied())
                 .peekable();
             for (i, w) in self.popover_widgets.iter().enumerate() {
-                while carves.peek().map_or(false, |&(_, mark)| mark <= i) {
+                while carves.peek().is_some_and(|&(_, mark)| mark <= i) {
                     let (carve, _) = carves.next().unwrap();
                     emit_control_carve(&mut pc, carve);
                 }
@@ -845,7 +845,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("network", &s) {
                 continue;
             }
-            network::update(&mut self.app.network, network::NetworkMessage::Refreshed(s), &mut self.ui_context);
+            network::update(&mut self.app.network, network::NetworkMessage::Refreshed(Box::new(s)), &mut self.ui_context);
             if self.app.current_page == Page::Network {
                 self.needs_rebuild = true;
             }
@@ -872,7 +872,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("power", &s) {
                 continue;
             }
-            pages::power::update(&mut self.app.power, pages::power::PowerMessage::Refreshed(s), &mut self.ui_context);
+            pages::power::update(&mut self.app.power, pages::power::PowerMessage::Refreshed(Box::new(s)), &mut self.ui_context);
             if self.app.current_page == Page::Power {
                 self.needs_rebuild = true;
             }
@@ -887,7 +887,7 @@ impl SystemInterface {
             }
         }
         while let Ok(s) = self.rx_processes.try_recv() {
-            processes::update(&mut self.app.processes, processes::ProcessesMessage::Refreshed(s));
+            processes::update(&mut self.app.processes, processes::ProcessesMessage::Refreshed(Box::new(s)));
             if self.app.current_page == Page::Processes {
                 self.needs_rebuild = true;
             }
@@ -957,7 +957,7 @@ impl SystemInterface {
             if !self.fresh_snapshot("packages", &s) {
                 continue;
             }
-            pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::Refreshed(s), &mut self.ui_context);
+            pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::Refreshed(Box::new(s)), &mut self.ui_context);
             if self.app.current_page == Page::Packages {
                 self.needs_rebuild = true;
             }
@@ -1054,7 +1054,7 @@ impl SystemInterface {
                         let wake = self.sender.clone();
                         tokio::spawn(async move {
                             let new_state = pages::packages::fetch_packages_state().await;
-                            let _ = tx.send(pages::packages::PackagesMessage::Refreshed(new_state));
+                            let _ = tx.send(pages::packages::PackagesMessage::Refreshed(Box::new(new_state)));
                             let _ = wake.send(AppAction::Wake);
                         });
                     }
@@ -1132,7 +1132,7 @@ impl SystemInterface {
                     let reread = self.app.packages.selected_package.clone();
                     tokio::spawn(async move {
                         let new_state = pages::packages::fetch_packages_state().await;
-                        let _ = tx.send(pages::packages::PackagesMessage::Refreshed(new_state));
+                        let _ = tx.send(pages::packages::PackagesMessage::Refreshed(Box::new(new_state)));
                         if let Some(name) = reread {
                             let res = pages::packages::fetch_package_info(name.clone(), true).await;
                             let _ = tx.send(pages::packages::PackagesMessage::InfoFetched(name, res));

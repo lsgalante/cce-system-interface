@@ -152,7 +152,7 @@ pub fn update(state: &mut DefaultAppsState, msg: DefaultAppsMessage, ctx: &mut U
     match msg {
         DefaultAppsMessage::Refreshed(info) => {
             state.loaded = true;
-            for (entry, cat) in state.categories.iter_mut().zip(info.0.into_iter()) {
+            for (entry, cat) in state.categories.iter_mut().zip(info.0) {
                 // Leave an open dropdown alone — the next refresh normalizes it.
                 if entry.info == cat || ctx[entry.dropdown].open {
                     continue;
@@ -377,7 +377,7 @@ async fn fetch_mime_category(apps: &HashMap<String, DesktopApp>, mimes: &[&str])
         })
         .map(|(id, app)| (id.clone(), app.name.clone()))
         .collect();
-    candidates.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    candidates.sort_by_key(|a| a.1.to_lowercase());
 
     // A current default we didn't scan (odd install) still shows, by id.
     if let Some(cur) = &current {
@@ -409,11 +409,11 @@ fn fetch_terminal_category(apps: &HashMap<String, DesktopApp>) -> CategoryInfo {
     }
     let mut candidates: Vec<(String, String)> =
         by_cmd.into_iter().map(|(cmd, name)| (cmd.to_string(), name.to_string())).collect();
-    candidates.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    candidates.sort_by_key(|a| a.1.to_lowercase());
 
     let current = cce_ui::config::get_string("/default_terminal")
         .filter(|s| !s.is_empty())
-        .or_else(|| Some("foot".to_string()).filter(|_| candidates.iter().any(|(c, _)| c == "foot")));
+        .or_else(|| candidates.iter().any(|(c, _)| c == "foot").then_some("foot".to_string()));
 
     // A configured command with no matching entry still shows, as itself.
     if let Some(cur) = &current {

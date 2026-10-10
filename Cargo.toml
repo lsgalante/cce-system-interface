@@ -31,3 +31,9 @@ path = "src/lib.rs"
 [[bin]]
 path = "src/main.rs"
 name = "cce-system-interface"
+
+[lints.clippy]
+# The toolkit's house style (cce-ui's [lints.clippy]): geometry, colour and paint state
+# taken piecewise, and the legacy tuple views.
+too_many_arguments = "allow"
+type_complexity = "allow"

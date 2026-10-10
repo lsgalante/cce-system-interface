@@ -125,27 +125,27 @@ pub fn spawn_all(
     Receiver<packages::PackagesMessage>,
 ) {
     let w = || (page.clone(), wake.clone());
-    let (p, k) = w(); let rx_audio = spawn_bg_active(p, Page::Audio, 3, k, || audio::fetch_audio_state());
-    let (p, k) = w(); let rx_network = spawn_bg_active(p, Page::Network, 5, k, || network::fetch_network_state());
-    let (p, k) = w(); let rx_bluetooth = spawn_bg_active(p, Page::Bluetooth, 5, k, || bluetooth::fetch_bluetooth_page_state());
-    let (p, k) = w(); let rx_power = spawn_bg_active(p, Page::Power, 5, k, || power::fetch_power_state());
+    let (p, k) = w(); let rx_audio = spawn_bg_active(p, Page::Audio, 3, k, audio::fetch_audio_state);
+    let (p, k) = w(); let rx_network = spawn_bg_active(p, Page::Network, 5, k, network::fetch_network_state);
+    let (p, k) = w(); let rx_bluetooth = spawn_bg_active(p, Page::Bluetooth, 5, k, bluetooth::fetch_bluetooth_page_state);
+    let (p, k) = w(); let rx_power = spawn_bg_active(p, Page::Power, 5, k, power::fetch_power_state);
 
-    let (p, k) = w(); let rx_system = spawn_bg_active(p, Page::System, 5, k, || system_info::fetch_system_state());
-    let (p, k) = w(); let rx_processes = spawn_bg_active(p, Page::Processes, 3, k, || processes::fetch_processes_state());
-    let (p, k) = w(); let rx_storage = spawn_bg_active(p, Page::Storage, 10, k, || storage::fetch_storage_state());
+    let (p, k) = w(); let rx_system = spawn_bg_active(p, Page::System, 5, k, system_info::fetch_system_state);
+    let (p, k) = w(); let rx_processes = spawn_bg_active(p, Page::Processes, 3, k, processes::fetch_processes_state);
+    let (p, k) = w(); let rx_storage = spawn_bg_active(p, Page::Storage, 10, k, storage::fetch_storage_state);
 
     let (p, k) = w(); let rx_notifications = spawn_bg_blocking(p, Page::Notifications, 30, k, notifications::read_notifications_config);
     // Config-file poll while the Browser page is open: catches edits made
     // outside this app (the browser itself, cce-data-editor).
     let (p, k) = w(); let rx_browser = spawn_bg_blocking(p, Page::Browser, 5, k, browser::read_browser_config);
 
-    let (p, k) = w(); let rx_services = spawn_bg_active(p, Page::Services, 3, k, || services::fetch_services());
-    let (p, k) = w(); let rx_default_apps = spawn_bg_active(p, Page::DefaultApps, 10, k, || default_apps::fetch_default_apps());
-    let (p, k) = w(); let rx_timers = spawn_bg_active(p, Page::Timers, 5, k, || timers::fetch_timers());
-    let (p, k) = w(); let rx_accounts = spawn_bg_active(p, Page::Accounts, 3, k, || accounts::fetch_accounts());
+    let (p, k) = w(); let rx_services = spawn_bg_active(p, Page::Services, 3, k, services::fetch_services);
+    let (p, k) = w(); let rx_default_apps = spawn_bg_active(p, Page::DefaultApps, 10, k, default_apps::fetch_default_apps);
+    let (p, k) = w(); let rx_timers = spawn_bg_active(p, Page::Timers, 5, k, timers::fetch_timers);
+    let (p, k) = w(); let rx_accounts = spawn_bg_active(p, Page::Accounts, 3, k, accounts::fetch_accounts);
 
     let (tx_backup, rx_backup) = channel();
-    let (p, k) = w(); let rx_packages = spawn_bg_active(p, Page::Packages, 30, k, || packages::fetch_packages_state());
+    let (p, k) = w(); let rx_packages = spawn_bg_active(p, Page::Packages, 30, k, packages::fetch_packages_state);
     let (tx_update, rx_update) = channel();
 
     (

@@ -111,23 +111,24 @@ pub struct AccountsState {
 impl AccountsState {
     /// The page's state, its form fields inserted into `ctx`.
     pub fn new(ctx: &mut UiContext) -> Self {
-        let mut state = Self::default();
-        state.email_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Email Address"));
-        state.password_box = {
-            let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Password / App Password");
-            tb.is_password = true;
-            ctx.insert(tb)
-        };
-        state.imap_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server"));
-        state.smtp_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server"));
-        state.oauth_client_id_box = ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID"));
-        state.oauth_client_secret_box = {
-            let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client Secret");
-            tb.is_password = true;
-            ctx.insert(tb)
-        };
-        state.list = ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_sink_behind(true);
-        state
+        Self {
+            email_box: ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Email Address")),
+            password_box: {
+                let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Password / App Password");
+                tb.is_password = true;
+                ctx.insert(tb)
+            },
+            imap_box: ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("IMAP Server")),
+            smtp_box: ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("SMTP Server")),
+            oauth_client_id_box: ctx.insert(TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client ID")),
+            oauth_client_secret_box: {
+                let mut tb = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true).with_label("Google Client Secret");
+                tb.is_password = true;
+                ctx.insert(tb)
+            },
+            list: ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_sink_behind(true),
+            ..Default::default()
+        }
     }
 }
 
@@ -1015,7 +1016,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage, ctx: &mut UiConte
                         let _ = entry.delete_credential();
                     }
                 }
-                let safe_email = deleted.email.replace('@', "_").replace('.', "_");
+                let safe_email = deleted.email.replace(['@', '.'], "_");
                 let cache = cce_ui::config::cce_config_dir().join(format!("emails_{}.json", safe_email));
                 let _ = std::fs::remove_file(cache);
                 state.selected_idx = if state.accounts.is_empty() { None } else { Some(0) };

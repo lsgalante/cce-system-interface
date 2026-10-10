@@ -9,12 +9,12 @@ pub struct SectionStyle {
 }
 
 pub fn section_rects(_label: &str, x: f32, y: f32, w: f32, h: f32) -> Vec<([f32; 4], f32, f32, f32, f32)> {
-    let mut rects = Vec::new();
-    // Section background
-    rects.push((color::CONTENT_BG, x, y, w, h));
-    // Section border top
-    rects.push(([0.20, 0.33, 0.22, 1.0], x, y, w, 1.0));
-    rects
+    vec![
+        // Section background
+        (color::CONTENT_BG, x, y, w, h),
+        // Section border top
+        ([0.20, 0.33, 0.22, 1.0], x, y, w, 1.0),
+    ]
 }
 
 pub fn label_color() -> [f32; 4] {

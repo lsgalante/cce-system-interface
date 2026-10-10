@@ -15,16 +15,11 @@ pub struct ServiceInfo {
     pub is_system: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ServiceTab {
+    #[default]
     System,
     User,
-}
-
-impl Default for ServiceTab {
-    fn default() -> Self {
-        ServiceTab::System
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -389,7 +384,7 @@ pub async fn fetch_services() -> Vec<ServiceInfo> {
     }
 
     // Sort alphabetically by name
-    services.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    services.sort_by_key(|a| a.name.to_lowercase());
     services
 }
 

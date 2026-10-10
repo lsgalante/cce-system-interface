@@ -52,7 +52,7 @@ impl NetworkState {
 
 #[derive(Debug, Clone)]
 pub enum NetworkMessage {
-    Refreshed(NetworkState),
+    Refreshed(Box<NetworkState>),
     ToggleWifi,
     ConnectWifi(String),
 }
@@ -150,7 +150,7 @@ async fn fetch_wifi_list() -> Vec<WifiNetwork> {
             });
         }
     }
-    networks.sort_by(|a, b| b.signal.cmp(&a.signal));
+    networks.sort_by_key(|a| std::cmp::Reverse(a.signal));
     networks
 }
 

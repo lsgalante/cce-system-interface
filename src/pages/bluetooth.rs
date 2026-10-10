@@ -115,11 +115,11 @@ async fn fetch_devices() -> Vec<BluetoothDevice> {
 
         let info_name = info.lines()
             .find(|l| l.contains("Name:"))
-            .and_then(|l| l.splitn(2, ':').nth(1).map(|s| s.trim().to_string()));
+            .and_then(|l| l.split_once(':').map(|(_, s)| s.trim().to_string()));
 
         let info_alias = info.lines()
             .find(|l| l.contains("Alias:"))
-            .and_then(|l| l.splitn(2, ':').nth(1).map(|s| s.trim().to_string()));
+            .and_then(|l| l.split_once(':').map(|(_, s)| s.trim().to_string()));
 
         let name = info_name.or(info_alias).unwrap_or(default_name);
 

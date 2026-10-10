@@ -206,7 +206,7 @@ async fn fetch_scope(user: bool) -> Vec<TimerInfo> {
             }
         }
     }
-    timers.sort_by(|a, b| a.unit.to_lowercase().cmp(&b.unit.to_lowercase()));
+    timers.sort_by_key(|a| a.unit.to_lowercase());
     timers
 }
 

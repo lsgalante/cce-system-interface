@@ -81,7 +81,7 @@ impl Default for ProcessesState {
 
 #[derive(Debug, Clone)]
 pub enum ProcessesMessage {
-    Refreshed(ProcessesState),
+    Refreshed(Box<ProcessesState>),
     /// The row's Kill button (the `x` glyph): SIGTERM this pid.
     Kill(String),
     /// A column header click. Mem headers toggle (Mem ⇄ back to Cpu); the
@@ -99,7 +99,7 @@ fn sort_rows(rows: &mut [ProcessRow], sort: ProcSort) {
             let (av, bv) = (a.cpu.parse::<f32>().unwrap_or(0.0), b.cpu.parse::<f32>().unwrap_or(0.0));
             bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
         }),
-        ProcSort::Mem => rows.sort_by(|a, b| b.rss_kb.cmp(&a.rss_kb)),
+        ProcSort::Mem => rows.sort_by_key(|a| std::cmp::Reverse(a.rss_kb)),
         // Unknowns sink below every known figure, however small.
         ProcSort::Power => rows.sort_by(|a, b| {
             b.watts.unwrap_or(-1.0).partial_cmp(&a.watts.unwrap_or(-1.0)).unwrap_or(std::cmp::Ordering::Equal)
@@ -207,9 +207,9 @@ pub async fn fetch_processes_state() -> ProcessesState {
 
     let processes = {
         let mut list = Vec::new();
-        if let Some(o) = tokio::process::Command::new("ps")
+        if let Ok(o) = tokio::process::Command::new("ps")
             .args(["-eo", "pid,%cpu,%mem,rss,cmd", "--sort=-%cpu"])
-            .output().await.ok()
+            .output().await
         {
             let text = String::from_utf8_lossy(&o.stdout);
             for line in text.lines().skip(1) {
@@ -628,7 +628,7 @@ mod tests {
         // ...and the next refresh clears every pending mark.
         update(
             &mut state,
-            ProcessesMessage::Refreshed(ProcessesState { loaded: true, ..Default::default() }),
+            ProcessesMessage::Refreshed(Box::new(ProcessesState { loaded: true, ..Default::default() })),
         );
         assert!(state.killing.is_empty());
     }
@@ -682,7 +682,7 @@ mod tests {
             processes: vec![sized_row("x", "9.0", 10), sized_row("y", "1.0", 999)],
             ..Default::default()
         };
-        update(&mut state, ProcessesMessage::Refreshed(fresh));
+        update(&mut state, ProcessesMessage::Refreshed(Box::new(fresh)));
         // The cpu-ordered fetch was re-sorted under the surviving Mem key.
         assert_eq!(state.sort, ProcSort::Mem);
         assert_eq!(state.processes[0].pid, "y");
@@ -837,7 +837,7 @@ mod tests {
             power: PowerSummary { mode: Mode::Battery, total_w: Some(20.0), floor_w: Some(15.0), attributed_w: 1.26 },
             ..Default::default()
         };
-        update(&mut state, ProcessesMessage::Refreshed(fresh));
+        update(&mut state, ProcessesMessage::Refreshed(Box::new(fresh)));
         assert_eq!(state.power.mode, Mode::Battery);
         let mut layout = cce_ui::layout::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();

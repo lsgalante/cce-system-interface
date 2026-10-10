@@ -117,10 +117,8 @@ fn parse_backup_status(content: &str) -> (String, String, Option<String>) {
         match key.trim() {
             "last_backup_time" => last_backup = val,
             "backup_size" => size = val,
-            "error_message" => {
-                if !val.is_empty() {
-                    err_msg = Some(val);
-                }
+            "error_message" if !val.is_empty() => {
+                err_msg = Some(val);
             }
             _ => {}
         }

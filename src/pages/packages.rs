@@ -24,16 +24,11 @@ pub struct UpdateInfo {
     pub new_version: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackageTab {
+    #[default]
     Installed,
     Updates,
-}
-
-impl Default for PackageTab {
-    fn default() -> Self {
-        PackageTab::Installed
-    }
 }
 
 /// Which slice of the installed list the Installed tab shows.
@@ -134,7 +129,7 @@ impl PackagesState {
 
 #[derive(Debug, Clone)]
 pub enum PackagesMessage {
-    Refreshed(PackagesState),
+    Refreshed(Box<PackagesState>),
     SetTab(PackageTab),
     StartUpdate,
     UpdateFinished(Result<(), String>),
@@ -206,7 +201,7 @@ pub fn parse_installed(all: &str, explicit: &str, orphans: &str) -> Vec<PackageI
             })
         })
         .collect();
-    list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    list.sort_by_key(|a| a.name.to_lowercase());
     list
 }
 
@@ -228,7 +223,7 @@ async fn fetch_available_updates() -> Vec<UpdateInfo> {
             }
         }
     }
-    list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    list.sort_by_key(|a| a.name.to_lowercase());
     list
 }
 
@@ -414,7 +409,7 @@ pub async fn fetch_package_info(name: String, installed: bool) -> Result<String,
                         path.starts_with("/usr/sbin/") || 
                         path.starts_with("/sbin/")
                     ) {
-                        if let Some(filename) = path.split('/').last() {
+                        if let Some(filename) = path.split('/').next_back() {
                             binaries.push(filename.to_string());
                         }
                     }
@@ -1316,14 +1311,14 @@ mod tests {
             installed: vec![PackageInfo { name: "foo".into(), version: "2".into(), ..Default::default() }],
             ..Default::default()
         };
-        update(&mut st, PackagesMessage::Refreshed(fresh), &mut ui);
+        update(&mut st, PackagesMessage::Refreshed(Box::new(fresh)), &mut ui);
         assert_eq!(st.selected_package.as_deref(), Some("foo"), "refresh must keep the selection");
         assert!(st.selected_package_info.is_some(), "refresh must keep fetched info");
         assert!(st.updating, "refresh must not clear the in-flight update flag");
 
         // A package that vanished from both lists does clear the selection.
         let fresh2 = PackagesState { loaded: true, ..Default::default() };
-        update(&mut st, PackagesMessage::Refreshed(fresh2), &mut ui);
+        update(&mut st, PackagesMessage::Refreshed(Box::new(fresh2)), &mut ui);
         assert!(st.selected_package.is_none());
         assert!(st.selected_package_info.is_none());
     }
@@ -1412,7 +1407,7 @@ mod tests {
         assert_eq!(st.checked.iter().cloned().collect::<Vec<_>>(), ["beta", "gamma-orphan"]);
         // A refresh drops checked names that are gone.
         let fresh = PackagesState { loaded: true, installed: vec![pkg("beta", false, true)], ..Default::default() };
-        update(&mut st, PackagesMessage::Refreshed(fresh), &mut ui);
+        update(&mut st, PackagesMessage::Refreshed(Box::new(fresh)), &mut ui);
         assert_eq!(st.checked.iter().cloned().collect::<Vec<_>>(), ["beta"]);
         update(&mut st, PackagesMessage::ToggleSelectMode, &mut ui);
         assert!(st.checked.is_empty(), "leaving select mode clears the selection");

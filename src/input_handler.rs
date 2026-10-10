@@ -172,16 +172,16 @@ impl SystemInterface {
 
         // CSD Close Button Interaction removed
 
-        if cce_ui::widget::context_menu::is_visible() {
-            if cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll, Some(&mut self.ui_context)) {
-                let mut actions = Vec::new();
-                self.propagate_widget_changes(&mut actions);
-                for action in actions {
-                    self.handle_action(&action);
-                }
-                self.needs_rebuild = true;
-                return true;
+        if cce_ui::widget::context_menu::is_visible()
+            && cce_ui::widget::context_menu::mouse_input(button, state, lx_no_scroll, ly_no_scroll, Some(&mut self.ui_context))
+        {
+            let mut actions = Vec::new();
+            self.propagate_widget_changes(&mut actions);
+            for action in actions {
+                self.handle_action(&action);
             }
+            self.needs_rebuild = true;
+            return true;
         }
 
         let dd_ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
@@ -230,10 +230,11 @@ impl SystemInterface {
             return true;
         }
         let mut actions = Vec::new();
-        if button == cce_ui::widget::MouseButton::Left && state == cce_ui::widget::ElementState::Released {
-            if self.app.get_current_page_mut().handle_pointer_up(&mut self.ui_context) {
-                self.needs_rebuild = true;
-            }
+        if button == cce_ui::widget::MouseButton::Left
+            && state == cce_ui::widget::ElementState::Released
+            && self.app.get_current_page_mut().handle_pointer_up(&mut self.ui_context)
+        {
+            self.needs_rebuild = true;
         }
 
         let lx = self.cursor_x / s;
@@ -280,7 +281,7 @@ impl SystemInterface {
             
 
 
-            let event = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: lx, y: ly, local_x: lx, local_y: ly };
+            let event = cce_ui::widget::Event::MouseWheel { delta: *delta, x: lx, y: ly, local_x: lx, local_y: ly };
             // Page dissolved (6u): one dispatch path for every page — scrollbar, then
             // sections, then the dissolved inner lists (the app-owned ScrollRegions,
             // hit-scoped like the old inner ScrollBoxes), then the manual page scroll
@@ -492,27 +493,25 @@ impl SystemInterface {
     }
 
     pub(crate) fn handle_key_input_internal(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
-        if cce_ui::widget::context_menu::is_visible() {
-            if event.state == cce_ui::widget::ElementState::Pressed
-                && event.logical_key == cce_ui::widget::Key::Named(cce_ui::widget::NamedKey::Escape)
-            {
-                cce_ui::widget::context_menu::hide();
-                self.needs_rebuild = true;
-                return true;
-            }
+        if cce_ui::widget::context_menu::is_visible()
+            && event.state == cce_ui::widget::ElementState::Pressed
+            && event.logical_key == cce_ui::widget::Key::Named(cce_ui::widget::NamedKey::Escape)
+        {
+            cce_ui::widget::context_menu::hide();
+            self.needs_rebuild = true;
+            return true;
         }
 
-        if self.search_open {
-            if event.state == cce_ui::widget::ElementState::Pressed
-                && event.logical_key == cce_ui::widget::Key::Named(cce_ui::widget::NamedKey::Escape)
-            {
-                self.search_open = false;
-                self.search_query.clear();
-                self.ui_context[self.search_box].set_value_string("");
-                self.ui_context.clear_focus();
-                self.needs_rebuild = true;
-                return true;
-            }
+        if self.search_open
+            && event.state == cce_ui::widget::ElementState::Pressed
+            && event.logical_key == cce_ui::widget::Key::Named(cce_ui::widget::NamedKey::Escape)
+        {
+            self.search_open = false;
+            self.search_query.clear();
+            self.ui_context[self.search_box].set_value_string("");
+            self.ui_context.clear_focus();
+            self.needs_rebuild = true;
+            return true;
         }
 
         let is_text_box_focused = self
@@ -521,32 +520,34 @@ impl SystemInterface {
             .and_then(|id| self.ui_context.get_widget(id))
             .is_some_and(|focused| focused.as_any().is::<cce_ui::widget::input::TextBox>());
 
-        if !self.search_open && !is_text_box_focused {
-            if event.state == cce_ui::widget::ElementState::Pressed && !event.repeat {
-                if cce_ui::widget::match_key_shortcut(event, &settings_keys().open_search) {
-                    self.search_open = true;
-                    self.ui_context[self.search_box].set_value_string("");
-                    self.search_query.clear();
-                    cce_ui::widget::WidgetHost::focus(&mut self.ui_context[self.search_box]);
-                    self.ui_context.set_focused_id(self.search_box.id());
-                    self.needs_rebuild = true;
-                    return true;
-                }
+        if !self.search_open
+            && !is_text_box_focused
+            && event.state == cce_ui::widget::ElementState::Pressed
+            && !event.repeat
+        {
+            if cce_ui::widget::match_key_shortcut(event, &settings_keys().open_search) {
+                self.search_open = true;
+                self.ui_context[self.search_box].set_value_string("");
+                self.search_query.clear();
+                cce_ui::widget::WidgetHost::focus(&mut self.ui_context[self.search_box]);
+                self.ui_context.set_focused_id(self.search_box.id());
+                self.needs_rebuild = true;
+                return true;
+            }
 
-                let next = cce_ui::widget::match_key_shortcut(event, &settings_keys().page_next);
-                let prev = cce_ui::widget::match_key_shortcut(event, &settings_keys().page_prev);
-                if next || prev {
-                    let n = Page::ALL.len();
-                    let cur = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
-                    let idx = if next { (cur + 1) % n } else { (cur + n - 1) % n };
-                    self.ui_context.clear_focus();
-                    self.focused_section = None;
-                    self.app.current_page = Page::ALL[idx];
-                    self.current_page_shared.send_replace(idx as u8);
-                    self.scroll_y = 0.0;
-                    self.needs_rebuild = true;
-                    return true;
-                }
+            let next = cce_ui::widget::match_key_shortcut(event, &settings_keys().page_next);
+            let prev = cce_ui::widget::match_key_shortcut(event, &settings_keys().page_prev);
+            if next || prev {
+                let n = Page::ALL.len();
+                let cur = Page::ALL.iter().position(|&p| p == self.app.current_page).unwrap_or(0);
+                let idx = if next { (cur + 1) % n } else { (cur + n - 1) % n };
+                self.ui_context.clear_focus();
+                self.focused_section = None;
+                self.app.current_page = Page::ALL[idx];
+                self.current_page_shared.send_replace(idx as u8);
+                self.scroll_y = 0.0;
+                self.needs_rebuild = true;
+                return true;
             }
         }
 

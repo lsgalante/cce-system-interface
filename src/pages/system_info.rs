@@ -146,13 +146,7 @@ fn read_cpu_temp() -> Option<f32> {
             let path = entry.path();
             if let Ok(name) = std::fs::read_to_string(path.join("name")) {
                 let name = name.trim();
-                if name == "thinkpad" {
-                    if let Ok(val) = std::fs::read_to_string(path.join("temp1_input")) {
-                        if let Ok(temp_milli) = val.trim().parse::<f32>() {
-                            return Some(temp_milli / 1000.0);
-                        }
-                    }
-                } else if name == "coretemp" {
+                if name == "thinkpad" || name == "coretemp" {
                     if let Ok(val) = std::fs::read_to_string(path.join("temp1_input")) {
                         if let Ok(temp_milli) = val.trim().parse::<f32>() {
                             return Some(temp_milli / 1000.0);
@@ -455,7 +449,7 @@ pub async fn fetch_system_state() -> SystemInfo {
     static GPUS_INFO: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     let gpus = GPUS_INFO.get_or_init(|| {
         let mut list = Vec::new();
-        if let Some(o) = std::process::Command::new("lspci").output().ok() {
+        if let Ok(o) = std::process::Command::new("lspci").output() {
             for line in String::from_utf8_lossy(&o.stdout).lines() {
                 if line.contains("VGA") || line.contains("3D") {
                     if let Some(name) = line.split(':').nth(2) {
@@ -543,6 +537,8 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         // destructive pair, rather than squeezing every plate below its label.
         let gap = cce_ui::layout::control_gap();
         let one_row = needs.iter().sum::<f32>() + gap * (needs.len() - 1) as f32 <= form.width();
+        // A slice of row ranges: `[0..4]` is one row, not the indices 0 to 3.
+        #[allow(clippy::single_range_in_vec_init)]
         let rows: &[std::ops::Range<usize>] = if one_row { &[0..4] } else { &[0..2, 2..4] };
         let mut col = form.column();
         for range in rows {

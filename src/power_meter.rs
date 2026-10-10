@@ -252,7 +252,7 @@ impl Meter {
         // Raw per-pid watts for this interval.
         let mut raw: HashMap<u32, f64> = HashMap::new();
         let share = |get: &dyn Fn(&Delta) -> f64| -> HashMap<u32, f64> {
-            let sum: f64 = deltas.values().map(|d| get(d)).sum();
+            let sum: f64 = deltas.values().map(get).sum();
             if sum <= 0.0 {
                 return HashMap::new();
             }
