@@ -267,9 +267,9 @@ fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String
     std::fs::write(dir.join(format!("{}.service", name)), service).map_err(|e| e.to_string())?;
     std::fs::write(&timer_path, timer).map_err(|e| e.to_string())?;
 
-    let _ = tokio::process::Command::new("sh")
-        .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user enable --now {}.timer", name)])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.args(["-c", &format!("systemctl --user daemon-reload && systemctl --user enable --now {}.timer", name)]);
+    let _ = crate::spawn_awaited(cmd);
     Ok(format!("Created and enabled {}.timer", name))
 }
 
@@ -388,9 +388,9 @@ fn update_user_timer(base: &str, command: &str, schedule: &str) -> Result<String
         let value = if ours { exec_start_for(command) } else { command.to_string() };
         replace_unit_field(&service_path, "ExecStart", &value)?;
     }
-    let _ = tokio::process::Command::new("sh")
-        .args(["-c", &format!("systemctl --user daemon-reload && systemctl --user try-restart {}.timer", base)])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.args(["-c", &format!("systemctl --user daemon-reload && systemctl --user try-restart {}.timer", base)]);
+    let _ = crate::spawn_awaited(cmd);
     Ok(format!("Updated {}.timer", base))
 }
 
@@ -398,11 +398,15 @@ fn systemctl_action(args: &[&str], is_system: bool) {
     if is_system {
         let mut full = vec!["systemctl"];
         full.extend(args);
-        let _ = tokio::process::Command::new("pkexec").args(&full).spawn();
+        let mut cmd = tokio::process::Command::new("pkexec");
+        cmd.args(&full);
+        let _ = crate::spawn_awaited(cmd);
     } else {
         let mut full = vec!["--user"];
         full.extend(args);
-        let _ = tokio::process::Command::new("systemctl").args(&full).spawn();
+        let mut cmd = tokio::process::Command::new("systemctl");
+        cmd.args(&full);
+        let _ = crate::spawn_awaited(cmd);
     }
 }
 

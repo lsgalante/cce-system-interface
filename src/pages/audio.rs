@@ -94,28 +94,28 @@ fn short_name(name: &str) -> String {
 
 fn set_sink_volume(id: u32, vol: f32) {
     let pct = (vol * 100.0).round() as u32;
-    let _ = tokio::process::Command::new("pactl")
-        .args(["set-sink-volume", &id.to_string(), &format!("{}%", pct)])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("pactl");
+    cmd.args(["set-sink-volume", &id.to_string(), &format!("{}%", pct)]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn set_sink_mute(id: u32, mute: bool) {
-    let _ = tokio::process::Command::new("pactl")
-        .args(["set-sink-mute", &id.to_string(), if mute { "1" } else { "0" }])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("pactl");
+    cmd.args(["set-sink-mute", &id.to_string(), if mute { "1" } else { "0" }]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn set_source_volume(id: u32, vol: f32) {
     let pct = (vol * 100.0).round() as u32;
-    let _ = tokio::process::Command::new("pactl")
-        .args(["set-source-volume", &id.to_string(), &format!("{}%", pct)])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("pactl");
+    cmd.args(["set-source-volume", &id.to_string(), &format!("{}%", pct)]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn set_source_mute(id: u32, mute: bool) {
-    let _ = tokio::process::Command::new("pactl")
-        .args(["set-source-mute", &id.to_string(), if mute { "1" } else { "0" }])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("pactl");
+    cmd.args(["set-source-mute", &id.to_string(), if mute { "1" } else { "0" }]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 pub async fn fetch_audio_state() -> AudioState {

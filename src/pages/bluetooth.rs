@@ -135,30 +135,30 @@ async fn fetch_devices() -> Vec<BluetoothDevice> {
 }
 
 fn bt_toggle(enable: bool) {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["power", if enable { "on" } else { "off" }])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("bluetoothctl");
+    cmd.args(["power", if enable { "on" } else { "off" }]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn bt_connect(mac: &str) {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["connect", mac])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("bluetoothctl");
+    cmd.args(["connect", mac]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn bt_disconnect(mac: &str) {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["disconnect", mac])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("bluetoothctl");
+    cmd.args(["disconnect", mac]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn bt_scan() {
-    let _ = tokio::process::Command::new("bluetoothctl")
-        .args(["scan", "on"])
-        .spawn();
-    let _ = tokio::process::Command::new("sh")
-        .args(["-c", "sleep 5 && bluetoothctl scan off"])
-        .spawn();
+    let mut cmd = tokio::process::Command::new("bluetoothctl");
+    cmd.args(["scan", "on"]);
+    let _ = crate::spawn_awaited(cmd);
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.args(["-c", "sleep 5 && bluetoothctl scan off"]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
@@ -264,14 +264,14 @@ pub fn update(state: &mut BluetoothState, msg: BluetoothMessage, _ctx: &mut UiCo
         BluetoothMessage::Disconnect(mac) => { bt_disconnect(&mac); }
         BluetoothMessage::Scan => { bt_scan(); }
         BluetoothMessage::InstallTools => {
-            let _ = tokio::process::Command::new("pkexec")
-                .args(["sh", "-c", "pacman -S --noconfirm bluez bluez-utils && systemctl enable --now bluetooth"])
-                .spawn();
+            let mut cmd = tokio::process::Command::new("pkexec");
+            cmd.args(["sh", "-c", "pacman -S --noconfirm bluez bluez-utils && systemctl enable --now bluetooth"]);
+            let _ = crate::spawn_awaited(cmd);
         }
         BluetoothMessage::StartService => {
-            let _ = tokio::process::Command::new("pkexec")
-                .args(["systemctl", "enable", "--now", "bluetooth"])
-                .spawn();
+            let mut cmd = tokio::process::Command::new("pkexec");
+            cmd.args(["systemctl", "enable", "--now", "bluetooth"]);
+            let _ = crate::spawn_awaited(cmd);
         }
     }
 }

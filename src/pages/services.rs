@@ -420,13 +420,13 @@ fn parse_service_line(line: &str, is_system: bool) -> Option<ServiceInfo> {
 fn service_action(name: &str, action: &str, is_system: bool) {
     if is_system {
         // System service needs root privilege, spawn via pkexec
-        let _ = tokio::process::Command::new("pkexec")
-            .args(["systemctl", action, name])
-            .spawn();
+        let mut cmd = tokio::process::Command::new("pkexec");
+        cmd.args(["systemctl", action, name]);
+        let _ = crate::spawn_awaited(cmd);
     } else {
-        let _ = tokio::process::Command::new("systemctl")
-            .args(["--user", action, name])
-            .spawn();
+        let mut cmd = tokio::process::Command::new("systemctl");
+        cmd.args(["--user", action, name]);
+        let _ = crate::spawn_awaited(cmd);
     }
 }
 

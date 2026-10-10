@@ -155,13 +155,15 @@ async fn fetch_wifi_list() -> Vec<WifiNetwork> {
 }
 
 fn wifi_connect(ssid: &str) {
-    let _ = tokio::process::Command::new("nmcli")
-        .args(["dev", "wifi", "connect", ssid]).spawn();
+    let mut cmd = tokio::process::Command::new("nmcli");
+    cmd.args(["dev", "wifi", "connect", ssid]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 fn wifi_toggle(enable: bool) {
-    let _ = tokio::process::Command::new("nmcli")
-        .args(["radio", "wifi", if enable { "on" } else { "off" }]).spawn();
+    let mut cmd = tokio::process::Command::new("nmcli");
+    cmd.args(["radio", "wifi", if enable { "on" } else { "off" }]);
+    let _ = crate::spawn_awaited(cmd);
 }
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
