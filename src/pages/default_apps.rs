@@ -234,71 +234,28 @@ struct DesktopApp {
 }
 
 fn desktop_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let data_home = std::env::var("XDG_DATA_HOME")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".local/share")));
-    if let Some(h) = data_home {
-        dirs.push(h.join("applications"));
-    }
-    let data_dirs = std::env::var("XDG_DATA_DIRS").ok().filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_string());
-    for d in data_dirs.split(':').filter(|d| !d.is_empty()) {
-        dirs.push(PathBuf::from(d).join("applications"));
-    }
-    dirs
+    cce_ui::desktop_entry::applications_dirs()
 }
 
 /// Parse the `[Desktop Entry]` group of one `.desktop` file. Returns None for
 /// non-applications and `Hidden=true` entries (spec: treated as nonexistent).
 fn parse_desktop_file(path: &std::path::Path) -> Option<DesktopApp> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let mut in_entry = false;
-    let mut name = None;
-    let mut mimes = Vec::new();
-    let mut categories = Vec::new();
-    let mut exec_cmd = None;
-    let mut app_type = None;
-    let mut hidden = false;
-    let mut no_display = false;
-    for line in content.lines() {
-        let line = line.trim();
-        if line.starts_with('[') {
-            in_entry = line == "[Desktop Entry]";
-            continue;
-        }
-        if !in_entry {
-            continue;
-        }
-        if let Some((k, v)) = line.split_once('=') {
-            match k.trim() {
-                "Name" if name.is_none() => name = Some(v.trim().to_string()),
-                "Type" => app_type = Some(v.trim().to_string()),
-                "Hidden" => hidden = v.trim().eq_ignore_ascii_case("true"),
-                "NoDisplay" => no_display = v.trim().eq_ignore_ascii_case("true"),
-                "MimeType" => {
-                    mimes = v.split(';').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect();
-                }
-                "Categories" => {
-                    categories = v.split(';').map(str::trim).filter(|c| !c.is_empty()).map(String::from).collect();
-                }
-                "Exec" => {
-                    exec_cmd = v
-                        .split_whitespace()
-                        .next()
-                        .and_then(|t| t.rsplit('/').next())
-                        .map(String::from);
-                }
-                _ => {}
-            }
-        }
-    }
-    if hidden || app_type.as_deref() != Some("Application") {
+    let entry = cce_ui::desktop_entry::DesktopEntry::read(path)?;
+    if entry.hidden() || !entry.is_application() {
         return None;
     }
-    Some(DesktopApp { name: name?, mimes, categories, exec_cmd, no_display })
+    let owned = |v: Vec<&str>| v.into_iter().map(String::from).collect();
+    Some(DesktopApp {
+        name: entry.get("Name")?.to_string(),
+        mimes: owned(entry.list("MimeType")),
+        categories: owned(entry.list("Categories")),
+        exec_cmd: entry
+            .get("Exec")
+            .and_then(|v| v.split_whitespace().next())
+            .and_then(|t| t.rsplit('/').next())
+            .map(String::from),
+        no_display: entry.no_display(),
+    })
 }
 
 /// Scan every XDG applications dir with spec ID shadowing: the first dir that
