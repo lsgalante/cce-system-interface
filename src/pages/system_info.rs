@@ -1,4 +1,4 @@
-use crate::app::{button_need, form_button, form_button_fit, wrap_to_width, AppAction, PageContent};
+use crate::app::{button_need, form_button, form_button_fit, wrap_to_width, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
@@ -261,7 +261,7 @@ where
 
 /// A line of text wrapped to the form's width rather than cut at it: its lines one under the
 /// next, so one wrapped item still reads as one item.
-fn wrapped_text(g: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>, text: &str, size: f32, color: [f32; 4]) {
+fn wrapped_text(g: &mut cce_ui::compose::FormGroup<'_, '_, PageCanvas>, text: &str, size: f32, color: [f32; 4]) {
     let lines = wrap_to_width(text, g.form_width(), size);
     g.lines(lines, size, color);
 }
@@ -499,8 +499,8 @@ const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     // Six, matching the add_section calls below and the six groups
     // section_widgets reports. The count caps the grid's column count
@@ -811,7 +811,7 @@ impl crate::pages::AppPage for SystemState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         // Phase 6u: System used to render through the WIDGET TREE (the only page that
         // did) — its content reached the frame via the root aggregate walking
         // Switcher → Page(AdaptiveGridLayout) → sections → widgets. With that chain

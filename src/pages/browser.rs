@@ -13,7 +13,7 @@ use cce_ui::compose::{PageFlow, PageLayoutBuilder};
 use cce_ui::widget::input::{Dropdown, Toggle};
 use cce_ui::widget::TextBox;
 
-use crate::app::{AppAction, PageContent};
+use crate::app::{AppAction, PageCanvas};
 use crate::pages::AppPage;
 
 /// config key, menu label — the browser maps the key onto a query URL.
@@ -296,8 +296,8 @@ impl AppPage for BrowserState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> PageContent {
-        let mut final_pc = PageContent::new();
+    ) -> PageCanvas {
+        let mut final_pc = PageCanvas::new();
         let sec_w = 320.0f32;
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 

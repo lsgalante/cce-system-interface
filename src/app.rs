@@ -130,7 +130,7 @@ pub enum AppAction {
 
 
 /// The width `text` takes at `size` in `font` (None = the default UI face,
-/// what `PageContent::text` draws in), shaped as the renderer shapes it —
+/// what `PageCanvas::text` draws in), shaped as the renderer shapes it —
 /// for placing a glyph right after a run of text.
 pub fn text_width(text: &str, size: f32, font: Option<&str>) -> f32 {
     cce_ui::geometry_font_system()
@@ -175,12 +175,12 @@ pub fn label_y_in(y: f32, h: f32, size: f32, font: Option<&str>) -> f32 {
 /// glyphs) a toolkit bridge replayed each widget onto, losing what the flat
 /// surface could not say (grooves, bevels, per-corner radii, the widgets'
 /// own clips).
-pub struct PageContent {
+pub struct PageCanvas {
     pc: PaintCtx,
     pub buttons: Vec<PageButtonSpec>,
 }
 
-/// A button a page declared ([`PageContent::button`] and its siblings): the
+/// A button a page declared ([`PageCanvas::button`] and its siblings): the
 /// button as made, what a click on it does, where in the page's list it was
 /// declared and the clip in force there (page coordinates) — where and under
 /// what the host paints it, and what a click outside it misses — and what it
@@ -254,7 +254,7 @@ pub fn sync_page_buttons(buttons: &mut Vec<PageButton>, specs: Vec<PageButtonSpe
     }
 }
 
-/// A finished [`PageContent`]: the page's list, still in page coordinates,
+/// A finished [`PageCanvas`]: the page's list, still in page coordinates,
 /// and its buttons.
 pub struct PageLayers {
     pub list: DisplayList,
@@ -301,7 +301,7 @@ pub fn place_and_paint<T: cce_ui::widget::WidgetHost + 'static>(
     }
 }
 
-impl PageContent {
+impl PageCanvas {
     pub fn new() -> Self {
         Self { pc: PaintCtx::new(), buttons: Vec::new() }
     }
@@ -361,7 +361,7 @@ impl PageContent {
     /// gets a control plate, edges only, so every idle row of a list wore a
     /// carved ring. No colours to pass: the row asks for its own.
     ///
-    /// [`button`]: PageContent::button
+    /// [`button`]: PageCanvas::button
     pub fn list_row(&mut self, x: f32, y: f32, w: f32, h: f32, action: AppAction) {
         let btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
         self.declare(btn, action, "row".to_string());
@@ -399,26 +399,26 @@ impl PageContent {
     }
 }
 
-impl Default for PageContent {
+impl Default for PageCanvas {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl std::ops::Deref for PageContent {
+impl std::ops::Deref for PageCanvas {
     type Target = PaintCtx;
     fn deref(&self) -> &PaintCtx {
         &self.pc
     }
 }
 
-impl std::ops::DerefMut for PageContent {
+impl std::ops::DerefMut for PageCanvas {
     fn deref_mut(&mut self) -> &mut PaintCtx {
         &mut self.pc
     }
 }
 
-impl AsMut<PaintCtx> for PageContent {
+impl AsMut<PaintCtx> for PageCanvas {
     fn as_mut(&mut self) -> &mut PaintCtx {
         &mut self.pc
     }
@@ -519,11 +519,11 @@ pub fn button_need(label: &str) -> f32 {
         .map_or(0.0, |s| s.width)
 }
 
-/// A page button (`PageContent::button`) as a form piece, a button's height: `w` wide, or
+/// A page button (`PageCanvas::button`) as a form piece, a button's height: `w` wide, or
 /// the width of its column (and, in a row, the row's slack) when `w` is 0. `colors` are the
 /// face, the hover face and the label.
 pub fn form_button<'w>(
-    g: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
+    g: &mut cce_ui::compose::FormGroup<'_, 'w, PageCanvas>,
     label: impl Into<String>,
     w: f32,
     colors: ([f32; 4], [f32; 4], [f32; 4]),
@@ -538,7 +538,7 @@ pub fn form_button<'w>(
 /// A page button as a row cell that asks for `need` (its label's own width) and shares the
 /// row's slack with the other cells — a row of buttons sized to their labels.
 pub fn form_button_fit<'w>(
-    g: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
+    g: &mut cce_ui::compose::FormGroup<'_, 'w, PageCanvas>,
     label: impl Into<String>,
     need: f32,
     colors: ([f32; 4], [f32; 4], [f32; 4]),
@@ -551,7 +551,7 @@ pub fn form_button_fit<'w>(
 }
 
 /// `text` broken into lines no wider than `width` at `size`, measured as the
-/// renderer shapes it (the default UI face, as `PageContent::text` draws).
+/// renderer shapes it (the default UI face, as `PageCanvas::text` draws).
 /// Breaks after a space or before a `/`, so a path splits on its separators;
 /// a run with neither is cut wherever it overflows. A section's text is
 /// clipped to its content box, so anything that does not fit has to wrap or
@@ -590,7 +590,7 @@ pub fn wrap_to_width(text: &str, width: f32, size: f32) -> Vec<String> {
 /// them, each value beside its label and wrapped to the room left of the content box, the
 /// label on the value's first line. Each pair is (label, label colour, value, value colour).
 pub fn form_pairs<'w>(
-    col: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
+    col: &mut cce_ui::compose::FormGroup<'_, 'w, PageCanvas>,
     size: f32,
     pairs: Vec<(String, [f32; 4], String, [f32; 4])>,
 ) {
@@ -610,7 +610,7 @@ pub fn form_pairs<'w>(
 }
 
 /// The hairline that parts a well's zones, as a form piece.
-pub fn form_divider(g: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>) {
+pub fn form_divider(g: &mut cce_ui::compose::FormGroup<'_, '_, PageCanvas>) {
     g.rule([1.0, 1.0, 1.0, 0.06]);
 }
 
@@ -624,7 +624,7 @@ mod page_content_tests {
     /// where it was declared and the clip in force there.
     #[test]
     fn a_page_paints_in_call_order_and_declares_its_buttons() {
-        let mut pc = PageContent::new();
+        let mut pc = PageCanvas::new();
         pc.quad(rect(0.0, 0.0, 10.0, 10.0), [1.0; 4]);
         pc.push_clip(rect(0.0, 0.0, 100.0, 50.0));
         pc.text("a", 5.0, 5.0, 12.0, [255; 3]);
@@ -650,7 +650,7 @@ mod page_content_tests {
     }
 
     fn declared(label: &str, y: f32, action: AppAction) -> PageButtonSpec {
-        let mut pc = PageContent::new();
+        let mut pc = PageCanvas::new();
         pc.push_clip(rect(0.0, 0.0, 200.0, 100.0));
         pc.button(label, 0.0, y, 40.0, 20.0, [0.0; 4], [0.0; 4], [1.0; 4], action);
         pc.pop_clip();

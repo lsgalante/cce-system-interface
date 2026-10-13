@@ -1,4 +1,4 @@
-use crate::app::{AppAction, PageContent};
+use crate::app::{AppAction, PageCanvas};
 use crate::power_meter::{self, Meter, Mode};
 use cce_ui::widget::ScrollRegion;
 use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
@@ -287,8 +287,8 @@ fn table_columns(box_w: f32, row_h: f32, kill_w: f32) -> ([Rect; 8], f32) {
     (std::array::from_fn(|i| rects[i]), content_w)
 }
 
-pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -347,7 +347,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
             let hdr_y = crate::app::label_y_in(list_box_y, header_h, HDR_SIZE, None);
             pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, header_h));
-            let header = |pc: &mut PageContent, label: &str, c: Rect, on: bool, chevron: bool| {
+            let header = |pc: &mut PageCanvas, label: &str, c: Rect, on: bool, chevron: bool| {
                 let x = at(c);
                 pc.text(label, x, hdr_y, HDR_SIZE, crate::app::rgb(hdr(on)));
                 if on && chevron {
@@ -395,7 +395,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     let watt_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.90, 0.75, 0.45, 1.0] };
 
                     let ty = crate::app::label_y_in(draw_y, row_h, ROW_SIZE, None);
-                    let cell = |pc: &mut PageContent, text: &str, c: Rect, color: [f32; 4]| {
+                    let cell = |pc: &mut PageCanvas, text: &str, c: Rect, color: [f32; 4]| {
                         let x = at(c);
                         pc.text_with(text, x, ty, ROW_SIZE, crate::app::rgb(color), None, Some([x, ty - ROW_SIZE, x + c.width, ty + 2.0 * ROW_SIZE]));
                     };
@@ -498,7 +498,7 @@ impl crate::pages::AppPage for ProcessesState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 

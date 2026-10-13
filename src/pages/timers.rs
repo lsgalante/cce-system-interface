@@ -2,7 +2,7 @@
 //! schedules, trigger the activated service immediately, and enable/disable
 //! timer units (system scope through pkexec).
 
-use crate::app::{button_need, form_button, AppAction, PageContent};
+use crate::app::{button_need, form_button, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
@@ -414,7 +414,7 @@ fn systemctl_action(args: &[&str], is_system: bool) {
 /// red Disable stays red) when `compact`, else the `word`. `word` is also
 /// the fallback a glyph face shows when the icon set is missing.
 #[allow(clippy::too_many_arguments)]
-fn button_glyph(pc: &mut PageContent, compact: bool, icon: &str, word: &str, x: f32, y: f32, w: f32, h: f32,
+fn button_glyph(pc: &mut PageCanvas, compact: bool, icon: &str, word: &str, x: f32, y: f32, w: f32, h: f32,
                 bg: [f32; 4], hover_bg: [f32; 4], label_color: [f32; 4], action: crate::app::AppAction) {
     if compact {
         pc.button_icon_tinted(icon, word, x, y, w, h, bg, hover_bg, label_color, action);
@@ -423,8 +423,8 @@ fn button_glyph(pc: &mut PageContent, compact: bool, icon: &str, word: &str, x: 
     }
 }
 
-pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -791,7 +791,7 @@ impl crate::pages::AppPage for TimersState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 

@@ -1,4 +1,4 @@
-use crate::app::{form_button, AppAction, PageContent};
+use crate::app::{form_button, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
@@ -68,8 +68,8 @@ const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 /// The least room the list keeps on a short window.
 const LIST_MIN_H: f32 = 120.0;
 
-pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -448,7 +448,7 @@ impl crate::pages::AppPage for ServicesState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 

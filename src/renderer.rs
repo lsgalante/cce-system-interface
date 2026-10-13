@@ -2,7 +2,7 @@ use cce_ui::scene::layout::Rect;
 use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim};
 use cce_ui::widget::WidgetHostExt;
 use crate::{SystemInterface, make_text_buffer_with_font};
-use cce_settings::app::PageContent;
+use cce_settings::app::PageCanvas;
 use cce_settings::pages::Page;
 use cce_ui::widget::WidgetHost;
 
@@ -284,7 +284,7 @@ impl SystemInterface {
         self.ui_context.clear_dirty();
     }
 
-    pub(crate) fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageContent {
+    pub(crate) fn render_page_content(&mut self, cx: f32, cy: f32, cw: f32, ch: f32) -> PageCanvas {
         use cce_ui::compose::PageFlow;
         // The sections are wells carved straight into the root plate (no
         // sidebar, no pane between), so the page's edge is the window's edge:

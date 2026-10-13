@@ -42,7 +42,7 @@
 //! re-reads the truth, so a dismissed auth prompt reverts the dropdown —
 //! honest, with no extra error channel.
 
-use crate::app::{AppAction, PageContent};
+use crate::app::{AppAction, PageCanvas};
 use crate::power_plan::{self, Automation, ChargeLimit, Lever, Mode, PowerPlan, Source};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
@@ -731,8 +731,8 @@ fn when_text(source: Source) -> &'static str {
         Source::Battery => "unplugged",
     }
 }
-pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let focused = |i: usize| sec_focused.get(i).copied().unwrap_or(false);
 
@@ -1044,7 +1044,7 @@ impl crate::pages::AppPage for PowerState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 

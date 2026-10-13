@@ -1,4 +1,4 @@
-use crate::app::{form_button, AppAction, PageContent};
+use crate::app::{form_button, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
@@ -161,8 +161,8 @@ fn bt_scan() {
     let _ = crate::spawn_awaited(cmd);
 }
 
-pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -301,7 +301,7 @@ impl crate::pages::AppPage for BluetoothState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
@@ -329,7 +329,7 @@ mod tests {
         let mut ui = cce_ui::context::UiContext::new();
         let mut st = BluetoothState::new(&mut ui);
         // Each of the three early branches paints a message (and maybe a plain
-        // PageContent button) but never `toggle` — the widget lives only in the
+        // PageCanvas button) but never `toggle` — the widget lives only in the
         // innermost `else`. Unlike a load gate, the middle two are steady
         // states: a host without bluez sits in one of them forever.
         assert_eq!(st.section_widgets(), vec![Vec::new()], "not loaded");

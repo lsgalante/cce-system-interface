@@ -95,7 +95,7 @@ pub trait AppPage {
         sec_focused: &[bool],
         layout: &mut cce_ui::compose::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent;
+    ) -> crate::app::PageCanvas;
 
     /// The page's share of a sweep of what the widgets reported
     /// (`UiContext::take_events`, which the host runs after every pointer,

@@ -1,4 +1,4 @@
-use crate::app::{form_button, form_divider, AppAction, PageContent};
+use crate::app::{form_button, form_divider, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
@@ -230,7 +230,7 @@ const TEXT_DANGER: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 /// stay index-aligned with the device vecs.
 #[allow(clippy::too_many_arguments)]
 fn device_row<'w>(
-    col: &mut cce_ui::compose::FormGroup<'_, 'w, PageContent>,
+    col: &mut cce_ui::compose::FormGroup<'_, 'w, PageCanvas>,
     name: String,
     name_w: f32,
     active: bool,
@@ -272,8 +272,8 @@ const SPIN_W: f32 = 90.0;
 /// The mute button's width: "Unmute" at the button font.
 const MUTE_W: f32 = 80.0;
 
-pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -413,7 +413,7 @@ impl crate::pages::AppPage for AudioState {
         sec_focused: &[bool],
         layout: &mut cce_ui::compose::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 

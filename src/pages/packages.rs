@@ -1,4 +1,4 @@
-use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppAction, PageContent};
+use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
@@ -537,8 +537,8 @@ pub fn view(
     sec_focused: &[bool],
     layout: &mut PageFlow,
     ctx: &mut cce_ui::context::UiContext,
-) -> PageContent {
-    let mut final_pc = PageContent::new();
+) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 260.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -1186,7 +1186,7 @@ impl crate::pages::AppPage for PackagesState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 

@@ -1,4 +1,4 @@
-use crate::app::{form_button, form_divider, form_pairs, AppAction, PageContent};
+use crate::app::{form_button, form_divider, form_pairs, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
@@ -101,7 +101,7 @@ pub struct AccountsState {
     /// updates from Save/Delete (the 3s watcher pass corrects them).
     pub keyring: std::collections::HashMap<String, KeyringStatus>,
     /// The account rows scroll independently of the page. Rows stay plain
-    /// `PageContent` buttons (network's list, not services'), so they dispatch
+    /// `PageCanvas` buttons (network's list, not services'), so they dispatch
     /// through `page_buttons` and this page still needs no dispatch-root
     /// bookkeeping — the clip rect is what keeps a scrolled-out row from
     /// drawing, and `renderer.rs` clamps each button to its emission-time clip.
@@ -630,8 +630,8 @@ const LIST_GAP: f32 = 4.0;
 /// one-or-two-account host this page usually runs on.
 const LIST_MAX_ROWS: usize = 8;
 
-pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -751,7 +751,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         let icons_ok = cce_ui::upload_icon("plus", 32).is_some();
         let sq = if icons_ok { btn_h } else if narrow { 86.0 } else { 110.0 };
         col.row(|r| {
-            let icon_button = |r: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>, icon: &'static str, word: &'static str,
+            let icon_button = |r: &mut cce_ui::compose::FormGroup<'_, '_, PageCanvas>, icon: &'static str, word: &'static str,
                                colors: ([f32; 4], [f32; 4]), text: [f32; 4], action: AccountsMessage| {
                 r.draw(sq, btn_h, false, move |pc, c, _| {
                     pc.button_icon(icon, word, c.x, c.y, c.width, c.height, colors.0, colors.1, text, 1.0, AppAction::Accounts(action));
@@ -1234,7 +1234,7 @@ impl crate::pages::AppPage for AccountsState {
         sec_focused: &[bool],
         layout: &mut cce_ui::compose::PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
@@ -1271,7 +1271,7 @@ impl crate::pages::AppPage for AccountsState {
 
     // The dissolved list's own input, all gated on the region actually having
     // been laid out this frame. Row CLICKS are not here: the rows are
-    // PageContent buttons, so their AppAction still travels the page_buttons
+    // PageCanvas buttons, so their AppAction still travels the page_buttons
     // path — these hooks only carry the region's hover, drag and scrolling.
     fn handle_pointer_move(
         &mut self,

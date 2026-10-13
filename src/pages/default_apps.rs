@@ -10,7 +10,7 @@
 //! (`default_terminal`) — which the launcher reads to host `Terminal=true`
 //! entries, and startcce exports as `$TERMINAL` for everything else.
 
-use crate::app::{AppAction, PageContent};
+use crate::app::{AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
@@ -127,8 +127,8 @@ fn rebuild_entry_options(entry: &mut CategoryEntry, ctx: &mut UiContext) {
     entry.option_ids = ids;
 }
 
-pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageContent {
-    let mut final_pc = PageContent::new();
+pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
+    let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
@@ -403,7 +403,7 @@ impl crate::pages::AppPage for DefaultAppsState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> crate::app::PageContent {
+    ) -> crate::app::PageCanvas {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 

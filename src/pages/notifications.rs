@@ -4,7 +4,7 @@ use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::input::{Toggle, Dropdown, Spinbox};
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
-use crate::app::{AppAction, PageContent};
+use crate::app::{AppAction, PageCanvas};
 use crate::pages::AppPage;
 
 
@@ -219,8 +219,8 @@ impl AppPage for NotificationsState {
         sec_focused: &[bool],
         layout: &mut PageFlow,
         ctx: &mut cce_ui::context::UiContext,
-    ) -> PageContent {
-        let mut final_pc = PageContent::new();
+    ) -> PageCanvas {
+        let mut final_pc = PageCanvas::new();
         let sec_w = 320.0f32;
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
 
