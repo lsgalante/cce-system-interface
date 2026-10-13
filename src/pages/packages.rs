@@ -1191,43 +1191,54 @@ impl crate::pages::AppPage for PackagesState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
-        let query = if ctx[self.search_box].editing {
-            ctx[self.search_box].edit_buffer.to_lowercase()
-        } else {
-            ctx[self.search_box].text.to_lowercase()
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<crate::app::AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        // The active tab's rows that were clicked, top to bottom (a row's
+        // click is its `just_clicked`, which the sweep drained).
+        let rows = match self.active_tab {
+            PackageTab::Installed => &self.installed_items,
+            PackageTab::Updates => &self.updates_items,
         };
+        let mut clicked: Vec<usize> = events
+            .iter()
+            .filter(|(_, ev)| *ev == cce_ui::widget::WidgetEvent::Clicked)
+            .filter_map(|(id, _)| rows.iter().position(|h| h.id() == *id))
+            .collect();
+        if clicked.is_empty() {
+            return;
+        }
+        clicked.sort_unstable();
 
         match self.active_tab {
             PackageTab::Installed => {
                 let visible = self.visible_installed(ctx);
-                for (idx, &row) in self.installed_items.iter().enumerate() {
-                    let item = &mut ctx[row];
-                    if item.just_clicked {
-                        item.just_clicked = false;
-                        if let Some(&i) = visible.get(idx) {
-                            let name = self.installed[i].name.clone();
-                            actions.push(AppAction::Packages(if self.select_mode {
-                                PackagesMessage::ToggleChecked(name)
-                            } else {
-                                PackagesMessage::SelectPackage(Some(name))
-                            }));
-                        }
+                for idx in clicked {
+                    if let Some(&i) = visible.get(idx) {
+                        let name = self.installed[i].name.clone();
+                        actions.push(AppAction::Packages(if self.select_mode {
+                            PackagesMessage::ToggleChecked(name)
+                        } else {
+                            PackagesMessage::SelectPackage(Some(name))
+                        }));
                     }
                 }
             }
             PackageTab::Updates => {
+                let query = if ctx[self.search_box].editing {
+                    ctx[self.search_box].edit_buffer.to_lowercase()
+                } else {
+                    ctx[self.search_box].text.to_lowercase()
+                };
                 let filtered: Vec<&UpdateInfo> = self.updates.iter()
                     .filter(|p| p.name.to_lowercase().contains(&query))
                     .collect();
-                for (idx, &row) in self.updates_items.iter().enumerate() {
-                    let item = &mut ctx[row];
-                    if item.just_clicked {
-                        item.just_clicked = false;
-                        if idx < filtered.len() {
-                            let pkg = filtered[idx];
-                            actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(pkg.name.clone()))));
-                        }
+                for idx in clicked {
+                    if let Some(pkg) = filtered.get(idx) {
+                        actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(pkg.name.clone()))));
                     }
                 }
             }
@@ -1376,7 +1387,8 @@ mod tests {
         assert_eq!(st.installed_items.len(), 2);
         ui[st.installed_items[1]].just_clicked = true;
         let mut actions = Vec::new();
-        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions, &mut ui);
+        let events = ui.take_events();
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &events, &mut actions, &mut ui);
         match actions.as_slice() {
             [AppAction::Packages(PackagesMessage::SelectPackage(Some(n)))] => assert_eq!(n, "gamma-orphan"),
             other => panic!("unexpected actions: {other:?}"),
@@ -1386,7 +1398,8 @@ mod tests {
         update(&mut st, PackagesMessage::ToggleSelectMode, &mut ui);
         ui[st.installed_items[1]].just_clicked = true;
         let mut actions = Vec::new();
-        crate::pages::AppPage::propagate_widget_changes(&mut st, &mut actions, &mut ui);
+        let events = ui.take_events();
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &events, &mut actions, &mut ui);
         match actions.as_slice() {
             [AppAction::Packages(PackagesMessage::ToggleChecked(n))] => assert_eq!(n, "gamma-orphan"),
             other => panic!("unexpected actions: {other:?}"),

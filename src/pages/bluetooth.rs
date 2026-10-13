@@ -306,9 +306,16 @@ impl crate::pages::AppPage for BluetoothState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
-        if ctx[self.toggle].take_change() {
-            actions.push(crate::app::AppAction::Bluetooth(BluetoothMessage::Toggle));
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut UiContext,
+    ) {
+        for &(id, ref ev) in events {
+            if *ev == cce_ui::widget::WidgetEvent::Changed && id == self.toggle.id() {
+                actions.push(crate::app::AppAction::Bluetooth(BluetoothMessage::Toggle));
+            }
         }
     }
 }

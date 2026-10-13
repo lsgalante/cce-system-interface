@@ -97,7 +97,19 @@ pub trait AppPage {
         ctx: &mut cce_ui::context::UiContext,
     ) -> crate::app::PageContent;
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut cce_ui::context::UiContext);
+    /// The page's share of a sweep of what the widgets reported
+    /// (`UiContext::take_events`, which the host runs after every pointer,
+    /// wheel and key dispatch and on each tick): its own widgets' clicks and
+    /// changes, turned into the `AppAction`s they stand for. `events` is
+    /// everything the window chrome did not take, so a page matches the ids
+    /// of its own handles and lets the rest go. The sweep has drained the
+    /// flags `take_click` / `take_change` read: a page never polls them.
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<crate::app::AppAction>,
+        ctx: &mut cce_ui::context::UiContext,
+    );
 
     fn handle_pointer_move(
         &mut self,

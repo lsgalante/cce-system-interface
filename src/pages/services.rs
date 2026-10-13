@@ -453,7 +453,13 @@ impl crate::pages::AppPage for ServicesState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut UiContext) {}
+    fn propagate_widget_changes(
+        &mut self,
+        _events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut UiContext,
+    ) {
+    }
 
     // Filtered by `get_item_draw_y`, the same predicate the view's paint loop virtualizes
     // on — a scrolled-out row keeps its last-drawn rect and would otherwise win the

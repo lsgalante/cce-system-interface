@@ -106,7 +106,8 @@ impl SystemInterface {
                 changed = true;
             }
             // Routed drags (6bd): a DragUpdate delivered inside the dispatch surfaces as
-            // widget take_change — drain and act per move, as the old page drag hooks did.
+            // the widget's Changed — swept and acted on per move, as the old page drag
+            // hooks did.
             let mut move_actions = Vec::new();
             self.propagate_widget_changes(&mut move_actions);
             if !move_actions.is_empty() {
@@ -186,16 +187,11 @@ impl SystemInterface {
         let dd_ev = cce_ui::widget::Event::MouseButton { button, state, x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
         let dd_root = self.page_dropdown.id();
         if self.ui_context.propagate_event(&dd_ev, dd_root) {
-            if self.ui_context[self.page_dropdown].take_change() {
-                let idx = self.ui_context[self.page_dropdown].selected;
-                if idx < Page::ALL.len() {
-                    self.ui_context.clear_focus();
-                    self.focused_section = None;
-                    let new_page = Page::ALL[idx];
-                    self.app.current_page = new_page;
-                    self.current_page_shared.send_replace(idx as u8);
-                    self.scroll_y = 0.0;
-                }
+            // A page picked from its menu turns the page in the sweep.
+            let mut actions = Vec::new();
+            self.propagate_widget_changes(&mut actions);
+            for action in actions {
+                self.handle_action(&action);
             }
             self.needs_rebuild = true;
             return true;
@@ -207,7 +203,6 @@ impl SystemInterface {
         let phys_y = self.cursor_y;
 
         let mut button_handled = false;
-        let mut clicked_action = None;
         let btn_ev = cce_ui::widget::Event::MouseButton { button, state, x: phys_x, y: phys_y, local_x: phys_x, local_y: phys_y };
         let btn_roots: Vec<_> = self.page_buttons.iter().map(|b| b.handle.id()).collect();
         for root in btn_roots {
@@ -215,15 +210,14 @@ impl SystemInterface {
                 button_handled = true;
             }
         }
-        for b in &self.page_buttons {
-            if self.ui_context[b.handle].take_click() {
-                clicked_action = Some(b.action.clone());
-                button_handled = true;
-                self.needs_rebuild = true;
-            }
+        // A release that completed a click: the sweep puts the button's
+        // action first.
+        let mut actions = Vec::new();
+        if self.propagate_widget_changes(&mut actions) {
+            button_handled = true;
         }
-        if let Some(action) = clicked_action {
-            self.handle_action(&action);
+        for action in &actions {
+            self.handle_action(action);
         }
         if button_handled {
             return true;
@@ -264,8 +258,68 @@ impl SystemInterface {
         true
     }
 
-    pub(crate) fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) {
-        self.app.get_current_page_mut().propagate_widget_changes(actions, &mut self.ui_context);
+    /// One sweep of what the widgets reported since the last
+    /// (`UiContext::take_events`), acted on. The window chrome's own are
+    /// taken here: a page picked in the switcher turns the page, the search
+    /// box's text becomes the query, and a page button's click puts its
+    /// action first in `actions`. The rest go to the current page, which
+    /// turns its widgets' into `actions` (another page's widgets have nothing
+    /// to report: none of them is laid out, focused or routed to). Run after
+    /// every pointer, wheel and key dispatch and on each tick, so a click or
+    /// change from the keyboard or an assistive tool is acted on at once,
+    /// not with the next pointer event. True when a page button was clicked.
+    pub(crate) fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>) -> bool {
+        use cce_ui::widget::WidgetEvent;
+        let events = self.ui_context.take_events();
+        if events.is_empty() {
+            return false;
+        }
+        let (switcher, search) = (self.page_dropdown.id(), self.search_box.id());
+        let (mut picked_page, mut search_changed) = (false, false);
+        let mut clicked = Vec::new();
+        let mut page_events = Vec::with_capacity(events.len());
+        for (id, ev) in events {
+            match ev {
+                WidgetEvent::Changed if id == switcher => picked_page = true,
+                WidgetEvent::Changed if id == search => search_changed = true,
+                WidgetEvent::Clicked if self.page_buttons.iter().any(|b| b.handle.id() == id) => clicked.push(id),
+                ev => page_events.push((id, ev)),
+            }
+        }
+
+        // Overlapping page buttons all see a press; the LAST in page order
+        // that took the click wins (a process row's Kill over the row).
+        let button = self.page_buttons.iter().rev().find(|b| clicked.contains(&b.handle.id()));
+        let button = button.map(|b| b.action.clone());
+        let button_clicked = button.is_some();
+        if let Some(action) = button {
+            actions.push(action);
+            self.needs_rebuild = true;
+        }
+
+        if !page_events.is_empty() {
+            self.app.get_current_page_mut().propagate_widget_changes(&page_events, actions, &mut self.ui_context);
+        }
+
+        // Typed into while open; a closed box's change is the echo of the
+        // clear that closed it.
+        if search_changed && self.search_open {
+            self.search_query = self.ui_context[self.search_box].text.clone();
+            self.needs_rebuild = true;
+        }
+
+        if picked_page {
+            let idx = self.ui_context[self.page_dropdown].selected;
+            if idx < Page::ALL.len() {
+                self.ui_context.clear_focus();
+                self.focused_section = None;
+                self.app.current_page = Page::ALL[idx];
+                self.current_page_shared.send_replace(idx as u8);
+                self.scroll_y = 0.0;
+            }
+            self.needs_rebuild = true;
+        }
+        button_clicked
     }
 
     pub(crate) fn handle_mouse_wheel_internal(&mut self, delta: &cce_ui::widget::MouseScrollDelta, px: f32, py: f32) -> bool {
@@ -673,17 +727,26 @@ impl SystemInterface {
             }
         }
 
-        if self.search_open {
-            if self.ui_context[self.search_box].take_change() {
-                self.search_query = self.ui_context[self.search_box].text.clone();
-                self.needs_rebuild = true;
-            }
-            if !self.ui_context.is_focused(&self.ui_context[self.search_box]) {
-                self.search_open = false;
-                self.search_query.clear();
-                self.ui_context[self.search_box].set_value_string("");
-                self.needs_rebuild = true;
-            }
+        // What the key changed that nothing above acted on: the search box's
+        // text (the sweep makes it the query) and a control's own keys (Enter
+        // or Space on a focused button, a focused dropdown's pick, the page
+        // switcher's too).
+        let mut actions = Vec::new();
+        self.propagate_widget_changes(&mut actions);
+        for a in &actions {
+            self.handle_action(a);
+        }
+        if !actions.is_empty() {
+            self.needs_rebuild = true;
+            key_handled = true;
+        }
+
+        // The search box lost the focus: the search closes.
+        if self.search_open && !self.ui_context.is_focused(&self.ui_context[self.search_box]) {
+            self.search_open = false;
+            self.search_query.clear();
+            self.ui_context[self.search_box].set_value_string("");
+            self.needs_rebuild = true;
         }
 
         key_handled

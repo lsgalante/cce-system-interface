@@ -345,40 +345,79 @@ impl AppPage for BrowserState {
         final_pc
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
-        if ctx[self.search_menu].take_change() {
-            let key = SEARCH_ENGINES
-                .get(ctx[self.search_menu].selected)
-                .map(|(k, _)| k.to_string())
-                .unwrap_or_else(|| "duckduckgo".to_string());
-            actions.push(AppAction::Browser(BrowserMessage::SetSearch(key)));
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        let mut apply = false;
+        for &(id, ref ev) in events {
+            if *ev != cce_ui::widget::WidgetEvent::Changed {
+                continue;
+            }
+            if id == self.search_menu.id() {
+                let key = SEARCH_ENGINES
+                    .get(ctx[self.search_menu].selected)
+                    .map(|(k, _)| k.to_string())
+                    .unwrap_or_else(|| "duckduckgo".to_string());
+                actions.push(AppAction::Browser(BrowserMessage::SetSearch(key)));
+            } else if id == self.bar_position_menu.id() {
+                let key = BAR_POSITIONS
+                    .get(ctx[self.bar_position_menu].selected)
+                    .map(|(k, _)| k.to_string())
+                    .unwrap_or_else(|| "top".to_string());
+                actions.push(AppAction::Browser(BrowserMessage::SetBarPosition(key)));
+            } else if id == self.color_scheme_menu.id() {
+                let key = COLOR_SCHEMES
+                    .get(ctx[self.color_scheme_menu].selected)
+                    .map(|(k, _)| k.to_string())
+                    .unwrap_or_else(|| "dark".to_string());
+                actions.push(AppAction::Browser(BrowserMessage::SetColorScheme(key)));
+            } else if id == self.history_toggle.id() {
+                actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));
+            } else if id == self.raindrop_toggle.id() {
+                actions.push(AppAction::Browser(BrowserMessage::ToggleRaindrop));
+            } else if id == self.vi_mode_toggle.id() {
+                actions.push(AppAction::Browser(BrowserMessage::ToggleViMode));
+            } else if id == self.homepage_box.id() || id == self.download_dir_box.id() {
+                apply = true;
+            }
         }
-        if ctx[self.bar_position_menu].take_change() {
-            let key = BAR_POSITIONS
-                .get(ctx[self.bar_position_menu].selected)
-                .map(|(k, _)| k.to_string())
-                .unwrap_or_else(|| "top".to_string());
-            actions.push(AppAction::Browser(BrowserMessage::SetBarPosition(key)));
-        }
-        if ctx[self.color_scheme_menu].take_change() {
-            let key = COLOR_SCHEMES
-                .get(ctx[self.color_scheme_menu].selected)
-                .map(|(k, _)| k.to_string())
-                .unwrap_or_else(|| "dark".to_string());
-            actions.push(AppAction::Browser(BrowserMessage::SetColorScheme(key)));
-        }
-        if ctx[self.history_toggle].take_change() {
-            actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));
-        }
-        if ctx[self.raindrop_toggle].take_change() {
-            actions.push(AppAction::Browser(BrowserMessage::ToggleRaindrop));
-        }
-        if ctx[self.vi_mode_toggle].take_change() {
-            actions.push(AppAction::Browser(BrowserMessage::ToggleViMode));
-        }
-        // Enter in either text field commits both.
-        if ctx[self.homepage_box].take_change() || ctx[self.download_dir_box].take_change() {
+        // Enter in either text field commits both, once.
+        if apply {
             actions.push(AppAction::Browser(BrowserMessage::Apply));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the sweep found becomes the page's actions: a toggle set by an
+    /// assistive tool or a binding (`set_value_string`) reports a change, and
+    /// both text fields committed in the same sweep apply once.
+    #[test]
+    fn swept_changes_become_actions() {
+        let mut ui = UiContext::new();
+        let mut st = BrowserState::new(&mut ui);
+        let _ = ui.take_events();
+        // Made off (the view sets it from the config).
+        assert!(ui[st.history_toggle].set_value_string("true"));
+        ui[st.homepage_box].set_value("swept.example");
+        ui[st.download_dir_box].set_value("/swept/downloads");
+        let events = ui.take_events();
+        let mut actions = Vec::new();
+        st.propagate_widget_changes(&events, &mut actions, &mut ui);
+        assert!(
+            matches!(
+                actions.as_slice(),
+                [AppAction::Browser(BrowserMessage::ToggleHistory), AppAction::Browser(BrowserMessage::Apply)]
+            ),
+            "{actions:?}"
+        );
+        // Swept once: nothing is left to report.
+        assert!(ui.take_events().is_empty());
     }
 }

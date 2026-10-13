@@ -418,40 +418,38 @@ impl crate::pages::AppPage for AudioState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
-        for (i, &sb) in self.sink_spinboxes.iter().enumerate() {
-            let sb = &mut ctx[sb];
-            if sb.take_change() {
-                let id = self.sinks[i].id;
-                actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, sb.value as f32 / 100.0)));
-            }
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<crate::app::AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        fn at<W: ?Sized>(handles: &[Handle<W>], id: cce_ui::widget::WidgetId) -> Option<usize> {
+            handles.iter().position(|h| h.id() == id)
         }
-        for (i, &sb) in self.source_spinboxes.iter().enumerate() {
-            let sb = &mut ctx[sb];
-            if sb.take_change() {
-                let id = self.sources[i].id;
-                actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, sb.value as f32 / 100.0)));
+        for &(id, ref ev) in events {
+            if *ev != cce_ui::widget::WidgetEvent::Changed {
+                continue;
             }
-        }
-        for (i, &slider) in self.sink_sliders.iter().enumerate() {
-            if ctx[slider].take_change() {
-                let value = ctx[slider].value();
-                let id = self.sinks[i].id;
+            if let Some(i) = at(&self.sink_spinboxes, id) {
+                let value = ctx[self.sink_spinboxes[i]].value;
+                actions.push(AppAction::Audio(AudioMessage::SinkVolume(self.sinks[i].id, value as f32 / 100.0)));
+            } else if let Some(i) = at(&self.source_spinboxes, id) {
+                let value = ctx[self.source_spinboxes[i]].value;
+                actions.push(AppAction::Audio(AudioMessage::SourceVolume(self.sources[i].id, value as f32 / 100.0)));
+            } else if let Some(i) = at(&self.sink_sliders, id) {
+                let value = ctx[self.sink_sliders[i]].value();
                 // Keep the paired spinbox display in step, as the old drag path did.
                 if let Some(&sb) = self.sink_spinboxes.get(i) {
                     ctx[sb].value = value;
                 }
-                actions.push(AppAction::Audio(AudioMessage::SinkVolume(id, value as f32 / 100.0)));
-            }
-        }
-        for (i, &slider) in self.source_sliders.iter().enumerate() {
-            if ctx[slider].take_change() {
-                let value = ctx[slider].value();
-                let id = self.sources[i].id;
+                actions.push(AppAction::Audio(AudioMessage::SinkVolume(self.sinks[i].id, value as f32 / 100.0)));
+            } else if let Some(i) = at(&self.source_sliders, id) {
+                let value = ctx[self.source_sliders[i]].value();
                 if let Some(&sb) = self.source_spinboxes.get(i) {
                     ctx[sb].value = value;
                 }
-                actions.push(AppAction::Audio(AudioMessage::SourceVolume(id, value as f32 / 100.0)));
+                actions.push(AppAction::Audio(AudioMessage::SourceVolume(self.sources[i].id, value as f32 / 100.0)));
             }
         }
     }
@@ -459,7 +457,7 @@ impl crate::pages::AppPage for AudioState {
     // The pointer drag hooks are GONE (6bd routed events): slider drags ride the
     // router's drag-target machinery — presses were already routed through the section
     // roots, and DragUpdate/DragEnd now reach the sliders the same way. Value changes
-    // surface through the take_change drain above.
+    // arrive as the sweep's Changed events, above.
 }
 
 #[cfg(test)]

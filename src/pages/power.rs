@@ -1048,26 +1048,29 @@ impl crate::pages::AppPage for PowerState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
-        if ctx[self.dd_limit].take_change() {
-            actions.push(AppAction::Power(PowerMessage::SetLimit(ctx[self.dd_limit].selected)));
-        }
-        if ctx[self.dd_mode].take_change() {
-            actions.push(AppAction::Power(PowerMessage::EditMode(ctx[self.dd_mode].selected)));
-        }
-        for (i, lever) in Lever::ALL.iter().enumerate() {
-            if ctx[self.levers.dds[i]].take_change() {
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        for &(id, ref ev) in events {
+            if *ev != cce_ui::widget::WidgetEvent::Changed {
+                continue;
+            }
+            if id == self.dd_limit.id() {
+                actions.push(AppAction::Power(PowerMessage::SetLimit(ctx[self.dd_limit].selected)));
+            } else if id == self.dd_mode.id() {
+                actions.push(AppAction::Power(PowerMessage::EditMode(ctx[self.dd_mode].selected)));
+            } else if let Some(i) = self.levers.dds.iter().position(|h| h.id() == id) {
                 actions.push(AppAction::Power(PowerMessage::Set {
-                    lever: *lever,
+                    lever: Lever::ALL[i],
                     idx: ctx[self.levers.dds[i]].selected,
                 }));
-            }
-        }
-        for source in Source::ALL {
-            let i = source_index(source);
-            if ctx[self.dd_assign[i]].take_change() {
+            } else if let Some(i) = self.dd_assign.iter().position(|h| h.id() == id) {
+                // `dd_assign` is in `Source::ALL` order (`source_index`).
                 actions.push(AppAction::Power(PowerMessage::Assign {
-                    source,
+                    source: Source::ALL[i],
                     idx: ctx[self.dd_assign[i]].selected,
                 }));
             }

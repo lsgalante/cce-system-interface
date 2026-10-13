@@ -388,10 +388,18 @@ impl crate::pages::AppPage for StorageState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
-        // Mouse click and Enter/Space on the focused button both land here.
-        if ctx[self.backup_button].take_click() && !self.backup_in_progress {
-            actions.push(AppAction::Storage(StorageMessage::StartBackup));
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut UiContext,
+    ) {
+        // Mouse click and Enter/Space on the focused button both land here;
+        // one while a backup runs is dropped.
+        for &(id, ref ev) in events {
+            if *ev == cce_ui::widget::WidgetEvent::Clicked && id == self.backup_button.id() && !self.backup_in_progress {
+                actions.push(AppAction::Storage(StorageMessage::StartBackup));
+            }
         }
     }
 }

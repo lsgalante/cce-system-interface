@@ -1239,8 +1239,17 @@ impl crate::pages::AppPage for AccountsState {
         view(self, cx, cy, cw, ch, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
-        if self.adding_new && ctx[self.email_box].take_change() {
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        _actions: &mut Vec<crate::app::AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        // The email box is laid out (and so edited) only while adding.
+        let email_changed = events
+            .iter()
+            .any(|(id, ev)| *ev == cce_ui::widget::WidgetEvent::Changed && *id == self.email_box.id());
+        if self.adding_new && email_changed {
             let email_val = ctx[self.email_box].text.trim().to_lowercase();
             if email_val.ends_with("@gmail.com") {
                 ctx[self.imap_box].text = "imap.gmail.com:993".to_string();

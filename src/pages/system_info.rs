@@ -820,7 +820,12 @@ impl crate::pages::AppPage for SystemState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut UiContext) {
+    fn propagate_widget_changes(
+        &mut self,
+        _events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut UiContext,
+    ) {
     }
 }
 

@@ -328,9 +328,16 @@ impl crate::pages::AppPage for NetworkState {
         view(self, cx, cy, cw, ch, focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<crate::app::AppAction>, ctx: &mut UiContext) {
-        if ctx[self.wifi_toggle].take_change() {
-            actions.push(crate::app::AppAction::Network(NetworkMessage::ToggleWifi));
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut UiContext,
+    ) {
+        for &(id, ref ev) in events {
+            if *ev == cce_ui::widget::WidgetEvent::Changed && id == self.wifi_toggle.id() {
+                actions.push(crate::app::AppAction::Network(NetworkMessage::ToggleWifi));
+            }
         }
     }
 

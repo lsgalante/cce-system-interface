@@ -407,10 +407,18 @@ impl crate::pages::AppPage for DefaultAppsState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
-        for (i, entry) in self.categories.iter_mut().enumerate() {
-            if ctx[entry.dropdown].take_change() {
-                actions.push(AppAction::DefaultApps(DefaultAppsMessage::Set(i, ctx[entry.dropdown].selected)));
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        for &(id, ref ev) in events {
+            if *ev != cce_ui::widget::WidgetEvent::Changed {
+                continue;
+            }
+            if let Some(i) = self.categories.iter().position(|entry| entry.dropdown.id() == id) {
+                actions.push(AppAction::DefaultApps(DefaultAppsMessage::Set(i, ctx[self.categories[i].dropdown].selected)));
             }
         }
     }

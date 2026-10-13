@@ -410,9 +410,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
 
                     // Kill button, in content space like the columns. Emitted
                     // AFTER the row button on purpose: overlapping page
-                    // buttons all see the click and the LAST take_click wins
-                    // the dispatched action (input_handler's collect loop), so
-                    // the Kill button beats the row's no-op exactly because it comes later.
+                    // buttons all see the click and the LAST one clicked wins
+                    // the dispatched action (input_handler's sweep), so the
+                    // Kill button beats the row's no-op exactly because it comes later.
                     if !dim {
                         // The `x` glyph in the danger tint; "Kill" only if
                         // the icon set is missing.
@@ -503,7 +503,13 @@ impl crate::pages::AppPage for ProcessesState {
         view(self, cx, cy, cw, ch, root_focused, sec_focused, layout, ctx)
     }
 
-    fn propagate_widget_changes(&mut self, _actions: &mut Vec<crate::app::AppAction>, _ctx: &mut cce_ui::context::UiContext) {}
+    fn propagate_widget_changes(
+        &mut self,
+        _events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        _actions: &mut Vec<crate::app::AppAction>,
+        _ctx: &mut cce_ui::context::UiContext,
+    ) {
+    }
 
     fn handle_pointer_move(
         &mut self,
@@ -601,7 +607,7 @@ mod tests {
         // One Kill button per row except the pending one (pid 2).
         assert_eq!(kills.len(), 2, "{:?}", pc.buttons.iter().map(|(_, a, _)| a).collect::<Vec<_>>());
         // Ordering invariant the dispatch relies on: each Kill comes after
-        // its row's hover button — last take_click wins, so Kill must be later.
+        // its row's hover button — the last one clicked wins, so Kill must be later.
         let rows: Vec<usize> = pc
             .buttons
             .iter()

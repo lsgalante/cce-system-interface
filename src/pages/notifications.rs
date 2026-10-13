@@ -259,22 +259,33 @@ impl AppPage for NotificationsState {
         final_pc
     }
 
-    fn propagate_widget_changes(&mut self, actions: &mut Vec<AppAction>, ctx: &mut UiContext) {
-        if ctx[self.enable_toggle].take_change() {
-            actions.push(AppAction::Notifications(NotificationsMessage::ToggleNotificationsEnable));
-        }
-        if ctx[self.bell_menu].take_change() {
-            let sound = match ctx[self.bell_menu].selected {
-                0 => "none",
-                1 => "bell",
-                2 => "dialog",
-                3 => "message",
-                _ => "none",
-            }.to_string();
-            actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsBell(sound)));
-        }
-        if ctx[self.duration_spinbox].take_change() {
-            actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsDuration(ctx[self.duration_spinbox].value)));
+    fn propagate_widget_changes(
+        &mut self,
+        events: &[(cce_ui::widget::WidgetId, cce_ui::widget::WidgetEvent)],
+        actions: &mut Vec<AppAction>,
+        ctx: &mut UiContext,
+    ) {
+        use cce_ui::widget::WidgetEvent;
+        for &(id, ref ev) in events {
+            match ev {
+                WidgetEvent::Changed if id == self.enable_toggle.id() => {
+                    actions.push(AppAction::Notifications(NotificationsMessage::ToggleNotificationsEnable));
+                }
+                WidgetEvent::Changed if id == self.bell_menu.id() => {
+                    let sound = match ctx[self.bell_menu].selected {
+                        0 => "none",
+                        1 => "bell",
+                        2 => "dialog",
+                        3 => "message",
+                        _ => "none",
+                    }.to_string();
+                    actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsBell(sound)));
+                }
+                WidgetEvent::Changed if id == self.duration_spinbox.id() => {
+                    actions.push(AppAction::Notifications(NotificationsMessage::SetNotificationsDuration(ctx[self.duration_spinbox].value)));
+                }
+                _ => {}
+            }
         }
     }
 }
