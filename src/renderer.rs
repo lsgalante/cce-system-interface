@@ -76,12 +76,10 @@ impl SystemInterface {
         self.sidebar_width = 0.0;
         self.header_height = 0.0; // No CSD Titlebar
 
-        cce_ui::widget::hover_animation::reset_frame_registration();
         self.ui_context.clear_popovers();
         // The page scroll, where the toolkit's popover and context-menu hit
         // tests (and a TreeList's) still read it.
         cce_ui::widget::hover_animation::set_scroll_offset(self.scroll_y);
-        cce_ui::widget::hover_animation::set_cursor_pos(self.cursor_x, self.cursor_y);
 
         let cursor = (self.cursor_x, self.cursor_y);
         let over = |wx: f32, wy: f32, ww: f32, wh: f32| -> bool {

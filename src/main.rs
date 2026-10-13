@@ -1,5 +1,4 @@
 use cce_ui::widget::Handle;
-use cce_ui::widget::hover_animation;
 use cce_ui::cosmic_text::{Buffer, FontSystem};
 use cce_ui::scene::layout::Rect;
 use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim};
@@ -428,7 +427,6 @@ impl cce_ui::engine::Application for SystemInterface {
             }
         }
 
-        cce_ui::widget::hover_animation::post_render_check();
         // The popovers over everything on the page — their plates and rows in
         // the widget's own order (the hovered row a Dropdown draws after its
         // plate lands on the frosted face), then their glyphs.
@@ -536,9 +534,6 @@ impl SystemInterface {
 
     fn tick_internal(&mut self, dt: f32) -> bool {
         let mut needs_redraw = false;
-        if hover_animation::tick(dt) {
-            needs_redraw = true;
-        }
         // Raise/sink upkeep for the page scrollbar: true while the post-scroll
         // hold runs (keeps frames coming so the sink actually renders) and on
         // the raised flip itself. A redraw re-emits the bar at its new depth —

@@ -77,7 +77,6 @@ impl SystemInterface {
 
         let lx = self.cursor_x / s;
         let ly = self.cursor_y / s + self.scroll_y;
-        cce_ui::widget::hover_animation::set_cursor_pos(lx, ly_no_scroll);
         let mut changed = false;
         {
             let ev = cce_ui::widget::Event::PointerMove { x: lx_no_scroll, y: ly_no_scroll, local_x: lx_no_scroll, local_y: ly_no_scroll };
