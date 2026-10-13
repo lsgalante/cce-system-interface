@@ -182,7 +182,6 @@ struct SystemInterface {
     seen_snapshots: std::collections::HashMap<&'static str, u64>,
     sender: calloop::channel::Sender<AppAction>,
     ui_context: cce_ui::context::UiContext,
-    scroll_logs: Vec<String>,
     search_open: bool,
     search_query: String,
     search_box: Handle<cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>>,
@@ -325,7 +324,6 @@ impl cce_ui::engine::Application for SystemInterface {
             seen_snapshots: std::collections::HashMap::new(),
             sender,
             ui_context,
-            scroll_logs: Vec::new(),
             search_open: false,
             search_query: String::new(),
             search_box,
@@ -1181,15 +1179,3 @@ fn main() {
     cce_ui::engine::run::<SystemInterface>();
 }
 
-impl Drop for SystemInterface {
-    fn drop(&mut self) {
-        if !self.scroll_logs.is_empty() {
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/cce-scroll-debug.log") {
-                use std::io::Write;
-                for log in &self.scroll_logs {
-                    let _ = writeln!(file, "{}", log);
-                }
-            }
-        }
-    }
-}
