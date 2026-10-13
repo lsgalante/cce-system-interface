@@ -1,6 +1,6 @@
 //! Browser (cce-browser) settings: homepage, search engine, download
 //! directory, history recording, Raindrop bookmark sync, vi mode, navigation-bar
-//! position, page color scheme. Edits the
+//! position, the tab line, page color scheme. Edits the
 //! browser's own app config (`~/.config/cce/cce-browser/config.kdl`,
 //! section "browser") — the browser reloads it when its window regains
 //! focus.
@@ -28,6 +28,18 @@ pub const SEARCH_ENGINES: [(&str, &str); 4] = [
 /// navigation bar is anchored to.
 pub const BAR_POSITIONS: [(&str, &str); 2] = [("top", "Top"), ("bottom", "Bottom")];
 
+/// config key, menu label — when the browser shows its tab line, a
+/// qutebrowser-style strip of `n: title` tabs beside the corner control
+/// while the navigation bar is folded. The keys are qutebrowser's
+/// `tabs.show` values; the browser's own default is `switching`.
+pub const TAB_LINES: [(&str, &str); 4] = [
+    ("never", "Never"),
+    ("switching", "When Switching Tabs"),
+    ("multiple", "With Several Tabs"),
+    ("always", "Always"),
+];
+const DEFAULT_TAB_LINE: &str = "switching";
+
 /// config key, menu label — the first two are reported to pages as
 /// `prefers-color-scheme`, so sites that ship a dark stylesheet use it.
 /// "Force Dark" additionally inverts the page, for sites that ship no dark
@@ -50,6 +62,8 @@ pub struct BrowserConfig {
     /// `src/vi.rs`). Off unless set.
     pub vi_mode: bool,
     pub bar_position: String,
+    /// `browser.tab-line`: a `TAB_LINES` key.
+    pub tab_line: String,
     pub color_scheme: String,
 }
 
@@ -62,10 +76,12 @@ pub struct BrowserState {
     pub raindrop: bool,
     pub vi_mode: bool,
     pub bar_position: String,
+    pub tab_line: String,
     pub color_scheme: String,
     pub homepage_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub search_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
     pub bar_position_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
+    pub tab_line_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
     pub color_scheme_menu: Handle<cce_ui::widget::Adapted<Dropdown>>,
     pub download_dir_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub history_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
@@ -86,10 +102,12 @@ impl Default for BrowserState {
             raindrop: config.raindrop,
             vi_mode: config.vi_mode,
             bar_position: config.bar_position.clone(),
+            tab_line: config.tab_line.clone(),
             color_scheme: config.color_scheme.clone(),
             homepage_box: Handle::none(),
             search_menu: Handle::none(),
             bar_position_menu: Handle::none(),
+            tab_line_menu: Handle::none(),
             color_scheme_menu: Handle::none(),
             download_dir_box: Handle::none(),
             history_toggle: Handle::none(),
@@ -123,6 +141,11 @@ impl BrowserState {
                 bar_position_index(&s.bar_position),
             )
             .with_label("Navigation Bar Position")),
+            tab_line_menu: ctx.insert(Dropdown::new(
+                TAB_LINES.iter().map(|(_, label)| label.to_string()).collect(),
+                tab_line_index(&s.tab_line),
+            )
+            .with_label("Tab Line")),
             color_scheme_menu: ctx.insert(Dropdown::new(
                 COLOR_SCHEMES.iter().map(|(_, label)| label.to_string()).collect(),
                 color_scheme_index(&s.color_scheme),
@@ -149,6 +172,12 @@ fn bar_position_index(key: &str) -> usize {
     BAR_POSITIONS.iter().position(|(k, _)| *k == key).unwrap_or(0)
 }
 
+/// An unknown key reads as the browser reads it: the default.
+fn tab_line_index(key: &str) -> usize {
+    let at = |k: &str| TAB_LINES.iter().position(|(t, _)| *t == k);
+    at(key).or_else(|| at(DEFAULT_TAB_LINE)).unwrap_or(0)
+}
+
 fn color_scheme_index(key: &str) -> usize {
     COLOR_SCHEMES.iter().position(|(k, _)| *k == key).unwrap_or(0)
 }
@@ -157,6 +186,7 @@ fn color_scheme_index(key: &str) -> usize {
 pub enum BrowserMessage {
     SetSearch(String),
     SetBarPosition(String),
+    SetTabLine(String),
     SetColorScheme(String),
     ToggleHistory,
     ToggleRaindrop,
@@ -185,6 +215,10 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage, ctx: &mut UiContext
         BrowserMessage::SetBarPosition(key) => {
             state.bar_position = key.clone();
             write_config_value("bar-position", &key);
+        }
+        BrowserMessage::SetTabLine(key) => {
+            state.tab_line = key.clone();
+            write_config_value("tab-line", &key);
         }
         BrowserMessage::SetColorScheme(key) => {
             state.color_scheme = key.clone();
@@ -220,6 +254,7 @@ pub fn update(state: &mut BrowserState, msg: BrowserMessage, ctx: &mut UiContext
             state.raindrop = new.raindrop;
             state.vi_mode = new.vi_mode;
             state.bar_position = new.bar_position;
+            state.tab_line = new.tab_line;
             state.color_scheme = new.color_scheme;
             // Don't clobber fields mid-edit with watcher refreshes.
             if !ctx[state.homepage_box].editing && state.homepage != new.homepage {
@@ -256,6 +291,7 @@ pub fn read_browser_config() -> BrowserConfig {
         raindrop: val["browser"]["raindrop"].as_bool().unwrap_or(false),
         vi_mode: val["browser"]["vi-mode"].as_bool().unwrap_or(false),
         bar_position: val["browser"]["bar-position"].as_str().unwrap_or("top").to_string(),
+        tab_line: val["browser"]["tab-line"].as_str().unwrap_or(DEFAULT_TAB_LINE).to_string(),
         color_scheme: val["browser"]["color-scheme"].as_str().unwrap_or("dark").to_string(),
     }
 }
@@ -278,6 +314,7 @@ impl AppPage for BrowserState {
             self.homepage_box.id(),
             self.search_menu.id(),
             self.bar_position_menu.id(),
+            self.tab_line_menu.id(),
             self.color_scheme_menu.id(),
             self.download_dir_box.id(),
             self.history_toggle.id(),
@@ -304,6 +341,7 @@ impl AppPage for BrowserState {
         builder.add_section(&mut final_pc, "Browser Settings", sec_focused.first().copied().unwrap_or(false), |sec| {
             ctx[self.search_menu].selected = search_index(&self.search);
             ctx[self.bar_position_menu].selected = bar_position_index(&self.bar_position);
+            ctx[self.tab_line_menu].selected = tab_line_index(&self.tab_line);
             ctx[self.color_scheme_menu].selected = color_scheme_index(&self.color_scheme);
             ctx[self.history_toggle].set_toggled(self.history);
             // Needs a Raindrop token in the keyring (service=raindrop.io);
@@ -321,6 +359,7 @@ impl AppPage for BrowserState {
                 .widget_h(ctx, self.homepage_box, field_h)
                 .widget_h(ctx, self.search_menu, menu_h)
                 .widget_h(ctx, self.bar_position_menu, menu_h)
+                .widget_h(ctx, self.tab_line_menu, menu_h)
                 .widget_h(ctx, self.color_scheme_menu, menu_h)
                 .widget_h(ctx, self.download_dir_box, field_h)
                 .widget_h(ctx, self.history_toggle, toggle_h)
@@ -368,6 +407,12 @@ impl AppPage for BrowserState {
                     .map(|(k, _)| k.to_string())
                     .unwrap_or_else(|| "top".to_string());
                 actions.push(AppAction::Browser(BrowserMessage::SetBarPosition(key)));
+            } else if id == self.tab_line_menu.id() {
+                let key = TAB_LINES
+                    .get(ctx[self.tab_line_menu].selected)
+                    .map_or(DEFAULT_TAB_LINE, |(k, _)| k)
+                    .to_string();
+                actions.push(AppAction::Browser(BrowserMessage::SetTabLine(key)));
             } else if id == self.color_scheme_menu.id() {
                 let key = COLOR_SCHEMES
                     .get(ctx[self.color_scheme_menu].selected)
@@ -419,5 +464,14 @@ mod tests {
         );
         // Swept once: nothing is left to report.
         assert!(ui.take_events().is_empty());
+    }
+
+    /// The menu shows what the browser does with the key: an unknown or
+    /// missing one is the browser's default, not the first row.
+    #[test]
+    fn an_unknown_tab_line_key_shows_the_default() {
+        assert_eq!(TAB_LINES[tab_line_index("always")].0, "always");
+        assert_eq!(TAB_LINES[tab_line_index("never")].0, "never");
+        assert_eq!(TAB_LINES[tab_line_index("sometimes")].0, DEFAULT_TAB_LINE);
     }
 }
