@@ -197,7 +197,7 @@ mod list_clip_tests {
     /// (`[x0, y0, x1, y1]`), row buttons beside them (`[x, y, w, h]`).
     fn assert_list_inside(name: &str, pc: &crate::app::PageLayers, list: &ScrollRegion) {
         let text_clips = pc.texts().into_iter().filter_map(|t| t.bounds);
-        let button_clips = pc.buttons.iter().filter_map(|b| b.2).map(|[x, y, w, h]| [x, y, x + w, y + h]);
+        let button_clips = pc.buttons.iter().filter_map(|b| b.clip).map(|c| [c.x, c.y, c.x + c.width, c.y + c.height]);
         let widest = text_clips
             .chain(button_clips)
             .filter(|b| b[1] >= list.y - 0.5 && b[3] <= list.y + list.h + 0.5)

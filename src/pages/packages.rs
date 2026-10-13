@@ -2,8 +2,7 @@ use crate::app::{button_need, form_button, form_divider, wrap_to_width, AppActio
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::compose::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
+use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
@@ -864,10 +863,10 @@ pub fn view(
                     // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
                     installed_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                     installed_list.update_bounds(filtered.len(), list_box_y, list_box_h);
-                    installed_list.push_prims(pc);
+                    installed_list.push_prims(pc.as_mut());
                     let item_h = installed_list.item_height;
 
-                    pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, list_box_h));
                     for (idx, pkg) in filtered.iter().enumerate() {
                         if let Some(draw_y) = installed_list.get_item_draw_y(idx, 4.0) {
                             // Rows dispatch as extra roots (the dissolved list is no parent).
@@ -886,24 +885,24 @@ pub fn view(
                                 Some(&pkg.name) == selected.as_ref()
                             };
                             let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
-                            render_widget_h(pc, row, cell.x, cell.y, cell.width, cell.height, ctx);
+                            crate::app::place_and_paint(pc, row, cell, ctx);
                         }
                     }
-                    pc.pop_clip_rect();
+                    pc.pop_clip();
                     // The scrollbar's fore copy, over the rows at the raise's fade.
-                    installed_list.push_scrollbar_fore(pc);
+                    installed_list.push_scrollbar_fore(pc.as_mut());
                     if filtered.is_empty() {
-                        pc.text(empty_msg, list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
+                        pc.text(empty_msg, list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
                     }
                 }
                 PackageTab::Updates => {
                     // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
                     updates_list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
                     updates_list.update_bounds(filtered_updates.len(), list_box_y, list_box_h);
-                    updates_list.push_prims(pc);
+                    updates_list.push_prims(pc.as_mut());
                     let item_h = updates_list.item_height;
 
-                    pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+                    pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, list_box_h));
                     for (idx, pkg) in filtered_updates.iter().enumerate() {
                         if let Some(draw_y) = updates_list.get_item_draw_y(idx, 4.0) {
                             // Rows dispatch as extra roots (the dissolved list is no parent).
@@ -913,14 +912,14 @@ pub fn view(
                             item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
                             item.selected = Some(&pkg.name) == selected.as_ref();
                             let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
-                            render_widget_h(pc, row, cell.x, cell.y, cell.width, cell.height, ctx);
+                            crate::app::place_and_paint(pc, row, cell, ctx);
                         }
                     }
-                    pc.pop_clip_rect();
+                    pc.pop_clip();
                     // The scrollbar's fore copy, over the rows at the raise's fade.
-                    updates_list.push_scrollbar_fore(pc);
+                    updates_list.push_scrollbar_fore(pc.as_mut());
                     if filtered_updates.is_empty() {
-                        pc.text("No updates match the query", list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
+                        pc.text("No updates match the query", list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
                     }
                 }
             }
@@ -1246,7 +1245,7 @@ impl crate::pages::AppPage for PackagesState {
     }
 
     // Both root methods below filter by `get_item_draw_y`, the SAME predicate the view's
-    // paint loop uses to virtualize rows. Only a row that was drawn had `render_widget`
+    // paint loop uses to virtualize rows. Only a row that was drawn had `place_and_paint`
     // refresh its rect; a scrolled-out row keeps the rect from the last frame it was
     // visible, and since `dispatch_page_event` takes the first root that hit-tests true
     // in index order, an unfiltered list let a stale low-index row swallow clicks meant

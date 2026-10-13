@@ -2,8 +2,7 @@ use crate::app::{form_button, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::compose::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
+use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{TextBox, InteractiveListItem};
 
@@ -126,10 +125,10 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
             list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
             list.update_bounds(filtered_services.len(), list_box_y, list_box_h);
-            list.push_prims(pc);
+            list.push_prims(pc.as_mut());
             let item_h = list.item_height;
 
-            pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+            pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, list_box_h));
                 for (idx, service) in filtered_services.iter().enumerate() {
                     if let Some(draw_y) = list.get_item_draw_y(idx, 4.0) {
                         // Transport + Restart, on the LEFT where the status dot
@@ -185,7 +184,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         let item_btn = &mut ctx[item];
                         item_btn.title = service.name.clone();
                         item_btn.subtitle = Some(desc_truncated);
-                        render_widget_h(pc, item, item_x, draw_y, item_w, item_h, ctx);
+                        crate::app::place_and_paint(pc, item, crate::app::rect(item_x, draw_y, item_w, item_h), ctx);
 
                         let active_txt = [0.90, 0.90, 0.95, 1.0];
                         // No per-action tints: both controls wear the DE's themed
@@ -253,13 +252,13 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
                         );
                     }
                 }
-            pc.pop_clip_rect();
+            pc.pop_clip();
             // The scrollbar's fore copy, over the rows at the raise's fade.
-            list.push_scrollbar_fore(pc);
+            list.push_scrollbar_fore(pc.as_mut());
 
             if filtered_services.is_empty() {
                 let inset = cce_ui::layout::plate_padding();
-                pc.text("No services match the query", list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
+                pc.text("No services match the query", list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
             }
         });
         sec.place(form, ctx);

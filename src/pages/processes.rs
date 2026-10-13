@@ -2,7 +2,6 @@ use crate::app::{AppAction, PageContent};
 use crate::power_meter::{self, Meter, Mode};
 use cce_ui::widget::ScrollRegion;
 use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use std::sync::Mutex;
 
@@ -330,14 +329,14 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // a scroll raises it.
             let rows_h = list_box_h - header_h - gap;
             cpu_list.update_bounds(processes.len(), list_box_y + header_h, rows_h);
-            cpu_list.push_prims(pc);
+            cpu_list.push_prims(pc.as_mut());
 
             let ox = cpu_list.scroll_x;
             let at = |c: Rect| list_box_x + c.x - ox;
 
             // Header row is background-less (the well shows through); only the
             // divider separates it from the rows.
-            pc.rect([0.18, 0.18, 0.24, 1.0], list_box_x, list_box_y + header_h, list_box_w, 1.0);
+            pc.quad(crate::app::rect(list_box_x, list_box_y + header_h, list_box_w, 1.0), [0.18, 0.18, 0.24, 1.0]);
 
             // Header labels pan with the columns, clipped to the box. The
             // sortable ones (MEM, MEM %, CPU %, W, WAKE/s) are hit targets the
@@ -347,14 +346,14 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // target, no distinction to learn.
             let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
             let hdr_y = crate::app::label_y_in(list_box_y, header_h, HDR_SIZE, None);
-            pc.push_clip_rect(list_box_x, list_box_y, list_box_w, header_h);
+            pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, header_h));
             let header = |pc: &mut PageContent, label: &str, c: Rect, on: bool, chevron: bool| {
                 let x = at(c);
-                pc.text(label, x, hdr_y, HDR_SIZE, hdr(on));
+                pc.text(label, x, hdr_y, HDR_SIZE, crate::app::rgb(hdr(on)));
                 if on && chevron {
                     let gx = x + crate::app::text_width(label, HDR_SIZE, None) + gap / 2.0;
                     let gy = list_box_y + (header_h - CHEVRON) / 2.0;
-                    pc.icon("chevron-down", gx, gy, CHEVRON, CHEVRON, hdr(on));
+                    pc.icon("chevron-down", crate::app::rect(gx, gy, CHEVRON, CHEVRON), hdr(on));
                 }
             };
             header(pc, "PID", c_pid, false, false);
@@ -370,13 +369,13 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             for (c, key) in [(c_rss, ProcSort::Mem), (c_mem, ProcSort::Mem), (c_cpu, ProcSort::Cpu), (c_watts, ProcSort::Power), (c_wake, ProcSort::Wakeups)] {
                 pc.list_row(at(c), list_box_y, c.width, header_h, AppAction::Processes(ProcessesMessage::SortBy(key)));
             }
-            pc.pop_clip_rect();
+            pc.pop_clip();
 
             // Visible process rows, clipped to the rows' viewport — not on
             // into the reserve band below it, where the scroll region still
             // hands back a row starting there and its Kill button stood alone
             // under the list.
-            pc.push_clip_rect(list_box_x, list_box_y + header_h, list_box_w, rows_h);
+            pc.push_clip(crate::app::rect(list_box_x, list_box_y + header_h, list_box_w, rows_h));
             for (idx, p) in processes.iter().enumerate() {
                 if let Some(draw_y) = cpu_list.get_item_draw_y(idx, 4.0) {
                     // The row itself, in the DE's list style: plateless,
@@ -398,7 +397,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     let ty = crate::app::label_y_in(draw_y, row_h, ROW_SIZE, None);
                     let cell = |pc: &mut PageContent, text: &str, c: Rect, color: [f32; 4]| {
                         let x = at(c);
-                        pc.text_with_bounds(text, x, ty, ROW_SIZE, color, Some([x, ty - ROW_SIZE, x + c.width, ty + 2.0 * ROW_SIZE]));
+                        pc.text_with(text, x, ty, ROW_SIZE, crate::app::rgb(color), None, Some([x, ty - ROW_SIZE, x + c.width, ty + 2.0 * ROW_SIZE]));
                     };
                     cell(pc, &p.pid, c_pid, fg);
                     cell(pc, &p.command, c_cmd, fg);
@@ -431,12 +430,12 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     }
                 }
             }
-            pc.pop_clip_rect();
+            pc.pop_clip();
             // The scrollbar's fore copy, over the rows at the raise's fade.
-            cpu_list.push_scrollbar_fore(pc);
+            cpu_list.push_scrollbar_fore(pc.as_mut());
 
             if processes.is_empty() {
-                pc.text("No active processes", list_box_x + gap, list_box_y + header_h + gap, 12.0, TEXT_DIM);
+                pc.text("No active processes", list_box_x + gap, list_box_y + header_h + gap, 12.0, crate::app::rgb(TEXT_DIM));
             }
         });
         sec.place(form, ctx);
@@ -601,18 +600,18 @@ mod tests {
             .buttons
             .iter()
             .enumerate()
-            .filter(|(_, (_, a, _))| matches!(a, AppAction::Processes(ProcessesMessage::Kill(_))))
+            .filter(|(_, b)| matches!(b.action, AppAction::Processes(ProcessesMessage::Kill(_))))
             .map(|(i, _)| i)
             .collect();
         // One Kill button per row except the pending one (pid 2).
-        assert_eq!(kills.len(), 2, "{:?}", pc.buttons.iter().map(|(_, a, _)| a).collect::<Vec<_>>());
+        assert_eq!(kills.len(), 2, "{:?}", pc.buttons.iter().map(|b| &b.action).collect::<Vec<_>>());
         // Ordering invariant the dispatch relies on: each Kill comes after
         // its row's hover button — the last one clicked wins, so Kill must be later.
         let rows: Vec<usize> = pc
             .buttons
             .iter()
             .enumerate()
-            .filter(|(_, (_, a, _))| matches!(a, AppAction::Processes(ProcessesMessage::None)))
+            .filter(|(_, b)| matches!(b.action, AppAction::Processes(ProcessesMessage::None)))
             .map(|(i, _)| i)
             .collect();
         assert!(kills[0] > rows[0]);
@@ -706,7 +705,7 @@ mod tests {
         let sorts: Vec<ProcSort> = pc
             .buttons
             .iter()
-            .filter_map(|(_, a, _)| match a {
+            .filter_map(|b| match &b.action {
                 AppAction::Processes(ProcessesMessage::SortBy(k)) => Some(*k),
                 _ => None,
             })
@@ -784,9 +783,9 @@ mod tests {
                 assert!(t.x >= b[0], "{:?} starts at {} left of its clip {}", t.text, t.x, b[0]);
             }
         }
-        for (b, a, clip) in &pc.buttons {
-            if let Some(c) = clip {
-                assert!(cce_ui::widget::WidgetHost::base(b).x >= c[0], "{a:?} starts left of its clip");
+        for b in &pc.buttons {
+            if let Some(c) = b.clip {
+                assert!(cce_ui::widget::WidgetHost::base(&b.button).x >= c.x, "{:?} starts left of its clip", b.action);
             }
         }
     }
@@ -802,10 +801,10 @@ mod tests {
         let mut ctx = cce_ui::context::UiContext::new();
         let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx);
         let rows_bottom = state.cpu_list.viewport_y + state.cpu_list.viewport_h;
-        for (_, a, clip) in &pc.buttons {
-            if matches!(a, AppAction::Processes(ProcessesMessage::Kill(_))) {
-                let c = clip.expect("rows are clipped");
-                assert_eq!(c[1] + c[3], rows_bottom);
+        for b in &pc.buttons {
+            if matches!(b.action, AppAction::Processes(ProcessesMessage::Kill(_))) {
+                let c = b.clip.expect("rows are clipped");
+                assert_eq!(c.y + c.height, rows_bottom);
             }
         }
     }

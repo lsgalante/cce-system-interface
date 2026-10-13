@@ -63,10 +63,10 @@ impl StorageState {
         Self {
             backup_button: ctx.insert(
                 cce_ui::widget::Button::new(0.0, 0.0, 0.0, 32.0)
-                    // Flat fill + border, not the SDF bevel: PageContent's RenderTarget
-                    // has no `bevel`, so a raised plate silently draws nothing here
-                    // (the label renders, the plate does not). The border path is also
-                    // what carries the keyboard focus ring.
+                    // Flat fill + border, not a control plate: the border path is
+                    // what carries the keyboard focus ring. (Chosen when this page's
+                    // flat host could draw no raised plate; kept, as the look the
+                    // page has.)
                     .with_raised(false)
                     .with_label("Run Backup")
                     .with_bg(BTN_BG)

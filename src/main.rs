@@ -3,7 +3,7 @@ use cce_ui::cosmic_text::{Buffer, FontSystem};
 use cce_ui::scene::layout::Rect;
 use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim};
 
-use cce_settings::app::{AppAction, AppState};
+use cce_settings::app::{AppAction, AppState, PageButton};
 use cce_settings::pages::{self, Page};
 mod input_handler;
 mod renderer;
@@ -21,34 +21,23 @@ fn make_text_buffer_with_font(
     cce_ui::backend::get_text_buffer(fs, text, size, font)
 }
 
-/// A page button's dispatch clone: the context's copy of a button the page
-/// drew, at its rect in the window (cut to its clip and the page's band), with
-/// what a click on it does.
-pub(crate) struct PageButton {
-    pub handle: Handle<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
-    pub action: AppAction,
-    /// Whether the pointer was over it at the rebuild that drew its face —
-    /// the move handler rebuilds when this goes stale, which is how a page
-    /// button lights under the pointer.
-    pub hovered: bool,
-}
-
-/// The page's geometry, emitted under the scroll (`dy`): its fills cut to
-/// `fill_band`, everything else (carves, plates) to `view`. The two are the
-/// same rect but while the search band is open — the page view then stops
-/// 42px higher, and the strip between kept showing the page's fills (and its
-/// text) but none of its carves, as it always has.
-fn emit_page_geo(pc: &mut PaintCtx, list: &DisplayList, dy: f32, fill_band: Rect, view: Rect) {
+/// The page, emitted under the scroll (`dy`): its fills and text cut to
+/// `fill_band`, everything else (carves, wells, plates, glyphs) to `view`.
+/// The two are the same rect but while the search band is open — the page
+/// view then stops 42px higher, and the strip between kept showing the page's
+/// fills and text but none of its carves, as it always has. A fill is what
+/// `PageLayers::fills` counts.
+fn emit_page(pc: &mut PaintCtx, list: &DisplayList, dy: f32, fill_band: Rect, view: Rect) {
     if fill_band == view {
         pc.clip(view, |pc| pc.append_translated(list, 0.0, dy));
         return;
     }
     for item in &list.items {
         let clip = match item.prim {
-            Prim::Quad { .. } | Prim::RoundedRect { .. } => fill_band,
+            Prim::Quad { .. } | Prim::RoundedRect { .. } | Prim::Bevel { .. } | Prim::Text { .. } => fill_band,
             _ => view,
         };
-        pc.clip(clip, |pc| pc.append_items(std::iter::once(item.clone().translated(0.0, dy))));
+        pc.clip(clip, |pc| pc.append_translated(&DisplayList { items: vec![item.clone()] }, 0.0, dy));
     }
 }
 
@@ -61,6 +50,7 @@ struct SystemInterface {
     /// (`renderer::CachedFrame`): the page in page coordinates, under the
     /// scroll; the popovers in window coordinates.
     frame: renderer::CachedFrame,
+    /// The page buttons, in the order the page declared them.
     page_buttons: Vec<PageButton>,
 
     sidebar_width: f32,
@@ -105,16 +95,17 @@ struct SystemInterface {
     // (single-slot with the global widget focus — descending clears it); the per-section
     // widget groups come from AppPage::section_widgets each time they're needed.
     focused_section: Option<usize>,
-    // The page the last `rebuild_layout` actually laid out. Registration is a side effect
-    // of the view pass (`render_widget`), and `clear_hierarchy` wipes the registry each
-    // rebuild — so between a page switch and the next rebuild, the NEW page's
-    // `section_widgets()` ids are not registered and every event to them is dropped with
-    // a router warning. `dispatch_page_event` suppresses dispatch across that gap.
+    // The page the last `rebuild_layout` actually laid out. Between a page switch and the
+    // next rebuild the NEW page's widgets have not been laid out by its view pass (and,
+    // before the context owned them, were not registered either, so every event to them
+    // was dropped with a router warning). `dispatch_page_event` suppresses dispatch across
+    // that gap.
     laid_out_page: Option<Page>,
-    /// The rect of the focused widget at the start of a view pass: the page's
-    /// buttons are per-rebuild clones, so the focused id dies with every
-    /// rebuild and the clone at the same rect takes the focus back (lit as it
-    /// is collected, focused at the pass's tail).
+    /// The rect of the focused widget at the start of a view pass: a page
+    /// button the page declares differently this time is a new widget, so the
+    /// focused id can die with a rebuild, and then the widget standing at the
+    /// same rect takes the focus (before the buttons are painted, so the ring
+    /// is drawn on it).
     refocus_rect: Option<(f32, f32, f32, f32)>,
     /// What the last rebuild's widgets claimed for text input (an editing
     /// TextBox, `cce_ui::text_input::capture`). Claimed again every frame:
@@ -379,34 +370,20 @@ impl cce_ui::engine::Application for SystemInterface {
             );
         }
 
-        // The page as the last rebuild recorded it, under the scroll: its
-        // fills and carves in the widgets' OWN order (a TextBox's selection
-        // and caret land on its well, not under its walls), the search's
-        // highlights, the page buttons' faces and plates.
+        // The page as the last rebuild recorded it, under the scroll: in the
+        // order it painted itself (a TextBox's selection and caret land on its
+        // well, a section's well after what it holds), the search's
+        // highlights, the page buttons over it all.
         let view = self.page_view(width, height);
         // The page's band above the status bar, what its fills and text were
         // always cut to (the page view also stops above the search band).
         let page_band = Rect { x: 0.0, y: 0.0, width, height: (height - self.status_height).max(0.0) };
-        let dy = -self.scroll_y;
-        emit_page_geo(&mut pc, &self.frame.geo, dy, page_band, view);
+        emit_page(&mut pc, &self.frame.page, -self.scroll_y, page_band, view);
         // The search band, over the page's foot while open.
         if self.search_open {
             let (x, w) = (self.sidebar_width, width - self.sidebar_width);
             pc.quad(Rect { x, y: height - 42.0, width: w, height: 42.0 }, [0.08, 0.08, 0.12, 1.0]);
             pc.quad(Rect { x, y: height - 42.0, width: w, height: 1.0 }, [0.18, 0.18, 0.24, 1.0]);
-        }
-        // The section wells, carved after the page's flat quads so the walls shade
-        // the fills they cross (the designer relief order), clipped to the page
-        // viewport so a scrolled-off well can't shade the status bar or search row.
-        if !self.frame.wells.is_empty() {
-            pc.clip(view, |pc| pc.append_translated(&self.frame.wells, 0.0, dy));
-        }
-        // The page's glyphs — button icon faces and the page's own — over its
-        // quads and carves, under the page viewport and each under the clip
-        // it was placed with, which is what cuts a half-scrolled list row's
-        // glyph at the list edge.
-        if !self.frame.icons.is_empty() {
-            pc.clip(view, |pc| pc.append_translated(&self.frame.icons, 0.0, dy));
         }
 
         // The window chrome, as it paints itself: the page dropdown in the status bar
@@ -427,19 +404,14 @@ impl cce_ui::engine::Application for SystemInterface {
             }
         }
 
-        // The popovers over everything on the page — their plates and rows in
-        // the widget's own order (the hovered row a Dropdown draws after its
-        // plate lands on the frosted face), then their glyphs.
-        pc.append_translated(&self.frame.popover_geo, 0.0, 0.0);
-        pc.append_translated(&self.frame.popover_icons, 0.0, 0.0);
+        // The popovers over everything on the page, each as it drew itself
+        // (the hovered row a Dropdown draws after its plate lands on the
+        // frosted face).
+        pc.append_translated(&self.frame.popovers, 0.0, 0.0);
         // The context menu last, over everything: the toolkit's lit plate,
         // its rows and its labels in the menu font, with the row marks and
         // page chevrons as cce-icons glyphs.
         cce_ui::widget::context_menu::paint_with_labels(&mut pc);
-        // The page's text, under the scroll and cut to the page's band, then
-        // the popovers' (the glyph pass draws all text after all geometry).
-        pc.clip(page_band, |pc| pc.append_translated(&self.frame.text, 0.0, dy));
-        pc.append_translated(&self.frame.popover_text, 0.0, 0.0);
         if let Some([x, y, w, h]) = self.text_claim {
             cce_ui::text_input::claim(x, y, w, h);
         }
@@ -503,8 +475,9 @@ impl cce_ui::engine::Application for SystemInterface {
     }
 
     /// The geometry is cached until the next rebuild — a moved focus ring needs
-    /// one. The view pass itself carries the focus across the button clones it
-    /// makes (see `refocus_rect`), on every rebuild.
+    /// one. A page button keeps its widget, and so its focus, while the page
+    /// declares it the same way; the view pass carries the focus to a
+    /// re-declared one (see `refocus_rect`).
     fn focus_stepped(&mut self) {
         self.needs_rebuild = true;
     }
@@ -529,6 +502,26 @@ impl SystemInterface {
             height: (height - self.header_height - self.status_height
                 - if self.search_open { 42.0 } else { 0.0 }).max(0.0),
         }
+    }
+
+    /// Where the window point `(x, y)` falls for page button `b`: the page
+    /// point under it, or `None` where the button cannot be reached — off the
+    /// page's band (under the status bar) or outside the clip the button was
+    /// painted under (a list row half scrolled out of its list).
+    pub(crate) fn page_button_point(&self, b: &PageButton, x: f32, y: f32) -> Option<(f32, f32)> {
+        let band = y >= 0.0 && y <= self.height as f32 - self.status_height;
+        let (px, py) = (x, y + self.scroll_y);
+        let in_clip = b.clip.is_none_or(|c| px >= c.x && px <= c.x + c.width && py >= c.y && py <= c.y + c.height);
+        (band && in_clip).then_some((px, py))
+    }
+
+    /// Whether the window point `(x, y)` is over page button `b` as it shows.
+    pub(crate) fn page_button_over(&self, b: &PageButton, x: f32, y: f32) -> bool {
+        use cce_ui::widget::WidgetHost;
+        self.page_button_point(b, x, y).is_some_and(|(px, py)| {
+            let (bx, by, bw, bh) = self.ui_context[b.handle].rect();
+            px >= bx && px <= bx + bw && py >= by && py <= by + bh
+        })
     }
 
 

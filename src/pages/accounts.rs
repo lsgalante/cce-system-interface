@@ -2,7 +2,6 @@ use crate::app::{form_button, form_divider, form_pairs, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::widget::TextBox;
@@ -676,8 +675,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
                 list.set_rect(list_x, list_y, list_w, list_h);
                 list.update_bounds(accounts.len(), list_y, list_h);
-                list.push_prims(pc);
-                pc.push_clip_rect(list_x, list_y, list_w, list_h);
+                list.push_prims(pc.as_mut());
+                pc.push_clip(crate::app::rect(list_x, list_y, list_w, list_h));
                 for (idx, acc) in accounts.iter().enumerate() {
                     // Same predicate the region virtualizes on — a row scrolled out
                     // of the box is not emitted at all.
@@ -726,17 +725,17 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                             + crate::app::text_width(&acc.email, size, Some(&font));
                         for (icon, word, color) in marks {
                             mx += gap;
-                            if pc.icon(icon, mx, draw_y + (item_h - g) / 2.0, g, g, *color) {
+                            if pc.icon(icon, crate::app::rect(mx, draw_y + (item_h - g) / 2.0, g, g), *color) {
                                 mx += g + gap / 2.0;
                             }
-                            pc.text_with_font(word, mx, ty, size, TEXT_BTN, &font);
+                            pc.text_with(*word, mx, ty, size, crate::app::rgb(TEXT_BTN), Some(font.clone()), None);
                             mx += crate::app::text_width(word, size, Some(&font));
                         }
                     }
                 }
-                pc.pop_clip_rect();
+                pc.pop_clip();
                 // The scrollbar's fore copy, over the rows at the raise's fade.
-                list.push_scrollbar_fore(pc);
+                list.push_scrollbar_fore(pc.as_mut());
             });
         }
 
@@ -1319,7 +1318,8 @@ mod tests {
         let mut layout = PageFlow::new();
         let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
         println!("PC BUTTONS COUNT: {}", pc.buttons.len());
-        for (i, (btn, _, _)) in pc.buttons.iter().enumerate() {
+        for (i, b) in pc.buttons.iter().enumerate() {
+            let btn = &b.button;
             let base = btn.base();
             println!(
                 "Button {}: label={:?}, x={}, y={}, w={}, h={}, bg={:?}, hover_bg={:?}, label_color={:?}",
@@ -1348,7 +1348,7 @@ mod tests {
         let add = pc
             .buttons
             .iter()
-            .map(|(b, _, _)| b.base())
+            .map(|b| b.button.base())
             .find(|b| b.label.as_deref() == Some("Add Account"))
             .expect("Add Account button is painted");
         assert!(
@@ -1374,7 +1374,7 @@ mod tests {
         let rows = pc
             .buttons
             .iter()
-            .filter(|(b, _, _)| b.base().label.as_deref().is_some_and(|l| l.starts_with("a")))
+            .filter(|b| b.button.base().label.as_deref().is_some_and(|l| l.starts_with("a")))
             .count();
         assert!(
             rows > 0 && rows <= LIST_MAX_ROWS + 2,

@@ -1,7 +1,6 @@
 use crate::SystemInterface;
 use cce_settings::app::AppAction;
 use cce_settings::pages::Page;
-use cce_ui::widget::WidgetHost;
 
 /// App shortcuts, resolved once per process from input.kdl
 /// (`cce-system-interface` domain → `cce-ui` domain).
@@ -120,14 +119,10 @@ impl SystemInterface {
 
         let t_dispatch = hov_t0.map(|s| s.elapsed().as_micros());
 
-        // A page button's face is drawn lit or not at the rebuild (they are
-        // the only page geometry with a hover face): rebuild when the pointer
-        // crossed one's edge since.
-        let stale = self.page_buttons.iter().any(|b| {
-            let base = self.ui_context[b.handle].base();
-            let over = x >= base.x && x <= base.x + base.w && y >= base.y && y <= base.y + base.h;
-            over != b.hovered
-        });
+        // A page button's face is painted lit or not at the rebuild (the
+        // page is cached until the next one): rebuild when the pointer
+        // crossed one's edge since — or a scroll carried one under it.
+        let stale = self.page_buttons.iter().any(|b| self.page_button_over(b, x, y) != b.hovered);
         if stale {
             changed = true;
         }
@@ -199,14 +194,22 @@ impl SystemInterface {
 
         if button != cce_ui::widget::MouseButton::Left && button != cce_ui::widget::MouseButton::Right { return false; }
 
-        let phys_x = self.cursor_x;
-        let phys_y = self.cursor_y;
-
+        // The page buttons, in page coordinates. Every one sees the event —
+        // a release has to reach the button it was pressed on wherever it
+        // lands — but where a button cannot be reached (under the status bar,
+        // outside the clip it was painted under) the point is somewhere no
+        // button is, so a press there misses it and a release cancels it.
         let mut button_handled = false;
-        let btn_ev = cce_ui::widget::Event::MouseButton { button, state, x: phys_x, y: phys_y, local_x: phys_x, local_y: phys_y };
-        let btn_roots: Vec<_> = self.page_buttons.iter().map(|b| b.handle.id()).collect();
-        for root in btn_roots {
-            if self.ui_context.propagate_event(&btn_ev, root) {
+        let btn_events: Vec<_> = self
+            .page_buttons
+            .iter()
+            .map(|b| {
+                let (px, py) = self.page_button_point(b, self.cursor_x, self.cursor_y).unwrap_or((-1.0e6, -1.0e6));
+                (b.handle.id(), cce_ui::widget::Event::MouseButton { button, state, x: px, y: py, local_x: px, local_y: py })
+            })
+            .collect();
+        for (root, ev) in btn_events {
+            if self.ui_context.propagate_event(&ev, root) {
                 button_handled = true;
             }
         }
@@ -375,19 +378,15 @@ impl SystemInterface {
 
     /// Move the page to `new_scroll_y` WITHOUT a rebuild — the wheel fast
     /// path. The page is cached in page coordinates and drawn under
-    /// `scroll_y`, so the offset is all that moves, with the page buttons'
-    /// dispatch clones (window coordinates) and the scrollbar thumb
+    /// `scroll_y`, and its widgets (the page buttons too) live in page
+    /// coordinates, so the offset is all that moves, with the scrollbar thumb
     /// (display_list emits the bar fresh each frame from this state). False
     /// when the offset did not actually change.
     pub(crate) fn shift_page_to(&mut self, new_scroll_y: f32) -> bool {
-        let actual_dy = new_scroll_y - self.scroll_y;
-        if actual_dy.abs() <= 0.01 {
+        if (new_scroll_y - self.scroll_y).abs() <= 0.01 {
             return false;
         }
         self.scroll_y = new_scroll_y;
-        for b in &self.page_buttons {
-            self.ui_context[b.handle].base_mut().y -= actual_dy;
-        }
         self.ui_context[self.page_scroll_bar].scroll_y = self.scroll_y;
         true
     }

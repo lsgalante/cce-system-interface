@@ -6,8 +6,7 @@ use crate::app::{button_need, form_button, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
-use cce_ui::compose::{lay_row, render_widget_h, Cell, PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
+use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{StatusDot, DotStatus, InteractiveListItem, TextBox};
 
@@ -509,10 +508,10 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             let (list_box_x, list_box_y, list_box_w, list_box_h) = (rect.x, rect.y, rect.width, rect.height);
             list.set_rect(list_box_x, list_box_y, list_box_w, list_box_h);
             list.update_bounds(filtered.len(), list_box_y, list_box_h);
-            list.push_prims(pc);
+            list.push_prims(pc.as_mut());
             let item_h = list.item_height;
 
-            pc.push_clip_rect(list_box_x, list_box_y, list_box_w, list_box_h);
+            pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, list_box_h));
                 for (idx, timer) in filtered.iter().enumerate() {
                     if let Some(draw_y) = list.get_item_draw_y(idx, 4.0) {
                         let is_small = sec_w < 350.0;
@@ -562,14 +561,14 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                         item_btn.title = timer.unit.clone();
                         item_btn.subtitle = Some(subtitle);
                         // Cut at its cell, so a long schedule stops short of the buttons.
-                        pc.push_clip_rect(item_rect.x, item_rect.y, item_rect.width, item_rect.height);
-                        render_widget_h(pc, item, item_rect.x, item_rect.y, item_rect.width, item_rect.height, ctx);
-                        pc.pop_clip_rect();
+                        pc.push_clip(item_rect);
+                        crate::app::place_and_paint(pc, item, item_rect, ctx);
+                        pc.pop_clip();
 
                         let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
                         // Drawn this frame only: out of the context once it is placed.
                         let dot = ctx.insert(StatusDot::new(dot_state));
-                        render_widget_h(pc, dot, dot_rect.x, dot_rect.y, dot_rect.width, dot_rect.height, ctx);
+                        crate::app::place_and_paint(pc, dot, dot_rect, ctx);
                         ctx.remove(dot);
 
                         let active_txt = [0.90, 0.90, 0.95, 1.0];
@@ -647,18 +646,18 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                                 );
                             }
                             _ => {
-                                pc.text("static", en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, 11.0, None), 11.0, TEXT_DIM);
+                                pc.text("static", en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, 11.0, None), 11.0, crate::app::rgb(TEXT_DIM));
                             }
                         }
                     }
                 }
-            pc.pop_clip_rect();
+            pc.pop_clip();
             // The scrollbar's fore copy, over the rows at the raise's fade.
-            list.push_scrollbar_fore(pc);
+            list.push_scrollbar_fore(pc.as_mut());
 
             if filtered.is_empty() {
                 let inset = cce_ui::layout::plate_padding();
-                pc.text("No timers in this scope", list_box_x + inset, list_box_y + inset, 12.0, TEXT_DIM);
+                pc.text("No timers in this scope", list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
             }
         });
         sec.place(form, ctx);

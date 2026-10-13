@@ -3,7 +3,6 @@ use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::widget::ScrollRegion;
 use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::scene::layout::Rect;
 use cce_ui::widget::{Adapted, Toggle};
 
@@ -227,13 +226,13 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                     // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
                     list.set_rect(r.x, r.y, r.width, r.height);
                     list.update_bounds(available.len(), r.y, r.height);
-                    list.push_prims(pc);
+                    list.push_prims(pc.as_mut());
 
                     let row_h = list.item_height;
                     let btn_w = r.width - 2.0 * cce_ui::layout::list_gap();
                     let max_chars = ((btn_w / 6.5) as usize).saturating_sub(10).max(5);
 
-                    pc.push_clip_rect(r.x, r.y, r.width, r.height);
+                    pc.push_clip(r);
                     for (idx, net) in available.iter().enumerate() {
                         if let Some(draw_y) = list.get_item_draw_y(idx, 4.0) {
                             let ssid_truncated = if net.ssid.len() > max_chars {
@@ -255,14 +254,14 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, root_f
                             // and a glyph in it all but vanishes there.
                             if active {
                                 let g = 12.0;
-                                pc.icon("check", row_x + cce_ui::layout::CONTROL_TEXT_INSET,
-                                    draw_y + (row_h - g) / 2.0, g, g, TEXT_FG);
+                                pc.icon("check", crate::app::rect(row_x + cce_ui::layout::CONTROL_TEXT_INSET,
+                                    draw_y + (row_h - g) / 2.0, g, g), TEXT_FG);
                             }
                         }
                     }
-                    pc.pop_clip_rect();
+                    pc.pop_clip();
                     // The scrollbar's fore copy, over the rows at the raise's fade.
-                    list.push_scrollbar_fore(pc);
+                    list.push_scrollbar_fore(pc.as_mut());
                 });
             }
         }

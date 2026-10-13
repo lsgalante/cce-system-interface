@@ -2,7 +2,6 @@ use crate::app::{form_button, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::widget::{Adapted, Toggle};
 
 #[derive(Debug, Clone)]
@@ -230,11 +229,11 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
                         r.draw(0.0, line_h, true, move |pc, cell, _| {
                             let g = font_size;
                             if connected {
-                                pc.icon("check", cell.x, cell.y + (line_h - g) / 2.0, g, g, ACCENT);
+                                pc.icon("check", crate::app::rect(cell.x, cell.y + (line_h - g) / 2.0, g, g), ACCENT);
                             }
                             let tx = cell.x + g + cce_ui::layout::CONTROL_TEXT_INSET;
                             let color = if connected { ACCENT } else { TEXT_FG };
-                            pc.text_with_bounds(&label, tx, cell.y, font_size, color,
+                            pc.text_with(label, tx, cell.y, font_size, crate::app::rgb(color), None,
                                 Some([tx, cell.y - font_size, cell.x + cell.width, cell.y + 2.0 * font_size]));
                         });
                     });

@@ -1,6 +1,5 @@
 use cce_ui::scene::layout::Rect;
-use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim, RenderTarget};
-use cce_ui::scene::Material;
+use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim};
 
 use crate::pages::audio;
 use crate::pages::bluetooth;
@@ -157,62 +156,112 @@ pub fn label_y_in(y: f32, h: f32, size: f32, font: Option<&str>) -> f32 {
     y + (h - lh) / 2.0
 }
 
-/// A page as its view pass records it: three recording layers in PAGE
-/// coordinates (before the scroll), plus the page's buttons and its section
-/// wells. `finish` hands the layers over as display lists; the host keeps them
-/// until the next rebuild and emits them every frame under the scroll offset
-/// (`PaintCtx::append_translated`), so a scroll moves the page without a
-/// rebuild.
+/// A page as its view pass paints it: ONE display list in call order, in
+/// PAGE coordinates (before the scroll) — each section's title, its content
+/// as the widgets paint themselves (`cce_ui::compose` places and paints them,
+/// `place_and_paint` the rows a list draws), and its well, carved by the
+/// section's `finish` — plus the page buttons declared on it. The host keeps
+/// the finished list until the next rebuild and emits it every frame under
+/// the scroll offset (`PaintCtx::append_translated`), so a scroll moves the
+/// page without a rebuild.
 ///
-/// A widget reaches it through the toolkit's flat-host replay
-/// (`compose::render_widget`, which `Form::widget_h` runs): every `RenderTarget`
-/// call lands as a real prim, in the order the widget made it. A clip
-/// (`push_clip_rect`) is a scissor on all three layers, as it is on a
-/// `PaintCtx`: what it cuts is cut square at the clip, not shrunk to it —
-/// except a control's carves, which take none (see `PageContent::carve`).
+/// A thin wrapper: the page's `PaintCtx`, which it dereferences to (and is
+/// `AsMut` of, for `compose`), and the [`PageButtonSpec`]s. A page button is
+/// declared here, not painted: the host keeps a widget for each and paints it
+/// into the page's list where it was declared, under the clip in force there.
 ///
-/// Until 2026-10-12 this was tuple vectors (rects shrunk to the innermost
-/// clip, texts with the clip folded into their bounds, carves and the marks
-/// that said where each fell between the rects) that the host flattened again
-/// into its own tuples every rebuild and shifted in place on a scroll.
+/// Until 2026-10-12 this was tuple vectors the host flattened again every
+/// rebuild; until 2026-10-13, three recording layers (geometry, text,
+/// glyphs) a toolkit bridge replayed each widget onto, losing what the flat
+/// surface could not say (grooves, bevels, per-corner radii, the widgets'
+/// own clips).
 pub struct PageContent {
-    /// Fills and carves — the page's own rects, each widget's replayed quads,
-    /// rounded rects and borders, a Dropdown's inset plate, a TextBox's well,
-    /// a Toggle's steps — in the order they were drawn, so a TextBox's
-    /// selection and caret land on its well rather than under its walls.
-    geo: PaintCtx,
-    /// The text runs. Drawn in the glyph pass after all geometry wherever
-    /// they sit in a list, so they are a layer of their own: the search dims
-    /// and lights them as one.
-    text: PaintCtx,
-    /// The glyphs: [`PageContent::icon`] (a sort chevron, a row's in-use
-    /// check) and a widget's own through `RenderTarget::icon` (a Dropdown's
-    /// chevron). The host draws them over the section wells.
-    icons: PaintCtx,
-    /// (button, action, clip): clip is the innermost `push_clip_rect` at
-    /// emission time (page coords, `[x, y, w, h]`) — the host cuts the drawn
-    /// face, label bounds and the dispatch clone's hit rect to it.
-    pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction, Option<[f32; 4]>)>,
-    /// Section wells claimed via `RenderTarget::section_relief` — the body box
-    /// plus the title tab box (page coordinates), carved into the window
-    /// plate by the host after the page's geometry.
-    pub reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
-    /// The clips pushed and not yet popped, as pushed — what `carve` lifts
-    /// off the geometry layer and puts back.
-    clips: Vec<Rect>,
+    pc: PaintCtx,
+    pub buttons: Vec<PageButtonSpec>,
 }
 
-/// A finished [`PageContent`]: its layers as display lists, still in page
-/// coordinates, and what the host builds the rest of the page from.
+/// A button a page declared ([`PageContent::button`] and its siblings): the
+/// button as made, what a click on it does, where in the page's list it was
+/// declared and the clip in force there (page coordinates) — where and under
+/// what the host paints it, and what a click outside it misses — and what it
+/// was made from.
+#[derive(Clone)]
+pub struct PageButtonSpec {
+    pub button: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    pub action: AppAction,
+    /// The page list's length when it was declared: the host paints it there,
+    /// over what the page drew before it and under what it drew after (a
+    /// glyph the page puts on a row, the list's raised scrollbar).
+    pub at: usize,
+    pub clip: Option<Rect>,
+    /// Everything the button was made from but its rect, its action
+    /// included: while a page declares a button with the same key, the host
+    /// keeps the widget it made for it (its focus, its press) and only moves
+    /// it. An icon's key carries the uploaded image's id, so a renderer
+    /// rebuild, which hands out new ids, makes a new widget.
+    pub key: String,
+}
+
+/// A page button as the host keeps it: the widget the context holds for a
+/// button the page declared, in PAGE coordinates like the page's other
+/// widgets, with what a click on it does.
+pub struct PageButton {
+    pub handle: cce_ui::widget::Handle<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
+    pub action: AppAction,
+    /// Where in the page's list it is painted ([`PageButtonSpec::at`]).
+    pub at: usize,
+    /// The clip it was declared under (page coordinates): it is painted cut
+    /// to it, and a point outside it misses the button.
+    pub clip: Option<Rect>,
+    /// What it was made from ([`PageButtonSpec::key`]): the next rebuild
+    /// keeps this widget for a button declared the same way.
+    pub key: String,
+    /// Whether the pointer was over it at the rebuild that painted it — the
+    /// host's move handler rebuilds when this goes stale, which is how a page
+    /// button lights under the pointer.
+    pub hovered: bool,
+}
+
+/// Bring the page buttons in `ctx` in line with what a page declared this
+/// rebuild, in the order it declared them: a button declared as before (the
+/// same key: face, label, colours, action) keeps its widget — its focus, a
+/// press not yet released — moved to where it was declared now; a new one
+/// gets a widget; one the page no longer declares loses its. A button its
+/// clip leaves nothing of gets none.
+pub fn sync_page_buttons(buttons: &mut Vec<PageButton>, specs: Vec<PageButtonSpec>, ctx: &mut cce_ui::context::UiContext) {
+    use cce_ui::widget::WidgetHost;
+    let mut old: Vec<Option<PageButton>> = std::mem::take(buttons).into_iter().map(Some).collect();
+    for spec in specs {
+        let base = spec.button.base();
+        let r = rect(base.x, base.y, base.w, base.h);
+        if let Some(c) = spec.clip {
+            if r.x.max(c.x) >= (r.x + r.width).min(c.x + c.width) || r.y.max(c.y) >= (r.y + r.height).min(c.y + c.height) {
+                continue;
+            }
+        }
+        let kept = old.iter_mut().find(|o| o.as_ref().is_some_and(|b| b.key == spec.key)).and_then(Option::take);
+        let handle = match kept {
+            Some(b) => {
+                ctx[b.handle].set_rect(r.x, r.y, r.width, r.height);
+                b.handle
+            }
+            None => ctx.insert(spec.button),
+        };
+        buttons.push(PageButton { handle, action: spec.action, at: spec.at, clip: spec.clip, key: spec.key, hovered: false });
+    }
+    for b in old.into_iter().flatten() {
+        ctx.remove(b.handle);
+    }
+}
+
+/// A finished [`PageContent`]: the page's list, still in page coordinates,
+/// and its buttons.
 pub struct PageLayers {
-    pub geo: DisplayList,
-    pub text: DisplayList,
-    pub icons: DisplayList,
-    pub buttons: Vec<(cce_ui::widget::Adapted<cce_ui::widget::Button>, AppAction, Option<[f32; 4]>)>,
-    pub reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
+    pub list: DisplayList,
+    pub buttons: Vec<PageButtonSpec>,
 }
 
-/// One text run of a finished page, read back out of its text layer.
+/// One text run of a finished page, read back out of its list.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PageText {
     pub text: String,
@@ -226,96 +275,47 @@ pub struct PageText {
     pub bounds: Option<[f32; 4]>,
 }
 
-/// A text colour as the layers carry it: sRGB bytes, truncated as the
-/// toolkit's flat-host bridge truncates them.
-fn text_rgb(c: [f32; 4]) -> [u8; 3] {
+/// A text colour given as `[r, g, b, a]` in 0..1, as a `PaintCtx` takes it:
+/// sRGB bytes, truncated.
+pub fn rgb(c: [f32; 4]) -> [u8; 3] {
     [(c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8]
 }
 
-fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
+/// A rect from its corner and size.
+pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
     Rect { x, y, width: w, height: h }
+}
+
+/// Place the widget `h` in the block `(x, y, w, h)` and paint it there, as a
+/// `compose::Form` does its widgets: what a page does for the rows of a list
+/// it draws itself.
+pub fn place_and_paint<T: cce_ui::widget::WidgetHost + 'static>(
+    pc: &mut PaintCtx,
+    h: cce_ui::widget::Handle<T>,
+    r: Rect,
+    ctx: &mut cce_ui::context::UiContext,
+) {
+    cce_ui::compose::place_h(h, r.x, r.y, r.width, r.height, ctx);
+    if let Some(w) = ctx.get(h) {
+        cce_ui::widget::painter::paint_root_into(ctx, w, pc);
+    }
 }
 
 impl PageContent {
     pub fn new() -> Self {
-        Self {
-            geo: PaintCtx::new(),
-            text: PaintCtx::new(),
-            icons: PaintCtx::new(),
-            buttons: Vec::new(),
-            reliefs: Vec::new(),
-            clips: Vec::new(),
-        }
+        Self { pc: PaintCtx::new(), buttons: Vec::new() }
     }
 
-    /// The layers, as built. The clips must be balanced.
+    /// The page's list and its buttons. The clips must be balanced.
     pub fn finish(self) -> PageLayers {
-        PageLayers {
-            geo: self.geo.finish(),
-            text: self.text.finish(),
-            icons: self.icons.finish(),
-            buttons: self.buttons,
-            reliefs: self.reliefs,
-        }
+        PageLayers { list: self.pc.finish(), buttons: self.buttons }
     }
 
-    /// The innermost clip, `[x, y, w, h]` — what a button records.
-    fn clip(&self) -> Option<[f32; 4]> {
-        self.geo.current_clip().map(|c| [c.x, c.y, c.width, c.height])
-    }
-
-    /// A fill: a plain quad, or rounded at `radius` on `corners` — a radius
-    /// under 0.1 is no rounding (the host never drew a radius-0 rounded rect).
-    fn fill(&mut self, color: [f32; 4], r: Rect, radius: f32, corners: (bool, bool, bool, bool)) {
-        if radius > 0.1 {
-            self.geo.rounded_rect(r, radius, corners, color);
-        } else {
-            self.geo.quad(r, color);
-        }
-    }
-
-    /// A control's carve (its inset plate, a well, a step), drawn clear of
-    /// the clips: the host cuts it to the page view alone, as it always has.
-    /// A control carves inside its own rect (`layout::carve_inside`), so a
-    /// clip has nothing of it to take — but the scissor truncates a clip's
-    /// fractional left edge and width separately (`dl_batches_2d`), which
-    /// shaved the last physical column off the right rim of every control
-    /// that runs the width of its section.
-    fn carve(&mut self, f: impl FnOnce(&mut PaintCtx)) {
-        for _ in &self.clips {
-            self.geo.pop_clip();
-        }
-        f(&mut self.geo);
-        for &r in &self.clips {
-            self.geo.push_clip(r);
-        }
-    }
-
-    fn run(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: Option<&str>, bounds: Option<[f32; 4]>) {
-        self.text.text_with(content, x, y, size, text_rgb(color), font.map(str::to_string), bounds);
-    }
-
-    pub fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.fill(color, rect(x, y, w, h), 0.0, (true, true, true, true));
-    }
-
-    pub fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.run(content, x, y, size, color, None, None);
-    }
-
-    pub fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        self.run(content, x, y, size, color, Some(font), None);
-    }
-
-    /// A bundled cce-icons glyph at (x, y, w, h), tinted `color` as a text
-    /// colour is (raw sRGB, alpha = the image's) — the ONE way a page draws a
-    /// symbol, never a character in whatever face the font falls back to.
-    /// Rasterized at twice the rect's longer side for a 2x output.
-    ///
-    /// `false` when the icon set lacks the glyph, so the caller can say it
-    /// in a WORD instead.
-    pub fn icon(&mut self, name: &str, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> bool {
-        self.icons.icon(name, rect(x, y, w, h), color)
+    /// Declare a button, under the clip in force.
+    fn declare(&mut self, button: cce_ui::widget::Adapted<cce_ui::widget::Button>, action: AppAction, made_of: String) {
+        let key = format!("{made_of}|{action:?}");
+        let (at, clip) = (self.pc.len(), self.pc.current_clip());
+        self.buttons.push(PageButtonSpec { button, action, at, clip, key });
     }
 
     pub fn button(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -326,8 +326,7 @@ impl PageContent {
             .with_bg(bg)
             .with_hover_bg(hover_bg)
             .with_label_color(label_color);
-        let clip = self.clip();
-        self.buttons.push((btn, action, clip));
+        self.declare(btn, action, format!("label|{label}|{bg:?}|{hover_bg:?}|{label_color:?}"));
     }
 
     /// A button whose face is a bundled cce-icons glyph instead of a label.
@@ -348,11 +347,11 @@ impl PageContent {
             .with_label_color(label_color);
         // 32px on the longer side: the toolkit caches the upload per (name, px),
         // so every row's Start button shares one texture.
-        if let Some((id, iw, ih)) = cce_ui::upload_icon(icon, 32) {
+        let image = cce_ui::upload_icon(icon, 32);
+        if let Some((id, iw, ih)) = image {
             btn = btn.with_icon(id, iw as f32, ih as f32).with_icon_alpha(alpha);
         }
-        let clip = self.clip();
-        self.buttons.push((btn, action, clip));
+        self.declare(btn, action, format!("icon|{icon}|{image:?}|{label}|{bg:?}|{hover_bg:?}|{label_color:?}|{alpha}"));
     }
 
     /// A row of a list, in the toolkit's list style (`Button::new_list_row`,
@@ -360,13 +359,12 @@ impl PageContent {
     /// transparent until hovered, the shared row wash. A plain [`button`]
     /// with a transparent face is NOT that — under `control_relief` it still
     /// gets a control plate, edges only, so every idle row of a list wore a
-    /// carved ring. No colours to pass: the renderer asks the row for its own.
+    /// carved ring. No colours to pass: the row asks for its own.
     ///
     /// [`button`]: PageContent::button
     pub fn list_row(&mut self, x: f32, y: f32, w: f32, h: f32, action: AppAction) {
         let btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
-        let clip = self.clip();
-        self.buttons.push((btn, action, clip));
+        self.declare(btn, action, "row".to_string());
     }
 
     /// [`button_icon`](Self::button_icon) with the glyph tinted
@@ -381,11 +379,11 @@ impl PageContent {
             .with_bg(bg)
             .with_hover_bg(hover_bg)
             .with_label_color(label_color);
-        if let Some((id, iw, ih)) = cce_ui::upload_icon_tinted(icon, 32, cce_ui::icon_tint(label_color)) {
+        let image = cce_ui::upload_icon_tinted(icon, 32, cce_ui::icon_tint(label_color));
+        if let Some((id, iw, ih)) = image {
             btn = btn.with_icon(id, iw as f32, ih as f32).with_icon_alpha(label_color[3]);
         }
-        let clip = self.clip();
-        self.buttons.push((btn, action, clip));
+        self.declare(btn, action, format!("tinted|{icon}|{image:?}|{label}|{bg:?}|{hover_bg:?}|{label_color:?}"));
     }
 
     pub fn button_left(&mut self, label: &str, x: f32, y: f32, w: f32, h: f32,
@@ -397,8 +395,7 @@ impl PageContent {
             .with_hover_bg(hover_bg)
             .with_label_color(label_color)
             .with_left_align(true);
-        let clip = self.clip();
-        self.buttons.push((btn, action, clip));
+        self.declare(btn, action, format!("left|{label}|{bg:?}|{hover_bg:?}|{label_color:?}"));
     }
 }
 
@@ -408,104 +405,37 @@ impl Default for PageContent {
     }
 }
 
-/// The flat-host surface the toolkit's replay and `compose` draw a page
-/// through. Every call becomes a prim on a layer; `line`, `arc` and `circle`
-/// keep the trait's no-op (this host never drew them — a widget's strokes
-/// arrive with Stage B's real widget paint).
-impl RenderTarget for PageContent {
-    fn icon(&mut self, name: &str, r: Rect, color: [f32; 4]) {
-        self.icons.icon(name, r, color);
+impl std::ops::Deref for PageContent {
+    type Target = PaintCtx;
+    fn deref(&self) -> &PaintCtx {
+        &self.pc
     }
+}
 
-    fn rect(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32) {
-        self.fill(color, rect(x, y, w, h), 0.0, (true, true, true, true));
+impl std::ops::DerefMut for PageContent {
+    fn deref_mut(&mut self) -> &mut PaintCtx {
+        &mut self.pc
     }
+}
 
-    fn rect_with_radius(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32) {
-        self.fill(color, rect(x, y, w, h), radius, (true, true, true, true));
-    }
-
-    fn rect_with_radius_corners(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, corners: (bool, bool, bool, bool)) {
-        self.fill(color, rect(x, y, w, h), radius, corners);
-    }
-
-    fn text(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4]) {
-        self.run(content, x, y, size, color, None, None);
-    }
-
-    fn text_with_font(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str) {
-        self.run(content, x, y, size, color, Some(font), None);
-    }
-
-    fn text_with_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], bounds: Option<[f32; 4]>) {
-        self.run(content, x, y, size, color, None, bounds);
-    }
-
-    fn text_with_font_and_bounds(&mut self, content: &str, x: f32, y: f32, size: f32, color: [f32; 4], font: &str, bounds: Option<[f32; 4]>) {
-        self.run(content, x, y, size, color, Some(font), bounds);
-    }
-
-    fn section_relief_style(&self) -> bool {
-        cce_ui::layout::control_relief()
-    }
-
-    /// A Dropdown's or a Button's flush inset trough, carved for real where
-    /// the widget drew it.
-    fn inset_plate(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32) {
-        let face = Material::face(color);
-        self.carve(|geo| geo.inset_plate(rect(x, y, w, h), (radius, radius, radius, radius), face.as_ref(), depth));
-    }
-
-    /// [`inset_plate`](RenderTarget::inset_plate) with the rim lit — a
-    /// focused control.
-    fn inset_plate_tinted(&mut self, color: [f32; 4], x: f32, y: f32, w: f32, h: f32, radius: f32, depth: f32, tint: [f32; 3]) {
-        let face = Material::face(color);
-        self.carve(|geo| geo.inset_plate_tinted(rect(x, y, w, h), (radius, radius, radius, radius), face.as_ref(), depth, tint));
-    }
-
-    /// The step carves — a DIFFERENT shape from an inset plate, not one at
-    /// another rect: a trough is a seam about the boundary with the face left
-    /// level, a well drops the whole interior, a boss raises it.
-    fn relief_carve(&mut self, carve: &cce_ui::scene::paint::ReliefCarve) {
-        self.carve(|geo| geo.carve(carve));
-    }
-
-    fn section_relief(&mut self, f: &cce_ui::scene::paint::SectionFrame) -> bool {
-        // Focused sections keep the legacy green outline (the ctrl-nav feedback);
-        // relief-off styling keeps the outline everywhere.
-        if f.focused || !cce_ui::layout::control_relief() {
-            return false;
-        }
-        self.reliefs.push(((f.x, f.y, f.w, f.h), f.tab));
-        true
-    }
-
-    fn push_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
-        let r = rect(x, y, w, h);
-        self.clips.push(r);
-        self.geo.push_clip(r);
-        self.text.push_clip(r);
-        self.icons.push_clip(r);
-    }
-
-    fn pop_clip_rect(&mut self) {
-        self.clips.pop();
-        self.geo.pop_clip();
-        self.text.pop_clip();
-        self.icons.pop_clip();
+impl AsMut<PaintCtx> for PageContent {
+    fn as_mut(&mut self) -> &mut PaintCtx {
+        &mut self.pc
     }
 }
 
 impl PageLayers {
-    /// Each fill (quad or rounded rect) where it shows: cut to the clip it
-    /// was drawn under, and left out when that clip leaves none of it.
+    /// Each fill where it shows: cut to the clip it was drawn under, and left
+    /// out when that clip leaves none of it. A fill is a quad, a rounded rect
+    /// or a bevel's plate — what a page's extent has always been measured by;
+    /// a control's inset face and the carves are not fills.
     pub fn fills(&self) -> Vec<Rect> {
-        self.geo
+        self.list
             .items
             .iter()
             .filter_map(|item| {
                 let r = match item.prim {
-                    Prim::Quad { rect, .. } | Prim::RoundedRect { rect, .. } => rect,
+                    Prim::Quad { rect, .. } | Prim::RoundedRect { rect, .. } | Prim::Bevel { rect, .. } => rect,
                     _ => return None,
                 };
                 let Some(c) = item.clip else { return Some(r) };
@@ -518,7 +448,7 @@ impl PageLayers {
 
     /// The text runs, in the order they were drawn.
     pub fn texts(&self) -> Vec<PageText> {
-        self.text
+        self.list
             .items
             .iter()
             .filter_map(|item| match &item.prim {
@@ -545,7 +475,7 @@ impl PageLayers {
 
     /// Where each glyph sits.
     pub fn icons(&self) -> Vec<Rect> {
-        self.icons
+        self.list
             .items
             .iter()
             .filter_map(|item| match item.prim {
@@ -560,12 +490,12 @@ impl PageLayers {
     /// count — a control's inset face sits inside the control's own rects.
     pub fn bottom(&self) -> f32 {
         let fills = self.fills().into_iter().map(|r| r.y + r.height);
-        let texts = self.text.items.iter().filter_map(|item| match item.prim {
+        let texts = self.list.items.iter().filter_map(|item| match item.prim {
             Prim::Text { y, font_size, .. } => Some(y + font_size),
             _ => None,
         });
-        let buttons = self.buttons.iter().map(|(btn, _, _)| {
-            let base = cce_ui::widget::WidgetHost::base(btn);
+        let buttons = self.buttons.iter().map(|b| {
+            let base = cce_ui::widget::WidgetHost::base(&b.button);
             base.y + base.h
         });
         fills.chain(texts).chain(buttons).fold(0.0f32, f32::max)
@@ -672,7 +602,7 @@ pub fn form_pairs<'w>(
     col.group(Style::column().cross_align(CrossAlign::Stretch), false, |lines| {
         for (label, label_color, value, value_color) in pairs {
             lines.group(Style::controls_row(), true, |row| {
-                row.draw(label_w, line_h, false, move |pc, r, _| pc.text(&label, r.x, r.y, size, label_color));
+                row.draw(label_w, line_h, false, move |pc, r, _| pc.text(label, r.x, r.y, size, rgb(label_color)));
                 row.lines(wrap_to_width(&value, value_w, size), size, value_color);
             });
         }
@@ -684,71 +614,68 @@ pub fn form_divider(g: &mut cce_ui::compose::FormGroup<'_, '_, PageContent>) {
     g.rule([1.0, 1.0, 1.0, 0.06]);
 }
 
-
 #[cfg(test)]
 mod page_content_tests {
     use super::*;
+    use cce_ui::widget::WidgetHost;
 
-    /// A control's carve lands between the fills it was drawn between — the
-    /// order is the picture (a TextBox's caret on its well, a Dropdown's
-    /// hovered row on its plate) — and a FOCUSED control's lit plate is kept
-    /// like any other. The marks this replaced had no entry for a lit plate,
-    /// so every carve after one slid a place later and the last was dropped.
+    /// A page paints into its one list in call order, and declares its
+    /// buttons beside it: a button is not painted by the page, and it carries
+    /// where it was declared and the clip in force there.
     #[test]
-    fn carves_keep_their_place_and_a_lit_plate_is_kept() {
+    fn a_page_paints_in_call_order_and_declares_its_buttons() {
         let mut pc = PageContent::new();
-        pc.rect([1.0; 4], 0.0, 0.0, 10.0, 10.0);
-        RenderTarget::inset_plate_tinted(&mut pc, [0.0; 4], 0.0, 0.0, 10.0, 10.0, 2.0, 2.0, [0.0, 1.0, 0.0]);
-        RenderTarget::rect_with_radius(&mut pc, [1.0; 4], 0.0, 20.0, 10.0, 10.0, 4.0);
-        RenderTarget::inset_plate(&mut pc, [0.0; 4], 0.0, 20.0, 10.0, 10.0, 2.0, 2.0);
+        pc.quad(rect(0.0, 0.0, 10.0, 10.0), [1.0; 4]);
+        pc.push_clip(rect(0.0, 0.0, 100.0, 50.0));
+        pc.text("a", 5.0, 5.0, 12.0, [255; 3]);
+        pc.button("Go", 0.0, 20.0, 40.0, 20.0, [0.0; 4], [0.0; 4], [1.0; 4], AppAction::Exit);
+        pc.pop_clip();
+        pc.list_row(0.0, 60.0, 40.0, 20.0, AppAction::Wake);
         let layers = pc.finish();
         let kinds: Vec<&str> = layers
-            .geo
+            .list
             .items
             .iter()
             .map(|i| match i.prim {
                 Prim::Quad { .. } => "quad",
-                Prim::RoundedRect { .. } => "rounded",
-                Prim::Field { tint: Some(_), .. } => "lit run",
-                Prim::Field { tint: None, .. } => "run",
+                Prim::Text { .. } => "text",
                 _ => "other",
             })
             .collect();
-        assert_eq!(kinds, ["quad", "lit run", "rounded", "run"]);
+        assert_eq!(kinds, ["quad", "text"], "the buttons are not painted by the page");
+        assert_eq!(layers.buttons[0].clip, Some(rect(0.0, 0.0, 100.0, 50.0)));
+        assert_eq!(layers.buttons[1].clip, None);
+        assert_eq!((layers.buttons[0].at, layers.buttons[1].at), (2, 2), "where they were declared");
+        assert_eq!(layers.bottom(), 80.0, "the row's foot");
     }
 
-    /// A clip is a scissor on the fills and the text, and a fill under one
-    /// counts (for the page's extent) only as far as it shows. A control's
-    /// carve takes no clip, nested or not, and the clips stand again after it.
-    #[test]
-    fn a_clip_cuts_fills_and_text_but_not_carves() {
+    fn declared(label: &str, y: f32, action: AppAction) -> PageButtonSpec {
         let mut pc = PageContent::new();
-        RenderTarget::push_clip_rect(&mut pc, 0.0, 0.0, 100.0, 50.0);
-        pc.rect([1.0; 4], 0.0, 40.0, 10.0, 30.0);
-        RenderTarget::push_clip_rect(&mut pc, 0.0, 0.0, 100.0, 45.0);
-        RenderTarget::relief_carve(&mut pc, &cce_ui::scene::paint::ReliefCarve {
-            kind: cce_ui::scene::paint::CarveKind::Recess { tint: None },
-            x: 0.0,
-            y: 40.0,
-            w: 10.0,
-            h: 10.0,
-            radii: (0.0, 0.0, 0.0, 0.0),
-            depth: 2.0,
-            edges: (true, true, true, true),
-        });
-        RenderTarget::pop_clip_rect(&mut pc);
-        pc.rect([1.0; 4], 0.0, 60.0, 10.0, 30.0);
-        pc.text("a", 5.0, 45.0, 12.0, [1.0; 4]);
-        RenderTarget::pop_clip_rect(&mut pc);
-        pc.text("b", 5.0, 80.0, 12.0, [1.0; 4]);
-        let layers = pc.finish();
-        let clip = Some(Rect { x: 0.0, y: 0.0, width: 100.0, height: 50.0 });
-        let clips: Vec<_> = layers.geo.items.iter().map(|i| i.clip).collect();
-        assert_eq!(clips, [clip, None, clip]);
-        assert_eq!(layers.fills(), [Rect { x: 0.0, y: 40.0, width: 10.0, height: 10.0 }]);
-        let texts = layers.texts();
-        assert_eq!(texts[0].bounds, Some([0.0, 0.0, 100.0, 50.0]));
-        assert_eq!(texts[1].bounds, None);
-        assert_eq!(layers.bottom(), 92.0, "the unclipped text's foot");
+        pc.push_clip(rect(0.0, 0.0, 200.0, 100.0));
+        pc.button(label, 0.0, y, 40.0, 20.0, [0.0; 4], [0.0; 4], [1.0; 4], action);
+        pc.pop_clip();
+        pc.finish().buttons.remove(0)
+    }
+
+    /// A button declared as before keeps its widget, moved; one declared
+    /// differently (its label, or what it does) gets a new widget and the old
+    /// one goes; one its clip leaves nothing of gets none.
+    #[test]
+    fn a_button_declared_as_before_keeps_its_widget() {
+        let mut ctx = cce_ui::context::UiContext::new();
+        let mut buttons = Vec::new();
+        sync_page_buttons(&mut buttons, vec![declared("Go", 10.0, AppAction::Exit), declared("Stop", 40.0, AppAction::Exit)], &mut ctx);
+        let (go, stop) = (buttons[0].handle, buttons[1].handle);
+
+        sync_page_buttons(
+            &mut buttons,
+            vec![declared("Go", 30.0, AppAction::Exit), declared("Stop", 40.0, AppAction::Wake), declared("Off", 150.0, AppAction::Exit)],
+            &mut ctx,
+        );
+        assert_eq!(buttons.len(), 2, "the clipped-out button gets no widget");
+        assert_eq!(buttons[0].handle, go, "declared as before: the same widget");
+        assert_eq!(ctx[go].rect().1, 30.0, "moved to where it was declared now");
+        assert_ne!(buttons[1].handle, stop, "another action: another widget");
+        assert!(ctx.get(stop).is_none(), "the old one is gone");
     }
 }

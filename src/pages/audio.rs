@@ -2,7 +2,6 @@ use crate::app::{form_button, form_divider, AppAction, PageContent};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{PageLayoutBuilder, PageFlow};
-use cce_ui::scene::paint::{RenderTarget};
 use cce_ui::widget::{Spinbox, Slider};
 
 #[derive(Debug, Clone)]
@@ -245,7 +244,7 @@ fn device_row<'w>(
     let line_h = cce_ui::compose::form_line_height(12.0);
     if !active {
         col.row(|r| {
-            r.draw(name_w, line_h, false, move |pc, c, _| pc.text(&name, c.x, c.y, 12.0, TEXT_DIM));
+            r.draw(name_w, line_h, false, move |pc, c, _| pc.text(name, c.x, c.y, 12.0, crate::app::rgb(TEXT_DIM)));
             r.text("inactive", 12.0, TEXT_DIM);
         });
         return;
@@ -260,7 +259,7 @@ fn device_row<'w>(
     };
     col.row(|r| {
         r.draw(name_w, line_h, false, move |pc, c, _| {
-            pc.text_with_bounds(&name, c.x, c.y, 12.0, TEXT_FG, Some([c.x, c.y - 12.0, c.x + c.width, c.y + 24.0]));
+            pc.text_with(name, c.x, c.y, 12.0, crate::app::rgb(TEXT_FG), None, Some([c.x, c.y - 12.0, c.x + c.width, c.y + 24.0]));
         });
         r.widget_h(ctx, slider, cce_ui::layout::slider_height());
         r.widget_w_h(ctx, spin, SPIN_W, cce_ui::layout::spinbox_height());
