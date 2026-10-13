@@ -550,8 +550,8 @@ mod tests {
         let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
-        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx).finish();
+        assert!(!pc.fills().is_empty() || !pc.texts().is_empty());
     }
 
     #[test]
@@ -696,7 +696,7 @@ mod tests {
         let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false];
         let mut ctx = cce_ui::context::UiContext::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ctx).finish();
         let sorts: Vec<ProcSort> = pc
             .buttons
             .iter()
@@ -709,12 +709,13 @@ mod tests {
         assert_eq!(sorts, [ProcSort::Mem, ProcSort::Mem, ProcSort::Cpu, ProcSort::Power, ProcSort::Wakeups]);
         // Active-sort indicator rides the CPU % header by default — as a
         // `chevron-down` glyph after the header text, never a character in it.
-        assert!(pc.texts.iter().any(|t| t.0 == "CPU %"));
-        assert!(pc.texts.iter().all(|t| !t.0.contains('\u{25bc}')));
+        let (texts, icons) = (pc.texts(), pc.icons());
+        assert!(texts.iter().any(|t| t.text == "CPU %"));
+        assert!(texts.iter().all(|t| !t.text.contains('\u{25bc}')));
         if cce_ui::upload_icon("chevron-down", 18).is_some() {
-            let cpu = pc.texts.iter().find(|t| t.0 == "CPU %").unwrap();
-            assert_eq!(pc.icons.len(), 1, "one sort chevron");
-            assert!(pc.icons[0].x > cpu.2, "the chevron follows the header text");
+            let cpu = texts.iter().find(|t| t.text == "CPU %").unwrap();
+            assert_eq!(icons.len(), 1, "one sort chevron");
+            assert!(icons[0].x > cpu.x, "the chevron follows the header text");
         }
     }
 
@@ -727,10 +728,10 @@ mod tests {
         let mut ctx = cce_ui::context::UiContext::new();
 
         // Prefix match: the active sort column carries a " ▾" suffix.
-        let header_x = |pc: &crate::app::PageContent, s: &str| {
-            pc.texts.iter().find(|t| t.0.starts_with(s)).map(|t| t.2).unwrap()
+        let header_x = |pc: &crate::app::PageLayers, s: &str| {
+            pc.texts().iter().find(|t| t.text.starts_with(s)).map(|t| t.x).unwrap()
         };
-        let pc0 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx);
+        let pc0 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx).finish();
         let x0 = header_x(&pc0, "MEM %");
         // The columns are wider than the ~500px page, so the list is
         // h-scrollable; pan within its range (the columns are as wide as
@@ -740,7 +741,7 @@ mod tests {
         let pan = state.cpu_list.max_scroll_x() / 2.0;
         assert!(pan > 0.0);
         state.cpu_list.scroll_x = pan;
-        let pc1 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx);
+        let pc1 = view(&mut state, 10.0, 20.0, 500.0, 400.0, false, &sec_focused, &mut layout, &mut ctx).finish();
         assert_eq!(header_x(&pc1, "MEM %"), x0 - pan);
         assert_eq!(header_x(&pc1, "CPU %"), header_x(&pc0, "CPU %") - pan);
     }
@@ -771,10 +772,10 @@ mod tests {
         state.processes = (0..40).map(|i| row(&i.to_string())).collect();
         let mut layout = cce_ui::compose::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
-        let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx);
-        for t in &pc.texts {
-            if let Some(b) = t.6 {
-                assert!(t.2 >= b[0], "{:?} starts at {} left of its clip {}", t.0, t.2, b[0]);
+        let pc = view(&mut state, 10.0, 20.0, 820.0, 640.0, false, &[false], &mut layout, &mut ctx).finish();
+        for t in &pc.texts() {
+            if let Some(b) = t.bounds {
+                assert!(t.x >= b[0], "{:?} starts at {} left of its clip {}", t.text, t.x, b[0]);
             }
         }
         for (b, a, clip) in &pc.buttons {
@@ -842,10 +843,11 @@ mod tests {
         assert_eq!(state.power.mode, Mode::Battery);
         let mut layout = cce_ui::compose::PageFlow::new();
         let mut ctx = cce_ui::context::UiContext::new();
-        let pc = view(&mut state, 10.0, 20.0, 900.0, 600.0, false, &[false], &mut layout, &mut ctx);
-        let all: Vec<&str> = pc.texts.iter().map(|t| t.0.as_str()).collect();
-        assert!(pc.texts.iter().any(|t| t.0 == "1.3"), "{all:?}");
-        assert!(pc.texts.iter().any(|t| t.0 == "40"));
-        assert!(pc.texts.iter().any(|t| t.0.starts_with("20.0 W total")));
+        let pc = view(&mut state, 10.0, 20.0, 900.0, 600.0, false, &[false], &mut layout, &mut ctx).finish();
+        let texts = pc.texts();
+        let all: Vec<&str> = texts.iter().map(|t| t.text.as_str()).collect();
+        assert!(texts.iter().any(|t| t.text == "1.3"), "{all:?}");
+        assert!(texts.iter().any(|t| t.text == "40"));
+        assert!(texts.iter().any(|t| t.text.starts_with("20.0 W total")));
     }
 }

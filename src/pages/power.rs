@@ -1428,8 +1428,8 @@ mod tests {
         let paint = |st: &mut PowerState, sections: usize, ui: &mut UiContext| {
             let mut layout = cce_ui::compose::PageFlow::new();
             let sec_focused = vec![false; sections];
-            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui);
-            assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui).finish();
+            assert!(!pc.fills().is_empty() || !pc.texts().is_empty());
         };
         let mut st = loaded(&mut ui);
         paint(&mut st, 3, &mut ui);
@@ -1448,8 +1448,8 @@ mod tests {
         let lines = |st: &mut PowerState, ui: &mut UiContext| -> Vec<String> {
             let mut layout = cce_ui::compose::PageFlow::new();
             let sec_focused = vec![false; 3];
-            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui);
-            pc.texts.iter().map(|t| t.0.clone()).collect()
+            let pc = st.view(10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, ui).finish();
+            pc.texts().into_iter().map(|t| t.text).collect()
         };
         let mut st = loaded(&mut ui);
         assert!(lines(&mut st, &mut ui).iter().any(|l| l.contains("Switches automatically")));

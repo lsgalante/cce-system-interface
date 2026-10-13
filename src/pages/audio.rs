@@ -498,14 +498,14 @@ mod tests {
         let mut layout = PageFlow::new();
         // One flag: section_widgets() returns a single group (the output ids
         // with input appended), so the view draws one section and reads [0].
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
-        for (i, (c, x, y, w, h, r, _)) in pc.rects.iter().enumerate() {
-            println!("TEST_PC_RECT {}: color={:?}, x={}, y={}, w={}, h={}, r={}", i, c, x, y, w, h, r);
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui).finish();
+        for (i, r) in pc.fills().iter().enumerate() {
+            println!("TEST_PC_FILL {}: x={}, y={}, w={}, h={}", i, r.x, r.y, r.width, r.height);
         }
-        for (i, (t, sz, x, y, c, _, _)) in pc.texts.iter().enumerate() {
-            println!("TEST_PC_TEXT {}: text='{}', size={}, x={}, y={}, color={:?}", i, t, sz, x, y, c);
+        for (i, t) in pc.texts().iter().enumerate() {
+            println!("TEST_PC_TEXT {}: text='{}', size={}, x={}, y={}, color={:?}", i, t.text, t.size, t.x, t.y, t.color);
         }
-        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+        assert!(!pc.fills().is_empty() || !pc.texts().is_empty());
     }
 
     /// A device's spinbox with its context menu open, given back by the context when a

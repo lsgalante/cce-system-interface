@@ -878,8 +878,8 @@ mod tests {
         let mut state = SystemState::new(&mut ui);
         let mut layout = cce_ui::compose::PageFlow::new();
         let sec_focused = vec![false, false, false, false, false, false, false];
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ui);
-        assert!(!pc.rects.is_empty() || !pc.texts.is_empty());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &sec_focused, &mut layout, &mut ui).finish();
+        assert!(!pc.fills().is_empty() || !pc.texts().is_empty());
     }
 }
 

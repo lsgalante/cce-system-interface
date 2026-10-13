@@ -171,9 +171,9 @@ mod list_clip_tests {
     use super::*;
     use cce_ui::widget::ScrollRegion;
 
-    fn render(page: &mut dyn AppPage, ui: &mut cce_ui::context::UiContext) -> crate::app::PageContent {
+    fn render(page: &mut dyn AppPage, ui: &mut cce_ui::context::UiContext) -> crate::app::PageLayers {
         let mut layout = cce_ui::compose::PageFlow::new();
-        page.view(10.0, 20.0, 820.0, 640.0, false, &[false; 4], &mut layout, ui)
+        page.view(10.0, 20.0, 820.0, 640.0, false, &[false; 4], &mut layout, ui).finish()
     }
 
     /// A list sits inside its section's clip exactly when the clip it
@@ -183,8 +183,8 @@ mod list_clip_tests {
     /// that took the edges off the framed lists and the first letter off
     /// the Processes summary. Row texts carry the clip in their bounds
     /// (`[x0, y0, x1, y1]`), row buttons beside them (`[x, y, w, h]`).
-    fn assert_list_inside(name: &str, pc: &crate::app::PageContent, list: &ScrollRegion) {
-        let text_clips = pc.texts.iter().filter_map(|t| t.6);
+    fn assert_list_inside(name: &str, pc: &crate::app::PageLayers, list: &ScrollRegion) {
+        let text_clips = pc.texts().into_iter().filter_map(|t| t.bounds);
         let button_clips = pc.buttons.iter().filter_map(|b| b.2).map(|[x, y, w, h]| [x, y, x + w, y + h]);
         let widest = text_clips
             .chain(button_clips)

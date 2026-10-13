@@ -1,8 +1,10 @@
 use cce_ui::widget::Handle;
 use cce_ui::widget::hover_animation;
 use cce_ui::cosmic_text::{Buffer, FontSystem};
+use cce_ui::scene::layout::Rect;
+use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim};
 
-use cce_settings::app::{AppAction, AppState, ControlCarve};
+use cce_settings::app::{AppAction, AppState};
 use cce_settings::pages::{self, Page};
 mod input_handler;
 mod renderer;
@@ -20,36 +22,34 @@ fn make_text_buffer_with_font(
     cce_ui::backend::get_text_buffer(fs, text, size, font)
 }
 
-#[allow(dead_code)]
-struct AppWidget {
-    x: f32, y: f32, w: f32, h: f32,
-    color: [f32; 4],
-    hover_color: [f32; 4],
-    hovering: bool,
-    radius: f32,
-    corners: (bool, bool, bool, bool),
+/// A page button's dispatch clone: the context's copy of a button the page
+/// drew, at its rect in the window (cut to its clip and the page's band), with
+/// what a click on it does.
+pub(crate) struct PageButton {
+    pub handle: Handle<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
+    pub action: AppAction,
+    /// Whether the pointer was over it at the rebuild that drew its face —
+    /// the move handler rebuilds when this goes stale, which is how a page
+    /// button lights under the pointer.
+    pub hovered: bool,
 }
 
-/// A cce-icons glyph ready to draw: window coordinates (scroll already
-/// applied), the image's alpha, and the clip it was placed under
-/// (`[x, y, w, h]`) — an image has no geometry to trim, only a clip.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct PlacedIcon {
-    pub image: u32,
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    pub alpha: f32,
-    pub clip: Option<[f32; 4]>,
-}
-
-fn draw_placed_icon(pc: &mut cce_ui::scene::paint::PaintCtx, icon: &PlacedIcon) {
-    use cce_ui::scene::layout::Rect;
-    let rect = Rect { x: icon.x, y: icon.y, width: icon.w, height: icon.h };
-    match icon.clip {
-        Some([x, y, w, h]) => pc.clip(Rect { x, y, width: w, height: h }, |pc| pc.image(icon.image, rect, icon.alpha)),
-        None => pc.image(icon.image, rect, icon.alpha),
+/// The page's geometry, emitted under the scroll (`dy`): its fills cut to
+/// `fill_band`, everything else (carves, plates) to `view`. The two are the
+/// same rect but while the search band is open — the page view then stops
+/// 42px higher, and the strip between kept showing the page's fills (and its
+/// text) but none of its carves, as it always has.
+fn emit_page_geo(pc: &mut PaintCtx, list: &DisplayList, dy: f32, fill_band: Rect, view: Rect) {
+    if fill_band == view {
+        pc.clip(view, |pc| pc.append_translated(list, 0.0, dy));
+        return;
+    }
+    for item in &list.items {
+        let clip = match item.prim {
+            Prim::Quad { .. } | Prim::RoundedRect { .. } => fill_band,
+            _ => view,
+        };
+        pc.clip(clip, |pc| pc.append_items(std::iter::once(item.clone().translated(0.0, dy))));
     }
 }
 
@@ -58,24 +58,11 @@ static INITIAL_PAGE_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::A
 struct SystemInterface {
     app: AppState,
     font_system: FontSystem,
-    widgets: Vec<AppWidget>,
-    // (content, font_size, x, y, color, font, bounds) — the frame's text, emitted as
-    // display-list Text prims (scroll shift, search dim/highlight, and viewport clamps
-    // already applied by rebuild_layout).
-    texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
-    // Popover + context-menu content, drawn INTO the frame on top of everything (Phase 6t —
-    // no engine xdg popup). Separate from widgets/texts so the wheel fast-path never
-    // scrolls them.
-    popover_widgets: Vec<AppWidget>,
-    popover_texts: Vec<(String, f32, f32, f32, [f32; 4], Option<String>, Option<[f32; 4]>)>,
-    /// Popover-layer inset plates (window coords, scroll already applied) —
-    /// the dropdown's grown-trigger surface via the inset_plate hook.
-    popover_control_reliefs: Vec<ControlCarve>,
-    /// Per popover carve, the index into `popover_widgets` it precedes
-    /// (`PageContent::control_relief_marks`) — display_list slots each carve
-    /// back between the rects the widget drew before and after it.
-    popover_control_relief_marks: Vec<usize>,
-    page_buttons: Vec<(Handle<cce_ui::widget::Adapted<cce_ui::widget::Button>>, AppAction)>,
+    /// What the last rebuild recorded, emitted every frame until the next
+    /// (`renderer::CachedFrame`): the page in page coordinates, under the
+    /// scroll; the popovers in window coordinates.
+    frame: renderer::CachedFrame,
+    page_buttons: Vec<PageButton>,
 
     sidebar_width: f32,
     header_height: f32,
@@ -109,16 +96,12 @@ struct SystemInterface {
     height: u32,
     needs_rebuild: bool,
     /// The page's DRAWN offset — `page_scroll_motion` glides it (wheel) or
-    /// coasts it (trackpad flick) by shifting the cached geometry in place;
-    /// direct writes (thumb drag, keyboard, search jump, clamp) are adopted
-    /// by the motion on its next step.
+    /// coasts it (trackpad flick), and display_list emits the cached page
+    /// under it, so a scroll needs no rebuild; direct writes (thumb drag,
+    /// keyboard, search jump, clamp) are adopted by the motion on its next step.
     scroll_y: f32,
     page_scroll_motion: cce_ui::widget::ScrollMotion,
     max_scroll_y: f32,
-    scrollable_widgets_start_idx: usize,
-    scrollable_text_items_start_idx: usize,
-    scrollable_buttons_start_idx: usize,
-    last_scroll_y: f32,
     // SectionContainer DISSOLVED (Phase 6w): section-level keyboard focus is this index
     // (single-slot with the global widget focus — descending clears it); the per-section
     // widget groups come from AppPage::section_widgets each time they're needed.
@@ -146,32 +129,8 @@ struct SystemInterface {
     // window pass reads last frame's value, exactly as the legacy Page did.
     page_scroll_bar: Handle<cce_ui::widget::Adapted<crate::scroll_bar::ScrollBar>>,
     content_h: f32,
-    // Section wells: body box + title tab (page coords, pre-scroll) — carved by
-    // display_list.
-    page_reliefs: Vec<((f32, f32, f32, f32), Option<(f32, f32, f32, f32)>)>,
-    /// Per page carve, the index into `widgets` it precedes — see
-    /// `popover_control_relief_marks`; the page layer interleaves the same way.
-    page_control_relief_marks: Vec<usize>,
-    /// Control troughs from `PageContent::control_reliefs` (page coords,
-    /// pre-scroll) — each carved as a flush inset plate after the section
-    /// wells — with the clip its control was emitted under (`[x, y, w, h]`,
-    /// page coords, pre-scroll). A button's plate needs it: the renderer
-    /// clamps the button's quad to its list, but a carve is drawn whole, so a
-    /// row half-scrolled out of a list left its plate standing past the edge.
-    page_control_reliefs: Vec<(ControlCarve, Option<[f32; 4]>)>,
-    /// The page's glyphs, drawn under the page clip and each its own: a
-    /// button's icon face, and the page's own (`PageContent::icon`: a sort
-    /// chevron, an in-use check). A flat host draws no images at all
-    /// otherwise: `all_quads` carries quads and the text list carries labels,
-    /// and an icon is neither.
-    page_icon_images: Vec<PlacedIcon>,
-    /// Glyphs the popovers drew (the expanded Dropdown's chevron), drawn over
-    /// the popover plates.
-    popover_icon_images: Vec<PlacedIcon>,
-    /// Glyphs of the window chrome (the page dropdown's arrow), window
-    /// coordinates, drawn over the chrome outside the page clip.
     // root plate container + StatusBar DISSOLVED (Phase 6s): the window plate and the status
-    // bar are emitted as tuples in rebuild_layout.
+    // bar are emitted by display_list itself.
     sans_serif_family: String,
     serif_family: String,
     monospace_family: String,
@@ -186,29 +145,6 @@ struct SystemInterface {
     search_query: String,
     search_box: Handle<cce_ui::widget::Adapted<cce_ui::widget::input::TextBox>>,
 
-}
-
-/// One collected control carve as the real relief prim it stands for.
-fn emit_control_carve(pc: &mut cce_ui::scene::paint::PaintCtx, carve: ControlCarve) {
-    use cce_ui::scene::layout::Rect;
-    match carve {
-        ControlCarve::Plate { x, y, w, h, radius, depth, color, tint } => match tint {
-            Some(t) => pc.inset_plate_tinted(
-                Rect { x, y, width: w, height: h },
-                (radius, radius, radius, radius),
-                cce_ui::scene::Material::face(color).as_ref(),
-                depth,
-                t,
-            ),
-            None => pc.inset_plate(
-                Rect { x, y, width: w, height: h },
-                (radius, radius, radius, radius),
-                cce_ui::scene::Material::face(color).as_ref(),
-                depth,
-            ),
-        },
-        ControlCarve::Step(c) => pc.carve(&c),
-    }
 }
 
 impl cce_ui::engine::Application for SystemInterface {
@@ -260,12 +196,7 @@ impl cce_ui::engine::Application for SystemInterface {
         let mut this = Self {
             app: app_state,
             font_system,
-            widgets: Vec::new(),
-            texts: Vec::new(),
-            popover_widgets: Vec::new(),
-            popover_texts: Vec::new(),
-            popover_control_reliefs: Vec::new(),
-            popover_control_relief_marks: Vec::new(),
+            frame: renderer::CachedFrame::default(),
             page_buttons: Vec::new(),
             sidebar_width,
             header_height: 0.0,
@@ -301,10 +232,6 @@ impl cce_ui::engine::Application for SystemInterface {
             scroll_y: 0.0,
             page_scroll_motion: cce_ui::widget::ScrollMotion::new(),
             max_scroll_y: 0.0,
-            scrollable_widgets_start_idx: 0,
-            scrollable_text_items_start_idx: 0,
-            scrollable_buttons_start_idx: 0,
-            last_scroll_y: 0.0,
             focused_section: None,
             laid_out_page: None,
             refocus_rect: None,
@@ -312,11 +239,6 @@ impl cce_ui::engine::Application for SystemInterface {
             page_dropdown: ui_context.insert(page_dropdown),
             page_scroll_bar: ui_context.insert(crate::scroll_bar::ScrollBar::new()),
             content_h: 0.0,
-            page_reliefs: Vec::new(),
-            page_control_reliefs: Vec::new(),
-            page_control_relief_marks: Vec::new(),
-            page_icon_images: Vec::new(),
-            popover_icon_images: Vec::new(),
             sans_serif_family: sans_family,
             serif_family,
             monospace_family,
@@ -382,8 +304,9 @@ impl cce_ui::engine::Application for SystemInterface {
 
     fn display_list(&mut self, size: cce_ui::engine::LogicalSize, scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
         // Phase 6 single paint path: the whole frame — geometry and text — is this one list.
-        // rebuild_layout flattens the UI into self.widgets/self.texts (scroll shift, search
-        // dim/highlight, and viewport clamps already applied).
+        // rebuild_layout records the page (in page coordinates) and the popovers into
+        // `self.frame`; this emits them, the page under the scroll, around what is
+        // drawn fresh every frame (the scrollbar, the window plate, the chrome).
         let (width, height) = (size.width, size.height);
         if self.needs_rebuild || self.ui_context.is_dirty() || self.width != width as u32 || self.height != height as u32 || self.scale_factor != scale {
             self.width = width as u32;
@@ -392,8 +315,7 @@ impl cce_ui::engine::Application for SystemInterface {
             cce_ui::scale::set_scale_factor(scale as f32);
             self.rebuild_layout(width, height);
         }
-        use cce_ui::scene::layout::Rect;
-        let mut pc = cce_ui::scene::paint::PaintCtx::new();
+        let mut pc = PaintCtx::new();
 
         // The page scrollbar straddles the window plate (the designer
         // parameter-pane treatment) and is emitted fresh EVERY frame — never
@@ -458,149 +380,34 @@ impl cce_ui::engine::Application for SystemInterface {
             );
         }
 
-        // The page's rects and the control carves the flat bridge offered
-        // (a Dropdown's inset plate, a TextBox's well, a Toggle's steps, the
-        // buttons' faces), replayed in the widgets' OWN order — each carve
-        // just before the rect it was claimed ahead of, so a TextBox's
-        // selection highlight and caret land on its well instead of under
-        // its walls. Carves clip to the page viewport like the wells; the
-        // rects were already clamped to it when collected.
-        {
-            let view = self.page_view(width, height);
-            let scroll_y = self.scroll_y;
-            let mut carves = self
-                .page_control_reliefs
-                .iter()
-                .copied()
-                .zip(self.page_control_relief_marks.iter().copied())
-                .peekable();
-            let mut emit_pending = |pc: &mut cce_ui::scene::paint::PaintCtx, upto: usize| {
-                while carves.peek().is_some_and(|&(_, mark)| mark <= upto) {
-                    let ((carve, clip), _) = carves.next().unwrap();
-                    pc.clip(view, |pc| match clip {
-                        Some([x, y, w, h]) => pc.clip(Rect { x, y: y - scroll_y, width: w, height: h }, |pc| {
-                            emit_control_carve(pc, carve.shifted_y(-scroll_y))
-                        }),
-                        None => emit_control_carve(pc, carve.shifted_y(-scroll_y)),
-                    });
-                }
-            };
-            for (i, w) in self.widgets.iter().enumerate() {
-                emit_pending(&mut pc, i);
-                let color = if w.hovering { w.hover_color } else { w.color };
-                let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
-                if w.radius > 0.1 {
-                    pc.rounded_rect(rect, w.radius, w.corners, color);
-                } else {
-                    pc.quad(rect, color);
-                }
-            }
-            emit_pending(&mut pc, usize::MAX);
+        // The page as the last rebuild recorded it, under the scroll: its
+        // fills and carves in the widgets' OWN order (a TextBox's selection
+        // and caret land on its well, not under its walls), the search's
+        // highlights, the page buttons' faces and plates.
+        let view = self.page_view(width, height);
+        // The page's band above the status bar, what its fills and text were
+        // always cut to (the page view also stops above the search band).
+        let page_band = Rect { x: 0.0, y: 0.0, width, height: (height - self.status_height).max(0.0) };
+        let dy = -self.scroll_y;
+        emit_page_geo(&mut pc, &self.frame.geo, dy, page_band, view);
+        // The search band, over the page's foot while open.
+        if self.search_open {
+            let (x, w) = (self.sidebar_width, width - self.sidebar_width);
+            pc.quad(Rect { x, y: height - 42.0, width: w, height: 42.0 }, [0.08, 0.08, 0.12, 1.0]);
+            pc.quad(Rect { x, y: height - 42.0, width: w, height: 1.0 }, [0.18, 0.18, 0.24, 1.0]);
         }
         // The section wells, carved after the page's flat quads so the walls shade
         // the fills they cross (the designer relief order), clipped to the page
         // viewport so a scrolled-off well can't shade the status bar or search row.
-        if !self.page_reliefs.is_empty() {
-            let view = self.page_view(width, height);
-            let r = 20.0f32;
-            let scroll_y = self.scroll_y;
-            pc.clip(view, |pc| {
-                for &((cx, cy, cw, ch), tab) in &self.page_reliefs {
-                    let cy = cy - scroll_y;
-                    let depth = cce_ui::layout::bevel_width().min(ch * 0.2);
-                    match tab {
-                        Some((tx, ty, tw, th)) => {
-                            // The designer union carve: the title tab bottom-open, one
-                            // piece owning the whole right run so its corners are real
-                            // turns, a left piece carrying the left wall — pieces
-                            // extend past their interior seam by `depth` so the walls
-                            // crossfade there instead of notching — and the throat's
-                            // inside corner rounded by a concave fillet.
-                            let ty = ty - scroll_y;
-                            let rt = r.min(th * 0.45);
-                            let throat_r = tx + tw;
-                            let rho = 10.0f32; // designer SECTION_FILLET_R
-                            let body_lr = |x_run: f32, pc: &mut cce_ui::scene::paint::PaintCtx| {
-                                pc.recess_edges(
-                                    Rect { x: x_run, y: cy, width: cx + cw - x_run, height: ch },
-                                    (0.0, r, r, 0.0),
-                                    depth,
-                                    (true, true, true, false),
-                                );
-                                pc.recess_edges(
-                                    Rect { x: cx, y: cy, width: x_run + depth - cx, height: ch },
-                                    (0.0, 0.0, 0.0, r),
-                                    depth,
-                                    (false, false, true, true),
-                                );
-                            };
-                            if cx + cw > throat_r + 2.0 * rho {
-                                // Filleted throat: the tab's right wall ends at the
-                                // fillet's vertical tangent, a left-only bridge
-                                // carries the left wall across the fillet span.
-                                pc.recess_edges(
-                                    Rect { x: tx, y: ty, width: tw, height: (cy - rho) - ty + depth },
-                                    (rt, rt, 0.0, 0.0),
-                                    depth,
-                                    (true, true, false, true),
-                                );
-                                pc.recess_edges(
-                                    Rect { x: tx, y: cy - rho, width: tw, height: rho + depth },
-                                    (0.0, 0.0, 0.0, 0.0),
-                                    depth,
-                                    (false, false, false, true),
-                                );
-                                body_lr(throat_r + rho - depth, pc);
-                                pc.concave_fillet(throat_r + rho, cy - rho, rho, depth, std::f32::consts::FRAC_PI_2, false);
-                            } else if cx + cw > throat_r + 0.5 {
-                                // Too narrow for the fillet: the plain square throat.
-                                pc.recess_edges(
-                                    Rect { x: tx, y: ty, width: tw, height: (cy - ty) + depth },
-                                    (rt, rt, 0.0, 0.0),
-                                    depth,
-                                    (true, true, false, true),
-                                );
-                                body_lr(throat_r - depth, pc);
-                            } else {
-                                // The tab spans the body: no top wall at all.
-                                pc.recess_edges(
-                                    Rect { x: tx, y: ty, width: tw, height: (cy - ty) + depth },
-                                    (rt, rt, 0.0, 0.0),
-                                    depth,
-                                    (true, true, false, true),
-                                );
-                                pc.recess_edges(
-                                    Rect { x: cx, y: cy, width: cw, height: ch },
-                                    (0.0, 0.0, r, r),
-                                    depth,
-                                    (false, true, true, true),
-                                );
-                            }
-                        }
-                        None => {
-                            pc.recess_edges(
-                                Rect { x: cx, y: cy, width: cw, height: ch },
-                                (r, r, r, r),
-                                depth,
-                                (true, true, true, true),
-                            );
-                        }
-                    }
-                }
-            });
+        if !self.frame.wells.is_empty() {
+            pc.clip(view, |pc| pc.append_translated(&self.frame.wells, 0.0, dy));
         }
-
-        // The page's glyphs — button icon faces and the page's own — over
-        // its quads and carves, under the page viewport and each under the
-        // clip it was placed with, which is what cuts a half-scrolled list
-        // row's glyph at the list edge.
-        if !self.page_icon_images.is_empty() {
-            let view = self.page_view(width, height);
-            pc.clip(view, |pc| {
-                for icon in &self.page_icon_images {
-                    draw_placed_icon(pc, icon);
-                }
-            });
+        // The page's glyphs — button icon faces and the page's own — over its
+        // quads and carves, under the page viewport and each under the clip
+        // it was placed with, which is what cuts a half-scrolled list row's
+        // glyph at the list edge.
+        if !self.frame.icons.is_empty() {
+            pc.clip(view, |pc| pc.append_translated(&self.frame.icons, 0.0, dy));
         }
 
         // The window chrome, as it paints itself: the page dropdown in the status bar
@@ -622,59 +429,19 @@ impl cce_ui::engine::Application for SystemInterface {
         }
 
         cce_ui::widget::hover_animation::post_render_check();
-        if let Some((qx, qy, qw, qh, qc)) = cce_ui::widget::hover_animation::get_quad() {
-            pc.quad(Rect { x: qx, y: qy - self.scroll_y, width: qw, height: qh }, qc);
-        }
-        // Popover rects and the surfaces claimed through the inset_plate hook
-        // (the dropdown's menu plate), replayed in the widget's OWN order:
-        // each carve goes out just before the rect it was claimed ahead of,
-        // so the hovered-row highlight a Dropdown draws after its plate lands
-        // on top of the frosted face instead of underneath it.
-        {
-            let mut carves = self
-                .popover_control_reliefs
-                .iter()
-                .copied()
-                .zip(self.popover_control_relief_marks.iter().copied())
-                .peekable();
-            for (i, w) in self.popover_widgets.iter().enumerate() {
-                while carves.peek().is_some_and(|&(_, mark)| mark <= i) {
-                    let (carve, _) = carves.next().unwrap();
-                    emit_control_carve(&mut pc, carve);
-                }
-                let rect = Rect { x: w.x, y: w.y, width: w.w, height: w.h };
-                if w.radius > 0.1 {
-                    pc.rounded_rect(rect, w.radius, w.corners, w.color);
-                } else {
-                    pc.quad(rect, w.color);
-                }
-            }
-            for (carve, _) in carves {
-                emit_control_carve(&mut pc, carve);
-            }
-        }
-        for icon in &self.popover_icon_images {
-            draw_placed_icon(&mut pc, icon);
-        }
+        // The popovers over everything on the page — their plates and rows in
+        // the widget's own order (the hovered row a Dropdown draws after its
+        // plate lands on the frosted face), then their glyphs.
+        pc.append_translated(&self.frame.popover_geo, 0.0, 0.0);
+        pc.append_translated(&self.frame.popover_icons, 0.0, 0.0);
         // The context menu last, over everything: the toolkit's lit plate,
         // its rows and its labels in the menu font, with the row marks and
         // page chevrons as cce-icons glyphs.
         cce_ui::widget::context_menu::paint_with_labels(&mut pc);
-        for (text, font_size, x, y, col, font, bounds) in self.texts.iter().chain(self.popover_texts.iter()) {
-            pc.text_with(
-                text.clone(),
-                *x,
-                *y,
-                *font_size,
-                [
-                    (col[0] * 255.0) as u8,
-                    (col[1] * 255.0) as u8,
-                    (col[2] * 255.0) as u8,
-                ],
-                font.clone(),
-                *bounds,
-            );
-        }
+        // The page's text, under the scroll and cut to the page's band, then
+        // the popovers' (the glyph pass draws all text after all geometry).
+        pc.clip(page_band, |pc| pc.append_translated(&self.frame.text, 0.0, dy));
+        pc.append_translated(&self.frame.popover_text, 0.0, 0.0);
         if let Some([x, y, w, h]) = self.text_claim {
             cce_ui::text_input::claim(x, y, w, h);
         }
@@ -779,8 +546,8 @@ impl SystemInterface {
         if self.ui_context[self.page_scroll_bar].tick_activity(dt) {
             needs_redraw = true;
         }
-        // The page's own wheel glide / flick coast: shifts the cached
-        // geometry like the wheel fast path, no rebuild.
+        // The page's own wheel glide / flick coast: moves the cached page
+        // like the wheel fast path, no rebuild.
         if self.tick_page_scroll(dt) {
             needs_redraw = true;
         }

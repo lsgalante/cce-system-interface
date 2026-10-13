@@ -1428,8 +1428,8 @@ mod tests {
         update(&mut st, PackagesMessage::RemovalPreviewed(vec!["beta".into()], Err(err.clone())), &mut ui);
         assert!(!st.previewing);
         let mut layout = cce_ui::compose::PageFlow::new();
-        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
-        let texts: Vec<String> = pc.texts.iter().map(|t| t.0.clone()).collect();
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui).finish();
+        let texts: Vec<String> = pc.texts().into_iter().map(|t| t.text).collect();
         assert!(texts.iter().any(|t| t.contains("required by alpha")), "the reason is painted: {texts:?}");
 
         // And a failed transaction reports into last_action, not the details.
@@ -1512,7 +1512,7 @@ mod tests {
         let mut ui = cce_ui::context::UiContext::new();
         let mut state = PackagesState::new(&mut ui);
         let mut layout = cce_ui::compose::PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut ui);
-        assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, &[false, false], &mut layout, &mut ui).finish();
+        assert!(!pc.fills().is_empty() || !pc.texts().is_empty() || !pc.buttons.is_empty());
     }
 }

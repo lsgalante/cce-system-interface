@@ -120,16 +120,16 @@ impl SystemInterface {
 
         let t_dispatch = hov_t0.map(|s| s.elapsed().as_micros());
 
-        let phys_x = x;
-        let phys_y = y;
-
-        // Check if cursor hover state changed on any widget
-        for w in &self.widgets {
-            let is_hovered = phys_x >= w.x && phys_x <= w.x + w.w && phys_y >= w.y && phys_y <= w.y + w.h;
-            if w.hovering != is_hovered {
-                changed = true;
-                break;
-            }
+        // A page button's face is drawn lit or not at the rebuild (they are
+        // the only page geometry with a hover face): rebuild when the pointer
+        // crossed one's edge since.
+        let stale = self.page_buttons.iter().any(|b| {
+            let base = self.ui_context[b.handle].base();
+            let over = x >= base.x && x <= base.x + base.w && y >= base.y && y <= base.y + base.h;
+            over != b.hovered
+        });
+        if stale {
+            changed = true;
         }
 
         if changed {
@@ -138,10 +138,10 @@ impl SystemInterface {
         if let (Some(s), Some(dd), Some(pm), Some(dp)) = (hov_t0, t_dropdown, t_pagemove, t_dispatch) {
             let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() % 100000;
             eprintln!(
-                "[hover] t={} move ({:.0},{:.0}) changed={} total={}us dropdown={}us page={}us dispatch={}us widgets={}us n_widgets={}",
+                "[hover] t={} move ({:.0},{:.0}) changed={} total={}us dropdown={}us page={}us dispatch={}us buttons={}us n_buttons={}",
                 t, self.cursor_x, self.cursor_y, changed,
                 s.elapsed().as_micros(), dd, pm - dd, dp - pm, s.elapsed().as_micros() - dp,
-                self.widgets.len()
+                self.page_buttons.len()
             );
         }
         changed
@@ -210,15 +210,15 @@ impl SystemInterface {
         let mut button_handled = false;
         let mut clicked_action = None;
         let btn_ev = cce_ui::widget::Event::MouseButton { button, state, x: phys_x, y: phys_y, local_x: phys_x, local_y: phys_y };
-        let btn_roots: Vec<_> = self.page_buttons[self.scrollable_buttons_start_idx..].iter().map(|(b, _)| b.id()).collect();
+        let btn_roots: Vec<_> = self.page_buttons.iter().map(|b| b.handle.id()).collect();
         for root in btn_roots {
             if self.ui_context.propagate_event(&btn_ev, root) {
                 button_handled = true;
             }
         }
-        for (btn, action) in &self.page_buttons[self.scrollable_buttons_start_idx..] {
-            if self.ui_context[*btn].take_click() {
-                clicked_action = Some(action.clone());
+        for b in &self.page_buttons {
+            if self.ui_context[b.handle].take_click() {
+                clicked_action = Some(b.action.clone());
                 button_handled = true;
                 self.needs_rebuild = true;
             }
@@ -321,8 +321,9 @@ impl SystemInterface {
     }
 
     /// Move the page to `new_scroll_y` WITHOUT a rebuild — the wheel fast
-    /// path: the cached widget/text/button geometry shifts in place by the
-    /// delta from the current drawn offset, and the scrollbar thumb follows
+    /// path. The page is cached in page coordinates and drawn under
+    /// `scroll_y`, so the offset is all that moves, with the page buttons'
+    /// dispatch clones (window coordinates) and the scrollbar thumb
     /// (display_list emits the bar fresh each frame from this state). False
     /// when the offset did not actually change.
     pub(crate) fn shift_page_to(&mut self, new_scroll_y: f32) -> bool {
@@ -331,29 +332,9 @@ impl SystemInterface {
             return false;
         }
         self.scroll_y = new_scroll_y;
-        for w in &mut self.widgets[self.scrollable_widgets_start_idx..] {
-            w.y -= actual_dy;
+        for b in &self.page_buttons {
+            self.ui_context[b.handle].base_mut().y -= actual_dy;
         }
-        for (_, _, _, ty, _, _, bounds) in &mut self.texts[self.scrollable_text_items_start_idx..] {
-            *ty -= actual_dy;
-            if let Some(ref mut b) = bounds {
-                b[1] -= actual_dy;
-                b[3] -= actual_dy;
-            }
-        }
-        for (btn, _) in &self.page_buttons[self.scrollable_buttons_start_idx..] {
-            self.ui_context[*btn].base_mut().y -= actual_dy;
-        }
-        // The glyphs ride with the page too — a button's icon face and the
-        // page's own icons — or they stand still while their rows scroll
-        // past them until something rebuilds.
-        for icon in &mut self.page_icon_images {
-            icon.y -= actual_dy;
-            if let Some(c) = icon.clip.as_mut() {
-                c[1] -= actual_dy;
-            }
-        }
-        self.last_scroll_y = self.scroll_y;
         self.ui_context[self.page_scroll_bar].scroll_y = self.scroll_y;
         true
     }

@@ -376,8 +376,8 @@ mod tests {
         state.loaded = true;
         state.wifi_enabled = true;
         let mut layout = cce_ui::compose::PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui);
-        assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui).finish();
+        assert!(!pc.fills().is_empty() || !pc.texts().is_empty() || !pc.buttons.is_empty());
     }
 
     #[test]
@@ -390,8 +390,8 @@ mod tests {
         state.signal_strength = 80;
         state.ip_address = "192.168.1.50".to_string();
         let mut layout = cce_ui::compose::PageFlow::new();
-        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui);
-        assert!(!pc.rects.is_empty() || !pc.texts.is_empty() || !pc.buttons.is_empty());
+        let pc = view(&mut state, 10.0, 20.0, 800.0, 600.0, false, &mut layout, &mut ui).finish();
+        assert!(!pc.fills().is_empty() || !pc.texts().is_empty() || !pc.buttons.is_empty());
     }
 
     #[test]
