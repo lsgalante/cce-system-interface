@@ -193,10 +193,18 @@ mod list_clip_tests {
     /// sticking out past the section's content box — laid out at
     /// `left + margin` — gets its row clip narrowed to that box, the cut
     /// that took the edges off the framed lists and the first letter off
-    /// the Processes summary. Row texts carry the clip in their bounds
-    /// (`[x0, y0, x1, y1]`), row buttons beside them (`[x, y, w, h]`).
+    /// the Processes summary. Row texts are drawn under that clip (the
+    /// display item's, not the text's own bounds: a row item bounds its
+    /// text to its row, `list_gap` in from the list's ends, since cce-ui
+    /// 73a5796 kept leaf text bounds), row buttons declared under it.
     fn assert_list_inside(name: &str, pc: &crate::app::PageLayers, list: &ScrollRegion) {
-        let text_clips = pc.texts().into_iter().filter_map(|t| t.bounds);
+        let text_clips = pc
+            .list
+            .items
+            .iter()
+            .filter(|it| matches!(it.prim, cce_ui::scene::paint::Prim::Text { .. }))
+            .filter_map(|it| it.clip)
+            .map(|c| [c.x, c.y, c.x + c.width, c.y + c.height]);
         let button_clips = pc.buttons.iter().filter_map(|b| b.clip).map(|c| [c.x, c.y, c.x + c.width, c.y + c.height]);
         let widest = text_clips
             .chain(button_clips)
