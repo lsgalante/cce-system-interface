@@ -287,6 +287,8 @@ mod list_clip_tests {
                 file_state: "enabled".into(),
                 is_system: true,
                 editable: false,
+                loaded: true,
+                last_failure: None,
             })
             .collect();
         let pc = render(&mut s, &mut ui);

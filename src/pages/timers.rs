@@ -1,6 +1,7 @@
 //! Systemd timers — the system's "cron". View system/user timers with their
-//! schedules, trigger the activated service immediately, and enable/disable
-//! timer units (system scope through pkexec).
+//! schedules and how their last run went, trigger the activated service
+//! immediately, enable/disable timer units (system scope through pkexec),
+//! and create, edit and delete user timers.
 
 use crate::app::{button_need, form_button, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
@@ -29,6 +30,28 @@ pub struct TimerInfo {
     pub is_system: bool,
     /// The unit file lives in ~/.config/systemd/user — safe to edit in place.
     pub editable: bool,
+    /// Listed by `list-timers`: systemd has it loaded, so `next`/`last` mean
+    /// something. A disabled timer nothing pulled in is not (fstrim, paccache).
+    pub loaded: bool,
+    /// How the activated service's last run went when it did not succeed
+    /// (`exit-code`, `signal`, `timeout`, … or `failed`). A timer whose job
+    /// fails every time used to read "last 3h ago" all the same.
+    pub last_failure: Option<String>,
+}
+
+/// What a click asks of a timer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimerAction {
+    /// Start the activated service now.
+    RunNow,
+    Enable,
+    Disable,
+    /// After Create: reload and `enable --now` the new timer.
+    Activate,
+    /// After an edit: reload and `try-restart` the timer.
+    Apply,
+    /// Disable and remove a user timer (and its service, when this page wrote it).
+    Delete,
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +67,15 @@ pub struct TimersState {
     pub name_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub command_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub schedule_box: Handle<cce_ui::widget::Adapted<TextBox>>,
-    pub status_msg: Option<String>,
+    /// The last action's outcome: Ok in green, Err in red.
+    pub status_msg: Option<Result<String, String>>,
+    /// The edit form's Delete is waiting on its confirmation.
+    pub confirm_delete: bool,
+    /// Timers with an action in flight (unit, system scope). Their optimistic
+    /// state is put back over each refresh, and a second action waits.
+    pub pending: Vec<(TimerAction, String, bool)>,
+    /// How results come back from the spawned commands (set by the host).
+    pub sender: Option<calloop::channel::Sender<AppAction>>,
 }
 
 impl Default for TimersState {
@@ -61,6 +92,9 @@ impl Default for TimersState {
             command_box: Handle::none(),
             schedule_box: Handle::none(),
             status_msg: None,
+            confirm_delete: false,
+            pending: Vec::new(),
+            sender: None,
         }
     }
 }
@@ -84,10 +118,13 @@ impl TimersState {
 pub enum TimersMessage {
     Refreshed(Vec<TimerInfo>),
     SetTab(TimerTab),
-    /// Start the timer's activated service right now.
-    RunNow(String, bool),
-    Enable(String, bool),
-    Disable(String, bool),
+    /// An action on a timer (by its `.timer` unit name).
+    Request(TimerAction, String, bool),
+    Finished(TimerAction, String, bool, Result<(), String>),
+    /// The edit form's Delete, and its confirmation.
+    DeleteAsk,
+    DeleteConfirm,
+    DeleteCancel,
     CreateStart,
     CreateCancel,
     CreateSave,
@@ -96,6 +133,8 @@ pub enum TimersMessage {
 }
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
+const OK_GREEN: [f32; 4] = [0.56, 0.83, 0.56, 1.0];
+const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
 /// The least room the list keeps on a short window.
 const LIST_MIN_H: f32 = 120.0;
 /// A row's status dot: a small LED, not a control.
@@ -123,6 +162,11 @@ fn now_usec() -> u64 {
 }
 
 fn schedule_line(t: &TimerInfo, now: u64) -> String {
+    // A failed last run leads, so the row's truncation never cuts it.
+    let failed = t.last_failure.as_ref().map(|r| format!("last run failed ({r}) \u{2022} ")).unwrap_or_default();
+    if !t.loaded {
+        return format!("{failed}{} \u{2022} not scheduled", t.activates);
+    }
     let next = match t.next_usec {
         Some(n) if n > now => format!("next in {}", humanize((n - now) / 1_000_000)),
         Some(_) => "next imminent".to_string(),
@@ -132,70 +176,142 @@ fn schedule_line(t: &TimerInfo, now: u64) -> String {
         Some(l) if l > 0 && l <= now => format!("last {} ago", humanize((now - l) / 1_000_000)),
         _ => "never ran".to_string(),
     };
-    format!("{} \u{2022} {} \u{2022} {}", t.activates, next, last)
+    format!("{failed}{} \u{2022} {} \u{2022} {}", t.activates, next, last)
 }
 
 // ── Background fetching ──
 
-async fn fetch_scope(user: bool) -> Vec<TimerInfo> {
-    let mut args: Vec<&str> = Vec::new();
+fn systemctl(user: bool) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new("systemctl");
     if user {
-        args.push("--user");
+        cmd.arg("--user");
     }
-    args.extend(["list-timers", "--all", "--output=json"]);
-    let out = match tokio::process::Command::new("systemctl").args(&args).output().await {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-        Err(_) => return Vec::new(),
-    };
-    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap_or_default();
+    cmd
+}
+
+async fn stdout_of(mut cmd: tokio::process::Command) -> String {
+    match cmd.output().await {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
+        Err(_) => String::new(),
+    }
+}
+
+/// `list-timers --all` (the LOADED timers, with their next and last runs)
+/// joined with `list-unit-files --type=timer` (every installed one, and
+/// whether it is enabled). The first alone never listed a disabled timer
+/// nothing had pulled in — fstrim and paccache among them here — so the
+/// row's Enable button had nothing to appear on. Templates and aliases are
+/// left out, as on the Services page.
+pub fn merge_timers(json: &str, files: &str, is_system: bool) -> Vec<TimerInfo> {
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+    let file_states: Vec<(&str, &str)> = files
+        .lines()
+        .filter_map(|l| {
+            let mut p = l.split_whitespace();
+            Some((p.next()?, p.next()?))
+        })
+        .collect();
+    let state_of = |unit: &str| file_states.iter().find(|(u, _)| *u == unit).map(|(_, s)| s.to_string()).unwrap_or_default();
     let mut timers: Vec<TimerInfo> = parsed
         .iter()
         .filter_map(|v| {
+            let unit = v.get("unit")?.as_str()?.to_string();
             Some(TimerInfo {
-                unit: v.get("unit")?.as_str()?.to_string(),
+                file_state: state_of(&unit),
+                unit,
                 activates: v.get("activates").and_then(|a| a.as_str()).unwrap_or("").to_string(),
-                next_usec: v.get("next").and_then(|n| n.as_u64()),
+                // 0 is how systemd says "none".
+                next_usec: v.get("next").and_then(|n| n.as_u64()).filter(|n| *n > 0),
                 last_usec: v.get("last").and_then(|n| n.as_u64()),
                 active: false,
-                file_state: String::new(),
-                is_system: !user,
+                is_system,
                 editable: false,
+                loaded: true,
+                last_failure: None,
             })
         })
         .collect();
+    for (unit, state) in &file_states {
+        if unit.ends_with("@.timer") || *state == "alias" || timers.iter().any(|t| t.unit == *unit) {
+            continue;
+        }
+        timers.push(TimerInfo {
+            unit: unit.to_string(),
+            activates: String::new(),
+            next_usec: None,
+            last_usec: None,
+            active: false,
+            file_state: state.to_string(),
+            is_system,
+            editable: false,
+            loaded: false,
+            last_failure: None,
+        });
+    }
+    timers
+}
+
+/// `systemctl show` output for several units: one `Key=value` map per unit.
+pub fn show_blocks(text: &str) -> Vec<std::collections::HashMap<String, String>> {
+    text.split("\n\n")
+        .map(|block| {
+            block
+                .lines()
+                .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+                .collect::<std::collections::HashMap<_, _>>()
+        })
+        .filter(|m| m.contains_key("Id"))
+        .collect()
+}
+
+/// The activated service's last outcome when it was not a success.
+pub fn service_failure(props: &std::collections::HashMap<String, String>) -> Option<String> {
+    let result = props.get("Result").map(String::as_str).unwrap_or("");
+    if props.get("ActiveState").map(String::as_str) == Some("failed") {
+        Some(if result.is_empty() || result == "success" { "failed".to_string() } else { result.to_string() })
+    } else if !result.is_empty() && result != "success" {
+        Some(result.to_string())
+    } else {
+        None
+    }
+}
+
+async fn fetch_scope(user: bool) -> Vec<TimerInfo> {
+    let mut list = systemctl(user);
+    list.args(["list-timers", "--all", "--output=json"]);
+    let mut files = systemctl(user);
+    files.args(["list-unit-files", "--type=timer", "--no-legend"]);
+    let (json, files) = tokio::join!(stdout_of(list), stdout_of(files));
+    let mut timers = merge_timers(&json, &files, !user);
     if timers.is_empty() {
         return timers;
     }
 
-    // One batched `show` for active/enabled state, blocks split by blank lines.
-    let mut show_args: Vec<String> = Vec::new();
-    if user {
-        show_args.push("--user".into());
-    }
-    show_args.push("show".into());
-    show_args.extend(timers.iter().map(|t| t.unit.clone()));
-    show_args.extend(["-p".into(), "Id,ActiveState,UnitFileState".into()]);
-    if let Ok(o) = tokio::process::Command::new("systemctl").args(&show_args).output().await {
-        let text = String::from_utf8_lossy(&o.stdout).to_string();
-        for block in text.split("\n\n") {
-            let mut id = None;
-            let mut active = false;
-            let mut file_state = String::new();
-            for line in block.lines() {
-                if let Some((k, v)) = line.split_once('=') {
-                    match k {
-                        "Id" => id = Some(v.to_string()),
-                        "ActiveState" => active = v == "active",
-                        "UnitFileState" => file_state = v.to_string(),
-                        _ => {}
-                    }
-                }
+    // One batched `show` for active/enabled state, and the unit an
+    // unloaded timer would run (`show` loads it to answer).
+    let mut show = systemctl(user);
+    show.arg("show").args(timers.iter().map(|t| t.unit.clone())).args(["-p", "Id,ActiveState,UnitFileState,Unit"]);
+    for props in show_blocks(&stdout_of(show).await) {
+        if let Some(t) = timers.iter_mut().find(|t| Some(&t.unit) == props.get("Id")) {
+            t.active = props.get("ActiveState").is_some_and(|v| v == "active");
+            if let Some(fs) = props.get("UnitFileState").filter(|v| !v.is_empty()) {
+                t.file_state = fs.clone();
             }
-            if let Some(id) = id {
-                if let Some(t) = timers.iter_mut().find(|t| t.unit == id) {
-                    t.active = active;
-                    t.file_state = file_state;
-                }
+            if t.activates.is_empty() {
+                t.activates = props.get("Unit").cloned().unwrap_or_default();
+            }
+        }
+    }
+
+    // And one for how each activated service's last run went.
+    let services: Vec<String> = timers.iter().map(|t| t.activates.clone()).filter(|a| !a.is_empty()).collect();
+    if !services.is_empty() {
+        let mut show = systemctl(user);
+        show.arg("show").args(&services).args(["-p", "Id,ActiveState,Result"]);
+        for props in show_blocks(&stdout_of(show).await) {
+            let failure = service_failure(&props);
+            for t in timers.iter_mut().filter(|t| Some(&t.activates) == props.get("Id")) {
+                t.last_failure = failure.clone();
             }
         }
     }
@@ -215,8 +331,8 @@ fn user_unit_dir() -> Option<std::path::PathBuf> {
 }
 
 pub async fn fetch_timers() -> Vec<TimerInfo> {
-    let mut all = fetch_scope(false).await;
-    all.extend(fetch_scope(true).await);
+    let (mut all, user) = tokio::join!(fetch_scope(false), fetch_scope(true));
+    all.extend(user);
     all
 }
 
@@ -230,14 +346,43 @@ fn live_text(tb: &cce_ui::widget::Adapted<TextBox>) -> String {
     }
 }
 
-/// Create and enable a USER timer: `<name>.service` + `<name>.timer` under
+/// Whether a user unit of this name exists anywhere systemd would find it
+/// (`~/.config`, `/usr/lib`, a drop-in path): `show` says `not-found` only
+/// when there is none.
+fn user_unit_exists(unit: &str) -> bool {
+    if user_unit_dir().is_some_and(|d| d.join(unit).exists()) {
+        return true;
+    }
+    std::process::Command::new("systemctl")
+        .args(["--user", "show", "-p", "LoadState", "--value", "--", unit])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() != "not-found")
+        .unwrap_or(true)
+}
+
+/// Write a USER timer: `<name>.service` + `<name>.timer` under
 /// ~/.config/systemd/user, schedule validated by `systemd-analyze calendar`.
-fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String, String> {
+/// Enabling it is [`TimerAction::Activate`], run after.
+///
+/// `exists` is asked about both names first. Only the `.timer` used to be
+/// checked, so a name like `cce-desktop` overwrote the session's own
+/// `cce-desktop.service` with a one-shot command, and `pipewire` shadowed the
+/// packaged pipewire.service from ~/.config.
+fn create_user_timer(name: &str, command: &str, schedule: &str, exists: impl Fn(&str) -> bool) -> Result<(), String> {
     if name.is_empty() || command.is_empty() || schedule.is_empty() {
         return Err("All fields are required".into());
     }
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return Err("Name: letters, digits, - and _ only".into());
+    }
+    // A leading `-` reads as an option to systemctl.
+    if !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return Err("Name must start with a letter or digit".into());
+    }
+    for unit in [format!("{name}.timer"), format!("{name}.service")] {
+        if exists(&unit) {
+            return Err(format!("{unit} already exists: pick another name"));
+        }
     }
     let valid = std::process::Command::new("systemd-analyze")
         .args(["calendar", schedule])
@@ -252,12 +397,9 @@ fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String
     let dir = std::path::PathBuf::from(home).join(".config/systemd/user");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let timer_path = dir.join(format!("{}.timer", name));
-    if timer_path.exists() {
-        return Err(format!("{}.timer already exists", name));
-    }
 
     let service = format!(
-        "[Unit]\nDescription={name} (created by cce-system-interface)\n\n[Service]\nType=oneshot\nExecStart={exec}\n",
+        "[Unit]\nDescription={name} {CREATED_MARK}\n\n[Service]\nType=oneshot\nExecStart={exec}\n",
         name = name,
         exec = exec_start_for(command),
     );
@@ -266,12 +408,12 @@ fn create_user_timer(name: &str, command: &str, schedule: &str) -> Result<String
     );
     std::fs::write(dir.join(format!("{}.service", name)), service).map_err(|e| e.to_string())?;
     std::fs::write(&timer_path, timer).map_err(|e| e.to_string())?;
-
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.args(["-c", &format!("systemctl --user daemon-reload && systemctl --user enable --now {}.timer", name)]);
-    let _ = crate::spawn_awaited(cmd);
-    Ok(format!("Created and enabled {}.timer", name))
+    Ok(())
 }
+
+/// The Description= `create_user_timer` writes: how Delete knows a service
+/// file is the page's own to remove, rather than one the timer only runs.
+const CREATED_MARK: &str = "(created by cce-system-interface)";
 
 /// The `ExecStart=` value that runs `command` through `/bin/sh -c`.
 ///
@@ -364,7 +506,8 @@ fn replace_unit_field(path: &std::path::Path, key: &str, value: &str) -> Result<
 
 /// Edit an existing USER timer in place: swap the .service ExecStart and the
 /// .timer OnCalendar lines, keeping the rest of both files untouched.
-fn update_user_timer(base: &str, command: &str, schedule: &str) -> Result<String, String> {
+/// Reloading it is [`TimerAction::Apply`], run after.
+fn update_user_timer(base: &str, command: &str, schedule: &str) -> Result<(), String> {
     if command.is_empty() || schedule.is_empty() {
         return Err("Command and schedule are required".into());
     }
@@ -388,25 +531,126 @@ fn update_user_timer(base: &str, command: &str, schedule: &str) -> Result<String
         let value = if ours { exec_start_for(command) } else { command.to_string() };
         replace_unit_field(&service_path, "ExecStart", &value)?;
     }
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.args(["-c", &format!("systemctl --user daemon-reload && systemctl --user try-restart {}.timer", base)]);
-    let _ = crate::spawn_awaited(cmd);
-    Ok(format!("Updated {}.timer", base))
+    Ok(())
 }
 
-fn systemctl_action(args: &[&str], is_system: bool) {
-    if is_system {
-        let mut full = vec!["systemctl"];
-        full.extend(args);
-        let mut cmd = tokio::process::Command::new("pkexec");
-        cmd.args(&full);
-        let _ = crate::spawn_awaited(cmd);
+/// One systemctl call, awaited; a system timer's through pkexec (126/127
+/// are pkexec's own: not authorized, or the dialog dismissed).
+async fn systemctl_run(args: &[&str], is_system: bool) -> Result<(), String> {
+    let mut cmd = if is_system {
+        let mut c = tokio::process::Command::new("pkexec");
+        c.arg("systemctl");
+        c
     } else {
-        let mut full = vec!["--user"];
-        full.extend(args);
-        let mut cmd = tokio::process::Command::new("systemctl");
-        cmd.args(&full);
-        let _ = crate::spawn_awaited(cmd);
+        systemctl(true)
+    };
+    let out = cmd.args(args).output().await.map_err(|e| format!("could not run systemctl: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let text = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(match out.status.code() {
+        Some(126) | Some(127) if is_system => "authorization was cancelled or denied".to_string(),
+        _ if text.is_empty() => format!("systemctl exited with {}", out.status),
+        _ => text,
+    })
+}
+
+/// Carry out one action. `activates` is the service a timer runs.
+async fn perform(action: TimerAction, unit: &str, activates: &str, is_system: bool) -> Result<(), String> {
+    match action {
+        TimerAction::RunNow => {
+            if activates.is_empty() {
+                return Err(format!("{unit} names no unit to run"));
+            }
+            systemctl_run(&["start", "--", activates], is_system).await
+        }
+        TimerAction::Enable => systemctl_run(&["enable", "--now", "--", unit], is_system).await,
+        TimerAction::Disable => systemctl_run(&["disable", "--now", "--", unit], is_system).await,
+        TimerAction::Activate => {
+            systemctl_run(&["daemon-reload"], false).await?;
+            systemctl_run(&["enable", "--now", "--", unit], false).await
+        }
+        TimerAction::Apply => {
+            systemctl_run(&["daemon-reload"], false).await?;
+            systemctl_run(&["try-restart", "--", unit], false).await
+        }
+        TimerAction::Delete => {
+            let dir = user_unit_dir().ok_or("HOME not set")?;
+            // Stopping it first; a timer already disabled is fine.
+            let _ = systemctl_run(&["disable", "--now", "--", unit], false).await;
+            std::fs::remove_file(dir.join(unit)).map_err(|e| format!("removing {unit}: {e}"))?;
+            let service = format!("{}.service", unit.trim_end_matches(".timer"));
+            if is_page_service(&dir.join(&service)) {
+                std::fs::remove_file(dir.join(&service)).map_err(|e| format!("removing {service}: {e}"))?;
+            }
+            systemctl_run(&["daemon-reload"], false).await
+        }
+    }
+}
+
+/// A service file this page wrote ([`CREATED_MARK`]): Delete removes it
+/// with its timer. Any other is left alone — something else may run it.
+fn is_page_service(path: &std::path::Path) -> bool {
+    read_unit_field(path, "Description").is_some_and(|d| d.ends_with(CREATED_MARK))
+}
+
+impl TimersState {
+    fn find_mut(&mut self, unit: &str, is_system: bool) -> Option<&mut TimerInfo> {
+        self.timers.iter_mut().find(|t| t.unit == unit && t.is_system == is_system)
+    }
+
+    fn apply_optimistic(&mut self, action: TimerAction, unit: &str, is_system: bool) {
+        let state = match action {
+            TimerAction::Enable => "enabled",
+            TimerAction::Disable => "disabled",
+            _ => return,
+        };
+        if let Some(t) = self.find_mut(unit, is_system) {
+            t.file_state = state.to_string();
+        }
+    }
+}
+
+/// Send `action`, unless the timer already has one in flight (a second
+/// click on a system timer used to queue a second password prompt).
+fn run_action(state: &mut TimersState, action: TimerAction, unit: String, is_system: bool) {
+    if state.pending.iter().any(|(_, u, s)| *u == unit && *s == is_system) {
+        return;
+    }
+    let activates = state.timers.iter().find(|t| t.unit == unit && t.is_system == is_system).map(|t| t.activates.clone()).unwrap_or_default();
+    state.apply_optimistic(action, &unit, is_system);
+    state.pending.push((action, unit.clone(), is_system));
+    let Some(tx) = state.sender.clone() else { return };
+    tokio::spawn(async move {
+        let res = perform(action, &unit, &activates, is_system).await;
+        let _ = tx.send(AppAction::Timers(TimersMessage::Finished(action, unit, is_system, res)));
+    });
+}
+
+/// A refresh now rather than at the next 5 s tick, after an action.
+fn refresh(state: &TimersState) {
+    let Some(tx) = state.sender.clone() else { return };
+    tokio::spawn(async move {
+        let _ = tx.send(AppAction::Timers(TimersMessage::Refreshed(fetch_timers().await)));
+    });
+}
+
+/// What the page says when an action finishes.
+fn outcome_text(action: TimerAction, unit: &str, activates: &str, res: Result<(), String>) -> Result<String, String> {
+    match (action, res) {
+        (TimerAction::RunNow, Ok(())) => Ok(format!("Started {activates}")),
+        (TimerAction::Enable, Ok(())) => Ok(format!("Enabled {unit}")),
+        (TimerAction::Disable, Ok(())) => Ok(format!("Disabled {unit}")),
+        (TimerAction::Activate, Ok(())) => Ok(format!("Created and enabled {unit}")),
+        (TimerAction::Apply, Ok(())) => Ok(format!("Updated {unit}")),
+        (TimerAction::Delete, Ok(())) => Ok(format!("Deleted {unit}")),
+        (TimerAction::Activate, Err(e)) => Err(format!("Created {unit}, but enabling it failed: {e}")),
+        (TimerAction::Apply, Err(e)) => Err(format!("Saved {unit}, but reloading it failed: {e}")),
+        (TimerAction::RunNow, Err(e)) => Err(format!("Couldn't start {activates}: {e}")),
+        (TimerAction::Enable, Err(e)) => Err(format!("Couldn't enable {unit}: {e}")),
+        (TimerAction::Disable, Err(e)) => Err(format!("Couldn't disable {unit}: {e}")),
+        (TimerAction::Delete, Err(e)) => Err(format!("Couldn't delete {unit}: {e}")),
     }
 }
 
@@ -492,16 +736,43 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
             col.widget_h(ctx, state.command_box, field_h);
             col.widget_h(ctx, state.schedule_box, field_h);
             let save_label = if state.editing.is_some() { "Save" } else { "Create" };
+            let danger = ([0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0]);
+            let editing = state.editing.is_some();
             col.row(|r| {
                 form_button(r, save_label, button_need(save_label), ([0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], text_on),
                     AppAction::Timers(TimersMessage::CreateSave));
                 form_button(r, "Cancel", button_need("Cancel"), ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], text_on),
                     AppAction::Timers(TimersMessage::CreateCancel));
+                r.space(0.0, true);
+                if editing {
+                    form_button(r, "Delete", button_need("Delete"), danger, AppAction::Timers(TimersMessage::DeleteAsk));
+                }
             });
+            if let (true, Some(base)) = (state.confirm_delete, state.editing.clone()) {
+                let ours = user_unit_dir().is_some_and(|d| is_page_service(&d.join(format!("{base}.service"))));
+                let note = if ours {
+                    format!("Delete {base}.timer and the {base}.service this page made for it?")
+                } else {
+                    format!("Delete {base}.timer? Its service file is left in place.")
+                };
+                col.text(note, 12.0, [0.95, 0.75, 0.55, 1.0]);
+                col.row(|r| {
+                    form_button(r, "Delete", button_need("Delete"), danger, AppAction::Timers(TimersMessage::DeleteConfirm));
+                    form_button(r, "Keep", button_need("Keep"), ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], text_on),
+                        AppAction::Timers(TimersMessage::DeleteCancel));
+                    r.space(0.0, true);
+                });
+            }
         }
 
         if let Some(ref msg) = state.status_msg {
-            col.text(msg.clone(), 12.0, [0.56, 0.83, 0.56, 1.0]);
+            let (text, color) = match msg {
+                Ok(m) => (m.clone(), OK_GREEN),
+                Err(e) => (e.clone(), RED),
+            };
+            let wrap_w = col.form_width();
+            let lines: Vec<String> = text.lines().flat_map(|l| crate::app::wrap_to_width(l, wrap_w, 12.0)).take(6).collect();
+            col.lines(lines, 12.0, color);
         }
 
         col.fill(LIST_MIN_H, move |pc, rect, ctx| {
@@ -549,12 +820,8 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                         // Title + schedule subtitle, truncated to the item's text room.
                         let text_max_w = item_rect.width - 2.0 * cce_ui::layout::CONTROL_TEXT_INSET;
                         let max_chars = ((text_max_w / 6.0) as usize).max(10);
-                        let subtitle_full = schedule_line(timer, now);
-                        let subtitle = if subtitle_full.len() > max_chars {
-                            format!("{}...", &subtitle_full[..subtitle_full.char_indices().take(max_chars.saturating_sub(3)).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)])
-                        } else {
-                            subtitle_full
-                        };
+                        // Char-safe, counted in characters (the "•" is three bytes).
+                        let subtitle = cce_ui::widget::display::truncate_tail(&schedule_line(timer, now), max_chars);
 
                         let item = items[idx];
                         let item_btn = &mut ctx[item];
@@ -565,7 +832,13 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                         crate::app::place_and_paint(pc, item, item_rect, ctx);
                         pc.pop_clip();
 
-                        let dot_state = if timer.active { DotStatus::Active } else { DotStatus::Inactive };
+                        let dot_state = if timer.last_failure.is_some() {
+                            DotStatus::Error
+                        } else if timer.active {
+                            DotStatus::Active
+                        } else {
+                            DotStatus::Inactive
+                        };
                         // Drawn this frame only: out of the context once it is placed.
                         let dot = ctx.insert(StatusDot::new(dot_state));
                         crate::app::place_and_paint(pc, dot, dot_rect, ctx);
@@ -606,7 +879,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                             [0.16, 0.35, 0.18, 0.4],
                             [0.22, 0.45, 0.25, 0.6],
                             active_txt,
-                            crate::app::AppAction::Timers(TimersMessage::RunNow(timer.activates.clone(), timer.is_system)),
+                            crate::app::AppAction::Timers(TimersMessage::Request(TimerAction::RunNow, timer.unit.clone(), timer.is_system)),
                         );
 
                         // Enable/Disable the timer unit; static units have no toggle.
@@ -624,7 +897,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                                     [0.25, 0.14, 0.14, 1.0],
                                     [0.40, 0.20, 0.20, 1.0],
                                     [0.95, 0.55, 0.55, 1.0],
-                                    crate::app::AppAction::Timers(TimersMessage::Disable(timer.unit.clone(), timer.is_system)),
+                                    crate::app::AppAction::Timers(TimersMessage::Request(TimerAction::Disable, timer.unit.clone(), timer.is_system)),
                                 );
                             }
                             "disabled" => {
@@ -642,11 +915,13 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                                     [0.15, 0.15, 0.20, 1.0],
                                     [0.22, 0.22, 0.28, 1.0],
                                     active_txt,
-                                    crate::app::AppAction::Timers(TimersMessage::Enable(timer.unit.clone(), timer.is_system)),
+                                    crate::app::AppAction::Timers(TimersMessage::Request(TimerAction::Enable, timer.unit.clone(), timer.is_system)),
                                 );
                             }
-                            _ => {
-                                pc.text("static", en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, 11.0, None), 11.0, crate::app::rgb(TEXT_DIM));
+                            // No toggle: say what it is instead (static, masked,
+                            // generated, …) rather than calling them all static.
+                            other => {
+                                pc.text(other, en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, 11.0, None), 11.0, crate::app::rgb(TEXT_DIM));
                             }
                         }
                     }
@@ -671,6 +946,11 @@ pub fn update(state: &mut TimersState, msg: TimersMessage, ctx: &mut UiContext) 
         TimersMessage::Refreshed(timers) => {
             state.loaded = true;
             state.timers = timers;
+            // An action still in flight keeps its optimistic state: systemd's
+            // answer, not the refresh, settles it.
+            for (action, unit, is_system) in state.pending.clone() {
+                state.apply_optimistic(action, &unit, is_system);
+            }
             for h in state.items.drain(..) {
                 ctx.remove(h);
             }
@@ -682,26 +962,29 @@ pub fn update(state: &mut TimersState, msg: TimersMessage, ctx: &mut UiContext) 
                 ctx.remove(h);
             }
         }
-        TimersMessage::RunNow(service, is_system) => {
-            if !service.is_empty() {
-                systemctl_action(&["start", &service], is_system);
-            }
+        TimersMessage::Request(action, unit, is_system) => {
+            state.status_msg = None;
+            run_action(state, action, unit, is_system);
         }
-        TimersMessage::Enable(unit, is_system) => {
-            if let Some(t) = state.timers.iter_mut().find(|t| t.unit == unit && t.is_system == is_system) {
-                t.file_state = "enabled".to_string();
-            }
-            systemctl_action(&["enable", "--now", &unit], is_system);
+        TimersMessage::Finished(action, unit, is_system, res) => {
+            state.pending.retain(|(a, u, s)| !(*a == action && *u == unit && *s == is_system));
+            let activates = state.timers.iter().find(|t| t.unit == unit && t.is_system == is_system).map(|t| t.activates.clone()).unwrap_or_default();
+            state.status_msg = Some(outcome_text(action, &unit, &activates, res));
+            refresh(state);
         }
-        TimersMessage::Disable(unit, is_system) => {
-            if let Some(t) = state.timers.iter_mut().find(|t| t.unit == unit && t.is_system == is_system) {
-                t.file_state = "disabled".to_string();
+        TimersMessage::DeleteAsk => state.confirm_delete = true,
+        TimersMessage::DeleteCancel => state.confirm_delete = false,
+        TimersMessage::DeleteConfirm => {
+            if let Some(base) = state.editing.take() {
+                state.confirm_delete = false;
+                state.creating = false;
+                run_action(state, TimerAction::Delete, format!("{base}.timer"), false);
             }
-            systemctl_action(&["disable", "--now", &unit], is_system);
         }
         TimersMessage::CreateStart => {
             state.creating = true;
             state.editing = None;
+            state.confirm_delete = false;
             state.status_msg = None;
             for tb in [state.name_box, state.command_box, state.schedule_box] {
                 let tb = &mut ctx[tb];
@@ -712,6 +995,7 @@ pub fn update(state: &mut TimersState, msg: TimersMessage, ctx: &mut UiContext) 
         TimersMessage::CreateCancel => {
             state.creating = false;
             state.editing = None;
+            state.confirm_delete = false;
             state.status_msg = None;
         }
         TimersMessage::EditStart(unit) => {
@@ -726,6 +1010,7 @@ pub fn update(state: &mut TimersState, msg: TimersMessage, ctx: &mut UiContext) 
                 .unwrap_or_default();
             state.creating = false;
             state.editing = Some(base.clone());
+            state.confirm_delete = false;
             state.status_msg = None;
             ctx[state.name_box].text = base.clone();
             ctx[state.name_box].edit_buffer = base;
@@ -737,25 +1022,27 @@ pub fn update(state: &mut TimersState, msg: TimersMessage, ctx: &mut UiContext) 
         TimersMessage::CreateSave => {
             let command = live_text(&ctx[state.command_box]);
             let schedule = live_text(&ctx[state.schedule_box]);
-            let result = if let Some(base) = state.editing.clone() {
-                update_user_timer(&base, &command, &schedule)
+            let (written, unit, action) = if let Some(base) = state.editing.clone() {
+                (update_user_timer(&base, &command, &schedule), format!("{base}.timer"), TimerAction::Apply)
             } else {
-                create_user_timer(&live_text(&ctx[state.name_box]), &command, &schedule)
+                let name = live_text(&ctx[state.name_box]);
+                (create_user_timer(&name, &command, &schedule, user_unit_exists), format!("{name}.timer"), TimerAction::Activate)
             };
-            match result {
-                Ok(msg) => {
+            match written {
+                Ok(()) => {
                     state.creating = false;
                     state.editing = None;
-                    state.status_msg = Some(msg);
+                    state.confirm_delete = false;
+                    // Said once systemd has answered (`Finished`).
+                    state.status_msg = None;
                     // Show the unit where it (re)appears on the next refresh.
                     state.active_tab = TimerTab::User;
                     for h in state.items.drain(..) {
                         ctx.remove(h);
                     }
+                    run_action(state, action, unit, false);
                 }
-                Err(e) => {
-                    state.status_msg = Some(e);
-                }
+                Err(e) => state.status_msg = Some(Err(e)),
             }
         }
     }
@@ -932,10 +1219,125 @@ mod tests {
 
     #[test]
     fn create_timer_validation_rejects_before_side_effects() {
-        assert!(create_user_timer("", "echo hi", "daily").is_err());
-        assert!(create_user_timer("backup", "", "daily").is_err());
-        assert!(create_user_timer("backup", "echo hi", "").is_err());
-        assert!(create_user_timer("bad name!", "echo hi", "daily").is_err());
+        let none = |_: &str| false;
+        assert!(create_user_timer("", "echo hi", "daily", none).is_err());
+        assert!(create_user_timer("backup", "", "daily", none).is_err());
+        assert!(create_user_timer("backup", "echo hi", "", none).is_err());
+        assert!(create_user_timer("bad name!", "echo hi", "daily", none).is_err());
+        assert!(create_user_timer("-backup", "echo hi", "daily", none).is_err(), "a leading - reads as an option");
+    }
+
+    /// The name is refused when EITHER unit exists, wherever systemd would
+    /// find it — `cce-desktop` used to overwrite the session's own service.
+    #[test]
+    fn create_refuses_a_name_that_is_taken() {
+        let taken = |unit: &str| unit == "cce-desktop.service" || unit == "pipewire.service";
+        let e = create_user_timer("cce-desktop", "echo hi", "daily", taken).unwrap_err();
+        assert!(e.contains("cce-desktop.service already exists"), "{e}");
+        assert!(create_user_timer("pipewire", "echo hi", "daily", taken).is_err());
+        let e = create_user_timer("x", "echo", "daily", |u: &str| u == "x.timer").unwrap_err();
+        assert!(e.contains("x.timer"), "{e}");
+    }
+
+    /// Disabled timers nothing loaded are listed too; templates and aliases
+    /// are not; systemd's 0 means no next run.
+    #[test]
+    fn unit_files_join_the_loaded_timers() {
+        let json = r#"[{"next":1792124612735344,"last":1792122806936818,"unit":"a.timer","activates":"a.service"},
+                       {"next":0,"last":0,"unit":"b.timer","activates":"b.service"}]"#;
+        let files = "a.timer enabled enabled\nfstrim.timer disabled disabled\nsysupdate.timer alias -\nt@.timer disabled -\n";
+        let list = merge_timers(json, files, true);
+        let names: Vec<&str> = list.iter().map(|t| t.unit.as_str()).collect();
+        assert_eq!(names, ["a.timer", "b.timer", "fstrim.timer"]);
+        assert_eq!(list[0].file_state, "enabled");
+        assert_eq!(list[1].next_usec, None);
+        assert!(!list[2].loaded && list[2].file_state == "disabled");
+    }
+
+    #[test]
+    fn a_failed_last_run_leads_the_row() {
+        let props = |a: &str, r: &str| {
+            [("Id", "x.service"), ("ActiveState", a), ("Result", r)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        };
+        assert_eq!(service_failure(&props("inactive", "success")), None);
+        assert_eq!(service_failure(&props("inactive", "exit-code")).as_deref(), Some("exit-code"));
+        assert_eq!(service_failure(&props("failed", "success")).as_deref(), Some("failed"));
+        let blocks = show_blocks("Id=a.service\nResult=success\n\nId=b.service\nResult=signal\n");
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(service_failure(&blocks[1]).as_deref(), Some("signal"));
+
+        let now = 1_000_000_000_000_000u64;
+        let t = TimerInfo {
+            unit: "x.timer".into(),
+            activates: "x.service".into(),
+            next_usec: Some(now + 60_000_000),
+            last_usec: Some(now - 3_600_000_000),
+            active: true,
+            file_state: "enabled".into(),
+            is_system: false,
+            editable: false,
+            loaded: true,
+            last_failure: Some("exit-code".into()),
+        };
+        assert!(schedule_line(&t, now).starts_with("last run failed (exit-code)"), "{}", schedule_line(&t, now));
+        let unloaded = TimerInfo { loaded: false, last_failure: None, ..t };
+        assert_eq!(schedule_line(&unloaded, now), "x.service \u{2022} not scheduled");
+    }
+
+    /// Errors are shown in red, results only once systemd answers, and an
+    /// action in flight survives refreshes and blocks a second.
+    #[test]
+    fn actions_report_and_survive_refreshes() {
+        let mut ui = UiContext::new();
+        let mut st = TimersState::new(&mut ui);
+        let t = |state: &str| TimerInfo {
+            unit: "f.timer".into(),
+            activates: "f.service".into(),
+            next_usec: None,
+            last_usec: None,
+            active: false,
+            file_state: state.into(),
+            is_system: true,
+            editable: false,
+            loaded: false,
+            last_failure: None,
+        };
+        update(&mut st, TimersMessage::Refreshed(vec![t("disabled")]), &mut ui);
+        update(&mut st, TimersMessage::Request(TimerAction::Enable, "f.timer".into(), true), &mut ui);
+        update(&mut st, TimersMessage::Refreshed(vec![t("disabled")]), &mut ui);
+        assert_eq!(st.timers[0].file_state, "enabled", "the refresh does not undo the click");
+        update(&mut st, TimersMessage::Request(TimerAction::Disable, "f.timer".into(), true), &mut ui);
+        assert_eq!(st.pending.len(), 1, "a second action waits");
+        update(&mut st, TimersMessage::Finished(TimerAction::Enable, "f.timer".into(), true, Err("authorization was cancelled or denied".into())), &mut ui);
+        assert!(st.pending.is_empty());
+        assert!(matches!(&st.status_msg, Some(Err(e)) if e.contains("Couldn't enable f.timer")));
+
+        let mut layout = cce_ui::compose::PageFlow::new();
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, false, &[false], &mut layout, &mut ui).finish();
+        let red = pc.texts().into_iter().find(|t| t.text.contains("Couldn't enable")).expect("the error is drawn");
+        assert_eq!(red.color, crate::app::rgb(RED));
+    }
+
+    #[test]
+    fn create_reports_only_after_enabling() {
+        assert_eq!(outcome_text(TimerAction::Activate, "b.timer", "b.service", Ok(())), Ok("Created and enabled b.timer".into()));
+        let e = outcome_text(TimerAction::Activate, "b.timer", "b.service", Err("Unit b.timer has a bad unit file setting.".into()));
+        assert!(matches!(e, Err(m) if m.starts_with("Created b.timer, but enabling it failed")));
+    }
+
+    /// Delete takes the service only when this page wrote it.
+    #[test]
+    fn delete_removes_only_the_pages_own_service() {
+        let dir = std::env::temp_dir().join(format!("cce-timer-delete-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ours = dir.join("a.service");
+        std::fs::write(&ours, format!("[Unit]\nDescription=a {CREATED_MARK}\n\n[Service]\nExecStart=/bin/true\n")).unwrap();
+        let theirs = dir.join("b.service");
+        std::fs::write(&theirs, "[Unit]\nDescription=Restic backup\n").unwrap();
+        assert!(is_page_service(&ours));
+        assert!(!is_page_service(&theirs));
+        assert!(!is_page_service(&dir.join("missing.service")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -950,6 +1352,8 @@ mod tests {
             file_state: "enabled".into(),
             is_system: true,
             editable: false,
+            loaded: true,
+            last_failure: None,
         };
         let line = schedule_line(&t, now);
         assert!(line.contains("x.service"), "{line}");
