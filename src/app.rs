@@ -49,7 +49,7 @@ impl AppState {
             browser: browser::BrowserState::new(ctx),
             default_apps: default_apps::DefaultAppsState::new(ctx),
             network: network::NetworkState::new(ctx),
-            processes: processes::ProcessesState::default(),
+            processes: processes::ProcessesState::new(ctx),
             services: services::ServicesState::new(ctx),
             system_info: system_info::SystemState::new(ctx),
             timers: timers::TimersState::new(ctx),

@@ -247,6 +247,7 @@ impl cce_ui::engine::Application for SystemInterface {
         this.app.system_info.sender = Some(this.sender.clone());
         this.app.services.sender = Some(this.sender.clone());
         this.app.timers.sender = Some(this.sender.clone());
+        this.app.processes.sender = Some(this.sender.clone());
 
         this.rebuild_layout(820.0, 680.0);
         this.needs_rebuild = true;

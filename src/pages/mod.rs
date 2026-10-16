@@ -344,8 +344,7 @@ mod list_clip_tests {
                 mem_pct: "1.0".into(),
                 rss_kb: 1024,
                 command: "p".into(),
-                watts: None,
-                wakeups: None,
+                ..Default::default()
             })
             .collect();
         let pc = render(&mut s, &mut ui);

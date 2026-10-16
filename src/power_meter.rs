@@ -96,6 +96,9 @@ pub struct PidPower {
     /// Smoothed estimate; None when the mode cannot produce one.
     pub watts: Option<f32>,
     pub wakeups_per_s: f32,
+    /// CPU time over the interval as a percentage of one core (top's %CPU):
+    /// what the process is doing NOW, where `ps`'s %cpu is its lifetime average.
+    pub cpu_pct: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -172,6 +175,11 @@ impl Meter {
             Some(w) => (w - self.floor(key, t, w)).max(0.0),
             None => 0.0,
         }
+    }
+
+    /// Whether a snapshot is held for the next tick to diff against.
+    pub fn has_baseline(&self) -> bool {
+        self.prev.is_some()
     }
 
     pub fn tick(&mut self, snap: Snapshot) -> Attribution {
@@ -304,7 +312,8 @@ impl Meter {
                 attributed += e;
                 Some(e as f32)
             };
-            per_pid.insert(*pid, PidPower { watts, wakeups_per_s: d.wakeups as f32 });
+            let cpu_pct = (d.cpu_ns / (dt * 1e9) * 100.0) as f32;
+            per_pid.insert(*pid, PidPower { watts, wakeups_per_s: d.wakeups as f32, cpu_pct });
         }
 
         Attribution {
@@ -482,6 +491,21 @@ mod tests {
         assert!((w(&a, 1) - 4.5).abs() < 1e-4);
         assert!((w(&a, 2) - 1.5).abs() < 1e-4);
         assert!((a.attributed_w - 6.0).abs() < 1e-4);
+    }
+
+    /// CPU % is the interval's share of one core, in every mode — it is
+    /// what the Processes page shows, power estimate or not.
+    #[test]
+    fn cpu_percent_is_over_the_interval() {
+        let mut m = Meter::new();
+        assert!(!m.has_baseline());
+        m.tick(snap(0.0, None, &[(1, proc(0, 0, 0)), (2, proc(1000, 0, 0))]));
+        assert!(m.has_baseline());
+        // 3 s: pid 1 used 150 ticks (1.5 s, half a core), pid 2 none.
+        let a = m.tick(snap(3.0, None, &[(1, proc(150, 0, 0)), (2, proc(1000, 0, 0))]));
+        assert_eq!(a.mode, Mode::Unavailable);
+        assert!((a.per_pid[&1].cpu_pct - 50.0).abs() < 1e-3);
+        assert_eq!(a.per_pid[&2].cpu_pct, 0.0, "a lifetime of CPU is not current use");
     }
 
     #[test]
