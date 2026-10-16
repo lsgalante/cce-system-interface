@@ -69,6 +69,7 @@ struct SystemInterface {
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageInfo>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_browser: std::sync::mpsc::Receiver<pages::browser::BrowserConfig>,
+    rx_code_agent: std::sync::mpsc::Receiver<pages::code_agent::CodeAgentConfig>,
     rx_appearance: std::sync::mpsc::Receiver<pages::appearance::AppearanceConfig>,
     rx_keyboard: std::sync::mpsc::Receiver<pages::keyboard::KeyboardSnapshot>,
     rx_display: std::sync::mpsc::Receiver<pages::display::DisplaySnapshot>,
@@ -213,6 +214,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
             rx_browser: watchers.rx_browser,
+            rx_code_agent: watchers.rx_code_agent,
             rx_appearance: watchers.rx_appearance,
             rx_keyboard: watchers.rx_keyboard,
             rx_display: watchers.rx_display,
@@ -701,6 +703,15 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
+        while let Ok(s) = self.rx_code_agent.try_recv() {
+            if !self.fresh_snapshot("code-agent", &s) {
+                continue;
+            }
+            pages::code_agent::update(&mut self.app.code_agent, pages::code_agent::CodeAgentMessage::Refreshed(s), &mut self.ui_context);
+            if self.app.current_page == Page::CodeAgent {
+                self.needs_rebuild = true;
+            }
+        }
         while let Ok(s) = self.rx_appearance.try_recv() {
             if !self.fresh_snapshot("appearance", &s) {
                 continue;
@@ -813,6 +824,7 @@ impl SystemInterface {
             AppAction::DefaultApps(m) => pages::default_apps::update(&mut self.app.default_apps, m.clone(), &mut self.ui_context),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone(), &mut self.ui_context),
             AppAction::Browser(m) => pages::browser::update(&mut self.app.browser, m.clone(), &mut self.ui_context),
+            AppAction::CodeAgent(m) => pages::code_agent::update(&mut self.app.code_agent, m.clone(), &mut self.ui_context),
             AppAction::Appearance(m) => pages::appearance::update(&mut self.app.appearance, m.clone(), &mut self.ui_context),
             AppAction::Keyboard(m) => pages::keyboard::update(&mut self.app.keyboard, m.clone(), &mut self.ui_context),
             AppAction::Display(m) => pages::display::update(&mut self.app.display, m.clone(), &mut self.ui_context),

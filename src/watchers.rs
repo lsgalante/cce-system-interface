@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, appearance, audio, bluetooth, browser, default_apps, display, keyboard, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
+use crate::pages::{Page, appearance, audio, bluetooth, browser, code_agent, default_apps, display, keyboard, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
 
 /// The page on screen, published by the UI (`watch::Sender::send_replace`)
 /// to every page worker.
@@ -21,6 +21,7 @@ pub struct Watchers {
     pub rx_storage: Receiver<storage::StorageInfo>,
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
     pub rx_browser: Receiver<browser::BrowserConfig>,
+    pub rx_code_agent: Receiver<code_agent::CodeAgentConfig>,
     pub rx_appearance: Receiver<appearance::AppearanceConfig>,
     pub rx_keyboard: Receiver<keyboard::KeyboardSnapshot>,
     pub rx_display: Receiver<display::DisplaySnapshot>,
@@ -169,6 +170,8 @@ pub fn spawn_all(
     // Config-file poll while the Browser page is open: catches edits made
     // outside this app (the browser itself, cce-data-editor).
     let (p, k) = w(); let rx_browser = spawn_bg_blocking(p, Page::Browser, 5, k, browser::read_browser_config);
+    // The same for cce-code-agent's config (edited by hand or in cce-data-editor).
+    let (p, k) = w(); let rx_code_agent = spawn_bg_blocking(p, Page::CodeAgent, 5, k, code_agent::read_code_agent_config);
     // The shared config's style block, for edits made elsewhere (cce-data-editor, by hand).
     let (p, k) = w(); let rx_appearance = spawn_bg_blocking(p, Page::Appearance, 5, k, appearance::read_appearance_config);
     // input.kdl, for edits made in cce-data-editor or by hand.
@@ -197,6 +200,7 @@ pub fn spawn_all(
             rx_storage,
             rx_notifications,
             rx_browser,
+            rx_code_agent,
             rx_appearance,
             rx_keyboard,
             rx_display,

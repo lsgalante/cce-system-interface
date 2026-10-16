@@ -18,6 +18,7 @@ use crate::pages::accounts;
 use crate::pages::packages;
 use crate::pages::notifications;
 use crate::pages::browser;
+use crate::pages::code_agent;
 use crate::pages::Page;
 
 pub struct AppState {
@@ -27,6 +28,7 @@ pub struct AppState {
     pub bluetooth: bluetooth::BluetoothState,
     pub power: power::PowerState,
     pub browser: browser::BrowserState,
+    pub code_agent: code_agent::CodeAgentState,
     pub default_apps: default_apps::DefaultAppsState,
     pub display: display::DisplayState,
     pub keyboard: keyboard::KeyboardState,
@@ -51,6 +53,7 @@ impl AppState {
             bluetooth: bluetooth::BluetoothState::new(ctx),
             power: power::PowerState::new(ctx),
             browser: browser::BrowserState::new(ctx),
+            code_agent: code_agent::CodeAgentState::new(ctx),
             default_apps: default_apps::DefaultAppsState::new(ctx),
             display: display::DisplayState::new(ctx),
             keyboard: keyboard::KeyboardState::default(),
@@ -76,6 +79,7 @@ impl AppState {
             Page::Bluetooth => &self.bluetooth,
             Page::Power => &self.power,
             Page::Browser => &self.browser,
+            Page::CodeAgent => &self.code_agent,
             Page::DefaultApps => &self.default_apps,
             Page::Display => &self.display,
             Page::Keyboard => &self.keyboard,
@@ -98,6 +102,7 @@ impl AppState {
             Page::Bluetooth => &mut self.bluetooth,
             Page::Power => &mut self.power,
             Page::Browser => &mut self.browser,
+            Page::CodeAgent => &mut self.code_agent,
             Page::DefaultApps => &mut self.default_apps,
             Page::Display => &mut self.display,
             Page::Keyboard => &mut self.keyboard,
@@ -130,6 +135,7 @@ pub enum AppAction {
     Appearance(appearance::AppearanceMessage),
     Audio(audio::AudioMessage),
     Browser(browser::BrowserMessage),
+    CodeAgent(code_agent::CodeAgentMessage),
     DefaultApps(default_apps::DefaultAppsMessage),
     Display(display::DisplayMessage),
     Keyboard(keyboard::KeyboardMessage),
