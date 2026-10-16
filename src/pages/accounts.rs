@@ -1,4 +1,4 @@
-use crate::app::{form_button, form_divider, form_pairs, AppAction, PageCanvas};
+use crate::app::{form_button, form_divider, form_pairs, wrap_to_width, AppAction, PageCanvas};
 use cce_ui::context::UiContext;
 use cce_ui::widget::Handle;
 use cce_ui::compose::{lay_row, Cell, PageLayoutBuilder, PageFlow};
@@ -68,6 +68,17 @@ pub fn status_from(acc: &AccountInfo, keyring_has_entry: bool) -> Option<Keyring
     })
 }
 
+/// Whether cce-calendar syncs this account: an iCloud one (by its IMAP host
+/// or address), or a Google sign-in with a refresh token. The same rule as
+/// `cce_calendar::AccountOnDisk::is_icloud` / `is_google`; deleting such an
+/// account here stops its calendar sync too, which the page now says.
+pub fn calendar_uses(acc: &AccountInfo) -> bool {
+    let host = acc.imap.split(':').next().unwrap_or("");
+    let icloud = host.ends_with(".mail.me.com") || ["@icloud.com", "@me.com", "@mac.com"].iter().any(|d| acc.email.ends_with(d));
+    let google = acc.is_oauth && acc.refresh_token.as_deref().is_some_and(|t| !t.is_empty());
+    icloud || google
+}
+
 /// What the accounts watcher delivers: the file contents plus, for each
 /// password account, where its credential actually lives.
 #[derive(Debug, Clone)]
@@ -104,6 +115,10 @@ pub struct AccountsState {
     pub keyring: std::collections::HashMap<String, KeyringStatus>,
     /// The keyring has not answered for these accounts yet.
     pub keyring_checking: bool,
+    /// The account a Delete is waiting to be confirmed for.
+    pub confirm_delete: Option<usize>,
+    /// The Vault Sync section.
+    pub sync: crate::pages::vault_sync::SyncState,
     /// The account rows scroll independently of the page. Rows stay plain
     /// `PageCanvas` buttons (network's list, not services'), so they dispatch
     /// through `page_buttons` and this page still needs no dispatch-root
@@ -130,7 +145,10 @@ impl AccountsState {
                 tb.is_password = true;
                 ctx.insert(tb)
             },
-            list: ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_sink_behind(true),
+            // Frameless on the well, the DE's list (no grey slab behind the
+            // rows), as the other pages' lists are.
+            list: ScrollRegion::new(cce_ui::layout::spinbox_height(), LIST_GAP).with_frame(false).with_sink_behind(true),
+            sync: crate::pages::vault_sync::SyncState::new(ctx),
             ..Default::default()
         }
     }
@@ -143,7 +161,10 @@ pub enum AccountsMessage {
     AddAccountStart,
     AddAccountCancel,
     AddAccountSave,
+    /// Asks first: the confirmation names what stops working.
     DeleteAccount(usize),
+    ConfirmDelete,
+    CancelDelete,
     MakeDefault(usize),
     StatusMessage(String),
     GoogleLoginInit,
@@ -156,6 +177,8 @@ pub enum AccountsMessage {
     EditAccountStart(usize),
     EditAccountSave,
     EditAccountCancel,
+    /// The Vault Sync section (`vault_sync`).
+    Sync(crate::pages::vault_sync::SyncMessage),
 }
 
 pub fn get_accounts_path() -> std::path::PathBuf {
@@ -666,7 +689,7 @@ const LIST_MAX_ROWS: usize = 8;
 pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
     let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(2);
 
     let widget_h = cce_ui::layout::spinbox_height();
     let btn_h = cce_ui::layout::button_height();
@@ -719,23 +742,17 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     // The stranded-vault tell, visible without selecting the row.
                     let missing = keyring.get(&acc.email) == Some(&KeyringStatus::Missing);
                     let is_selected = selected_idx == Some(idx) && !adding_new;
-                    let (bg, hover) = if is_selected {
-                        (ACCENT_BG, [0.22, 0.44, 0.70, 0.45])
-                    } else {
-                        ([1.0, 1.0, 1.0, 0.04], [1.0, 1.0, 1.0, 0.10])
-                    };
                     let cell = lay_row(Rect { x: list_x, y: draw_y, width: list_w, height: item_h }, &[Cell::grow(item_h)])[0];
-                    pc.button_left(
-                        &acc.email,
-                        cell.x,
-                        cell.y,
-                        cell.width,
-                        cell.height,
-                        bg,
-                        hover,
-                        TEXT_BTN,
-                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)),
-                    );
+                    // The toolkit's list row, its own selected and hover
+                    // washes; the address in the list font, as every DE list.
+                    pc.list_row_selected(cell.x, cell.y, cell.width, cell.height, is_selected,
+                        AppAction::Accounts(AccountsMessage::SelectAccount(idx)));
+                    let (list_font, list_size) = cce_ui::layout::list_font_parsed();
+                    let fg = cce_ui::color::list_font_color();
+                    let ty = crate::app::label_y_in(draw_y, item_h, list_size, Some(&list_font));
+                    let name_x = cell.x + cce_ui::layout::list_gap();
+                    pc.text_with(&acc.email, name_x, ty, list_size, crate::app::rgb(fg), Some(list_font.clone()),
+                        Some([cell.x, cell.y, cell.x + cell.width, cell.y + cell.height]));
                     // The row's marks run on after the address: a `star` glyph
                     // and "default", a `warning` glyph and "no password". Each
                     // is its glyph and its word — the word alone when the icon
@@ -748,20 +765,18 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                         (false, false) => &[],
                     };
                     if !marks.is_empty() {
-                        let font = cce_ui::layout::button_font();
-                        let size = 12.0;
-                        let ty = crate::app::label_y_in(draw_y, item_h, size, Some(&font));
-                        let g = 11.0;
+                        let font = list_font.clone();
+                        let size = list_size;
+                        let g = (size * 0.85).round();
                         // A list gap before each mark; a glyph and its word, half that.
                         let gap = cce_ui::layout::list_gap();
-                        let mut mx = cell.x + cce_ui::layout::CONTROL_TEXT_INSET
-                            + crate::app::text_width(&acc.email, size, Some(&font));
+                        let mut mx = name_x + crate::app::text_width(&acc.email, size, Some(&font));
                         for (icon, word, color) in marks {
                             mx += gap;
                             if pc.icon(icon, crate::app::rect(mx, draw_y + (item_h - g) / 2.0, g, g), *color) {
                                 mx += g + gap / 2.0;
                             }
-                            pc.text_with(*word, mx, ty, size, crate::app::rgb(TEXT_BTN), Some(font.clone()), None);
+                            pc.text_with(*word, mx, ty, size, crate::app::rgb(*color), Some(font.clone()), None);
                             mx += crate::app::text_width(word, size, Some(&font));
                         }
                     }
@@ -796,6 +811,18 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 icon_button(r, "trash", "Delete", BTN_DANGER, TEXT_DANGER, AccountsMessage::DeleteAccount(i));
             }
         });
+
+        // ── Delete, confirmed: it reaches past this page ──
+        if let Some(acc) = state.confirm_delete.and_then(|i| state.accounts.get(i)) {
+            let also = if calendar_uses(acc) { "Mail and Calendar stop using it" } else { "Mail stops using it" };
+            let q = format!("Delete {}? {also}, and its saved password and cached mail are removed.", acc.email);
+            let w = col.form_width();
+            col.lines(wrap_to_width(&q, w, 12.0), 12.0, TEXT_WARN);
+            col.row(|r| {
+                form_button(r, "Delete", 0.0, (BTN_DANGER.0, BTN_DANGER.1, TEXT_DANGER), AppAction::Accounts(AccountsMessage::ConfirmDelete));
+                form_button(r, "Cancel", 0.0, (BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::CancelDelete));
+            });
+        }
 
         form_divider(&mut col);
 
@@ -852,7 +879,12 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         } else if let Some(selected_idx) = sel {
             let acc = state.accounts[selected_idx].clone();
             let auth_type = if acc.is_oauth { "OAuth2 (Google)" } else { "Password" };
-            let mut pairs = vec![kv("Email", &acc.email, TEXT_BTN), kv("Authentication", auth_type, TEXT_BTN)];
+            let used_by = if calendar_uses(&acc) { "Mail, Calendar" } else { "Mail" };
+            let mut pairs = vec![
+                kv("Email", &acc.email, TEXT_BTN),
+                kv("Authentication", auth_type, TEXT_BTN),
+                kv("Used by", used_by, TEXT_BTN),
+            ];
             // Where the password actually lives — the row that would have
             // shown the 08-29 vault stranding at a glance. Only password
             // accounts carry it; the probe skips OAuth and mock.
@@ -897,6 +929,15 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         }
         sec.place(form, ctx);
     });
+
+    builder.add_section(&mut final_pc, "Vault Sync", sec_focused.get(1).copied().unwrap_or(false), |sec| {
+        let mut form = sec.form();
+        let mut col = form.column();
+        if state.loaded {
+            crate::pages::vault_sync::view(&state.sync, &mut col, ctx);
+        }
+        sec.place(form, ctx);
+    });
     final_pc
 }
 
@@ -927,6 +968,11 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage, ctx: &mut UiConte
             state.accounts = snap.accounts;
             state.keyring = snap.keyring.into_iter().collect();
             state.keyring_checking = snap.keyring_checking;
+            // The sync section's first read rides the page's first load; it
+            // is a network request, so not every refresh.
+            if state.sync.snap.is_none() && !state.sync.checking {
+                crate::pages::vault_sync::update(&mut state.sync, crate::pages::vault_sync::SyncMessage::Check, ctx);
+            }
             // An account deleted out from under an open edit form leaves it
             // editing nothing; close it rather than render a blank zone.
             if let Some(ref e) = state.editing_email {
@@ -1029,6 +1075,14 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage, ctx: &mut UiConte
             });
         }
         AccountsMessage::DeleteAccount(idx) => {
+            if idx < state.accounts.len() {
+                state.confirm_delete = Some(idx);
+            }
+        }
+        AccountsMessage::CancelDelete => state.confirm_delete = None,
+        AccountsMessage::Sync(m) => crate::pages::vault_sync::update(&mut state.sync, m, ctx),
+        AccountsMessage::ConfirmDelete => {
+            let Some(idx) = state.confirm_delete.take() else { return };
             if idx < state.accounts.len() {
                 let deleted = state.accounts[idx].clone();
                 let saved = commit(state, |accounts| {
@@ -1257,7 +1311,8 @@ impl crate::pages::AppPage for AccountsState {
                 None => Vec::new(),
             }
         };
-        vec![modify]
+        let sync = if self.loaded && self.sync.token_box_visible() { vec![self.sync.token_box.id()] } else { Vec::new() };
+        vec![modify, sync]
     }
 
     fn view(
@@ -1338,6 +1393,10 @@ impl crate::pages::AppPage for AccountsState {
     fn tick(&mut self, dt: f32) -> bool {
         self.list.tick(dt)
     }
+
+    fn frameless_lists(&self) -> Vec<&ScrollRegion> {
+        vec![&self.list]
+    }
 }
 
 #[cfg(test)]
@@ -1410,7 +1469,9 @@ mod tests {
         let rows = pc
             .buttons
             .iter()
-            .filter(|b| b.button.base().label.as_deref().is_some_and(|l| l.starts_with("a")))
+            // A row is a list row that selects its account; the address is
+            // drawn beside it, not as its label.
+            .filter(|b| matches!(b.action, AppAction::Accounts(AccountsMessage::SelectAccount(_))))
             .count();
         assert!(
             rows > 0 && rows <= LIST_MAX_ROWS + 2,

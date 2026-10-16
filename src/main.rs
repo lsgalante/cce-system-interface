@@ -252,6 +252,7 @@ impl cce_ui::engine::Application for SystemInterface {
         this.app.services.sender = Some(this.sender.clone());
         this.app.network.sender = Some(this.sender.clone());
         this.app.display.sender = Some(this.sender.clone());
+        pages::vault_sync::set_sender(this.sender.clone());
         this.app.timers.sender = Some(this.sender.clone());
         this.app.processes.sender = Some(this.sender.clone());
 
