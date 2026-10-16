@@ -87,6 +87,11 @@ impl SystemInterface {
         }
         let t_dropdown = hov_t0.map(|s| s.elapsed().as_micros());
 
+        // The open page switcher's menu covers the page: the page gets the
+        // pointer as gone, far off every widget, so whatever it lit un-lights
+        // and nothing under the menu lights.
+        let (lx, ly) = if self.under_switcher_menu(lx_no_scroll, ly_no_scroll) { (-1.0e6, -1.0e6) } else { (lx, ly) };
+
         // Drag updates are high-priority overrides
         let mut drag_handled = false;
         let mut drag_actions = Vec::new();
@@ -332,6 +337,16 @@ impl SystemInterface {
             px, py, delta, self.sidebar_width
         );
         let s = 1.0f32;
+        // Over the open page switcher's menu the wheel is the menu's, never
+        // the page's behind it.
+        if self.under_switcher_menu(px / s, py / s) {
+            let ev = cce_ui::widget::Event::MouseWheel { delta: *delta, x: px / s, y: py / s, local_x: px / s, local_y: py / s };
+            let dd = self.page_dropdown.id();
+            if self.ui_context.propagate_event(&ev, dd) {
+                self.needs_rebuild = true;
+            }
+            return true;
+        }
         if px >= self.sidebar_width * s {
             let lx = px / s;
             let ly = py / s + self.scroll_y;

@@ -523,10 +523,21 @@ impl SystemInterface {
     /// page's band (under the status bar) or outside the clip the button was
     /// painted under (a list row half scrolled out of its list).
     pub(crate) fn page_button_point(&self, b: &PageButton, x: f32, y: f32) -> Option<(f32, f32)> {
-        let band = y >= 0.0 && y <= self.height as f32 - self.status_height;
+        // Not under the status bar, and not under the open page switcher's
+        // menu, which covers the page: a point there is the menu's.
+        let band = y >= 0.0 && y <= self.height as f32 - self.status_height && !self.under_switcher_menu(x, y);
         let (px, py) = (x, y + self.scroll_y);
         let in_clip = b.clip.is_none_or(|c| px >= c.x && px <= c.x + c.width && py >= c.y && py <= c.y + c.height);
         (band && in_clip).then_some((px, py))
+    }
+
+    /// Whether the window point `(x, y)` is on the open page switcher's menu.
+    /// The menu opens up over the page from the status bar; whatever of the
+    /// page is under it is covered, so the pointer there hovers, clicks and
+    /// scrolls nothing of the page. Until 2026-10-16 a move over the menu
+    /// also reached the page behind it, lighting its buttons and rows.
+    pub(crate) fn under_switcher_menu(&self, x: f32, y: f32) -> bool {
+        self.ui_context.popover_owner_at(x, y) == Some(self.page_dropdown.id())
     }
 
     /// Whether the window point `(x, y)` is over page button `b` as it shows.
