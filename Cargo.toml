@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }
-cce-ui = { git = "https://github.com/lsgalante/cce-ui.git", rev = "0c868d59d0ca9c7f7d02e8f9680e08bec3b17acd" }
+cce-ui = { git = "https://github.com/lsgalante/cce-ui.git", rev = "7108237e2130a7730da20ca70e1ddc7ea16c6f84" }
 # The window manager's action names and stock bindings, for the Keyboard page.
 cce-window-manager = { git = "https://github.com/lsgalante/cce-window-manager.git", rev = "0f2c9a14cb359ab57a7b5fcb31dc2c7be7f5260a" }
 smithay-client-toolkit = "0.19.2"
