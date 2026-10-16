@@ -1,6 +1,7 @@
 use cce_ui::scene::layout::Rect;
 use cce_ui::scene::paint::{DisplayList, PaintCtx, Prim};
 
+use crate::pages::appearance;
 use crate::pages::audio;
 use crate::pages::bluetooth;
 use crate::pages::power;
@@ -19,6 +20,7 @@ use crate::pages::Page;
 
 pub struct AppState {
     pub current_page: Page,
+    pub appearance: appearance::AppearanceState,
     pub audio: audio::AudioState,
     pub bluetooth: bluetooth::BluetoothState,
     pub power: power::PowerState,
@@ -40,6 +42,7 @@ impl AppState {
     pub fn new(ctx: &mut cce_ui::context::UiContext) -> Self {
         Self {
             current_page: Page::ALL[0],
+            appearance: appearance::AppearanceState::new(ctx),
             audio: audio::AudioState::default(),
             bluetooth: bluetooth::BluetoothState::new(ctx),
             power: power::PowerState::new(ctx),
@@ -62,6 +65,7 @@ impl AppState {
     pub fn get_page(&self, page: Page) -> &dyn crate::pages::AppPage {
         match page {
             Page::Accounts => &self.accounts,
+            Page::Appearance => &self.appearance,
             Page::Audio => &self.audio,
             Page::Bluetooth => &self.bluetooth,
             Page::Power => &self.power,
@@ -81,6 +85,7 @@ impl AppState {
     pub fn get_page_mut(&mut self, page: Page) -> &mut dyn crate::pages::AppPage {
         match page {
             Page::Accounts => &mut self.accounts,
+            Page::Appearance => &mut self.appearance,
             Page::Audio => &mut self.audio,
             Page::Bluetooth => &mut self.bluetooth,
             Page::Power => &mut self.power,
@@ -112,6 +117,7 @@ pub enum AppAction {
     /// A page worker sent a snapshot; the next tick drains it. Carries
     /// nothing and rebuilds nothing by itself.
     Wake,
+    Appearance(appearance::AppearanceMessage),
     Audio(audio::AudioMessage),
     Browser(browser::BrowserMessage),
     DefaultApps(default_apps::DefaultAppsMessage),

@@ -1,3 +1,4 @@
+pub mod appearance;
 pub mod audio;
 pub mod bluetooth;
 pub mod browser;
@@ -16,6 +17,7 @@ pub mod power;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Accounts,
+    Appearance,
     Audio,
     Bluetooth,
     Browser,
@@ -32,8 +34,9 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 14] = [
+    pub const ALL: [Page; 15] = [
         Page::Accounts,
+        Page::Appearance,
         Page::Audio,
         Page::Bluetooth,
         Page::Browser,
@@ -52,6 +55,7 @@ impl Page {
     pub fn label(self) -> &'static str {
         match self {
             Page::Accounts => "Accounts",
+            Page::Appearance => "Appearance",
             Page::Audio => "Audio",
             Page::Bluetooth => "Bluetooth",
             Page::Browser => "Browser",

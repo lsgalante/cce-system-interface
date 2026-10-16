@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, audio, bluetooth, browser, default_apps, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
+use crate::pages::{Page, appearance, audio, bluetooth, browser, default_apps, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
 
 /// The page on screen, published by the UI (`watch::Sender::send_replace`)
 /// to every page worker.
@@ -21,6 +21,7 @@ pub struct Watchers {
     pub rx_storage: Receiver<storage::StorageInfo>,
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
     pub rx_browser: Receiver<browser::BrowserConfig>,
+    pub rx_appearance: Receiver<appearance::AppearanceConfig>,
     pub rx_services: Receiver<Vec<services::ServiceInfo>>,
     pub rx_default_apps: Receiver<default_apps::DefaultAppsInfo>,
     pub rx_timers: Receiver<Vec<timers::TimerInfo>>,
@@ -138,6 +139,8 @@ pub fn spawn_all(
     // Config-file poll while the Browser page is open: catches edits made
     // outside this app (the browser itself, cce-data-editor).
     let (p, k) = w(); let rx_browser = spawn_bg_blocking(p, Page::Browser, 5, k, browser::read_browser_config);
+    // The shared config's style block, for edits made elsewhere (cce-data-editor, by hand).
+    let (p, k) = w(); let rx_appearance = spawn_bg_blocking(p, Page::Appearance, 5, k, appearance::read_appearance_config);
 
     let (p, k) = w(); let rx_services = spawn_bg_active(p, Page::Services, 3, k, services::fetch_services);
     let (p, k) = w(); let rx_default_apps = spawn_bg_active(p, Page::DefaultApps, 10, k, default_apps::fetch_default_apps);
@@ -159,6 +162,7 @@ pub fn spawn_all(
             rx_storage,
             rx_notifications,
             rx_browser,
+            rx_appearance,
             rx_services,
             rx_default_apps,
             rx_timers,

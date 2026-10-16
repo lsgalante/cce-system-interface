@@ -40,12 +40,15 @@ pub const TAB_LINES: [(&str, &str); 4] = [
 ];
 const DEFAULT_TAB_LINE: &str = "switching";
 
-/// config key, menu label — the first two are reported to pages as
+/// config key, menu label — the first three are reported to pages as
 /// `prefers-color-scheme`, so sites that ship a dark stylesheet use it.
+/// "Follow System" (the browser's default) reports the desktop's scheme,
+/// set on the Appearance page and read from the Settings portal.
 /// "Force Dark" additionally inverts the page, for sites that ship no dark
 /// theme; it fights their palette, so it is a deliberate last resort.
-pub const COLOR_SCHEMES: [(&str, &str); 3] =
-    [("dark", "Dark"), ("light", "Light"), ("force-dark", "Force Dark")];
+pub const COLOR_SCHEMES: [(&str, &str); 4] =
+    [("system", "Follow System"), ("dark", "Dark"), ("light", "Light"), ("force-dark", "Force Dark")];
+const DEFAULT_COLOR_SCHEME: &str = "system";
 
 const DEFAULT_HOMEPAGE: &str = "https://servo.org";
 
@@ -178,8 +181,10 @@ fn tab_line_index(key: &str) -> usize {
     at(key).or_else(|| at(DEFAULT_TAB_LINE)).unwrap_or(0)
 }
 
+/// An unknown key reads as the browser reads it: following the system.
 fn color_scheme_index(key: &str) -> usize {
-    COLOR_SCHEMES.iter().position(|(k, _)| *k == key).unwrap_or(0)
+    let at = |k: &str| COLOR_SCHEMES.iter().position(|(t, _)| *t == k);
+    at(key).or_else(|| at(DEFAULT_COLOR_SCHEME)).unwrap_or(0)
 }
 
 #[derive(Debug, Clone)]
@@ -292,7 +297,7 @@ pub fn read_browser_config() -> BrowserConfig {
         vi_mode: val["browser"]["vi-mode"].as_bool().unwrap_or(false),
         bar_position: val["browser"]["bar-position"].as_str().unwrap_or("top").to_string(),
         tab_line: val["browser"]["tab-line"].as_str().unwrap_or(DEFAULT_TAB_LINE).to_string(),
-        color_scheme: val["browser"]["color-scheme"].as_str().unwrap_or("dark").to_string(),
+        color_scheme: val["browser"]["color-scheme"].as_str().unwrap_or(DEFAULT_COLOR_SCHEME).to_string(),
     }
 }
 
@@ -416,8 +421,8 @@ impl AppPage for BrowserState {
             } else if id == self.color_scheme_menu.id() {
                 let key = COLOR_SCHEMES
                     .get(ctx[self.color_scheme_menu].selected)
-                    .map(|(k, _)| k.to_string())
-                    .unwrap_or_else(|| "dark".to_string());
+                    .map_or(DEFAULT_COLOR_SCHEME, |(k, _)| k)
+                    .to_string();
                 actions.push(AppAction::Browser(BrowserMessage::SetColorScheme(key)));
             } else if id == self.history_toggle.id() {
                 actions.push(AppAction::Browser(BrowserMessage::ToggleHistory));

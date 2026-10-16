@@ -69,6 +69,7 @@ struct SystemInterface {
     rx_storage: std::sync::mpsc::Receiver<pages::storage::StorageInfo>,
     rx_notifications: std::sync::mpsc::Receiver<pages::notifications::NotificationsConfig>,
     rx_browser: std::sync::mpsc::Receiver<pages::browser::BrowserConfig>,
+    rx_appearance: std::sync::mpsc::Receiver<pages::appearance::AppearanceConfig>,
     rx_services: std::sync::mpsc::Receiver<Vec<pages::services::ServiceInfo>>,
     rx_default_apps: std::sync::mpsc::Receiver<pages::default_apps::DefaultAppsInfo>,
     rx_timers: std::sync::mpsc::Receiver<Vec<pages::timers::TimerInfo>>,
@@ -206,6 +207,7 @@ impl cce_ui::engine::Application for SystemInterface {
             rx_storage: watchers.rx_storage,
             rx_notifications: watchers.rx_notifications,
             rx_browser: watchers.rx_browser,
+            rx_appearance: watchers.rx_appearance,
             rx_services: watchers.rx_services,
             rx_accounts: watchers.rx_accounts,
             tx_backup,
@@ -672,6 +674,15 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
+        while let Ok(s) = self.rx_appearance.try_recv() {
+            if !self.fresh_snapshot("appearance", &s) {
+                continue;
+            }
+            pages::appearance::update(&mut self.app.appearance, pages::appearance::AppearanceMessage::Refreshed(s), &mut self.ui_context);
+            if self.app.current_page == Page::Appearance {
+                self.needs_rebuild = true;
+            }
+        }
         while let Ok(s) = self.rx_default_apps.try_recv() {
             if !self.fresh_snapshot("default_apps", &s) {
                 continue;
@@ -748,6 +759,7 @@ impl SystemInterface {
             AppAction::DefaultApps(m) => pages::default_apps::update(&mut self.app.default_apps, m.clone(), &mut self.ui_context),
             AppAction::Notifications(m) => notifications::update(&mut self.app.notifications, m.clone(), &mut self.ui_context),
             AppAction::Browser(m) => pages::browser::update(&mut self.app.browser, m.clone(), &mut self.ui_context),
+            AppAction::Appearance(m) => pages::appearance::update(&mut self.app.appearance, m.clone(), &mut self.ui_context),
             AppAction::Storage(m) => match m {
                 pages::storage::StorageMessage::StartBackup => {
                     pages::storage::update(&mut self.app.storage, pages::storage::StorageMessage::StartBackup, &mut self.ui_context);
