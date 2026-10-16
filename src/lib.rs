@@ -1,6 +1,7 @@
 mod accounts_file;
 pub mod app;
 pub mod pages;
+pub mod portal_routing;
 pub mod power_meter;
 pub mod power_plan;
 pub use cce_ui::widget::scroll_region;

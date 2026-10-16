@@ -52,6 +52,8 @@ pub struct SystemState {
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
     pub builds: Vec<InstalledBuild>,
+    /// Which backend answers each portal interface (`portal_routing`).
+    pub portals: crate::portal_routing::PortalReport,
     pub cpu_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
     pub cpu_usage_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
     pub cpu_temp_label: Handle<cce_ui::widget::Adapted<cce_ui::widget::Label>>,
@@ -91,6 +93,7 @@ impl Default for SystemState {
             gpus: Vec::new(),
             gpu_strings: Vec::new(),
             builds: Vec::new(),
+            portals: Default::default(),
             cpu_label: Handle::none(),
             cpu_usage_label: Handle::none(),
             cpu_temp_label: Handle::none(),
@@ -371,6 +374,7 @@ pub struct SystemInfo {
     pub gpus: Vec<String>,
     pub gpu_strings: Vec<String>,
     pub builds: Vec<InstalledBuild>,
+    pub portals: crate::portal_routing::PortalReport,
 }
 
 pub async fn fetch_system_state() -> SystemInfo {
@@ -489,6 +493,7 @@ pub async fn fetch_system_state() -> SystemInfo {
         gpus,
         gpu_strings,
         builds: scan_installed_builds(),
+        portals: crate::portal_routing::fetch().await,
     }
 }
 
@@ -502,12 +507,12 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_focused: bool, sec_focused: &[bool], layout: &mut PageFlow, ctx: &mut cce_ui::context::UiContext) -> PageCanvas {
     let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
-    // Six, matching the add_section calls below and the six groups
+    // Seven, matching the add_section calls below and the seven groups
     // section_widgets reports. The count caps the grid's column count
     // (`n.min(cols)`), so a stale count only bites once the window is wide
     // enough for that many columns — harmless, but it reads as a missing
     // section.
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(6);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(7);
 
     // ── 1. System Section ──
     builder.add_section(&mut final_pc, "System", sec_focused.first().copied().unwrap_or(false), |sec| {
@@ -681,6 +686,43 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         sec.place(form, ctx);
     });
 
+    // ── 7. Portals Section ──
+    // Which backend answers each portal interface. The routing is an
+    // unversioned user file that fails quietly (a missing line falls to
+    // gtk), so this is where a misrouted interface shows up.
+    builder.add_section(&mut final_pc, "Portals", sec_focused.get(6).copied().unwrap_or(false), |sec| {
+        let rep = &state.portals;
+        let mut form = sec.form();
+        let mut col = form.column();
+        if !state.loaded {
+            col.text("Reading the portal routing...", 12.0, TEXT_FG);
+        } else {
+            let problems = rep.problem_count();
+            let summary = match problems {
+                0 => "Every interface is routed as intended".to_string(),
+                1 => "1 problem".to_string(),
+                n => format!("{n} problems"),
+            };
+            wrapped_text(&mut col, &summary, 12.0, if problems == 0 { TEXT_DIM } else { TEXT_FG });
+            let pairs = rep
+                .rows
+                .iter()
+                .map(|r| match &r.problem {
+                    None => (r.interface.clone(), TEXT_FG, r.answer.clone(), TEXT_DIM),
+                    Some(p) => (r.interface.clone(), TEXT_FG, format!("{} — {p}", r.answer), DANGER_BG),
+                })
+                .collect();
+            crate::app::form_pairs(&mut col, 11.0, pairs);
+            for note in &rep.notes {
+                wrapped_text(&mut col, note, 11.0, DANGER_BG);
+            }
+            if let Some(path) = &rep.config {
+                wrapped_text(&mut col, &format!("From {path}"), 11.0, TEXT_DIM);
+            }
+        }
+        sec.place(form, ctx);
+    });
+
     final_pc
 }
 
@@ -698,6 +740,7 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
             state.gpus = new.gpus;
             state.gpu_strings = new.gpu_strings.clone();
             state.builds = new.builds;
+            state.portals = new.portals;
 
             if state.loaded {
                 ctx[state.hostname_label].set_text(&format!("{}  —  Linux {}", state.hostname, state.kernel));
@@ -789,9 +832,10 @@ pub fn update(state: &mut SystemState, msg: SystemMessage, ctx: &mut cce_ui::con
 
 
 impl crate::pages::AppPage for SystemState {
-    // Sections: [System, System Actions, CPU, GPU, System Files, Builds]
+    // Sections: [System, System Actions, CPU, GPU, System Files, Builds, Portals]
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
