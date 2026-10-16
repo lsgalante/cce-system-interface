@@ -186,7 +186,8 @@ impl Default for ServicesState {
             active_tab: ServiceTab::System,
             filter: ServiceFilter::All,
             search_box: Handle::none(),
-            list: ScrollRegion::new(36.0, 6.0).with_frame(false).with_sink_behind(true),
+            // Rows sized from the list font (two lines), not a figure it outgrows.
+            list: ScrollRegion::new(cce_ui::widget::InteractiveListItem::row_height(true), 4.0).with_frame(false).with_sink_behind(true),
             items: Vec::new(),
             pending: Vec::new(),
             confirm: None,
@@ -567,7 +568,7 @@ pub fn subtitle(s: &ServiceInfo) -> String {
         (true, true) => "not loaded",
         (true, false) => "No description",
     });
-    parts.join("  ·  ")
+    parts.join(" · ")
 }
 
 /// `systemctl status` cut to what says how the unit is doing, in at most
@@ -1044,7 +1045,7 @@ mod tests {
         u.description = "x".repeat(500);
         u.file_state = Some("enabled".into());
         let line = subtitle(&u);
-        assert!(line.starts_with("failed  ·  enabled"), "{line}");
+        assert!(line.starts_with("failed · enabled"), "{line}");
         let shown = cce_ui::widget::display::truncate_tail(&line, 20);
         assert!(shown.starts_with("failed"), "got {shown:?}");
         let mut quiet = unit("y.service", UNLOADED, "inactive", "dead", true);
@@ -1052,7 +1053,7 @@ mod tests {
         quiet.file_state = Some("static".into());
         assert_eq!(subtitle(&quiet), "not loaded", "static is not worth a word");
         let gone = unit("gitsite.service", "not-found", "failed", "failed", false);
-        assert!(subtitle(&gone).starts_with("failed  ·  not installed"));
+        assert!(subtitle(&gone).starts_with("failed · not installed"));
     }
 
     /// Unit files nothing loaded are listed and startable; templates,

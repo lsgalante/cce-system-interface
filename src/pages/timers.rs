@@ -84,7 +84,8 @@ impl Default for TimersState {
             loaded: false,
             timers: Vec::new(),
             active_tab: TimerTab::System,
-            list: ScrollRegion::new(36.0, 6.0).with_frame(false).with_sink_behind(true),
+            // Rows sized from the list font (two lines), not a figure it outgrows.
+            list: ScrollRegion::new(cce_ui::widget::InteractiveListItem::row_height(true), 4.0).with_frame(false).with_sink_behind(true),
             items: Vec::new(),
             creating: false,
             editing: None,

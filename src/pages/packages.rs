@@ -110,9 +110,9 @@ impl Default for PackagesState {
             updates_error: None,
             active_tab: PackageTab::Installed,
             search_box: Handle::none(),
-            installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
+            installed_list: ScrollRegion::new(cce_ui::widget::InteractiveListItem::row_height(true), 4.0).with_frame(false).with_sink_behind(true),
             installed_items: Vec::new(),
-            updates_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
+            updates_list: ScrollRegion::new(cce_ui::widget::InteractiveListItem::row_height(true), 4.0).with_frame(false).with_sink_behind(true),
             updates_items: Vec::new(),
             updating: false,
             last_update_res: None,
@@ -1151,9 +1151,9 @@ pub fn view(
                                 (false, false) => "dependency",
                             };
                             item.subtitle = Some(if pkg.foreign {
-                                format!("{}  ·  {}  ·  AUR", pkg.version, reason)
+                                format!("{} · {} · AUR", pkg.version, reason)
                             } else {
-                                format!("{}  ·  {}", pkg.version, reason)
+                                format!("{} · {}", pkg.version, reason)
                             });
                             item.selected = if select_mode {
                                 checked.contains(&pkg.name)
@@ -1185,7 +1185,7 @@ pub fn view(
                             let row = updates_items[idx];
                             let item = &mut ctx[row];
                             item.title = pkg.name.clone();
-                            item.subtitle = Some(format!("{}  ->  {}", pkg.old_version, pkg.new_version));
+                            item.subtitle = Some(format!("{} -> {}", pkg.old_version, pkg.new_version));
                             item.selected = Some(&pkg.name) == selected.as_ref();
                             let cell = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: item_h }, &[Cell::grow(item_h)])[0];
                             crate::app::place_and_paint(pc, row, cell, ctx);
