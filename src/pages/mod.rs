@@ -265,6 +265,7 @@ mod list_clip_tests {
                 active_state: "active".into(),
                 sub_state: "running".into(),
                 is_system: true,
+                ..Default::default()
             })
             .collect();
         let pc = render(&mut s, &mut ui);

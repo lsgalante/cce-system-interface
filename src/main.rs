@@ -245,6 +245,7 @@ impl cce_ui::engine::Application for SystemInterface {
             search_box,
         };
         this.app.system_info.sender = Some(this.sender.clone());
+        this.app.services.sender = Some(this.sender.clone());
 
         this.rebuild_layout(820.0, 680.0);
         this.needs_rebuild = true;
