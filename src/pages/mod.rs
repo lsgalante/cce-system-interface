@@ -316,9 +316,10 @@ mod list_clip_tests {
         let mut ui = cce_ui::context::UiContext::new();
         let mut s = network::NetworkState::new(&mut ui);
         s.loaded = true;
-        s.wifi_enabled = true;
-        s.available = (0..3)
-            .map(|i| network::WifiNetwork { ssid: format!("net{i}"), signal: 50, secured: true, in_use: i == 0 })
+        s.snap.nm_running = true;
+        s.snap.wifi_enabled = true;
+        s.snap.available = (0..3)
+            .map(|i| network::WifiNetwork { ssid: format!("net{i}"), signal: 50, security: "WPA2".into(), in_use: i == 0 })
             .collect();
         let pc = render(&mut s, &mut ui);
         assert_list_inside("network", &pc, &s.wifi_list);

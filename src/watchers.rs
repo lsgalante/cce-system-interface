@@ -13,7 +13,7 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 
 pub struct Watchers {
     pub rx_audio: Receiver<audio::AudioState>,
-    pub rx_network: Receiver<network::NetworkState>,
+    pub rx_network: Receiver<network::NetworkSnapshot>,
     pub rx_bluetooth: Receiver<bluetooth::BluetoothState>,
     pub rx_power: Receiver<power::PowerFacts>,
     pub rx_processes: Receiver<processes::ProcessesState>,

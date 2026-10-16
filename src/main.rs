@@ -61,7 +61,7 @@ struct SystemInterface {
     cursor_y: f32,
 
     rx_audio: std::sync::mpsc::Receiver<pages::audio::AudioState>,
-    rx_network: std::sync::mpsc::Receiver<pages::network::NetworkState>,
+    rx_network: std::sync::mpsc::Receiver<pages::network::NetworkSnapshot>,
     rx_bluetooth: std::sync::mpsc::Receiver<pages::bluetooth::BluetoothState>,
     rx_power: std::sync::mpsc::Receiver<pages::power::PowerFacts>,
     pub rx_processes: std::sync::mpsc::Receiver<pages::processes::ProcessesState>,
@@ -248,6 +248,7 @@ impl cce_ui::engine::Application for SystemInterface {
         };
         this.app.system_info.sender = Some(this.sender.clone());
         this.app.services.sender = Some(this.sender.clone());
+        this.app.network.sender = Some(this.sender.clone());
         this.app.timers.sender = Some(this.sender.clone());
         this.app.processes.sender = Some(this.sender.clone());
 
