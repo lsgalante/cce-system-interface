@@ -451,22 +451,7 @@ pub async fn fetch_system_state() -> SystemInfo {
     } as f32;
 
     static GPUS_INFO: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    let gpus = GPUS_INFO.get_or_init(|| {
-        let mut list = Vec::new();
-        if let Ok(o) = std::process::Command::new("lspci").output() {
-            for line in String::from_utf8_lossy(&o.stdout).lines() {
-                if line.contains("VGA") || line.contains("3D") {
-                    if let Some(name) = line.split(':').nth(2) {
-                        let trimmed = name.trim().to_string();
-                        if !trimmed.is_empty() {
-                            list.push(trimmed);
-                        }
-                    }
-                }
-            }
-        }
-        list
-    }).clone();
+    let gpus = GPUS_INFO.get_or_init(gpu_names).clone();
 
 
     let tp_gpu_temp = read_thinkpad_gpu_temp();
@@ -497,10 +482,64 @@ pub async fn fetch_system_state() -> SystemInfo {
     }
 }
 
+/// The display controllers' names, from sysfs and the pci.ids database.
+/// Until 2026-10-16 this ran `lspci`, which reads every device's PCI config
+/// space: 1-1.8 s on the first System visit, and it woke a runtime-suspended
+/// discrete GPU (then kept awake by the temperature query that follows).
+/// `class`, `vendor` and `device` are cached by the kernel and wake nothing.
+fn gpu_names() -> Vec<String> {
+    let ids = std::fs::read_to_string("/usr/share/hwdata/pci.ids").unwrap_or_default();
+    let Ok(dir) = std::fs::read_dir("/sys/bus/pci/devices") else { return Vec::new() };
+    let mut devices: Vec<_> = dir.flatten().map(|e| e.path()).collect();
+    devices.sort();
+    devices
+        .iter()
+        .filter_map(|d| {
+            let read = |f: &str| std::fs::read_to_string(d.join(f)).ok().map(|s| s.trim().trim_start_matches("0x").to_lowercase());
+            // Class 0x03xxxx: VGA, 3D and other display controllers.
+            read("class").filter(|c| c.starts_with("03"))?;
+            Some(pci_name(&ids, &read("vendor")?, &read("device")?))
+        })
+        .collect()
+}
+
+/// "Intel Corporation Raptor Lake-P [Iris Xe Graphics]" for vendor and
+/// device ids, from pci.ids text (a vendor line `8086  Intel Corporation`,
+/// its devices below it indented one tab); the bare ids when not listed.
+pub fn pci_name(ids: &str, vendor: &str, device: &str) -> String {
+    let mut vendor_name = None;
+    for line in ids.lines() {
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        match vendor_name {
+            None => {
+                if let Some(rest) = line.strip_prefix(vendor).filter(|r| r.starts_with("  ")) {
+                    vendor_name = Some(rest.trim().to_string());
+                }
+            }
+            Some(ref v) => {
+                if !line.starts_with('\t') {
+                    break; // the next vendor: the device is not listed
+                }
+                if let Some(rest) = line.strip_prefix('\t').and_then(|l| l.strip_prefix(device)).filter(|r| r.starts_with("  ")) {
+                    return format!("{v} {}", rest.trim());
+                }
+            }
+        }
+    }
+    match vendor_name {
+        Some(v) => format!("{v} device {device}"),
+        None => format!("PCI {vendor}:{device}"),
+    }
+}
+
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 const DANGER_BG: [f32; 4] = [0.67, 0.20, 0.20, 1.0];
+/// Failure text. DANGER_BG is a button face; as text it was 2.8:1.
+const DANGER_TEXT: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 const SAFE_BG: [f32; 4] = [0.20, 0.33, 0.22, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
@@ -641,7 +680,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         if let Some(ref res) = sf.result {
             let (msg, color) = match res {
                 Ok(()) => ("Installed — takes effect at next login".to_string(), TEXT_DIM),
-                Err(e) => (format!("Failed: {}", e), DANGER_BG),
+                Err(e) => (format!("Failed: {}", e), DANGER_TEXT),
             };
             wrapped_text(&mut col, &msg, 11.0, color);
         }
@@ -709,12 +748,12 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 .iter()
                 .map(|r| match &r.problem {
                     None => (r.interface.clone(), TEXT_FG, r.answer.clone(), TEXT_DIM),
-                    Some(p) => (r.interface.clone(), TEXT_FG, format!("{} — {p}", r.answer), DANGER_BG),
+                    Some(p) => (r.interface.clone(), TEXT_FG, format!("{} — {p}", r.answer), DANGER_TEXT),
                 })
                 .collect();
             crate::app::form_pairs(&mut col, 11.0, pairs);
             for note in &rep.notes {
-                wrapped_text(&mut col, note, 11.0, DANGER_BG);
+                wrapped_text(&mut col, note, 11.0, DANGER_TEXT);
             }
             if let Some(path) = &rep.config {
                 wrapped_text(&mut col, &format!("From {path}"), 11.0, TEXT_DIM);
@@ -880,6 +919,20 @@ impl crate::pages::AppPage for SystemState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// pci.ids names, as lspci printed them on this machine (2026-10-16).
+    #[test]
+    fn gpu_names_come_from_pci_ids() {
+        let ids = "# comment\n8086  Intel Corporation\n\ta7a0  Raptor Lake-P [Iris Xe Graphics]\n\t\t1028 0c7d  subsystem\n10de  NVIDIA Corporation\n\t27a0  AD104M [GeForce RTX 4080 Max-Q / Mobile]\n10df  Emulex\n";
+        assert_eq!(pci_name(ids, "8086", "a7a0"), "Intel Corporation Raptor Lake-P [Iris Xe Graphics]");
+        assert_eq!(pci_name(ids, "10de", "27a0"), "NVIDIA Corporation AD104M [GeForce RTX 4080 Max-Q / Mobile]");
+        assert_eq!(pci_name(ids, "10de", "ffff"), "NVIDIA Corporation device ffff");
+        assert_eq!(pci_name(ids, "1234", "0001"), "PCI 1234:0001");
+        // A vendor id that is a prefix of another's must not match it.
+        assert_eq!(pci_name(ids, "10d", "27a0"), "PCI 10d:27a0");
+        let real = gpu_names();
+        assert!(real.iter().all(|n| !n.is_empty()));
+    }
 
     /// The dry run prints pending changes, banners and the queued root
     /// commands down one stream; only the indented `name -> dest` lines are

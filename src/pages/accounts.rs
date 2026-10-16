@@ -74,6 +74,8 @@ pub fn status_from(acc: &AccountInfo, keyring_has_entry: bool) -> Option<Keyring
 pub struct AccountsSnapshot {
     pub accounts: Vec<AccountInfo>,
     pub keyring: Vec<(String, KeyringStatus)>,
+    /// A keyring probe for these accounts has not answered yet.
+    pub keyring_checking: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -100,6 +102,8 @@ pub struct AccountsState {
     /// Per-address keyring status from the last snapshot, plus optimistic
     /// updates from Save/Delete (the 3s watcher pass corrects them).
     pub keyring: std::collections::HashMap<String, KeyringStatus>,
+    /// The keyring has not answered for these accounts yet.
+    pub keyring_checking: bool,
     /// The account rows scroll independently of the page. Rows stay plain
     /// `PageCanvas` buttons (network's list, not services'), so they dispatch
     /// through `page_buttons` and this page still needs no dispatch-root
@@ -238,42 +242,71 @@ pub fn invalidate_keyring_probe() {
     *KEYRING_PROBE.lock().unwrap() = None;
 }
 
+/// A keyring probe is running. At most one at a time: a wedged Secret
+/// Service holds its thread, and a new probe every refresh would pile up
+/// threads behind it.
+static KEYRING_PROBE_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// How long a refresh waits for a probe it started before sending the file
+/// contents without it. An answering keyring takes 10-30 ms; a locked or
+/// wedged one has no upper bound (it once blocked for 12 s), and the account
+/// list must not wait on it — this is the app's first page.
+const KEYRING_PROBE_WAIT: std::time::Duration = std::time::Duration::from_millis(400);
+
+fn accounts_key(accounts: &[AccountInfo]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    format!("{accounts:?}").hash(&mut h);
+    h.finish()
+}
+
+/// The last probe's findings if it covered exactly these accounts, and
+/// whether they are still fresh.
+fn probe_for(key: u64) -> Option<(Vec<(String, KeyringStatus)>, bool)> {
+    KEYRING_PROBE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .filter(|(k, _, _)| *k == key)
+        .map(|(_, at, found)| (found.clone(), at.elapsed() < KEYRING_PROBE_MAX_AGE))
+}
+
 pub async fn fetch_accounts() -> AccountsSnapshot {
     let accounts = load_accounts();
     // The probe fetches each account's secret over D-Bus to learn whether it
-    // exists, waking the keyring. This page refreshes every 3 s — it is the
-    // app's first page — so the probe is reused while the account list is
-    // the same, for up to KEYRING_PROBE_MAX_AGE; this page's own actions
-    // invalidate it (`invalidate_keyring_probe`).
-    let accounts_key = {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        format!("{accounts:?}").hash(&mut h);
-        h.finish()
-    };
-    if let Some((key, at, keyring)) = KEYRING_PROBE.lock().unwrap().as_ref() {
-        if *key == accounts_key && at.elapsed() < KEYRING_PROBE_MAX_AGE {
-            return AccountsSnapshot { accounts, keyring: keyring.clone() };
+    // exists, waking the keyring. This page refreshes every 3 s, so the
+    // probe is reused while the account list is the same, for up to
+    // KEYRING_PROBE_MAX_AGE; this page's own actions invalidate it
+    // (`invalidate_keyring_probe`).
+    let key = accounts_key(&accounts);
+    let fresh = probe_for(key).is_some_and(|(_, fresh)| fresh);
+    if !fresh && !KEYRING_PROBE_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // Secret Service lookups are synchronous D-Bus: off the async
+        // workers, and not awaited past KEYRING_PROBE_WAIT. A late answer is
+        // stored, and the next refresh sends it.
+        let probe = accounts.clone();
+        tokio::task::spawn_blocking(move || {
+            let found: Vec<(String, KeyringStatus)> = probe
+                .iter()
+                .filter_map(|acc| {
+                    let has_entry = keyring::Entry::new(KEYRING_SERVICE, &acc.email)
+                        .and_then(|e| e.get_password())
+                        .is_ok();
+                    status_from(acc, has_entry).map(|s| (acc.email.clone(), s))
+                })
+                .collect();
+            *KEYRING_PROBE.lock().unwrap() = Some((key, std::time::Instant::now(), found));
+            KEYRING_PROBE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+        let started = std::time::Instant::now();
+        while started.elapsed() < KEYRING_PROBE_WAIT && KEYRING_PROBE_RUNNING.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     }
-    // Secret Service lookups are synchronous DBus; keep them off the async
-    // workers (a wedged provider used to block for 12s at a time).
-    let probe = accounts.clone();
-    let keyring: Vec<(String, KeyringStatus)> = tokio::task::spawn_blocking(move || {
-        probe
-            .iter()
-            .filter_map(|acc| {
-                let has_entry = keyring::Entry::new(KEYRING_SERVICE, &acc.email)
-                    .and_then(|e| e.get_password())
-                    .is_ok();
-                status_from(acc, has_entry).map(|s| (acc.email.clone(), s))
-            })
-            .collect()
-    })
-    .await
-    .unwrap_or_default();
-    *KEYRING_PROBE.lock().unwrap() = Some((accounts_key, std::time::Instant::now(), keyring.clone()));
-    AccountsSnapshot { accounts, keyring }
+    match probe_for(key) {
+        Some((keyring, _)) => AccountsSnapshot { accounts, keyring, keyring_checking: false },
+        None => AccountsSnapshot { accounts, keyring: Vec::new(), keyring_checking: true },
+    }
 }
 
 fn generate_pkce() -> (String, String) {
@@ -830,6 +863,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                     KeyringStatus::Missing => ("MISSING \u{2014} mail cannot sign in; Edit to set it", TEXT_DANGER),
                 };
                 pairs.push(kv("Password", text, color));
+            } else if state.keyring_checking && status_from(&acc, false).is_some() {
+                pairs.push(kv("Password", "checking the keyring\u{2026}", TEXT_DIM));
             }
             pairs.push(kv("IMAP", &acc.imap, TEXT_BTN));
             pairs.push(kv("SMTP", &acc.smtp, TEXT_BTN));
@@ -891,6 +926,7 @@ pub fn update(state: &mut AccountsState, msg: AccountsMessage, ctx: &mut UiConte
             state.loaded = true;
             state.accounts = snap.accounts;
             state.keyring = snap.keyring.into_iter().collect();
+            state.keyring_checking = snap.keyring_checking;
             // An account deleted out from under an open edit form leaves it
             // editing nothing; close it rather than render a blank zone.
             if let Some(ref e) = state.editing_email {
@@ -1465,7 +1501,7 @@ mod tests {
 
         update(
             &mut state,
-            AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("second@example.org", false), acct("first@example.org", false)], keyring: Vec::new() }),&mut ui);
+            AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("second@example.org", false), acct("first@example.org", false)], keyring: Vec::new(), keyring_checking: false }),&mut ui);
         assert_eq!(state.editing_email.as_deref(), Some("second@example.org"), "the refresh keeps the form open");
 
         fill_box(&mut ui[state.imap_box], "");
@@ -1481,7 +1517,7 @@ mod tests {
         state.accounts = vec![acct("gone@example.org", false)];
         update(&mut state, AccountsMessage::EditAccountStart(0), &mut ui);
 
-        update(&mut state, AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("other@example.org", false)], keyring: Vec::new() }), &mut ui);
+        update(&mut state, AccountsMessage::Refreshed(AccountsSnapshot { accounts: vec![acct("other@example.org", false)], keyring: Vec::new(), keyring_checking: false }), &mut ui);
 
         assert!(state.editing_email.is_none());
         assert!(ui[state.password_box].placeholder.is_none(), "the placeholder does not leak into the add form");

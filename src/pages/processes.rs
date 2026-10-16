@@ -508,7 +508,9 @@ fn spawn_signal(state: &mut ProcessesState, target: Target, signal: Signal) {
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const OK_GREEN: [f32; 4] = [0.56, 0.83, 0.56, 1.0];
-const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
+/// Error text: light enough for small type on the dark plate (7.6:1; the
+/// old [0.85, 0.25, 0.25] was 4.1:1, under AA for text this size).
+const RED: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.75, 0.55, 1.0];
 const NEUTRAL: ([f32; 4], [f32; 4], [f32; 4]) = ([0.16, 0.16, 0.24, 1.0], [0.25, 0.30, 0.26, 1.0], TEXT_FG);
 const DANGER: ([f32; 4], [f32; 4], [f32; 4]) = ([0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0]);
@@ -725,10 +727,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     // on purpose: the hover band spans the visible row whatever
                     // the horizontal pan.
                     let wash = lay_row(Rect { x: list_box_x, y: draw_y, width: list_box_w, height: row_h }, &[Cell::grow(row_h)])[0];
-                    if selected.as_deref() == Some(p.pid.as_str()) {
-                        pc.quad(crate::app::rect(wash.x, wash.y, wash.width, wash.height), [0.20, 0.40, 0.65, 0.25]);
-                    }
-                    pc.list_row(wash.x, wash.y, wash.width, wash.height, AppAction::Processes(ProcessesMessage::Select(Some(p.pid.clone()))));
+                    // The selected row wears the toolkit's selected wash.
+                    let is_selected = selected.as_deref() == Some(p.pid.as_str());
+                    pc.list_row_selected(wash.x, wash.y, wash.width, wash.height, is_selected, AppAction::Processes(ProcessesMessage::Select(Some(p.pid.clone()))));
 
                     // A pending kill dims the row until the next refresh
                     // settles it (gone, or alive again = the kill didn't take).

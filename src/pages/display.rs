@@ -28,7 +28,9 @@ use crate::pages::AppPage;
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
+/// Error text: light enough for small type on the dark plate (7.6:1; the
+/// old [0.85, 0.25, 0.25] was 4.1:1, under AA for text this size).
+const RED: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.75, 0.55, 1.0];
 const NEUTRAL: ([f32; 4], [f32; 4], [f32; 4]) = ([0.16, 0.16, 0.24, 1.0], [0.25, 0.30, 0.26, 1.0], TEXT_FG);
 

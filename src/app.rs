@@ -381,8 +381,16 @@ impl PageCanvas {
     ///
     /// [`button`]: PageCanvas::button
     pub fn list_row(&mut self, x: f32, y: f32, w: f32, h: f32, action: AppAction) {
-        let btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
-        self.declare(btn, action, "row".to_string());
+        self.list_row_selected(x, y, w, h, false, action);
+    }
+
+    /// [`list_row`](Self::list_row) that may be the list's selected row: the
+    /// row wears the toolkit's own selected wash, as every DE list does,
+    /// rather than a quad or a plate the page paints under it.
+    pub fn list_row_selected(&mut self, x: f32, y: f32, w: f32, h: f32, selected: bool, action: AppAction) {
+        let mut btn = cce_ui::widget::Button::new_list_row(x, y, w, h);
+        btn.set_selected(selected);
+        self.declare(btn, action, format!("row|{selected}"));
     }
 
     /// [`button_icon`](Self::button_icon) with the glyph tinted

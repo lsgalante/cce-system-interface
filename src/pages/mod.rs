@@ -253,10 +253,10 @@ mod list_clip_tests {
         for (name, list) in lists {
             assert!(list.sink_behind, "{name}: its bar sinks behind the plate");
         }
-        for page in [&app.services as &dyn AppPage, &app.timers, &app.processes, &app.packages] {
+        for page in [&app.services as &dyn AppPage, &app.timers, &app.processes, &app.packages, &app.network] {
             assert_eq!(page.frameless_lists().len(), 1, "a frameless list is handed to the host");
         }
-        for page in [&app.accounts as &dyn AppPage, &app.network] {
+        for page in [&app.accounts as &dyn AppPage] {
             assert!(page.frameless_lists().is_empty(), "a framed list lays its own idle copy");
         }
     }

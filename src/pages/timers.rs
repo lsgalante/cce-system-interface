@@ -134,7 +134,9 @@ pub enum TimersMessage {
 
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
 const OK_GREEN: [f32; 4] = [0.56, 0.83, 0.56, 1.0];
-const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
+/// Error text: light enough for small type on the dark plate (7.6:1; the
+/// old [0.85, 0.25, 0.25] was 4.1:1, under AA for text this size).
+const RED: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 /// The least room the list keeps on a short window.
 const LIST_MIN_H: f32 = 120.0;
 /// A row's status dot: a small LED, not a control.

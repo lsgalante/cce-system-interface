@@ -103,7 +103,10 @@ impl Default for NetworkState {
         Self {
             loaded: false,
             snap: NetworkSnapshot::default(),
-            wifi_list: ScrollRegion::new(26.0, 4.0).with_sink_behind(true),
+            // Frameless on the section's well, the DE's list: no grey slab
+            // behind the rows. 0 takes the toolkit's row height for the
+            // list font.
+            wifi_list: ScrollRegion::new(0.0, LIST_GAP).with_frame(false).with_sink_behind(true),
             wifi_toggle: Handle::none(),
             password_box: Handle::none(),
             selected: None,
@@ -515,16 +518,19 @@ pub fn update(state: &mut NetworkState, msg: NetworkMessage, ctx: &mut UiContext
 
 const TEXT_FG: [f32; 4] = [0.83, 0.83, 0.83, 1.0];
 const TEXT_DIM: [f32; 4] = [0.53, 0.53, 0.60, 1.0];
-const RED: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
+/// Error text: light enough for small type on the dark plate (7.6:1; the
+/// old [0.85, 0.25, 0.25] was 4.1:1, under AA for text this size).
+const RED: [f32; 4] = [0.95, 0.55, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.75, 0.55, 1.0];
 const ACCENT: [f32; 4] = [0.36, 0.56, 0.38, 1.0];
-/// The Wi-Fi list's own height: a window of rows that scrolls.
-const WIFI_LIST_H: f32 = 160.0;
-const ROW_SIZE: f32 = 12.0;
-const NET_BTN: [f32; 4] = [0.13, 0.20, 0.27, 1.0];
-const ACT_BTN: [f32; 4] = [0.16, 0.29, 0.18, 1.0];
-const SEL_BTN: [f32; 4] = [0.20, 0.32, 0.48, 1.0];
-const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
+/// The network in use, in the list: ACCENT lifted to read on a row's
+/// selected wash as well as on the plate.
+const ACCENT_TEXT: [f32; 4] = [0.55, 0.82, 0.58, 1.0];
+/// Rows the Wi-Fi list shows before it scrolls.
+const WIFI_LIST_ROWS: usize = 5;
+const LIST_GAP: f32 = 4.0;
+/// The first row's offset into the list (`get_item_draw_y`).
+const LIST_TOP: f32 = 4.0;
 const NEUTRAL: ([f32; 4], [f32; 4], [f32; 4]) = ([0.16, 0.16, 0.24, 1.0], [0.25, 0.30, 0.26, 1.0], TEXT_FG);
 const GO: ([f32; 4], [f32; 4], [f32; 4]) = ([0.16, 0.29, 0.18, 1.0], [0.25, 0.30, 0.26, 1.0], [1.0, 1.0, 1.0, 1.0]);
 const DANGER: ([f32; 4], [f32; 4], [f32; 4]) = ([0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0]);
@@ -532,8 +538,8 @@ const DANGER: ([f32; 4], [f32; 4], [f32; 4]) = ([0.30, 0.14, 0.14, 1.0], [0.45, 
 /// `text` cut by whole characters, with an ellipsis, to fit `max_w` at
 /// `size`. Until 2026-10-16 SSIDs were cut by a byte count, which panicked
 /// on a character wider than a byte (é, an emoji) in a narrow window.
-pub fn elide(text: &str, max_w: f32, size: f32) -> String {
-    let w = |s: &str| crate::app::text_width(s, size, None);
+pub fn elide(text: &str, max_w: f32, size: f32, font: Option<&str>) -> String {
+    let w = |s: &str| crate::app::text_width(s, size, font);
     if w(text) <= max_w {
         return text.to_string();
     }
@@ -590,7 +596,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                 if snap.connected_ssid.is_empty() {
                     col.text("Not connected", 12.0, TEXT_DIM);
                 } else {
-                    let name = elide(&snap.connected_ssid, text_w - crate::app::text_width("Connected: ", 13.0, None), 13.0);
+                    let name = elide(&snap.connected_ssid, text_w - crate::app::text_width("Connected: ", 13.0, None), 13.0, None);
                     col.text(format!("Connected: {name}"), 13.0, ACCENT);
                     let ip = if snap.ip_address.is_empty() { String::new() } else { format!("  IP: {}", snap.ip_address) };
                     wrapped(&mut col, &format!("Signal: {}%{ip}", snap.signal_strength), 12.0, TEXT_DIM);
@@ -601,57 +607,66 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
             }
 
             if list_visible {
+                // A whole number of rows, so the last one is never cut by
+                // the list's bottom edge.
+                let pitch = state.wifi_list.item_height + state.wifi_list.item_gap;
+                let rows = state.snap.available.len().clamp(1, WIFI_LIST_ROWS) as f32;
+                let list_h = LIST_TOP + rows * pitch - state.wifi_list.item_gap + LIST_TOP;
                 let list = &mut state.wifi_list;
                 let available = &state.snap.available;
                 let selected = state.selected.clone();
-                col.draw(0.0, WIFI_LIST_H, false, move |pc, r, _| {
-                    // Dissolved List (Phase 6v): scroll state + frame prims are app-owned.
+                col.draw(0.0, list_h, false, move |pc, r, _| {
+                    // Dissolved List (Phase 6v): scroll state is app-owned; a
+                    // frameless list draws no frame, and the host lays its
+                    // idle scrollbar under the plate (`frameless_lists`).
                     list.set_rect(r.x, r.y, r.width, r.height);
                     list.update_bounds(available.len(), r.y, r.height);
                     list.push_prims(pc.as_mut());
 
+                    // The list font and colour, as the toolkit's own rows wear.
+                    let (font, size) = cce_ui::layout::list_font_parsed();
+                    let font = Some(font.as_str());
+                    let fg = cce_ui::color::list_font_color();
                     let row_h = list.item_height;
-                    let inset = cce_ui::layout::CONTROL_TEXT_INSET;
-                    let glyph = 12.0;
-                    let btn_w = r.width - 2.0 * cce_ui::layout::list_gap();
-                    let security_slot = crate::app::text_width("Open", 11.0, None).max(glyph);
+                    let glyph = (size * 0.85).round();
+                    let gap = cce_ui::layout::list_gap();
+                    let security_slot = crate::app::text_width("Open", size, font).max(glyph);
                     pc.push_clip(r);
                     for (idx, net) in available.iter().enumerate() {
-                        let Some(draw_y) = list.get_item_draw_y(idx, 4.0) else { continue };
-                        let row = lay_row(Rect { x: r.x, y: draw_y, width: btn_w, height: row_h }, &[Cell::grow(row_h)])[0];
-                        let face = if selected.as_deref() == Some(net.ssid.as_str()) {
-                            SEL_BTN
-                        } else if net.in_use {
-                            ACT_BTN
-                        } else {
-                            NET_BTN
-                        };
-                        // Selects; Connect is a separate, named button. The
-                        // label is drawn below, in columns.
-                        pc.button("", row.x, row.y, row.width, row.height, face, BTN_HOVER, TEXT_FG,
+                        let Some(draw_y) = list.get_item_draw_y(idx, LIST_TOP) else { continue };
+                        // `lay_row` on the list's own width: one list gap in
+                        // from each end, the same on both sides.
+                        let row = lay_row(Rect { x: r.x, y: draw_y, width: r.width, height: row_h }, &[Cell::grow(row_h)])[0];
+                        let is_selected = selected.as_deref() == Some(net.ssid.as_str());
+                        // Selects; Connect is a separate, named button.
+                        pc.list_row_selected(row.x, row.y, row.width, row.height, is_selected,
                             AppAction::Network(NetworkMessage::Select(net.ssid.clone())));
 
-                        let ty = crate::app::label_y_in(draw_y, row_h, ROW_SIZE, None);
+                        let ty = crate::app::label_y_in(draw_y, row_h, size, font);
                         let gy = draw_y + (row_h - glyph) / 2.0;
+                        let text = |pc: &mut PageCanvas, t: &str, x: f32, color: [f32; 4]| {
+                            pc.text_with(t, x, ty, size, crate::app::rgb(color), font.map(str::to_string), None);
+                        };
                         // Right: a lock on a secured network or "Open" on one
                         // that is not, in one slot so the percentages line up.
-                        let slot_x = row.x + row.width - inset - security_slot;
+                        let slot_x = row.x + row.width - gap - security_slot;
                         if net.is_open() {
-                            pc.text("Open", slot_x, crate::app::label_y_in(draw_y, row_h, 11.0, None), 11.0, crate::app::rgb(WARN));
+                            text(pc, "Open", slot_x, WARN);
                         } else {
-                            pc.icon("lock", crate::app::rect(slot_x + (security_slot - glyph) / 2.0, gy, glyph, glyph), TEXT_FG);
+                            pc.icon("lock", crate::app::rect(slot_x + (security_slot - glyph) / 2.0, gy, glyph, glyph), fg);
                         }
                         let pct = format!("{}%", net.signal);
-                        let right = slot_x - 8.0 - crate::app::text_width(&pct, ROW_SIZE, None);
-                        pc.text(&pct, right, ty, ROW_SIZE, crate::app::rgb(TEXT_DIM));
+                        let pct_x = slot_x - gap - crate::app::text_width(&pct, size, font);
+                        text(pc, &pct, pct_x, TEXT_DIM);
 
                         // Left: the check on the network in use, then its name.
-                        let name_x = row.x + inset + glyph + 6.0;
+                        let check_x = row.x + gap;
                         if net.in_use {
-                            pc.icon("check", crate::app::rect(row.x + inset, gy, glyph, glyph), TEXT_FG);
+                            pc.icon("check", crate::app::rect(check_x, gy, glyph, glyph), ACCENT_TEXT);
                         }
-                        let name = elide(&net.ssid, (right - 8.0 - name_x).max(0.0), ROW_SIZE);
-                        pc.text(&name, name_x, ty, ROW_SIZE, crate::app::rgb(if net.in_use { ACCENT } else { TEXT_FG }));
+                        let name_x = check_x + glyph + gap;
+                        let name = elide(&net.ssid, (pct_x - gap - name_x).max(0.0), size, font);
+                        text(pc, &name, name_x, if net.in_use { ACCENT_TEXT } else { fg });
                     }
                     pc.pop_clip();
                     // The scrollbar's fore copy, over the rows at the raise's fade.
@@ -830,6 +845,10 @@ impl crate::pages::AppPage for NetworkState {
 
     fn tick(&mut self, dt: f32) -> bool {
         self.wifi_list.tick(dt)
+    }
+
+    fn frameless_lists(&self) -> Vec<&ScrollRegion> {
+        vec![&self.wifi_list]
     }
 }
 
@@ -1011,7 +1030,7 @@ mod tests {
             st.selected = Some(name.into());
             let _ = render(&mut st, &mut ui, cw);
         }
-        let e = elide("Café Café Café", 30.0, 12.0);
+        let e = elide("Café Café Café", 30.0, 12.0, None);
         assert!(e.ends_with('…') || e == "Café Café Café");
     }
 
