@@ -820,8 +820,13 @@ impl SystemInterface {
                     pages::packages::update(&mut self.app.packages, pages::packages::PackagesMessage::StartUpdate, &mut self.ui_context);
                     let tx = self.tx_update.clone();
                     let wake = self.sender.clone();
+                    let (line_tx, line_wake) = (tx.clone(), wake.clone());
                     tokio::spawn(async move {
-                        let res = pages::packages::run_update().await;
+                        let res = pages::packages::run_update(move |line| {
+                            let _ = line_tx.send(pages::packages::PackagesMessage::TransactionOutput(line));
+                            let _ = line_wake.send(AppAction::Wake);
+                        })
+                        .await;
                         let _ = tx.send(pages::packages::PackagesMessage::UpdateFinished(res));
                         let _ = wake.send(AppAction::Wake);
                     });
@@ -881,8 +886,13 @@ impl SystemInterface {
                         let targets = targets.clone();
                         let tx = self.tx_update.clone();
                         let wake = self.sender.clone();
+                        let (line_tx, line_wake) = (tx.clone(), wake.clone());
                         tokio::spawn(async move {
-                            let res = pages::packages::run_uninstall(targets.clone()).await;
+                            let res = pages::packages::run_uninstall(targets.clone(), move |line| {
+                                let _ = line_tx.send(pages::packages::PackagesMessage::TransactionOutput(line));
+                                let _ = line_wake.send(AppAction::Wake);
+                            })
+                            .await;
                             let _ = tx.send(pages::packages::PackagesMessage::UninstallFinished(targets, res));
                             let _ = wake.send(AppAction::Wake);
                         });

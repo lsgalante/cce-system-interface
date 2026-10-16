@@ -96,6 +96,8 @@ pub struct PackagesState {
     pub marking: bool,
     /// Outcome of the last remove / mark, shown until the next one starts.
     pub last_action: Option<Result<String, String>>,
+    /// The running update or removal's progress, while one runs.
+    pub progress: Option<TransactionProgress>,
 }
 
 impl Default for PackagesState {
@@ -125,6 +127,7 @@ impl Default for PackagesState {
             previewing: false,
             marking: false,
             last_action: None,
+            progress: None,
         }
     }
 }
@@ -148,6 +151,8 @@ pub enum PackagesMessage {
     SetTab(PackageTab),
     StartUpdate,
     UpdateFinished(Result<(), String>),
+    /// A line pacman printed during the running update or removal.
+    TransactionOutput(String),
     SelectPackage(Option<String>),
     SelectAndScrollPackage(String),
     InfoFetched(String, Result<String, String>),
@@ -300,10 +305,145 @@ pub fn checkupdates_db() -> Option<std::path::PathBuf> {
     db.join("sync").is_dir().then_some(db)
 }
 
-pub async fn run_update() -> Result<(), String> {
-    let output = command("pkexec")
-        .args(["pacman", "-Syu", "--noconfirm"])
-        .output()
+/// How far a running update or removal has got, read from what pacman prints.
+/// Piped, pacman draws no bars, but it puts each step on a line of its own and
+/// flushes it as it happens: `Packages (N)` once the transaction is resolved,
+/// `upgrading x...` / `removing x...` as each package starts, and
+/// `(n/m) description` per hook.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransactionProgress {
+    /// What pacman is doing now, for the line under the bar.
+    pub step: String,
+    /// Packages begun; the last of them is the one being worked on.
+    pub started: usize,
+    /// The transaction's package count: the page's own figure (the update
+    /// list, the removal plan) until pacman's `Packages (N)` line gives its own.
+    pub total: usize,
+    /// The post-transaction hooks have begun, so every package is done.
+    pub packages_done: bool,
+    /// Between `:: Synchronizing package databases...` and the upgrade
+    /// proper, `x downloading...` names a database, not a package.
+    syncing: bool,
+}
+
+impl TransactionProgress {
+    pub fn new(total: usize) -> Self {
+        // pkexec's prompt comes before pacman prints anything.
+        Self { step: "Waiting for authorization...".to_string(), started: 0, total, packages_done: false, syncing: false }
+    }
+
+    /// The share of packages finished: the bar's fill. It waits at zero
+    /// through syncing and downloading, which pacman does not count.
+    pub fn fraction(&self) -> f32 {
+        let finished = if self.packages_done { self.total } else { self.started.saturating_sub(1) };
+        if self.total == 0 { 0.0 } else { (finished as f32 / self.total as f32).min(1.0) }
+    }
+
+    /// Takes one line of pacman's stdout.
+    pub fn feed(&mut self, line: &str) {
+        let line = line.trim();
+        if let Some(n) = line.strip_prefix("Packages (").and_then(|r| r.split(')').next()).and_then(|n| n.parse().ok()) {
+            self.total = n;
+            return;
+        }
+        const OPS: [(&str, &str); 5] = [
+            ("upgrading ", "Upgrading"),
+            ("installing ", "Installing"),
+            ("removing ", "Removing"),
+            ("reinstalling ", "Reinstalling"),
+            ("downgrading ", "Downgrading"),
+        ];
+        for (prefix, verb) in OPS {
+            if let Some(name) = line.strip_prefix(prefix).and_then(|r| r.strip_suffix("...")) {
+                self.started += 1;
+                // A package replaced by another is removed beside the list.
+                self.total = self.total.max(self.started);
+                self.step = format!("{verb} {name} ({}/{})", self.started, self.total);
+                return;
+            }
+        }
+        // "(3/9) Arming ConditionNeedsUpdate..."
+        if let Some((count, what)) = line.strip_prefix('(').and_then(|r| r.split_once(") ")) {
+            if count.split_once('/').is_some_and(|(n, m)| n.parse::<usize>().is_ok() && m.parse::<usize>().is_ok()) {
+                self.step = format!("Hook {count}: {}", what.trim_end_matches("..."));
+                return;
+            }
+        }
+        if let Some(what) = line.strip_suffix(" downloading...") {
+            self.step = if self.syncing { format!("Syncing {what}") } else { format!("Downloading {what}") };
+            return;
+        }
+        let step = match line {
+            ":: Synchronizing package databases..." => {
+                self.syncing = true;
+                "Syncing package databases"
+            }
+            ":: Starting full system upgrade..." => {
+                self.syncing = false;
+                "Starting full system upgrade"
+            }
+            ":: Retrieving packages..." => "Downloading packages",
+            ":: Processing package changes..." => "Processing package changes",
+            ":: Running pre-transaction hooks..." => "Running pre-transaction hooks",
+            ":: Running post-transaction hooks..." => {
+                self.packages_done = true;
+                "Running post-transaction hooks"
+            }
+            // The rest of pacman's own steps: "checking keyring...",
+            // "loading package files...", "resolving dependencies..." and the
+            // like. Other `::` lines are its prompts, which --noconfirm answers.
+            _ if !line.starts_with("::") && line.ends_with("...") => {
+                let what = line.trim_end_matches("...");
+                let mut chars = what.chars();
+                self.step = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+                return;
+            }
+            _ => return,
+        };
+        self.step = step.to_string();
+    }
+}
+
+/// Runs `program <args>` (pkexec, outside tests), handing each line it
+/// prints to `on_line` as it comes, and returns what `.output()` would have.
+async fn run_transaction(program: &str, args: &[&str], on_line: impl Fn(String)) -> std::io::Result<std::process::Output> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+    let mut child = command(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdout = tokio::io::BufReader::new(child.stdout.take().expect("stdout is piped"));
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let read_stdout = async {
+        let (mut all, mut line) = (Vec::new(), Vec::new());
+        loop {
+            line.clear();
+            match stdout.read_until(b'\n', &mut line).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    all.extend_from_slice(&line);
+                    on_line(String::from_utf8_lossy(&line).trim_end().to_string());
+                }
+            }
+        }
+        all
+    };
+    // Read alongside stdout: a full stderr pipe would stall pacman.
+    let read_stderr = async {
+        let mut all = Vec::new();
+        let _ = stderr.read_to_end(&mut all).await;
+        all
+    };
+    let (stdout, stderr) = tokio::join!(read_stdout, read_stderr);
+    Ok(std::process::Output { status: child.wait().await?, stdout, stderr })
+}
+
+/// `pacman -Syu`, its output lines handed to `on_line` as they come.
+pub async fn run_update(on_line: impl Fn(String)) -> Result<(), String> {
+    let output = run_transaction("pkexec", &["pacman", "-Syu", "--noconfirm"], on_line)
         .await
         .map_err(|e| format!("Failed to run update: {}", e))?;
     if !output.status.success() {
@@ -413,11 +553,10 @@ pub fn parse_removal_preview(stdout: &str) -> Vec<(String, u64)> {
 /// transaction — pacman orders it, so a target and the package that required
 /// it can go together. Removing them one call at a time fails on whichever
 /// comes first and silently leaves its dependencies behind as orphans.
-pub async fn run_uninstall(targets: Vec<String>) -> Result<(), String> {
-    let output = command("pkexec")
-        .args(["pacman", "-Rs", "--noconfirm", "--"])
-        .args(&targets)
-        .output()
+/// pacman's output lines are handed to `on_line` as they come.
+pub async fn run_uninstall(targets: Vec<String>, on_line: impl Fn(String)) -> Result<(), String> {
+    let args: Vec<&str> = ["pacman", "-Rs", "--noconfirm", "--"].into_iter().chain(targets.iter().map(String::as_str)).collect();
+    let output = run_transaction("pkexec", &args, on_line)
         .await
         .map_err(|e| format!("Failed to run uninstall: {}", e))?;
     if !output.status.success() {
@@ -648,6 +787,10 @@ pub fn view(
         let hover_bg = [0.20, 0.20, 0.25, 0.15];
         let text_on = [0.90, 0.90, 0.95, 1.0];
         let busy = state.busy();
+        // The running update or removal's bar: drawn this frame only, out of
+        // the context once the form is placed.
+        let progress = state.progress.clone();
+        let progress_bar = progress.as_ref().map(|p| ctx.insert(cce_ui::widget::ProgressBar::new(p.fraction())));
 
         let query = if ctx[state.search_box].editing {
             ctx[state.search_box].edit_buffer.to_lowercase()
@@ -691,7 +834,7 @@ pub fn view(
 
         // ── Update System: a button as wide as its label, its status beside it ──
         let (status_line, status_color) = if state.updating {
-            ("Updating system...".to_string(), ACCENT)
+            (progress.as_ref().map_or_else(|| "Updating system...".to_string(), |p| p.step.clone()), ACCENT)
         } else if !state.updates_checked {
             ("Checking for updates...".to_string(), TEXT_DIM)
         } else if state.updates_error.is_some() {
@@ -721,6 +864,9 @@ pub fn view(
             form_button(r, btn_lbl, button_need(btn_lbl), (bg, hover, fg), AppAction::Packages(PackagesMessage::StartUpdate));
             r.text_fill(status_line, 12.0, status_color);
         });
+        if let (true, Some(bar)) = (state.updating, progress_bar) {
+            col.widget_h(ctx, bar, cce_ui::layout::progressbar_height());
+        }
 
         if let (Some(err), false) = (&state.updates_error, state.updating) {
             let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(3).collect();
@@ -819,13 +965,22 @@ pub fn view(
                     });
                     let confirm = if state.uninstalling { "Removing...".to_string() } else { format!("Remove {}", count_noun(pkgs.len())) };
                     let targets = plan.targets.clone();
+                    let uninstalling = state.uninstalling;
                     col.row(|r| {
                         let need = button_need(&confirm);
                         form_button(r, confirm, need, ([0.30, 0.14, 0.14, 1.0], [0.45, 0.20, 0.20, 1.0], [0.98, 0.65, 0.65, 1.0]),
                             AppAction::Packages(PackagesMessage::StartUninstall(targets)));
-                        form_button(r, "Cancel", button_need("Cancel"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
-                            AppAction::Packages(PackagesMessage::CancelRemoval));
+                        // Once pacman runs there is nothing to cancel, and
+                        // dropping the plan would take its progress with it.
+                        if !uninstalling {
+                            form_button(r, "Cancel", button_need("Cancel"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
+                                AppAction::Packages(PackagesMessage::CancelRemoval));
+                        }
                     });
+                    if let (true, Some(bar), Some(p)) = (state.uninstalling, progress_bar, progress.as_ref()) {
+                        col.widget_h(ctx, bar, cce_ui::layout::progressbar_height());
+                        col.text(p.step.clone(), 11.0, TEXT_DIM);
+                    }
                 }
                 Err(err) => {
                     let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
@@ -1055,6 +1210,9 @@ pub fn view(
             }
         });
         sec.place(form, ctx);
+        if let Some(bar) = progress_bar {
+            ctx.remove(bar);
+        }
     });
 
     final_pc
@@ -1111,10 +1269,17 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage, ctx: &mut UiConte
         PackagesMessage::StartUpdate => {
             state.updating = true;
             state.last_update_res = None;
+            state.progress = Some(TransactionProgress::new(state.updates.len()));
         }
         PackagesMessage::UpdateFinished(res) => {
             state.updating = false;
+            state.progress = None;
             state.last_update_res = Some(res);
+        }
+        PackagesMessage::TransactionOutput(line) => {
+            if let Some(p) = state.progress.as_mut() {
+                p.feed(&line);
+            }
         }
         PackagesMessage::SelectPackage(name) => {
             if name != state.selected_package {
@@ -1173,12 +1338,19 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage, ctx: &mut UiConte
             state.removal = None;
             state.previewing = false;
         }
-        PackagesMessage::StartUninstall(_) => {
+        PackagesMessage::StartUninstall(targets) => {
             state.uninstalling = true;
             state.last_action = None;
+            // The plan counts the dependencies going too.
+            let total = state.removal.as_ref()
+                .filter(|p| p.targets == targets)
+                .and_then(|p| p.outcome.as_ref().ok())
+                .map_or(targets.len(), |pkgs| pkgs.len());
+            state.progress = Some(TransactionProgress::new(total));
         }
         PackagesMessage::UninstallFinished(targets, res) => {
             state.uninstalling = false;
+            state.progress = None;
             let removed = state.removal.as_ref()
                 .filter(|p| p.targets == targets)
                 .and_then(|p| p.outcome.as_ref().ok())
@@ -1594,6 +1766,93 @@ mod tests {
         update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Err(err)), &mut ui);
         assert!(!st.uninstalling);
         assert!(matches!(&st.last_action, Some(Err(e)) if e.contains("required by alpha")));
+    }
+
+    /// stdout of `pacman -Rs --noconfirm -- tree which`, piped (captured under
+    /// fakeroot into a scratch root).
+    const REMOVE_OUTPUT: &str = "checking dependencies...\n\nPackages (2) tree-2.3.2-1  which-2.25-1\n\n\
+        Total Removed Size:  0.12 MiB\n\n:: Do you want to remove these packages? [Y/n] \n\
+        :: Processing package changes...\nremoving which...\nremoving tree...\n";
+
+    /// Lines reach `on_line` while the program still runs, and the whole
+    /// output comes back for the error summary as `.output()` gave it.
+    #[tokio::test]
+    async fn transaction_output_streams_line_by_line() {
+        let seen = std::sync::Mutex::new(Vec::new());
+        let script = "echo one; echo oops >&2; sleep 0.3; echo two; exit 1";
+        let started = std::time::Instant::now();
+        let out = run_transaction("sh", &["-c", script], |line| seen.lock().unwrap().push((line, started.elapsed())))
+            .await
+            .unwrap();
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>(), ["one", "two"]);
+        assert!(seen[0].1 < std::time::Duration::from_millis(250), "the first line came before the sleep ended");
+        assert_eq!(out.stdout, b"one\ntwo\n");
+        assert_eq!(out.stderr, b"oops\n");
+        assert_eq!(out.status.code(), Some(1));
+    }
+
+    #[test]
+    fn removal_progress_counts_packages() {
+        let mut p = TransactionProgress::new(1);
+        assert_eq!(p.step, "Waiting for authorization...");
+        let mut seen = Vec::new();
+        for line in REMOVE_OUTPUT.lines() {
+            p.feed(line);
+            seen.push((p.step.clone(), p.fraction()));
+        }
+        assert_eq!(p.total, 2, "pacman's `Packages (2)` outranks the page's own count");
+        assert_eq!(seen[0].0, "Checking dependencies");
+        assert!(seen.contains(&("Removing which (1/2)".to_string(), 0.0)));
+        assert_eq!(seen.last().unwrap(), &("Removing tree (2/2)".to_string(), 0.5));
+    }
+
+    #[test]
+    fn update_progress_follows_sync_download_upgrade_and_hooks() {
+        let mut p = TransactionProgress::new(3);
+        let mut feed = |line: &str| {
+            p.feed(line);
+            (p.step.clone(), p.fraction())
+        };
+        assert_eq!(feed(":: Synchronizing package databases...").0, "Syncing package databases");
+        assert_eq!(feed(" core downloading...").0, "Syncing core");
+        assert_eq!(feed(" extra is up to date").0, "Syncing core", "not a step");
+        assert_eq!(feed(":: Starting full system upgrade...").0, "Starting full system upgrade");
+        feed("Packages (4) firefox-131.0-1  glibc-2.40-2  linux-6.11-1  newdep-1.0-1");
+        assert_eq!(feed(":: Proceed with installation? [Y/n] ").0, "Starting full system upgrade", "prompts are skipped");
+        assert_eq!(feed(":: Retrieving packages...").0, "Downloading packages");
+        assert_eq!(feed(" firefox-131.0-1-x86_64 downloading..."), ("Downloading firefox-131.0-1-x86_64".to_string(), 0.0));
+        assert_eq!(feed("checking package integrity...").0, "Checking package integrity");
+        assert_eq!(feed("(1/1) Removing old kernel modules...").0, "Hook 1/1: Removing old kernel modules");
+        assert_eq!(feed("upgrading firefox..."), ("Upgrading firefox (1/4)".to_string(), 0.0));
+        assert_eq!(feed("installing newdep..."), ("Installing newdep (2/4)".to_string(), 0.25));
+        feed("upgrading glibc...");
+        assert_eq!(feed("upgrading linux..."), ("Upgrading linux (4/4)".to_string(), 0.75));
+        assert_eq!(feed(":: Running post-transaction hooks..."), ("Running post-transaction hooks".to_string(), 1.0));
+        assert_eq!(feed("(3/9) Arming ConditionNeedsUpdate..."), ("Hook 3/9: Arming ConditionNeedsUpdate".to_string(), 1.0));
+    }
+
+    #[test]
+    fn removal_progress_is_seeded_from_the_plan_and_cleared_after() {
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        update(&mut st, PackagesMessage::RemovalPreviewed(
+            vec!["beta".into()],
+            Ok(parse_removal_preview("beta 1024\nlibbeta 2048\n")),
+        ), &mut ui);
+        update(&mut st, PackagesMessage::StartUninstall(vec!["beta".into()]), &mut ui);
+        assert_eq!(st.progress.as_ref().map(|p| p.total), Some(2), "the plan's dependencies count too");
+        update(&mut st, PackagesMessage::TransactionOutput("removing libbeta...".into()), &mut ui);
+        let mut layout = cce_ui::compose::PageFlow::new();
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui).finish();
+        let texts: Vec<String> = pc.texts().into_iter().map(|t| t.text).collect();
+        assert!(texts.iter().any(|t| t == "Removing libbeta (1/2)"), "the step is painted: {texts:?}");
+        assert!(!texts.iter().any(|t| t == "Cancel"), "nothing to cancel once pacman runs: {texts:?}");
+        update(&mut st, PackagesMessage::UninstallFinished(vec!["beta".into()], Ok(())), &mut ui);
+        assert!(st.progress.is_none());
+        // A stray line after the end changes nothing.
+        update(&mut st, PackagesMessage::TransactionOutput("removing beta...".into()), &mut ui);
+        assert!(st.progress.is_none());
     }
 
     #[test]
