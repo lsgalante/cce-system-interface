@@ -442,9 +442,9 @@ impl AppPage for KeyboardState {
             let mut form = sec.form();
             let mut col = form.column();
             if !self.loaded {
-                col.text("Reading input.kdl...", 12.0, TEXT_FG);
+                col.text("Reading input.kdl...", crate::app::text_body(), TEXT_FG);
             } else {
-                wrapped(&mut col, "Read-only. Shortcuts are changed in input.kdl.", 12.0, TEXT_FG);
+                wrapped(&mut col, "Read-only. Shortcuts are changed in input.kdl.", crate::app::text_body(), TEXT_FG);
                 // Name the reload chord as it is bound now, not as it ships.
                 let reload = snap
                     .window_manager
@@ -454,16 +454,16 @@ impl AppPage for KeyboardState {
                 wrapped(
                     &mut col,
                     &format!("Apps read it when they start. The window manager rereads it on {reload}."),
-                    11.0,
+                    crate::app::text_small(),
                     TEXT_DIM,
                 );
                 if let Some(e) = &snap.parse_error {
-                    wrapped(&mut col, &format!("input.kdl does not parse, so every app is using its defaults: {e}"), 11.0, WARN);
+                    wrapped(&mut col, &format!("input.kdl does not parse, so every app is using its defaults: {e}"), crate::app::text_small(), WARN);
                 }
                 if !snap.exists {
-                    wrapped(&mut col, "There is no input.kdl yet: every shortcut is at its default.", 11.0, TEXT_DIM);
+                    wrapped(&mut col, "There is no input.kdl yet: every shortcut is at its default.", crate::app::text_small(), TEXT_DIM);
                 } else {
-                    wrapped(&mut col, &snap.path, 11.0, TEXT_DIM);
+                    wrapped(&mut col, &snap.path, crate::app::text_small(), TEXT_DIM);
                     let label = "Open input.kdl";
                     let need = crate::app::button_need(label);
                     col.row(|r| {
@@ -471,7 +471,7 @@ impl AppPage for KeyboardState {
                     });
                 }
                 if let Some(e) = &self.open_error {
-                    wrapped(&mut col, e, 11.0, WARN);
+                    wrapped(&mut col, e, crate::app::text_small(), WARN);
                 }
             }
             sec.place(form, ctx);
@@ -481,9 +481,9 @@ impl AppPage for KeyboardState {
             let mut form = sec.form();
             let mut col = form.column();
             if self.loaded {
-                form_pairs(&mut col, 11.0, pairs(&snap.window_manager));
+                form_pairs(&mut col, crate::app::text_small(), pairs(&snap.window_manager));
                 form_divider(&mut col);
-                wrapped(&mut col, "Dimmed: built in, not set in input.kdl.", 11.0, TEXT_DIM);
+                wrapped(&mut col, "Dimmed: built in, not set in input.kdl.", crate::app::text_small(), TEXT_DIM);
             }
             sec.place(form, ctx);
         });
@@ -494,7 +494,7 @@ impl AppPage for KeyboardState {
             if self.loaded {
                 let mut rows = pairs(&snap.this_app);
                 rows.insert(1, ("Esc".to_string(), TEXT_DIM, "Close the search (fixed)".to_string(), TEXT_DIM));
-                form_pairs(&mut col, 11.0, rows);
+                form_pairs(&mut col, crate::app::text_small(), rows);
             }
             sec.place(form, ctx);
         });
@@ -506,17 +506,17 @@ impl AppPage for KeyboardState {
                 wrapped(
                     &mut col,
                     "Only what input.kdl changes. Each app's own defaults are built into it and are not listed here.",
-                    11.0,
+                    crate::app::text_small(),
                     TEXT_DIM,
                 );
                 if snap.other_apps.is_empty() {
-                    col.text("No other app's shortcuts are changed.", 11.0, TEXT_DIM);
+                    col.text("No other app's shortcuts are changed.", crate::app::text_small(), TEXT_DIM);
                 }
                 for (domain, rows) in &snap.other_apps {
                     form_divider(&mut col);
                     let title = if domain == UI_DOMAIN { "Every app (cce-ui)".to_string() } else { domain.clone() };
-                    col.text(title, 12.0, TEXT_FG);
-                    form_pairs(&mut col, 11.0, pairs(rows));
+                    col.text(title, crate::app::text_heading(), TEXT_FG);
+                    form_pairs(&mut col, crate::app::text_small(), pairs(rows));
                 }
             }
             sec.place(form, ctx);

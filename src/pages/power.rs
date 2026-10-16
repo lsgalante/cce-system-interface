@@ -845,7 +845,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(1);
         builder.add_section_spanned(&mut final_pc, "", 1, focused(0), |sec| {
             let mut form = sec.form();
-            form.column().text("Reading power interfaces...", 12.0, TEXT_DIM);
+            form.column().text("Reading power interfaces...", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
         });
         return final_pc;
@@ -867,7 +867,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         let mut col = form.column();
         col.block(|b| {
             if !f.battery_present {
-                b.text("No battery detected", 12.0, TEXT_DIM);
+                b.text("No battery detected", crate::app::text_body(), TEXT_DIM);
                 return;
             }
             let status_color = match f.status.as_str() {
@@ -882,7 +882,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             if let Some(true) = f.ac_online {
                 line.push_str("  ·  on AC");
             }
-            b.text(line, 12.0, status_color);
+            b.text(line, crate::app::text_body(), status_color);
 
             // Folded in from the System page's battery section, which showed
             // the same pack in a second place until 2026-08-23.
@@ -898,14 +898,14 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
                 detail.push_str(&format!("{} {}", humanize_secs(secs), what));
             }
             if !detail.is_empty() {
-                b.text(detail, 12.0, TEXT_DIM);
+                b.text(detail, crate::app::text_body(), TEXT_DIM);
             }
             if let Some(h) = f.health_pct {
-                b.text(format!("Health: {}% of design capacity", h), 12.0, if h >= 80 { TEXT_DIM } else { WARN });
+                b.text(format!("Health: {}% of design capacity", h), crate::app::text_body(), if h >= 80 { TEXT_DIM } else { WARN });
             }
             let pack = format!("{} {}", f.vendor, f.model);
             if !pack.trim().is_empty() {
-                b.text(pack.trim().to_string(), 11.0, TEXT_DIM);
+                b.text(pack.trim().to_string(), crate::app::text_small(), TEXT_DIM);
             }
         });
 
@@ -916,16 +916,16 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
         if f.battery_present {
             col.block(|b| match f.automation {
                 Automation::Ready => {
-                    b.text("Switches automatically on plug and unplug.", 11.0, TEXT_DIM);
+                    b.text("Switches automatically on plug and unplug.", crate::app::text_small(), TEXT_DIM);
                 }
                 Automation::Missing => {
-                    b.text("Automatic switching is not installed:", 11.0, WARN);
-                    b.text("System › System Files installs it.", 11.0, WARN);
+                    b.text("Automatic switching is not installed:", crate::app::text_small(), WARN);
+                    b.text("System › System Files installs it.", crate::app::text_small(), WARN);
                 }
                 Automation::Stale => {
-                    b.text("Automatic switching is out of date and", 11.0, WARN);
-                    b.text("applies nothing on plug or unplug.", 11.0, WARN);
-                    b.text("Run: ccebuild install-system", 11.0, WARN);
+                    b.text("Automatic switching is out of date and", crate::app::text_small(), WARN);
+                    b.text("applies nothing on plug or unplug.", crate::app::text_small(), WARN);
+                    b.text("Run: ccebuild install-system", crate::app::text_small(), WARN);
                 }
             });
         }
@@ -947,13 +947,13 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             col.widget_h(ctx, dd_mode, menu_h);
             col.block(|b| {
                 if running {
-                    b.text("Running now — picks apply immediately.", 11.0, GOOD);
+                    b.text("Running now — picks apply immediately.", crate::app::text_small(), GOOD);
                 } else if applies_when.is_empty() {
-                    b.text("Assigned to no adapter state.", 11.0, TEXT_DIM);
+                    b.text("Assigned to no adapter state.", crate::app::text_small(), TEXT_DIM);
                 } else {
-                    b.text(format!("Applied when {}.", applies_when.join(" and ")), 11.0, TEXT_DIM);
+                    b.text(format!("Applied when {}.", applies_when.join(" and ")), crate::app::text_small(), TEXT_DIM);
                 }
-                b.text("Not set leaves a lever alone.", 11.0, TEXT_DIM);
+                b.text("Not set leaves a lever alone.", crate::app::text_small(), TEXT_DIM);
             });
             for (row, &dd) in levers.rows.iter().zip(levers.dds.iter()) {
                 if !row.is_empty() {
@@ -971,8 +971,8 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             let mut form = sec.form();
             let mut col = form.column();
             col.block(|b| {
-                b.text("Which mode runs in each adapter state.", 11.0, TEXT_DIM);
-                b.text(format!("{} right now.", f.source.label()), 11.0, GOOD);
+                b.text("Which mode runs in each adapter state.", crate::app::text_small(), TEXT_DIM);
+                b.text(format!("{} right now.", f.source.label()), crate::app::text_small(), GOOD);
             });
             let wanted: Vec<usize> = sources.iter().map(|s| source_index(*s)).collect();
             for (i, &dd) in dd_assign.iter().enumerate() {
@@ -995,13 +995,13 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             let mut col = form.column();
             match f.idle_inhibitors.as_deref() {
                 None => {
-                    col.text("No compositor answered.", 11.0, TEXT_DIM);
+                    col.text("No compositor answered.", crate::app::text_small(), TEXT_DIM);
                 }
                 Some([]) => {
-                    col.text("Nothing is holding the display awake.", 11.0, TEXT_DIM);
+                    col.text("Nothing is holding the display awake.", crate::app::text_small(), TEXT_DIM);
                 }
                 Some(names) => {
-                    col.text("Display off and sleep wait for:", 11.0, TEXT_FG);
+                    col.text("Display off and sleep wait for:", crate::app::text_small(), TEXT_FG);
                     let pairs = names
                         .iter()
                         .map(|n| {
@@ -1009,7 +1009,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
                             (who, TEXT_FG, how.to_string(), TEXT_DIM)
                         })
                         .collect();
-                    crate::app::form_pairs(&mut col, 11.0, pairs);
+                    crate::app::form_pairs(&mut col, crate::app::text_small(), pairs);
                 }
             }
             sec.place(form, ctx);

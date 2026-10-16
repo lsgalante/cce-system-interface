@@ -680,7 +680,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let sec_w = sec.cw;
         let mut form = sec.form();
         if !state.loaded {
-            form.column().text("Loading systemd timers...", 12.0, TEXT_DIM);
+            form.column().text("Loading systemd timers...", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
             return;
         }
@@ -733,7 +733,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 Some(base) => format!("Editing {}.timer \u{2014} command and schedule rewrite in place.", base),
                 None => "New user timer \u{2014} runs the command on the schedule.".to_string(),
             };
-            col.text(note, 11.0, TEXT_DIM);
+            col.text(note, crate::app::text_small(), TEXT_DIM);
             if state.creating {
                 col.widget_h(ctx, state.name_box, field_h);
             }
@@ -759,7 +759,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 } else {
                     format!("Delete {base}.timer? Its service file is left in place.")
                 };
-                col.text(note, 12.0, [0.95, 0.75, 0.55, 1.0]);
+                col.text(note, crate::app::text_body(), [0.95, 0.75, 0.55, 1.0]);
                 col.row(|r| {
                     form_button(r, "Delete", button_need("Delete"), danger, AppAction::Timers(TimersMessage::DeleteConfirm));
                     form_button(r, "Keep", button_need("Keep"), ([0.15, 0.15, 0.20, 1.0], [0.22, 0.22, 0.28, 1.0], text_on),
@@ -775,8 +775,8 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 Err(e) => (e.clone(), RED),
             };
             let wrap_w = col.form_width();
-            let lines: Vec<String> = text.lines().flat_map(|l| crate::app::wrap_to_width(l, wrap_w, 12.0)).take(6).collect();
-            col.lines(lines, 12.0, color);
+            let lines: Vec<String> = text.lines().flat_map(|l| crate::app::wrap_to_width(l, wrap_w, crate::app::text_body())).take(6).collect();
+            col.lines(lines, crate::app::text_body(), color);
         }
 
         col.fill(LIST_MIN_H, move |pc, rect, ctx| {
@@ -925,7 +925,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                             // No toggle: say what it is instead (static, masked,
                             // generated, …) rather than calling them all static.
                             other => {
-                                pc.text(other, en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, 11.0, None), 11.0, crate::app::rgb(TEXT_DIM));
+                                pc.text(other, en_x + cce_ui::layout::CONTROL_TEXT_INSET, crate::app::label_y_in(btn_y, btn_h, crate::app::text_small(), None), crate::app::text_small(), crate::app::rgb(TEXT_DIM));
                             }
                         }
                     }
@@ -936,7 +936,7 @@ pub fn view(state: &mut TimersState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
 
             if filtered.is_empty() {
                 let inset = cce_ui::layout::plate_padding();
-                pc.text("No timers in this scope", list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
+                pc.text("No timers in this scope", list_box_x + inset, list_box_y + inset, crate::app::text_body(), crate::app::rgb(TEXT_DIM));
             }
         });
         sec.place(form, ctx);

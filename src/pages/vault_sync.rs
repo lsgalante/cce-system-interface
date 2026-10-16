@@ -314,11 +314,11 @@ fn action(msg: SyncMessage) -> AppAction {
 /// The section's contents, in a column of the Accounts page's second well.
 pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, PageCanvas>, ctx: &mut UiContext) {
     let Some(snap) = &state.snap else {
-        col.text(if state.checking { "Checking cce-sync..." } else { "Not checked yet." }, 12.0, TEXT_DIM);
+        col.text(if state.checking { "Checking cce-sync..." } else { "Not checked yet." }, crate::app::text_body(), TEXT_DIM);
         return;
     };
     let Some(server) = &snap.server else {
-        wrapped(col, "Not set up: config.kdl has no sync { server \"…\" } block.", 12.0, TEXT_FG);
+        wrapped(col, "Not set up: config.kdl has no sync { server \"…\" } block.", crate::app::text_body(), TEXT_FG);
         return;
     };
     let (token, color) = match snap.token {
@@ -330,7 +330,7 @@ pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, Page
     };
     crate::app::form_pairs(
         col,
-        12.0,
+        crate::app::text_body(),
         vec![("Server".into(), TEXT_DIM, server.clone(), TEXT_FG), ("Token".into(), TEXT_DIM, token.to_string(), color)],
     );
     if snap.token == TokenPlace::File && state.busy.is_none() && state.confirm.is_none() {
@@ -342,7 +342,7 @@ pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, Page
 
     if state.token_box_visible() {
         col.widget_h(ctx, state.token_box, cce_ui::layout::spinbox_height());
-        wrapped(col, "Checked with the server, then kept in the keyring.", 11.0, TEXT_DIM);
+        wrapped(col, "Checked with the server, then kept in the keyring.", crate::app::text_small(), TEXT_DIM);
         col.row(|r| {
             form_button(r, "Save token", button_need("Save token"), NEUTRAL, action(SyncMessage::SetToken));
             r.space(0.0, true);
@@ -350,13 +350,13 @@ pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, Page
     }
 
     form_divider(col);
-    col.text("Connected apps", 12.0, TEXT_FG);
+    col.text("Connected apps", crate::app::text_body(), TEXT_FG);
     match &snap.grants {
-        Err(e) => wrapped(col, &format!("Could not list them: {e}"), 11.0, RED),
+        Err(e) => wrapped(col, &format!("Could not list them: {e}"), crate::app::text_small(), RED),
         Ok(grants) => {
             let live: Vec<&Grant> = grants.iter().filter(|g| !g.revoked).collect();
             if live.is_empty() {
-                wrapped(col, "No app can reach the vault.", 11.0, TEXT_DIM);
+                wrapped(col, "No app can reach the vault.", crate::app::text_small(), TEXT_DIM);
             }
             for g in live {
                 let detail = [
@@ -369,17 +369,17 @@ pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, Page
                 .collect::<Vec<_>>()
                 .join(" · ");
                 col.row(|r| {
-                    r.text(g.client.clone(), 12.0, TEXT_FG);
+                    r.text(g.client.clone(), crate::app::text_body(), TEXT_FG);
                     r.space(0.0, true);
                     if state.busy.is_none() && state.confirm.is_none() {
                         form_button(r, "Revoke", button_need("Revoke"), DANGER, action(SyncMessage::Revoke(g.id.clone(), g.client.clone())));
                     }
                 });
-                wrapped(col, &detail, 11.0, TEXT_DIM);
+                wrapped(col, &detail, crate::app::text_small(), TEXT_DIM);
             }
             let revoked = grants.len() - grants.iter().filter(|g| !g.revoked).count();
             if revoked > 0 {
-                wrapped(col, &format!("{revoked} revoked, not shown."), 11.0, TEXT_DIM);
+                wrapped(col, &format!("{revoked} revoked, not shown."), crate::app::text_small(), TEXT_DIM);
             }
         }
     }
@@ -390,7 +390,7 @@ pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, Page
             Confirm::Revoke { client, .. } => (format!("Revoke {client}? It loses access to the vault until it signs in again."), "Revoke"),
             Confirm::MoveToKeyring => ("Store the token in the keyring and delete the plain file?".to_string(), "Move"),
         };
-        wrapped(col, &question, 12.0, WARN);
+        wrapped(col, &question, crate::app::text_body(), WARN);
         col.row(|r| {
             form_button(r, go, button_need(go), DANGER, action(SyncMessage::ConfirmYes));
             form_button(r, "Cancel", button_need("Cancel"), NEUTRAL, action(SyncMessage::ConfirmNo));
@@ -398,14 +398,14 @@ pub fn view(state: &SyncState, col: &mut cce_ui::compose::FormGroup<'_, '_, Page
         });
     }
     if let Some(b) = &state.busy {
-        wrapped(col, b, 11.0, TEXT_DIM);
+        wrapped(col, b, crate::app::text_small(), TEXT_DIM);
     }
     if let Some(res) = &state.result {
         let (text, color) = match res {
             Ok(t) => (t.as_str(), TEXT_FG),
             Err(e) => (e.as_str(), RED),
         };
-        wrapped(col, text, 11.0, color);
+        wrapped(col, text, crate::app::text_small(), color);
         col.row(|r| {
             form_button(r, "Dismiss", button_need("Dismiss"), NEUTRAL, action(SyncMessage::Dismiss));
             r.space(0.0, true);

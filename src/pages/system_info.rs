@@ -561,10 +561,10 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let mut form = sec.form();
         form.column().block(|b| {
             if !state.loaded {
-                b.text("Loading system information...", 14.0, TEXT_FG);
+                b.text("Loading system information...", crate::app::text_body(), TEXT_DIM);
             } else {
-                wrapped_text(b, &format!("{}  —  Linux {}", state.hostname, state.kernel), 14.0, TEXT_FG);
-                wrapped_text(b, &format!("Uptime: {}", state.uptime), 12.0, TEXT_DIM);
+                wrapped_text(b, &format!("{}  —  Linux {}", state.hostname, state.kernel), crate::app::text_heading(), TEXT_FG);
+                wrapped_text(b, &format!("Uptime: {}", state.uptime), crate::app::text_body(), TEXT_DIM);
             }
         });
         sec.place(form, ctx);
@@ -605,12 +605,12 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let mut form = sec.form();
         form.column().block(|b| {
             if !state.loaded {
-                b.text("Loading CPU model and utilization...", 12.0, TEXT_FG);
+                b.text("Loading CPU model and utilization...", crate::app::text_body(), TEXT_FG);
             } else {
-                wrapped_text(b, &format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores), 12.0, TEXT_FG);
-                wrapped_text(b, &format!("Usage  {:.0}%", state.cpu_usage), 12.0, TEXT_FG);
+                wrapped_text(b, &format!("CPU  {}  ({} cores)", state.cpu_model, state.cpu_cores), crate::app::text_body(), TEXT_FG);
+                wrapped_text(b, &format!("Usage  {:.0}%", state.cpu_usage), crate::app::text_body(), TEXT_FG);
                 let cpu_temp_text = read_cpu_temp().map(|t| format!("Temp  {:.0}°C", t)).unwrap_or_else(|| "Temp  N/A".to_string());
-                wrapped_text(b, &cpu_temp_text, 12.0, TEXT_FG);
+                wrapped_text(b, &cpu_temp_text, crate::app::text_body(), TEXT_FG);
             }
         });
         sec.place(form, ctx);
@@ -621,10 +621,10 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let mut form = sec.form();
         form.column().block(|b| {
             if !state.loaded {
-                b.text("Loading GPU models...", 12.0, TEXT_FG);
+                b.text("Loading GPU models...", crate::app::text_body(), TEXT_FG);
             } else {
                 for gpu_text in state.gpu_strings.iter() {
-                    wrapped_text(b, gpu_text, 12.0, TEXT_FG);
+                    wrapped_text(b, gpu_text, crate::app::text_body(), TEXT_FG);
                 }
             }
         });
@@ -660,21 +660,21 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let wrap_w = form.width();
         let mut col = form.column();
         col.block(|b| {
-            b.text(status, 12.0, color);
+            b.text(status, crate::app::text_body(), color);
             // Name the files. "2 files differ" is not enough to authorize a root
             // install on — which one is the greeter matters. A path pair is wider
             // than the well, and the well clips: wrapped, continuation lines
             // indented past the first, so each file still reads as one entry.
             let indent = cce_ui::layout::CONTROL_TEXT_INSET;
             for line in sf.pending.iter().take(8) {
-                let lines = wrap_to_width(line, wrap_w, 11.0);
+                let lines = wrap_to_width(line, wrap_w, crate::app::text_small());
                 let (first, rest) = lines.split_first().map_or((String::new(), &[][..]), |(f, r)| (f.clone(), r));
-                let rest: Vec<String> = rest.iter().flat_map(|l| wrap_to_width(l, wrap_w - indent, 11.0)).collect();
-                b.text(first, 11.0, TEXT_DIM);
+                let rest: Vec<String> = rest.iter().flat_map(|l| wrap_to_width(l, wrap_w - indent, crate::app::text_small())).collect();
+                b.text(first, crate::app::text_small(), TEXT_DIM);
                 if !rest.is_empty() {
                     b.row(|r| {
                         r.space(indent, false);
-                        r.lines(rest, 11.0, TEXT_DIM);
+                        r.lines(rest, crate::app::text_small(), TEXT_DIM);
                     });
                 }
             }
@@ -685,7 +685,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 Ok(()) => ("Installed — takes effect at next login".to_string(), TEXT_DIM),
                 Err(e) => (format!("Failed: {}", e), DANGER_TEXT),
             };
-            wrapped_text(&mut col, &msg, 11.0, color);
+            wrapped_text(&mut col, &msg, crate::app::text_small(), color);
         }
 
         let has_work = sf.scanned && !sf.pending.is_empty();
@@ -712,9 +712,9 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Loading installed builds...", 12.0, TEXT_FG);
+            col.text("Loading installed builds...", crate::app::text_body(), TEXT_FG);
         } else if state.builds.is_empty() {
-            col.text("No cce binaries in ~/.local/bin", 12.0, TEXT_DIM);
+            col.text("No cce binaries in ~/.local/bin", crate::app::text_body(), TEXT_DIM);
         } else {
             // "—" is a binary no ccebuild build has timed (a bare `cargo
             // build`, or one built before the timing was recorded).
@@ -723,7 +723,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 .iter()
                 .map(|b| (b.name.clone(), TEXT_FG, b.seconds.map(format_build_duration).unwrap_or_else(|| "—".to_string()), TEXT_DIM))
                 .collect();
-            crate::app::form_pairs(&mut col, 11.0, pairs);
+            crate::app::form_pairs(&mut col, crate::app::text_small(), pairs);
         }
         sec.place(form, ctx);
     });
@@ -737,7 +737,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Reading the portal routing...", 12.0, TEXT_FG);
+            col.text("Reading the portal routing...", crate::app::text_body(), TEXT_FG);
         } else {
             let problems = rep.problem_count();
             let summary = match problems {
@@ -745,7 +745,7 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                 1 => "1 problem".to_string(),
                 n => format!("{n} problems"),
             };
-            wrapped_text(&mut col, &summary, 12.0, if problems == 0 { TEXT_DIM } else { TEXT_FG });
+            wrapped_text(&mut col, &summary, crate::app::text_body(), if problems == 0 { TEXT_DIM } else { TEXT_FG });
             let pairs = rep
                 .rows
                 .iter()
@@ -754,12 +754,12 @@ pub fn view(state: &mut SystemState, cx: f32, cy: f32, cw: f32, ch: f32, _root_f
                     Some(p) => (r.interface.clone(), TEXT_FG, format!("{} — {p}", r.answer), DANGER_TEXT),
                 })
                 .collect();
-            crate::app::form_pairs(&mut col, 11.0, pairs);
+            crate::app::form_pairs(&mut col, crate::app::text_small(), pairs);
             for note in &rep.notes {
-                wrapped_text(&mut col, note, 11.0, DANGER_TEXT);
+                wrapped_text(&mut col, note, crate::app::text_small(), DANGER_TEXT);
             }
             if let Some(path) = &rep.config {
-                wrapped_text(&mut col, &format!("From {path}"), 11.0, TEXT_DIM);
+                wrapped_text(&mut col, &format!("From {path}"), crate::app::text_small(), TEXT_DIM);
             }
         }
         sec.place(form, ctx);

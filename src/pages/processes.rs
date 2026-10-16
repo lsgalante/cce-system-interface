@@ -533,8 +533,6 @@ const DANGER: ([f32; 4], [f32; 4], [f32; 4]) = ([0.30, 0.14, 0.14, 1.0], [0.45, 
 /// The least room the table keeps on a short window.
 const LIST_MIN_H: f32 = 120.0;
 /// The table's header and row text sizes, and the sort chevron's.
-const HDR_SIZE: f32 = 11.0;
-const ROW_SIZE: f32 = 12.0;
 const CHEVRON: f32 = 9.0;
 /// The least room COMMAND keeps, in characters, before the table scrolls sideways.
 const COMMAND_MIN_CHARS: usize = 24;
@@ -548,9 +546,9 @@ const TERM_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 /// it. They stand `list_gap` apart and in from the edges (`lay_row`).
 fn table_columns(box_w: f32, row_h: f32, kill_w: f32) -> ([Rect; 9], f32) {
     let gap = cce_ui::layout::list_gap();
-    let w = |s: &str| crate::app::text_width(s, ROW_SIZE, None);
+    let w = |s: &str| crate::app::text_width(s, crate::app::text_body(), None);
     let head = |s: &str, sortable: bool| {
-        crate::app::text_width(s, HDR_SIZE, None) + if sortable { gap / 2.0 + CHEVRON } else { 0.0 }
+        crate::app::text_width(s, crate::app::text_small(), None) + if sortable { gap / 2.0 + CHEVRON } else { 0.0 }
     };
     let widths = [
         w("4194304").max(head("PID", false)),
@@ -583,7 +581,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
     builder.add_section_spanned(&mut final_pc, "", 1, root_focused || sec_focused.first().copied().unwrap_or(false), |sec| {
         let mut form = sec.form();
         if !state.loaded {
-            form.column().text("Loading processes...", 12.0, TEXT_FG);
+            form.column().text("Loading processes...", crate::app::text_body(), TEXT_FG);
             sec.place(form, ctx);
             return;
         }
@@ -594,7 +592,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
         let n_kernel = state.processes.iter().filter(|p| p.kernel).count();
         let mut col = form.column();
         // Power summary line above the table.
-        col.text(summary_line(&state.power), 11.0, TEXT_DIM);
+        col.text(summary_line(&state.power), crate::app::text_small(), TEXT_DIM);
 
         // ── Search, and the kernel-thread switch ──
         if state.has_search() {
@@ -610,9 +608,9 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
         if let Some(t) = state.confirm.clone() {
             let warning = state.row(&t.pid).and_then(|r| kill_warning(r, std::process::id()));
             col.block(|b| {
-                b.lines(wrap_to_width(&format!("Kill {} ({})?", t.command, t.pid), wrap_w, 12.0), 12.0, WARN);
+                b.lines(wrap_to_width(&format!("Kill {} ({})?", t.command, t.pid), wrap_w, crate::app::text_body()), crate::app::text_body(), WARN);
                 if let Some(w) = warning {
-                    b.lines(wrap_to_width(w, wrap_w, 11.0), 11.0, RED);
+                    b.lines(wrap_to_width(w, wrap_w, crate::app::text_small()), crate::app::text_small(), RED);
                 }
             });
             col.row(|r| {
@@ -624,7 +622,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
 
         // ── A process that ignored its TERM ──
         if let Some(t) = state.stubborn.clone() {
-            col.lines(wrap_to_width(&format!("{} ({}) is still running after being asked to exit.", t.command, t.pid), wrap_w, 12.0), 12.0, WARN);
+            col.lines(wrap_to_width(&format!("{} ({}) is still running after being asked to exit.", t.command, t.pid), wrap_w, crate::app::text_body()), crate::app::text_body(), WARN);
             col.row(|r| {
                 form_button(r, "Force Kill", button_need("Force Kill"), DANGER, AppAction::Processes(ProcessesMessage::ForceKill));
                 form_button(r, "Leave It", button_need("Leave It"), NEUTRAL, AppAction::Processes(ProcessesMessage::DismissNotice));
@@ -638,14 +636,14 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 Ok(m) => (m, OK_GREEN),
                 Err(e) => (e, RED),
             };
-            col.lines(wrap_to_width(&text, wrap_w, 12.0).into_iter().take(4).collect(), 12.0, color);
+            col.lines(wrap_to_width(&text, wrap_w, crate::app::text_body()).into_iter().take(4).collect(), crate::app::text_body(), color);
         }
 
         // ── Details of the clicked row ──
         if let Some(p) = state.selected.as_deref().and_then(|pid| state.row(pid)).cloned() {
             let parent = state.row(&p.ppid.to_string()).map(|r| format!("{} ({})", r.command, p.ppid)).unwrap_or_else(|| p.ppid.to_string());
             col.row(|r| {
-                r.text_fill(format!("{} ({})", p.command, p.pid), 14.0, [0.35, 0.65, 0.90, 1.0]);
+                r.text_fill(format!("{} ({})", p.command, p.pid), crate::app::text_heading(), [0.35, 0.65, 0.90, 1.0]);
                 if p.mine {
                     form_button(r, "Kill", button_need("Kill"), DANGER, AppAction::Processes(ProcessesMessage::Kill(p.pid.clone())));
                 }
@@ -659,8 +657,8 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                 if p.threads == 1 { "" } else { "s" },
                 p.state,
             );
-            col.lines(wrap_to_width(&facts, wrap_w, 11.0), 11.0, TEXT_DIM);
-            col.lines(wrap_to_width(&p.args, wrap_w, 11.0).into_iter().take(6).collect(), 11.0, TEXT_FG);
+            col.lines(wrap_to_width(&facts, wrap_w, crate::app::text_small()), crate::app::text_small(), TEXT_DIM);
+            col.lines(wrap_to_width(&p.args, wrap_w, crate::app::text_small()).into_iter().take(6).collect(), crate::app::text_small(), TEXT_FG);
         }
 
         let cpu_list = &mut state.cpu_list;
@@ -705,13 +703,13 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             // Both memory headers toggle the same Mem sort — one bigger
             // target, no distinction to learn.
             let hdr = |on: bool| if on { [0.78, 0.78, 0.85, 1.0] } else { TEXT_DIM };
-            let hdr_y = crate::app::label_y_in(list_box_y, header_h, HDR_SIZE, None);
+            let hdr_y = crate::app::label_y_in(list_box_y, header_h, crate::app::text_small(), None);
             pc.push_clip(crate::app::rect(list_box_x, list_box_y, list_box_w, header_h));
             let header = |pc: &mut PageCanvas, label: &str, c: Rect, on: bool, chevron: bool| {
                 let x = at(c);
-                pc.text(label, x, hdr_y, HDR_SIZE, crate::app::rgb(hdr(on)));
+                pc.text(label, x, hdr_y, crate::app::text_small(), crate::app::rgb(hdr(on)));
                 if on && chevron {
-                    let gx = x + crate::app::text_width(label, HDR_SIZE, None) + gap / 2.0;
+                    let gx = x + crate::app::text_width(label, crate::app::text_small(), None) + gap / 2.0;
                     let gy = list_box_y + (header_h - CHEVRON) / 2.0;
                     pc.icon("chevron-down", crate::app::rect(gx, gy, CHEVRON, CHEVRON), hdr(on));
                 }
@@ -756,10 +754,10 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     let cpu_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.56, 0.83, 0.56, 1.0] };
                     let watt_fg = if dim { [0.45, 0.45, 0.50, 1.0] } else { [0.90, 0.75, 0.45, 1.0] };
 
-                    let ty = crate::app::label_y_in(draw_y, row_h, ROW_SIZE, None);
+                    let ty = crate::app::label_y_in(draw_y, row_h, crate::app::text_body(), None);
                     let cell = |pc: &mut PageCanvas, text: &str, c: Rect, color: [f32; 4]| {
                         let x = at(c);
-                        pc.text_with(text, x, ty, ROW_SIZE, crate::app::rgb(color), None, Some([x, ty - ROW_SIZE, x + c.width, ty + 2.0 * ROW_SIZE]));
+                        pc.text_with(text, x, ty, crate::app::text_body(), crate::app::rgb(color), None, Some([x, ty - crate::app::text_body(), x + c.width, ty + 2.0 * crate::app::text_body()]));
                     };
                     cell(pc, &p.pid, c_pid, fg);
                     cell(pc, &p.user, c_user, if p.mine { fg } else { TEXT_DIM });
@@ -808,7 +806,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
             cpu_list.push_scrollbar_fore(pc.as_mut());
 
             if rows.is_empty() {
-                pc.text("No processes match", list_box_x + gap, list_box_y + header_h + gap, 12.0, crate::app::rgb(TEXT_DIM));
+                pc.text("No processes match", list_box_x + gap, list_box_y + header_h + gap, crate::app::text_body(), crate::app::rgb(TEXT_DIM));
             }
         });
         sec.place(form, ctx);

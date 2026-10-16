@@ -574,9 +574,9 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
         let snap = &state.snap;
 
         if !state.loaded {
-            col.text("Reading NetworkManager...", 12.0, TEXT_DIM);
+            col.text("Reading NetworkManager...", crate::app::text_body(), TEXT_DIM);
         } else if !snap.nm_running {
-            wrapped(&mut col, "NetworkManager is not running, so Wi-Fi cannot be managed here.", 12.0, WARN);
+            wrapped(&mut col, "NetworkManager is not running, so Wi-Fi cannot be managed here.", crate::app::text_body(), WARN);
         } else {
             ctx[state.wifi_toggle].set_toggled(snap.wifi_enabled);
             ctx[state.wifi_toggle].set_label(if snap.wifi_enabled { "ON" } else { "OFF" });
@@ -585,24 +585,24 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                 r.widget_w_h(ctx, state.wifi_toggle, toggle_w, cce_ui::layout::toggle_height());
             });
             if !snap.wifi_hw_enabled {
-                wrapped(&mut col, "Wi-Fi is blocked by a hardware switch or the airplane-mode key.", 11.0, WARN);
+                wrapped(&mut col, "Wi-Fi is blocked by a hardware switch or the airplane-mode key.", crate::app::text_small(), WARN);
             }
             if let Some(Busy::Radio(on)) = busy {
-                col.text(if on { "Turning Wi-Fi on..." } else { "Turning Wi-Fi off..." }, 11.0, TEXT_DIM);
+                col.text(if on { "Turning Wi-Fi on..." } else { "Turning Wi-Fi off..." }, crate::app::text_small(), TEXT_DIM);
             }
 
             if snap.wifi_enabled {
                 let text_w = col.form_width();
                 if snap.connected_ssid.is_empty() {
-                    col.text("Not connected", 12.0, TEXT_DIM);
+                    col.text("Not connected", crate::app::text_body(), TEXT_DIM);
                 } else {
-                    let name = elide(&snap.connected_ssid, text_w - crate::app::text_width("Connected: ", 13.0, None), 13.0, None);
-                    col.text(format!("Connected: {name}"), 13.0, ACCENT);
+                    let name = elide(&snap.connected_ssid, text_w - crate::app::text_width("Connected: ", crate::app::text_body(), None), crate::app::text_body(), None);
+                    col.text(format!("Connected: {name}"), crate::app::text_body(), ACCENT);
                     let ip = if snap.ip_address.is_empty() { String::new() } else { format!("  IP: {}", snap.ip_address) };
-                    wrapped(&mut col, &format!("Signal: {}%{ip}", snap.signal_strength), 12.0, TEXT_DIM);
+                    wrapped(&mut col, &format!("Signal: {}%{ip}", snap.signal_strength), crate::app::text_body(), TEXT_DIM);
                 }
                 if busy == Some(Busy::Disconnecting) {
-                    col.text("Disconnecting...", 11.0, TEXT_DIM);
+                    col.text("Disconnecting...", crate::app::text_small(), TEXT_DIM);
                 }
             }
 
@@ -673,7 +673,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                     list.push_scrollbar_fore(pc.as_mut());
                 });
             } else if snap.wifi_enabled {
-                col.text("No networks found.", 11.0, TEXT_DIM);
+                col.text("No networks found.", crate::app::text_small(), TEXT_DIM);
             }
 
             if snap.wifi_enabled {
@@ -693,32 +693,32 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                 form_divider(&mut col);
                 let connecting = busy == Some(Busy::Connecting(net.ssid.clone()));
                 if net.in_use {
-                    wrapped(&mut col, &format!("Connected to {}.", net.ssid), 12.0, TEXT_FG);
+                    wrapped(&mut col, &format!("Connected to {}.", net.ssid), crate::app::text_body(), TEXT_FG);
                     // `nmcli dev disconnect` also stops the device joining
                     // another network on its own, as GNOME's Disconnect does.
-                    wrapped(&mut col, "After Disconnect, Wi-Fi joins no network until you pick one.", 11.0, TEXT_DIM);
+                    wrapped(&mut col, "After Disconnect, Wi-Fi joins no network until you pick one.", crate::app::text_small(), TEXT_DIM);
                     col.row(|r| {
                         form_button(r, "Disconnect", button_need("Disconnect"), DANGER, AppAction::Network(NetworkMessage::Disconnect));
                         form_button(r, "Close", button_need("Close"), NEUTRAL, AppAction::Network(NetworkMessage::CancelSelect));
                         r.space(0.0, true);
                     });
                 } else if connecting {
-                    wrapped(&mut col, &format!("Connecting to {}...", net.ssid), 12.0, TEXT_FG);
+                    wrapped(&mut col, &format!("Connecting to {}...", net.ssid), crate::app::text_body(), TEXT_FG);
                 } else {
-                    wrapped(&mut col, &format!("Connect to {}?", net.ssid), 12.0, TEXT_FG);
+                    wrapped(&mut col, &format!("Connect to {}?", net.ssid), crate::app::text_body(), TEXT_FG);
                     if net.is_enterprise() {
                         wrapped(
                             &mut col,
                             &format!("{}: an enterprise network needs an identity and certificate this page cannot set up.", net.security),
-                            11.0,
+                            crate::app::text_small(),
                             WARN,
                         );
                     } else if net.is_open() {
-                        wrapped(&mut col, "Open network: what you send is not encrypted, and anyone can run one by this name.", 11.0, WARN);
+                        wrapped(&mut col, "Open network: what you send is not encrypted, and anyone can run one by this name.", crate::app::text_small(), WARN);
                     } else {
-                        wrapped(&mut col, &format!("Secured ({}).", net.security), 11.0, TEXT_DIM);
+                        wrapped(&mut col, &format!("Secured ({}).", net.security), crate::app::text_small(), TEXT_DIM);
                         col.widget_h(ctx, state.password_box, cce_ui::layout::textbox_height());
-                        wrapped(&mut col, "Leave the password empty for a network you have joined before.", 11.0, TEXT_DIM);
+                        wrapped(&mut col, "Leave the password empty for a network you have joined before.", crate::app::text_small(), TEXT_DIM);
                     }
                     col.row(|r| {
                         if !net.is_enterprise() {
@@ -733,8 +733,8 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
             // ── The last failed action ──
             if let Some(err) = error {
                 form_divider(&mut col);
-                let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, col.form_width(), 11.0)).take(6).collect();
-                col.lines(lines, 11.0, RED);
+                let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, col.form_width(), crate::app::text_small())).take(6).collect();
+                col.lines(lines, crate::app::text_small(), RED);
                 col.row(|r| {
                     form_button(r, "Dismiss", button_need("Dismiss"), NEUTRAL, AppAction::Network(NetworkMessage::DismissError));
                     r.space(0.0, true);
@@ -749,7 +749,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
         let mut col = form.column();
         if state.loaded && state.snap.nm_running {
             if state.snap.others.is_empty() {
-                col.text("None active.", 11.0, TEXT_DIM);
+                col.text("None active.", crate::app::text_small(), TEXT_DIM);
             } else {
                 let pairs = state
                     .snap
@@ -757,7 +757,7 @@ pub fn view(state: &mut NetworkState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                     .iter()
                     .map(|o| (o.name.clone(), TEXT_FG, o.kind.clone(), TEXT_DIM))
                     .collect();
-                form_pairs(&mut col, 11.0, pairs);
+                form_pairs(&mut col, crate::app::text_small(), pairs);
             }
         }
         sec.place(form, ctx);

@@ -697,7 +697,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let mut form = sec.form();
         if !state.loaded {
-            form.column().text("Loading online accounts...", 12.0, TEXT_DIM);
+            form.column().text("Loading online accounts...", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
             return;
         }
@@ -713,7 +713,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         // ── Account list: a scroll region, selection tinted, default marked ──
         // It grows with the account count up to LIST_MAX_ROWS and scrolls past it.
         if state.accounts.is_empty() {
-            col.text("No accounts configured.", 12.0, TEXT_DIM);
+            col.text("No accounts configured.", crate::app::text_body(), TEXT_DIM);
         } else {
             // Row height comes from the region, not from spinbox_height():
             // ScrollRegion floors item_height at the list font's line box, and
@@ -817,7 +817,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             let also = if calendar_uses(acc) { "Mail and Calendar stop using it" } else { "Mail stops using it" };
             let q = format!("Delete {}? {also}, and its saved password and cached mail are removed.", acc.email);
             let w = col.form_width();
-            col.lines(wrap_to_width(&q, w, 12.0), 12.0, TEXT_WARN);
+            col.lines(wrap_to_width(&q, w, crate::app::text_body()), crate::app::text_body(), TEXT_WARN);
             col.row(|r| {
                 form_button(r, "Delete", 0.0, (BTN_DANGER.0, BTN_DANGER.1, TEXT_DANGER), AppAction::Accounts(AccountsMessage::ConfirmDelete));
                 form_button(r, "Cancel", 0.0, (BTN_NEUTRAL.0, BTN_NEUTRAL.1, TEXT_BTN), AppAction::Accounts(AccountsMessage::CancelDelete));
@@ -831,8 +831,8 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
         let kv = |label: &str, value: &str, color: [f32; 4]| (label.to_string(), TEXT_DIM, value.to_string(), color);
         if state.adding_new {
             col.block(|b| {
-                b.text("Add New Account", 14.0, heading);
-                b.text("Gmail signs in with Google below; iCloud requires an App Password.", 11.0, TEXT_DIM);
+                b.text("Add New Account", crate::app::text_heading(), heading);
+                b.text("Gmail signs in with Google below; iCloud requires an App Password.", crate::app::text_small(), TEXT_DIM);
             });
             col.widget_h(ctx, state.email_box, widget_h)
                 .widget_h(ctx, state.password_box, widget_h)
@@ -854,17 +854,17 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             .and_then(|e| state.accounts.iter().find(|a| a.email == *e))
             .cloned()
         {
-            col.text("Edit Account", 14.0, heading);
-            form_pairs(&mut col, 12.0, vec![kv("Email", &acc.email, TEXT_BTN)]);
-            col.text("The address identifies the account \u{2014} delete and re-add to change it.", 11.0, TEXT_DIM);
+            col.text("Edit Account", crate::app::text_heading(), heading);
+            form_pairs(&mut col, crate::app::text_body(), vec![kv("Email", &acc.email, TEXT_BTN)]);
+            col.text("The address identifies the account \u{2014} delete and re-add to change it.", crate::app::text_small(), TEXT_DIM);
 
             // An OAuth account has no password to edit; a password one has no
             // client credentials. Neither ever shows the other's fields.
             if acc.is_oauth {
                 col.widget_h(ctx, state.imap_box, widget_h).widget_h(ctx, state.smtp_box, widget_h);
                 col.block(|b| {
-                    b.text("Credentials this account refreshes tokens with, taking effect", 11.0, TEXT_DIM);
-                    b.text("on the next refresh \u{2014} Re-login to re-issue the tokens now.", 11.0, TEXT_DIM);
+                    b.text("Credentials this account refreshes tokens with, taking effect", crate::app::text_small(), TEXT_DIM);
+                    b.text("on the next refresh \u{2014} Re-login to re-issue the tokens now.", crate::app::text_small(), TEXT_DIM);
                 });
                 col.widget_h(ctx, state.oauth_client_id_box, widget_h).widget_h(ctx, state.oauth_client_secret_box, widget_h);
             } else {
@@ -900,7 +900,7 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
             }
             pairs.push(kv("IMAP", &acc.imap, TEXT_BTN));
             pairs.push(kv("SMTP", &acc.smtp, TEXT_BTN));
-            form_pairs(&mut col, 12.0, pairs);
+            form_pairs(&mut col, crate::app::text_body(), pairs);
 
             // What is left of the per-account actions once Edit and Delete moved
             // up beside Add. The row holds only what applies, and for a default
@@ -921,11 +921,11 @@ pub fn view(state: &mut AccountsState, cx: f32, cy: f32, cw: f32, ch: f32, sec_f
                 });
             }
         } else {
-            col.text("Select an account to view details, or add one.", 12.0, TEXT_DIM);
+            col.text("Select an account to view details, or add one.", crate::app::text_body(), TEXT_DIM);
         }
 
         if let Some(ref msg) = state.status_msg {
-            col.text(msg.clone(), 12.0, [0.56, 0.83, 0.56, 1.0]);
+            col.text(msg.clone(), crate::app::text_body(), [0.56, 0.83, 0.56, 1.0]);
         }
         sec.place(form, ctx);
     });

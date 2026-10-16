@@ -773,7 +773,7 @@ pub fn view(
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let mut form = sec.form();
         if !state.loaded {
-            form.column().text("Loading package lists...", 12.0, TEXT_DIM);
+            form.column().text("Loading package lists...", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
             return;
         }
@@ -862,26 +862,26 @@ pub fn view(
         };
         col.row(|r| {
             form_button(r, btn_lbl, button_need(btn_lbl), (bg, hover, fg), AppAction::Packages(PackagesMessage::StartUpdate));
-            r.text_fill(status_line, 12.0, status_color);
+            r.text_fill(status_line, crate::app::text_body(), status_color);
         });
         if let (true, Some(bar)) = (state.updating, progress_bar) {
             col.widget_h(ctx, bar, cce_ui::layout::progressbar_height());
         }
 
         if let (Some(err), false) = (&state.updates_error, state.updating) {
-            let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(3).collect();
-            col.lines(lines, 11.0, RED);
+            let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, crate::app::text_small())).take(3).collect();
+            col.lines(lines, crate::app::text_small(), RED);
         }
 
         if let Some(ref res) = state.last_update_res {
             match res {
                 Ok(_) => {
-                    col.text("Last update succeeded", 12.0, [0.56, 0.83, 0.56, 1.0]);
+                    col.text("Last update succeeded", crate::app::text_body(), [0.56, 0.83, 0.56, 1.0]);
                 }
                 Err(err) => {
                     col.block(|b| {
-                        b.text("Last update failed:", 12.0, RED);
-                        b.lines(err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect(), 11.0, RED);
+                        b.text("Last update failed:", crate::app::text_body(), RED);
+                        b.lines(err.lines().flat_map(|l| wrap_to_width(l, wrap_w, crate::app::text_small())).take(8).collect(), crate::app::text_small(), RED);
                     });
                 }
             }
@@ -917,7 +917,7 @@ pub fn view(
                 let act_text = if can_act { TEXT_FG } else { TEXT_DIM };
                 let mark_label = if state.marking { "Marking..." } else { "Mark Explicit" };
                 col.row(|r| {
-                    r.text_fill(summary, 12.0, if n > 0 { ACCENT } else { TEXT_DIM });
+                    r.text_fill(summary, crate::app::text_body(), if n > 0 { ACCENT } else { TEXT_DIM });
                     form_button(r, "Select Visible", button_need("Select Visible"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
                         AppAction::Packages(PackagesMessage::CheckAllVisible));
                     form_button(r, "Clear", button_need("Clear"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
@@ -938,7 +938,7 @@ pub fn view(
 
         // ── Removal confirmation: what pacman says it would take ──
         if state.previewing {
-            col.text("Checking what would be removed...", 12.0, TEXT_DIM);
+            col.text("Checking what would be removed...", crate::app::text_body(), TEXT_DIM);
         } else if let Some(plan) = state.removal.clone() {
             form_divider(&mut col);
             match &plan.outcome {
@@ -953,14 +953,14 @@ pub fn view(
                         format!("Remove {} ({}):", count_noun(pkgs.len()), human_size(total))
                     };
                     let names = pkgs.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ");
-                    let lines = wrap_to_width(&names, wrap_w, 11.0);
+                    let lines = wrap_to_width(&names, wrap_w, crate::app::text_small());
                     const MAX_LINES: usize = 6;
                     col.block(|b| {
-                        b.text(head, 12.0, [0.95, 0.75, 0.55, 1.0]);
-                        b.lines(lines.iter().take(MAX_LINES).cloned().collect(), 11.0, TEXT_FG);
+                        b.text(head, crate::app::text_body(), [0.95, 0.75, 0.55, 1.0]);
+                        b.lines(lines.iter().take(MAX_LINES).cloned().collect(), crate::app::text_small(), TEXT_FG);
                         if lines.len() > MAX_LINES {
                             let shown: usize = lines.iter().take(MAX_LINES).map(|l| l.split_whitespace().count()).sum();
-                            b.text(format!("... and {} more", pkgs.len().saturating_sub(shown)), 11.0, TEXT_DIM);
+                            b.text(format!("... and {} more", pkgs.len().saturating_sub(shown)), crate::app::text_small(), TEXT_DIM);
                         }
                     });
                     let confirm = if state.uninstalling { "Removing...".to_string() } else { format!("Remove {}", count_noun(pkgs.len())) };
@@ -979,14 +979,14 @@ pub fn view(
                     });
                     if let (true, Some(bar), Some(p)) = (state.uninstalling, progress_bar, progress.as_ref()) {
                         col.widget_h(ctx, bar, cce_ui::layout::progressbar_height());
-                        col.text(p.step.clone(), 11.0, TEXT_DIM);
+                        col.text(p.step.clone(), crate::app::text_small(), TEXT_DIM);
                     }
                 }
                 Err(err) => {
-                    let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
+                    let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, crate::app::text_small())).take(8).collect();
                     col.block(|b| {
-                        b.text(format!("Can't remove {}:", plan.targets.join(", ")), 12.0, RED);
-                        b.lines(lines, 11.0, [0.95, 0.55, 0.55, 1.0]);
+                        b.text(format!("Can't remove {}:", plan.targets.join(", ")), crate::app::text_body(), RED);
+                        b.lines(lines, crate::app::text_small(), [0.95, 0.55, 0.55, 1.0]);
                     });
                     col.row(|r| {
                         form_button(r, "Dismiss", button_need("Dismiss"), (TOGGLE_OFF, BTN_HOVER, TEXT_FG),
@@ -1000,11 +1000,11 @@ pub fn view(
         if let Some(ref res) = state.last_action {
             match res {
                 Ok(msg) => {
-                    col.text(msg.clone(), 12.0, [0.56, 0.83, 0.56, 1.0]);
+                    col.text(msg.clone(), crate::app::text_body(), [0.56, 0.83, 0.56, 1.0]);
                 }
                 Err(err) => {
-                    let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
-                    col.lines(lines, 11.0, RED);
+                    let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, crate::app::text_small())).take(8).collect();
+                    col.lines(lines, crate::app::text_small(), RED);
                 }
             }
         }
@@ -1019,14 +1019,14 @@ pub fn view(
         if confirming {
             // Nothing: the confirmation above stands in for the details.
         } else if state.loading_info {
-            col.text("Loading package details...", 12.0, TEXT_DIM);
+            col.text("Loading package details...", crate::app::text_body(), TEXT_DIM);
         } else if let Some(pkg_name) = state.selected_package.clone() {
             if let Some(Err(err)) = state.selected_package_info.clone() {
-                let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
+                let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, crate::app::text_small())).take(8).collect();
                 col.block(|b| {
-                    b.text(pkg_name.clone(), 14.0, [0.35, 0.65, 0.90, 1.0]);
-                    b.text("Couldn't load the details:", 12.0, RED);
-                    b.lines(lines, 11.0, RED);
+                    b.text(pkg_name.clone(), crate::app::text_heading(), [0.35, 0.65, 0.90, 1.0]);
+                    b.text("Couldn't load the details:", crate::app::text_body(), RED);
+                    b.lines(lines, crate::app::text_small(), RED);
                 });
             } else if let Some(Ok(info_raw)) = state.selected_package_info.clone() {
                 let mut parsed = parse_package_info(&info_raw);
@@ -1040,7 +1040,7 @@ pub fn view(
                 let installed = state.installed.iter().find(|p| p.name == pkg_name).map(|p| p.explicit);
                 let on_installed = state.active_tab == PackageTab::Installed;
                 col.row(|r| {
-                    r.text_fill(parsed.name.clone(), 14.0, [0.35, 0.65, 0.90, 1.0]);
+                    r.text_fill(parsed.name.clone(), crate::app::text_heading(), [0.35, 0.65, 0.90, 1.0]);
                     if let (true, Some(explicit)) = (on_installed, installed) {
                         let (mark_lbl, to_explicit) = if explicit { ("Mark as Dependency", false) } else { ("Mark Explicit", true) };
                         form_button(r, mark_lbl, button_need(mark_lbl),
@@ -1077,7 +1077,7 @@ pub fn view(
                 .filter(|(_, v)| !v.is_empty())
                 .map(|(k, v)| (k.to_string(), TEXT_DIM, v, TEXT_FG))
                 .collect();
-                crate::app::form_pairs(&mut col, 11.0, pairs);
+                crate::app::form_pairs(&mut col, crate::app::text_small(), pairs);
 
                 if !parsed.required_by.is_empty() && parsed.required_by != "None" {
                     let reqs: Vec<String> = parsed.required_by.split_whitespace().map(str::to_string).collect();
@@ -1087,7 +1087,7 @@ pub fn view(
                     // bottom the list loses its box; a few rows say enough.
                     const MAX_REQ_ROWS: usize = 4;
                     let shown = reqs.len().min(COLUMNS * MAX_REQ_ROWS);
-                    col.text("Required By", 11.0, TEXT_DIM);
+                    col.text("Required By", crate::app::text_small(), TEXT_DIM);
                     for chunk in reqs[..shown].chunks(COLUMNS) {
                         col.row(|r| {
                             for pkg in chunk {
@@ -1101,11 +1101,11 @@ pub fn view(
                         });
                     }
                     if reqs.len() > shown {
-                        col.text(format!("... and {} more", reqs.len() - shown), 11.0, TEXT_DIM);
+                        col.text(format!("... and {} more", reqs.len() - shown), crate::app::text_small(), TEXT_DIM);
                     }
                 }
             } else {
-                col.text("No details available.", 12.0, TEXT_DIM);
+                col.text("No details available.", crate::app::text_body(), TEXT_DIM);
             }
         }
 
@@ -1168,7 +1168,7 @@ pub fn view(
                     // The scrollbar's fore copy, over the rows at the raise's fade.
                     installed_list.push_scrollbar_fore(pc.as_mut());
                     if filtered.is_empty() {
-                        pc.text(empty_msg, list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
+                        pc.text(empty_msg, list_box_x + inset, list_box_y + inset, crate::app::text_body(), crate::app::rgb(TEXT_DIM));
                     }
                 }
                 PackageTab::Updates => {
@@ -1204,7 +1204,7 @@ pub fn view(
                         } else {
                             "No updates match the query"
                         };
-                        pc.text(msg, list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
+                        pc.text(msg, list_box_x + inset, list_box_y + inset, crate::app::text_body(), crate::app::rgb(TEXT_DIM));
                     }
                 }
             }

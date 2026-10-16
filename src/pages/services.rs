@@ -288,7 +288,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
         let sec_w = sec.cw;
         let mut form = sec.form();
         if !state.loaded {
-            form.column().text("Loading systemd services...", 12.0, TEXT_DIM);
+            form.column().text("Loading systemd services...", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
             return;
         }
@@ -342,9 +342,9 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             form_divider(&mut col);
             let question = format!("{} {}?", c.action.label(), c.name);
             col.block(|b| {
-                b.lines(wrap_to_width(&question, wrap_w, 12.0), 12.0, WARN);
+                b.lines(wrap_to_width(&question, wrap_w, crate::app::text_body()), crate::app::text_body(), WARN);
                 if session_critical(&c.name, c.is_system) {
-                    b.lines(wrap_to_width("Your session runs on this unit: this logs you out.", wrap_w, 11.0), 11.0, RED);
+                    b.lines(wrap_to_width("Your session runs on this unit: this logs you out.", wrap_w, crate::app::text_small()), crate::app::text_small(), RED);
                 }
             });
             let go = c.action.label();
@@ -358,8 +358,8 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
         // ── The last failed action ──
         if let Some(err) = state.error.clone() {
             form_divider(&mut col);
-            let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(6).collect();
-            col.lines(lines, 11.0, RED);
+            let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, crate::app::text_small())).take(6).collect();
+            col.lines(lines, crate::app::text_small(), RED);
             col.row(|r| {
                 form_button(r, "Dismiss", button_need("Dismiss"), NEUTRAL, AppAction::Services(ServicesMessage::DismissError));
                 r.space(0.0, true);
@@ -371,7 +371,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
         // the page's bottom. Everything above the status is counted from the
         // toolkit's own control metrics.
         let status_budget = {
-            let line_h = cce_ui::compose::form_line_height(11.0);
+            let line_h = cce_ui::compose::form_line_height(crate::app::text_small());
             let row_h = cce_ui::layout::button_height() + cce_ui::layout::control_gap();
             let divider = 2.0 * cce_ui::layout::control_gap();
             let mut above = 3.0 * row_h + cce_ui::layout::textbox_height() + line_h + 3.0 * divider + row_h;
@@ -389,7 +389,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             let unit = state.find(&name, is_system).cloned();
             let busy = state.pending.iter().any(|(_, n, s)| *n == name && *s == is_system);
             col.row(|r| {
-                r.text_fill(name.clone(), 14.0, [0.35, 0.65, 0.90, 1.0]);
+                r.text_fill(name.clone(), crate::app::text_heading(), [0.35, 0.65, 0.90, 1.0]);
                 if let Some(u) = &unit {
                     let colors = if busy { (NEUTRAL.0, NEUTRAL.0, TEXT_DIM) } else { NEUTRAL };
                     let toggle = match u.file_state.as_deref() {
@@ -410,10 +410,10 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
             });
             match &state.status {
                 None => {
-                    col.text("Reading status...", 11.0, TEXT_DIM);
+                    col.text("Reading status...", crate::app::text_small(), TEXT_DIM);
                 }
                 Some(text) => {
-                    col.lines(fit_status(text, status_budget, |l| wrap_to_width(l, wrap_w, 11.0)), 11.0, TEXT_FG);
+                    col.lines(fit_status(text, status_budget, |l| wrap_to_width(l, wrap_w, crate::app::text_small())), crate::app::text_small(), TEXT_FG);
                 }
             }
         }
@@ -527,7 +527,7 @@ pub fn view(state: &mut ServicesState, cx: f32, cy: f32, cw: f32, ch: f32, _root
 
             if rows.is_empty() {
                 let inset = cce_ui::layout::plate_padding();
-                pc.text(empty_msg, list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
+                pc.text(empty_msg, list_box_x + inset, list_box_y + inset, crate::app::text_body(), crate::app::rgb(TEXT_DIM));
             }
         });
         sec.place(form, ctx);

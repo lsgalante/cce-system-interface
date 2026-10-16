@@ -147,6 +147,28 @@ pub enum AppAction {
 }
 
 
+/// The app's three text sizes, from the DE's list font: what the config
+/// makes the toolkit's own rows and controls. Until 2026-10-16 the pages
+/// hard-coded 11, 12, 13 and 14 px (some 76 places at 11) while the controls
+/// beside them followed the config — 14 px here — so a page's help text and
+/// notes were the smallest type in the window. Nothing goes below 12.
+///
+/// Body: the list font's size (14 under this config, 12 by default).
+pub fn text_body() -> f32 {
+    cce_ui::layout::list_font_parsed().1.max(12.0)
+}
+
+/// Notes, help, details and column headers: one under body, never below 12.
+pub fn text_small() -> f32 {
+    (text_body() - 1.0).max(12.0)
+}
+
+/// A heading inside a section (an item's name over its details): two over
+/// body, so it still stands out when body is the controls' size.
+pub fn text_heading() -> f32 {
+    text_body() + 2.0
+}
+
 /// The width `text` takes at `size` in `font` (None = the default UI face,
 /// what `PageCanvas::text` draws in), shaped as the renderer shapes it —
 /// for placing a glyph right after a run of text.

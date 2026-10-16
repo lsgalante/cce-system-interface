@@ -241,11 +241,11 @@ fn device_row<'w>(
     spin: Handle<cce_ui::widget::Adapted<Spinbox>>,
     mute_action: AppAction,
 ) {
-    let line_h = cce_ui::compose::form_line_height(12.0);
+    let line_h = cce_ui::compose::form_line_height(crate::app::text_body());
     if !active {
         col.row(|r| {
-            r.draw(name_w, line_h, false, move |pc, c, _| pc.text(name, c.x, c.y, 12.0, crate::app::rgb(TEXT_DIM)));
-            r.text("inactive", 12.0, TEXT_DIM);
+            r.draw(name_w, line_h, false, move |pc, c, _| pc.text(name, c.x, c.y, crate::app::text_body(), crate::app::rgb(TEXT_DIM)));
+            r.text("inactive", crate::app::text_body(), TEXT_DIM);
         });
         return;
     }
@@ -259,7 +259,7 @@ fn device_row<'w>(
     };
     col.row(|r| {
         r.draw(name_w, line_h, false, move |pc, c, _| {
-            pc.text_with(name, c.x, c.y, 12.0, crate::app::rgb(TEXT_FG), None, Some([c.x, c.y - 12.0, c.x + c.width, c.y + 24.0]));
+            pc.text_with(name, c.x, c.y, crate::app::text_body(), crate::app::rgb(TEXT_FG), None, Some([c.x, c.y - crate::app::text_body(), c.x + c.width, c.y + 24.0]));
         });
         r.widget_h(ctx, slider, cce_ui::layout::slider_height());
         r.widget_w_h(ctx, spin, SPIN_W, cce_ui::layout::spinbox_height());
@@ -281,7 +281,7 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Loading audio devices...", 12.0, TEXT_DIM);
+            col.text("Loading audio devices...", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
             return;
         }
@@ -292,13 +292,13 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
             .iter()
             .map(|d| d.name.as_str())
             .chain(state.sources.iter().map(|d| d.name.as_str()))
-            .map(|n| cce_ui::compose::form_text_width(n, 12.0))
+            .map(|n| cce_ui::compose::form_text_width(n, crate::app::text_body()))
             .fold(0.0, f32::max)
             .min(col.form_width() / 3.0);
 
-        col.text("Output", 14.0, HEADING);
+        col.text("Output", crate::app::text_heading(), HEADING);
         if state.sinks.is_empty() {
-            col.text("No output devices found", 12.0, TEXT_DIM);
+            col.text("No output devices found", crate::app::text_body(), TEXT_DIM);
         }
         let devices = state.sinks.iter().zip(state.sink_sliders.iter().copied()).zip(state.sink_spinboxes.iter().copied());
         for ((sink, slider), spin) in devices {
@@ -308,9 +308,9 @@ pub fn view(state: &mut AudioState, cx: f32, cy: f32, cw: f32, ch: f32, sec_focu
 
         form_divider(&mut col);
 
-        col.text("Input", 14.0, HEADING);
+        col.text("Input", crate::app::text_heading(), HEADING);
         if state.sources.is_empty() {
-            col.text("No input devices found", 12.0, TEXT_DIM);
+            col.text("No input devices found", crate::app::text_body(), TEXT_DIM);
         }
         let devices = state.sources.iter().zip(state.source_sliders.iter().copied()).zip(state.source_spinboxes.iter().copied());
         for ((src, slider), spin) in devices {

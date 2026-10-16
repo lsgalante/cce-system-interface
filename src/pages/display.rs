@@ -487,9 +487,9 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Asking the compositor...", 12.0, TEXT_DIM);
+            col.text("Asking the compositor...", crate::app::text_body(), TEXT_DIM);
         } else if !snap.compositor {
-            wrapped(&mut col, "The compositor did not answer, so night light cannot be read or changed.", 12.0, WARN);
+            wrapped(&mut col, "The compositor did not answer, so night light cannot be read or changed.", crate::app::text_body(), WARN);
         } else if let Some(n) = &snap.night {
             col.widget_h(ctx, state.mode_menu, cce_ui::layout::dropdown_height());
             let now = if n.shown_k >= n.day_k && n.target_k >= n.day_k {
@@ -499,39 +499,39 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
             } else {
                 format!("Now {} K", n.shown_k)
             };
-            wrapped(&mut col, &now, 12.0, TEXT_FG);
+            wrapped(&mut col, &now, crate::app::text_body(), TEXT_FG);
 
             form_divider(&mut col);
             col.row(|r| {
-                r.text("Night temperature", 12.0, TEXT_FG);
+                r.text("Night temperature", crate::app::text_body(), TEXT_FG);
                 r.space(0.0, true);
-                r.text(format!("{} K", n.night_k), 12.0, TEXT_FG);
+                r.text(format!("{} K", n.night_k), crate::app::text_body(), TEXT_FG);
             });
             col.widget_h(ctx, state.night_slider, cce_ui::layout::slider_height());
-            wrapped(&mut col, "Lower is warmer. 6500 K is no tint.", 11.0, TEXT_DIM);
+            wrapped(&mut col, "Lower is warmer. 6500 K is no tint.", crate::app::text_small(), TEXT_DIM);
 
             form_divider(&mut col);
             let mut notes = schedule_lines(n);
             notes.push("The location or hours and the fade are set in config.kdl's night_light block.".to_string());
-            paragraph(&mut col, &notes, 11.0, TEXT_DIM);
+            paragraph(&mut col, &notes, crate::app::text_small(), TEXT_DIM);
             let warnings: Vec<String> = n
                 .outputs
                 .iter()
                 .filter_map(|(output, st)| output_state_note(st).map(|note| format!("{output}: {note}.")))
                 .collect();
-            paragraph(&mut col, &warnings, 11.0, WARN);
+            paragraph(&mut col, &warnings, crate::app::text_small(), WARN);
         } else {
-            wrapped(&mut col, "Night light is not set up: config.kdl has no night_light block.", 12.0, TEXT_FG);
+            wrapped(&mut col, "Night light is not set up: config.kdl has no night_light block.", crate::app::text_body(), TEXT_FG);
             wrapped(
                 &mut col,
                 "Add one with a temperature and a location (night_light { temperature 3500; location latitude=… longitude=… }), then reload.",
-                11.0,
+                crate::app::text_small(),
                 TEXT_DIM,
             );
         }
         if let Some(e) = state.error.clone() {
             form_divider(&mut col);
-            wrapped(&mut col, &e, 11.0, RED);
+            wrapped(&mut col, &e, crate::app::text_small(), RED);
             col.row(|r| {
                 form_button(r, "Dismiss", button_need("Dismiss"), NEUTRAL, AppAction::Display(DisplayMessage::DismissError));
                 r.space(0.0, true);
@@ -545,14 +545,14 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
         let mut col = form.column();
         if state.loaded {
             if snap.backlights.is_empty() {
-                wrapped(&mut col, "No adjustable backlight. An external monitor's brightness is set on the monitor.", 11.0, TEXT_DIM);
+                wrapped(&mut col, "No adjustable backlight. An external monitor's brightness is set on the monitor.", crate::app::text_small(), TEXT_DIM);
             }
             let several = snap.backlights.len() > 1;
             for (b, &h) in snap.backlights.iter().zip(&state.brightness_sliders) {
                 col.row(|r| {
-                    r.text(if several { b.device.clone() } else { "Screen".to_string() }, 12.0, TEXT_FG);
+                    r.text(if several { b.device.clone() } else { "Screen".to_string() }, crate::app::text_body(), TEXT_FG);
                     r.space(0.0, true);
-                    r.text(format!("{}%", b.percent), 12.0, TEXT_FG);
+                    r.text(format!("{}%", b.percent), crate::app::text_body(), TEXT_FG);
                 });
                 col.widget_h(ctx, h, cce_ui::layout::slider_height());
             }
@@ -568,7 +568,7 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                 if i > 0 {
                     form_divider(&mut col);
                 }
-                col.text(o.name.clone(), 12.0, TEXT_FG);
+                col.text(o.name.clone(), crate::app::text_body(), TEXT_FG);
                 // A headless or virtual output reports no refresh rate.
                 let rate = if o.refresh_hz > 0.0 { format!(" at {:.0} Hz", o.refresh_hz) } else { String::new() };
                 let mut pairs = vec![("Resolution".to_string(), TEXT_DIM, format!("{} × {}{rate}", o.mode_w, o.mode_h), TEXT_FG)];
@@ -579,13 +579,13 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
                 if !o.enabled {
                     pairs.push(("State".to_string(), TEXT_DIM, "Off".to_string(), WARN));
                 }
-                form_pairs(&mut col, 12.0, pairs);
+                form_pairs(&mut col, crate::app::text_body(), pairs);
             }
             if snap.outputs.is_empty() {
-                col.text("No displays reported.", 11.0, TEXT_DIM);
+                col.text("No displays reported.", crate::app::text_small(), TEXT_DIM);
             }
             form_divider(&mut col);
-            wrapped(&mut col, "Scale is set in config.kdl's output block. When the screen turns off is on the Power page.", 11.0, TEXT_DIM);
+            wrapped(&mut col, "Scale is set in config.kdl's output block. When the screen turns off is on the Power page.", crate::app::text_small(), TEXT_DIM);
         }
         sec.place(form, ctx);
     });

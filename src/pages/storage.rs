@@ -250,10 +250,10 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Loading storage usage...", 12.0, TEXT_FG);
+            col.text("Loading storage usage...", crate::app::text_body(), TEXT_FG);
         } else {
             let usage = format!("{:.0} / {:.0} GiB  ({:.0}%)", state.disk_used, state.disk_total, disk_pct);
-            crate::app::form_pairs(&mut col, 12.0, vec![("Disk".into(), LABEL_FG, usage, TEXT_FG)]);
+            crate::app::form_pairs(&mut col, crate::app::text_body(), vec![("Disk".into(), LABEL_FG, usage, TEXT_FG)]);
             col.widget_h(ctx, disk_bar, USAGE_BAR_H);
         }
         sec.place(form, ctx);
@@ -271,10 +271,10 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Loading memory usage...", 12.0, TEXT_FG);
+            col.text("Loading memory usage...", crate::app::text_body(), TEXT_FG);
         } else {
             let usage = format!("{:.1} / {:.1} GiB  ({:.0}%)", state.ram_used, state.ram_total, ram_pct);
-            crate::app::form_pairs(&mut col, 12.0, vec![("RAM".into(), LABEL_FG, usage, TEXT_FG)]);
+            crate::app::form_pairs(&mut col, crate::app::text_body(), vec![("RAM".into(), LABEL_FG, usage, TEXT_FG)]);
             col.widget_h(ctx, ram_bar, USAGE_BAR_H);
         }
         sec.place(form, ctx);
@@ -299,7 +299,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
         let mut form = sec.form();
         let mut col = form.column();
         if !state.backup_loaded {
-            col.text("Loading backup state...", 12.0, TEXT_DIM);
+            col.text("Loading backup state...", crate::app::text_body(), TEXT_DIM);
         } else {
             let (status_text, status_color) =
                 if state.backup_in_progress { ("Backing up...", GREEN) } else { ("Idle", TEXT_FG) };
@@ -313,7 +313,7 @@ pub fn view(state: &mut StorageState, cx: f32, cy: f32, cw: f32, ch: f32, sec_fo
             if let Some(ref err) = state.error_message {
                 pairs.push(("Error:".into(), RED, err.clone(), RED));
             }
-            crate::app::form_pairs(&mut col, 12.0, pairs);
+            crate::app::form_pairs(&mut col, crate::app::text_body(), pairs);
             col.widget_h(ctx, state.backup_button, cce_ui::layout::button_height());
         }
         sec.place(form, ctx);

@@ -136,7 +136,7 @@ pub fn view(state: &mut DefaultAppsState, cx: f32, cy: f32, cw: f32, ch: f32, _r
         let mut form = sec.form();
         let mut col = form.column();
         if !state.loaded {
-            col.text("Scanning installed applications...", 12.0, TEXT_DIM);
+            col.text("Scanning installed applications...", crate::app::text_body(), TEXT_DIM);
         } else {
             for entry in state.categories.iter_mut() {
                 col.widget_h(ctx, entry.dropdown, cce_ui::layout::dropdown_height());

@@ -178,7 +178,7 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
 
     builder.add_section_spanned(&mut final_pc, "", 1, sec_focused.first().copied().unwrap_or(false), |sec| {
         let bt_sec_w = sec.cw;
-        let font_size = 12.0;
+        let font_size = crate::app::text_body();
         let mut form = sec.form();
         let mut col = form.column();
 

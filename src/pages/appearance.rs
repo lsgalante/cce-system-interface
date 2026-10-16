@@ -144,7 +144,7 @@ impl AppPage for AppearanceState {
             let mut form = sec.form();
             form.column()
                 .widget_h(ctx, self.color_scheme_menu, cce_ui::layout::dropdown_height())
-                .text("What apps and web pages are told to prefer.", 12.0, TEXT_DIM);
+                .text("What apps and web pages are told to prefer.", crate::app::text_body(), TEXT_DIM);
             sec.place(form, ctx);
         });
 
