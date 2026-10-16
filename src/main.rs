@@ -971,11 +971,16 @@ fn main() {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let _guard = rt.enter();
 
-    // One gap everywhere: the wells fill their grid allocations, so the grid
-    // gap IS the visual section gap. The sections stand on the root plate,
-    // so it is the root rung's sibling gap — `PageFlow::init` reads the
-    // toolkit's grid_gap, hence the set here.
-    cce_ui::layout::set_grid_gap(cce_ui::layout::root_plate_gap());
+    // One gap everywhere. The sections stand on the root plate, so between
+    // them goes the root rung's sibling gap: root_plate_gap of FLAT plate
+    // face. A well is carved at bevel_width, and its lit rim is shaded
+    // outward from its rect, about half the bevel on each side, so two wells
+    // a bare root_plate_gap apart left ~3 px of flat between their rims
+    // (measured 2026-10-16: 12 px laid out, 9 of it under the rims). The
+    // grid gap adds one bevel width, the two half-rims, so the flat between
+    // them is the root gap. `PageFlow::init` reads the toolkit's grid_gap,
+    // hence the set here.
+    cce_ui::layout::set_grid_gap(cce_ui::layout::root_plate_gap() + cce_ui::layout::bevel_width());
 
     let mut initial_page = Page::ALL[0];
 
