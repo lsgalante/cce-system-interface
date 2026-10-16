@@ -6,6 +6,7 @@ use crate::pages::audio;
 use crate::pages::bluetooth;
 use crate::pages::power;
 use crate::pages::default_apps;
+use crate::pages::display;
 use crate::pages::keyboard;
 use crate::pages::network;
 use crate::pages::processes;
@@ -27,6 +28,7 @@ pub struct AppState {
     pub power: power::PowerState,
     pub browser: browser::BrowserState,
     pub default_apps: default_apps::DefaultAppsState,
+    pub display: display::DisplayState,
     pub keyboard: keyboard::KeyboardState,
     pub network: network::NetworkState,
     pub processes: processes::ProcessesState,
@@ -50,6 +52,7 @@ impl AppState {
             power: power::PowerState::new(ctx),
             browser: browser::BrowserState::new(ctx),
             default_apps: default_apps::DefaultAppsState::new(ctx),
+            display: display::DisplayState::new(ctx),
             keyboard: keyboard::KeyboardState::default(),
             network: network::NetworkState::new(ctx),
             processes: processes::ProcessesState::new(ctx),
@@ -74,6 +77,7 @@ impl AppState {
             Page::Power => &self.power,
             Page::Browser => &self.browser,
             Page::DefaultApps => &self.default_apps,
+            Page::Display => &self.display,
             Page::Keyboard => &self.keyboard,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
@@ -95,6 +99,7 @@ impl AppState {
             Page::Power => &mut self.power,
             Page::Browser => &mut self.browser,
             Page::DefaultApps => &mut self.default_apps,
+            Page::Display => &mut self.display,
             Page::Keyboard => &mut self.keyboard,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
@@ -126,6 +131,7 @@ pub enum AppAction {
     Audio(audio::AudioMessage),
     Browser(browser::BrowserMessage),
     DefaultApps(default_apps::DefaultAppsMessage),
+    Display(display::DisplayMessage),
     Keyboard(keyboard::KeyboardMessage),
     Network(network::NetworkMessage),
     Bluetooth(bluetooth::BluetoothMessage),

@@ -3,6 +3,7 @@ pub mod audio;
 pub mod bluetooth;
 pub mod browser;
 pub mod default_apps;
+pub mod display;
 pub mod keyboard;
 pub mod network;
 pub mod storage;
@@ -23,6 +24,7 @@ pub enum Page {
     Bluetooth,
     Browser,
     DefaultApps,
+    Display,
     Keyboard,
     Network,
     Notifications,
@@ -36,13 +38,14 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 16] = [
+    pub const ALL: [Page; 17] = [
         Page::Accounts,
         Page::Appearance,
         Page::Audio,
         Page::Bluetooth,
         Page::Browser,
         Page::DefaultApps,
+        Page::Display,
         Page::Keyboard,
         Page::Network,
         Page::Notifications,
@@ -63,6 +66,7 @@ impl Page {
             Page::Bluetooth => "Bluetooth",
             Page::Browser => "Browser",
             Page::DefaultApps => "Default Apps",
+            Page::Display => "Display",
             Page::Keyboard => "Keyboard",
             Page::Network => "Network",
             Page::Notifications => "Notifications",
