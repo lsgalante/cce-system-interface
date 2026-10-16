@@ -409,8 +409,7 @@ pub async fn fetch_power_state() -> PowerFacts {
             let text = String::from_utf8_lossy(&out.stdout);
             f.idle_display_off_secs = idle_status_field(&text, "display_off");
             f.idle_sleep_secs = idle_status_field(&text, "sleep");
-            f.idle_inhibitors = idle_status_quoted(&text, "inhibited_by")
-                .map(|v| v.split(',').map(str::trim).filter(|n| !n.is_empty()).map(String::from).collect());
+            f.idle_inhibitors = idle_status_quoted(&text, "inhibited_by").map(|v| split_inhibitors(&v));
         }
     }
 
@@ -507,10 +506,28 @@ fn idle_status_quoted(status: &str, key: &str) -> Option<String> {
     None
 }
 
+/// `inhibited_by`'s names: comma-joined, a comma or backslash inside a name
+/// escaped by a backslash (cce-fx `idle::join_inhibitors`). A compositor from
+/// before the escaping printed names bare, which reads the same unless a
+/// name held a comma — then it shows as two rows until the next login.
+fn split_inhibitors(joined: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cur = String::new();
+    let mut chars = joined.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => cur.extend(chars.next()),
+            ',' => names.push(std::mem::take(&mut cur)),
+            c => cur.push(c),
+        }
+    }
+    names.push(cur);
+    names.into_iter().map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect()
+}
+
 /// An inhibitor name as the page shows it: who, and how it is holding on.
 /// Window holders are app ids, shown by their desktop entry's name when
-/// there is one. A comma in a window title splits it in the status line
-/// (the names are comma-joined), so such a title shows as two rows.
+/// there is one.
 fn describe_inhibitor(name: &str, app_name: impl Fn(&str) -> Option<String>) -> (String, &'static str) {
     if let Some(who) = name.strip_prefix("portal:") {
         let who = if who == "portal-app" { "An app".to_string() } else { app_name(who).unwrap_or_else(|| who.to_string()) };
@@ -1635,6 +1652,13 @@ mod tests {
         assert_eq!(idle_status_quoted("inhibited_by=\"caf\\u{e9}\"", "inhibited_by").as_deref(), Some("caf\u{e9}"));
         assert_eq!(idle_status_quoted("inhibited=false", "inhibited_by"), None);
         assert_eq!(idle_status_quoted("inhibited_by=\"cut", "inhibited_by"), None, "unterminated");
+    }
+
+    #[test]
+    fn inhibitors_split_on_unescaped_commas_only() {
+        assert_eq!(split_inhibitors(r"mpv,window:Hello\, world,window:C:\\temp"), ["mpv", "window:Hello, world", r"window:C:\temp"]);
+        assert_eq!(split_inhibitors("mpv,portal:steam"), ["mpv", "portal:steam"], "a pre-escaping compositor's line");
+        assert!(split_inhibitors("").is_empty());
     }
 
     #[test]
