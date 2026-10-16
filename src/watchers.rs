@@ -38,6 +38,11 @@ pub struct Watchers {
 /// send the result, wake the UI. While another page is up it sleeps until the
 /// page changes — until 2026-10-05 each of the fourteen workers woke every
 /// 250 ms to look, whatever was open. `None` from `f` sends nothing.
+///
+/// `f` may also name when it wants its next turn, sooner than the period: a
+/// fetch with a fast half and a slow half sends the fast half and asks to
+/// come back for the rest (Processes: rows at once, CPU % from a baseline
+/// half a second later).
 fn spawn_page_worker<T, F, Fut>(
     mut page: PageWatch,
     target_page: Page,
@@ -48,13 +53,14 @@ fn spawn_page_worker<T, F, Fut>(
 where
     T: Send + 'static,
     F: Fn() -> Fut + Send + 'static,
-    Fut: std::future::Future<Output = Option<T>> + Send + 'static,
+    Fut: std::future::Future<Output = Option<(T, Option<std::time::Duration>)>> + Send + 'static,
 {
     let target = target_page.index() as u8;
     let period = std::time::Duration::from_secs(period_secs);
     let (tx, rx) = channel::<T>();
     tokio::spawn(async move {
-        let mut last_fetch: Option<std::time::Instant> = None;
+        // When the next fetch is due; None = at once.
+        let mut due_at: Option<std::time::Instant> = None;
         loop {
             if *page.borrow_and_update() != target {
                 if page.changed().await.is_err() {
@@ -62,16 +68,18 @@ where
                 }
                 continue;
             }
-            if last_fetch.is_none_or(|t| t.elapsed() >= period) {
-                if let Some(val) = f().await {
+            if due_at.is_none_or(|t| std::time::Instant::now() >= t) {
+                let mut next_in = period;
+                if let Some((val, sooner)) = f().await {
                     if tx.send(val).is_err() {
                         break;
                     }
                     wake();
+                    next_in = sooner.map_or(period, |d| d.min(period));
                 }
-                last_fetch = Some(std::time::Instant::now());
+                due_at = Some(std::time::Instant::now() + next_in);
             }
-            let due = period.saturating_sub(last_fetch.map_or(period, |t| t.elapsed()));
+            let due = due_at.map_or(period, |t| t.saturating_duration_since(std::time::Instant::now()));
             tokio::select! {
                 _ = tokio::time::sleep(due) => {}
                 changed = page.changed() => {
@@ -99,6 +107,24 @@ where
 {
     spawn_page_worker(page, target_page, period_secs, wake, move || {
         let fut = f();
+        async move { Some((fut.await, None)) }
+    })
+}
+
+/// [`spawn_bg_active`] for a fetch that may ask for its next turn early.
+fn spawn_bg_paced<T, F>(
+    page: PageWatch,
+    target_page: Page,
+    period_secs: u64,
+    wake: Wake,
+    f: fn() -> F,
+) -> Receiver<T>
+where
+    T: Send + 'static,
+    F: std::future::Future<Output = (T, Option<std::time::Duration>)> + Send + 'static,
+{
+    spawn_page_worker(page, target_page, period_secs, wake, move || {
+        let fut = f();
         async move { Some(fut.await) }
     })
 }
@@ -115,7 +141,7 @@ where
     T: Send + 'static,
 {
     spawn_page_worker(page, target_page, period_secs, wake, move || async move {
-        tokio::task::spawn_blocking(f).await.ok()
+        tokio::task::spawn_blocking(f).await.ok().map(|v| (v, None))
     })
 }
 
@@ -136,7 +162,7 @@ pub fn spawn_all(
     let (p, k) = w(); let rx_power = spawn_bg_active(p, Page::Power, 5, k, power::fetch_power_state);
 
     let (p, k) = w(); let rx_system = spawn_bg_active(p, Page::System, 5, k, system_info::fetch_system_state);
-    let (p, k) = w(); let rx_processes = spawn_bg_active(p, Page::Processes, 3, k, processes::fetch_processes_state);
+    let (p, k) = w(); let rx_processes = spawn_bg_paced(p, Page::Processes, 3, k, processes::fetch_processes_state);
     let (p, k) = w(); let rx_storage = spawn_bg_active(p, Page::Storage, 10, k, storage::fetch_storage_state);
 
     let (p, k) = w(); let rx_notifications = spawn_bg_blocking(p, Page::Notifications, 30, k, notifications::read_notifications_config);

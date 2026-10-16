@@ -404,7 +404,7 @@ pub async fn fetch_power_state() -> PowerFacts {
 
     // The compositor reports its effective timeouts (plan override or config)
     // in `key=<secs>s` fields; no compositor, no rows worth a live value.
-    if let Ok(out) = tokio::process::Command::new("ccectl").args(["idle", "status"]).output().await {
+    if let Ok(out) = crate::output_within(tokio::process::Command::new("ccectl").args(["idle", "status"]), crate::FETCH_TIMEOUT).await {
         if out.status.success() {
             let text = String::from_utf8_lossy(&out.stdout);
             f.idle_display_off_secs = idle_status_field(&text, "display_off");
@@ -443,19 +443,44 @@ fn gpu_limits_key(f: &PowerFacts) -> u64 {
 /// sleeps the last answer stands unless the source or the plan moved since —
 /// until 2026-10-05 the page asked every five seconds, which held the dGPU
 /// awake the whole time it was open.
+///
+/// Asked of a sleeping card, nvidia-smi takes ~0.7 s; until 2026-10-16 the
+/// page's thirty other values (battery, profile, plan, governor, timeouts)
+/// waited for it on every first visit. A sleeping card is now asked in the
+/// background, one query at a time, and the dropdown arrives with the next
+/// refresh; an awake card answers in ~20 ms and is asked inline.
 async fn gpu_limits(key: u64) -> GpuLimits {
-    if !crate::power_meter::dgpu_awake() {
-        if let Some((k, limits)) = *GPU_LIMITS.lock().unwrap() {
-            if k == key {
-                return limits;
-            }
+    let cached = *GPU_LIMITS.lock().unwrap();
+    let awake = crate::power_meter::dgpu_awake();
+    if let Some((k, limits)) = cached {
+        if k == key && !awake {
+            return limits;
         }
     }
+    if awake {
+        return query_gpu_limits(key).await;
+    }
+    if !GPU_QUERY_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        tokio::spawn(async move {
+            query_gpu_limits(key).await;
+            GPU_QUERY_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+    }
+    cached.map_or((None, None, None), |(_, limits)| limits)
+}
+
+/// A background nvidia-smi query is running (`gpu_limits`).
+static GPU_QUERY_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Ask nvidia-smi, and keep the answer under `key`.
+async fn query_gpu_limits(key: u64) -> GpuLimits {
     let mut limits: GpuLimits = (None, None, None);
-    if let Ok(out) = tokio::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=power.limit,power.default_limit,power.min_limit", "--format=csv,noheader,nounits"])
-        .output()
-        .await
+    if let Ok(out) = crate::output_within(
+        tokio::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=power.limit,power.default_limit,power.min_limit", "--format=csv,noheader,nounits"]),
+        crate::FETCH_TIMEOUT,
+    )
+    .await
     {
         if out.status.success() {
             let text = String::from_utf8_lossy(&out.stdout);

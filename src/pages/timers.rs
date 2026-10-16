@@ -192,7 +192,7 @@ fn systemctl(user: bool) -> tokio::process::Command {
 }
 
 async fn stdout_of(mut cmd: tokio::process::Command) -> String {
-    match cmd.output().await {
+    match crate::output_within(&mut cmd, crate::FETCH_TIMEOUT).await {
         Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
         Err(_) => String::new(),
     }
@@ -281,9 +281,8 @@ pub fn service_failure(props: &std::collections::HashMap<String, String>) -> Opt
 async fn fetch_scope(user: bool) -> Vec<TimerInfo> {
     let mut list = systemctl(user);
     list.args(["list-timers", "--all", "--output=json"]);
-    let mut files = systemctl(user);
-    files.args(["list-unit-files", "--type=timer", "--no-legend"]);
-    let (json, files) = tokio::join!(stdout_of(list), stdout_of(files));
+    // Cached, as on Services (`crate::unit_files`).
+    let (json, files) = tokio::join!(stdout_of(list), crate::unit_files::list(!user, "timer"));
     let mut timers = merge_timers(&json, &files, !user);
     if timers.is_empty() {
         return timers;
@@ -632,6 +631,8 @@ fn run_action(state: &mut TimersState, action: TimerAction, unit: String, is_sys
 
 /// A refresh now rather than at the next 5 s tick, after an action.
 fn refresh(state: &TimersState) {
+    // An action may have created, enabled, disabled or deleted a timer.
+    crate::unit_files::invalidate();
     let Some(tx) = state.sender.clone() else { return };
     tokio::spawn(async move {
         let _ = tx.send(AppAction::Timers(TimersMessage::Refreshed(fetch_timers().await)));

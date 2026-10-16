@@ -134,8 +134,8 @@ pub async fn fetch_audio_state() -> AudioState {
 }
 
 async fn fetch_sinks(connected_ports: &[String]) -> Vec<AudioSink> {
-    let short_out = match tokio::process::Command::new("pactl")
-        .args(["list", "sinks", "short"]).output().await
+    let short_out = match crate::output_within(tokio::process::Command::new("pactl")
+        .args(["list", "sinks", "short"]), crate::FETCH_TIMEOUT).await
     {
         Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(_) => return Vec::new(),
@@ -148,16 +148,16 @@ async fn fetch_sinks(connected_ports: &[String]) -> Vec<AudioSink> {
         let id = parts[0].parse::<u32>().unwrap_or(0);
         let name = parts[1].to_string();
 
-        let vol = tokio::process::Command::new("pactl")
-            .args(["get-sink-volume", &id.to_string()]).output().await.ok()
+        let vol = crate::output_within(tokio::process::Command::new("pactl")
+            .args(["get-sink-volume", &id.to_string()]), crate::FETCH_TIMEOUT).await.ok()
             .and_then(|o| {
                 let s = String::from_utf8_lossy(&o.stdout);
                 s.split('/').nth(1)
                     .and_then(|v| v.trim().trim_end_matches('%').parse::<f32>().ok())
             }).unwrap_or(50.0);
 
-        let muted = tokio::process::Command::new("pactl")
-            .args(["get-sink-mute", &id.to_string()]).output().await.ok()
+        let muted = crate::output_within(tokio::process::Command::new("pactl")
+            .args(["get-sink-mute", &id.to_string()]), crate::FETCH_TIMEOUT).await.ok()
             .map(|o| String::from_utf8_lossy(&o.stdout).contains("yes"))
             .unwrap_or(false);
 
@@ -171,8 +171,8 @@ async fn fetch_sinks(connected_ports: &[String]) -> Vec<AudioSink> {
 }
 
 async fn fetch_sources(connected_ports: &[String]) -> Vec<AudioSource> {
-    let short_out = match tokio::process::Command::new("pactl")
-        .args(["list", "sources", "short"]).output().await
+    let short_out = match crate::output_within(tokio::process::Command::new("pactl")
+        .args(["list", "sources", "short"]), crate::FETCH_TIMEOUT).await
     {
         Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(_) => return Vec::new(),
@@ -187,16 +187,16 @@ async fn fetch_sources(connected_ports: &[String]) -> Vec<AudioSource> {
 
         if name.contains(".monitor") { continue; }
 
-        let vol = tokio::process::Command::new("pactl")
-            .args(["get-source-volume", &id.to_string()]).output().await.ok()
+        let vol = crate::output_within(tokio::process::Command::new("pactl")
+            .args(["get-source-volume", &id.to_string()]), crate::FETCH_TIMEOUT).await.ok()
             .and_then(|o| {
                 let s = String::from_utf8_lossy(&o.stdout);
                 s.split('/').nth(1)
                     .and_then(|v| v.trim().trim_end_matches('%').parse::<f32>().ok())
             }).unwrap_or(50.0);
 
-        let muted = tokio::process::Command::new("pactl")
-            .args(["get-source-mute", &id.to_string()]).output().await.ok()
+        let muted = crate::output_within(tokio::process::Command::new("pactl")
+            .args(["get-source-mute", &id.to_string()]), crate::FETCH_TIMEOUT).await.ok()
             .map(|o| String::from_utf8_lossy(&o.stdout).contains("yes"))
             .unwrap_or(false);
 

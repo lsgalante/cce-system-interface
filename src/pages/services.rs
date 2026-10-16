@@ -737,6 +737,8 @@ fn fetch_status(state: &mut ServicesState, name: &str, is_system: bool) {
 
 /// A refresh now rather than at the next 3 s tick, after an action.
 fn refresh(state: &ServicesState) {
+    // An action may have enabled, disabled or masked a unit.
+    crate::unit_files::invalidate();
     let Some(tx) = state.sender.clone() else { return };
     tokio::spawn(async move {
         let _ = tx.send(AppAction::Services(ServicesMessage::Refreshed(fetch_services().await)));
@@ -755,7 +757,7 @@ fn systemctl(is_system: bool) -> tokio::process::Command {
 }
 
 async fn stdout_of(mut cmd: tokio::process::Command) -> String {
-    match cmd.output().await {
+    match crate::output_within(&mut cmd, crate::FETCH_TIMEOUT).await {
         Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
         Err(_) => String::new(),
     }
@@ -767,11 +769,9 @@ pub async fn fetch_services() -> Vec<ServiceInfo> {
         c.args(["list-units", "--type=service", "--all", "--no-legend", "--plain"]);
         stdout_of(c)
     };
-    let files = |is_system: bool| {
-        let mut c = systemctl(is_system);
-        c.args(["list-unit-files", "--type=service", "--no-legend"]);
-        stdout_of(c)
-    };
+    // Cached: ~280 ms for the system scope, and it changes only when a unit
+    // is installed, removed, enabled or disabled (`crate::unit_files`).
+    let files = |is_system: bool| crate::unit_files::list(is_system, "service");
     let (sys_units, sys_files, user_units, user_files) = tokio::join!(units(true), files(true), units(false), files(false));
     let mut services = merge_units(&sys_units, &sys_files, true);
     services.extend(merge_units(&user_units, &user_files, false));

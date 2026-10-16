@@ -112,6 +112,9 @@ pub struct ProcessesState {
     /// list under this key rather than resetting to the fetch order.
     pub sort: ProcSort,
     pub power: PowerSummary,
+    /// A first snapshot: the rows are real, but CPU % and power need a
+    /// second sample, which follows half a second later.
+    pub cpu_pending: bool,
     pub search_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub show_kernel: bool,
     /// The row whose details pane is open.
@@ -137,6 +140,7 @@ impl Default for ProcessesState {
             killing: std::collections::HashSet::new(),
             sort: ProcSort::Cpu,
             power: PowerSummary::default(),
+            cpu_pending: false,
             search_box: Handle::none(),
             show_kernel: false,
             selected: None,
@@ -308,11 +312,12 @@ async fn dgpu_draw_w() -> Option<f64> {
     if !power_meter::dgpu_awake() {
         return None;
     }
-    let out = tokio::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=power.draw", "--format=csv,noheader,nounits"])
-        .output()
-        .await
-        .ok()?;
+    let out = crate::output_within(
+        tokio::process::Command::new("nvidia-smi").args(["--query-gpu=power.draw", "--format=csv,noheader,nounits"]),
+        crate::FETCH_TIMEOUT,
+    )
+    .await
+    .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -421,22 +426,31 @@ fn my_uid() -> u32 {
     std::fs::metadata("/proc/self").map(|m| m.uid()).unwrap_or(u32::MAX)
 }
 
-pub async fn fetch_processes_state() -> ProcessesState {
+/// How soon after a first, baseline-only snapshot the worker comes back for
+/// CPU %: a diff needs two samples, and this is the window it is taken over.
+const BASELINE_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// The process list, and when to come back sooner than the period. Until
+/// 2026-10-16 a first visit slept half a second for a CPU baseline before
+/// sending anything; now the rows go at once with their CPU and power cells
+/// pending (`cpu_pending`), and the worker returns after BASELINE_WINDOW.
+pub async fn fetch_processes_state() -> (ProcessesState, Option<std::time::Duration>) {
     let dgpu_w = dgpu_draw_w().await;
     let attribution = tokio::task::spawn_blocking(move || {
         let mut meter = METER.lock().unwrap();
         let meter = meter.get_or_insert_with(Meter::new);
-        // The first fetch has nothing to diff against, and CPU % is a diff:
-        // take a baseline half a second earlier rather than show lifetime
-        // averages for the first three seconds.
+        // CPU % is a diff, and the first fetch has nothing to diff against:
+        // take the baseline and report nothing rather than lifetime averages.
         if !meter.has_baseline() {
             meter.tick(power_meter::sample(dgpu_w));
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            return None;
         }
-        meter.tick(power_meter::sample(dgpu_w))
+        Some(meter.tick(power_meter::sample(dgpu_w)))
     })
     .await
-    .ok();
+    .ok()
+    .flatten();
+    let cpu_pending = attribution.is_none();
     let power = attribution
         .as_ref()
         .map(|a| PowerSummary { mode: a.mode, total_w: a.total_w, floor_w: a.floor_w, attributed_w: a.attributed_w })
@@ -444,10 +458,11 @@ pub async fn fetch_processes_state() -> ProcessesState {
 
     let uid = my_uid();
     let mut processes = Vec::new();
-    if let Ok(o) = tokio::process::Command::new("ps")
-        .args(["-eo", "pid=,ppid=,uid=,user:32=,%cpu=,%mem=,rss=,etimes=,nlwp=,stat=,args="])
-        .output()
-        .await
+    if let Ok(o) = crate::output_within(
+        tokio::process::Command::new("ps").args(["-eo", "pid=,ppid=,uid=,user:32=,%cpu=,%mem=,rss=,etimes=,nlwp=,stat=,args="]),
+        crate::FETCH_TIMEOUT,
+    )
+    .await
     {
         for line in String::from_utf8_lossy(&o.stdout).lines() {
             let Some(mut row) = parse_ps_line(line, uid) else { continue };
@@ -466,7 +481,8 @@ pub async fn fetch_processes_state() -> ProcessesState {
     }
     sort_rows(&mut processes, ProcSort::Cpu);
 
-    ProcessesState { loaded: true, processes, power, ..Default::default() }
+    let state = ProcessesState { loaded: true, processes, power, cpu_pending, ..Default::default() };
+    (state, cpu_pending.then_some(BASELINE_WINDOW))
 }
 
 /// Send `signal` to `target`, if the pid is still the process the list
@@ -652,6 +668,7 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
         let killing = &state.killing;
         let sort = state.sort;
         let selected = state.selected.clone();
+        let cpu_pending = state.cpu_pending;
         col.fill(LIST_MIN_H, move |pc, r, _| {
             let (list_box_x, list_box_y, list_box_w, list_box_h) = (r.x, r.y, r.width, r.height);
             let gap = cce_ui::layout::list_gap();
@@ -749,9 +766,17 @@ pub fn view(state: &mut ProcessesState, cx: f32, cy: f32, cw: f32, ch: f32, root
                     cell(pc, &p.command, c_cmd, fg);
                     cell(pc, &format_rss(p.rss_kb), c_rss, mem_fg);
                     cell(pc, &format!("{}%", p.mem_pct), c_mem, mem_fg);
-                    cell(pc, &format!("{}%", p.cpu), c_cpu, cpu_fg);
-                    cell(pc, &format_watts(p.watts), c_watts, watt_fg);
-                    cell(pc, &format_wakeups(p.wakeups), c_wake, fg);
+                    if cpu_pending {
+                        // Measured over the next half second; not ps's
+                        // lifetime average in the meantime.
+                        for c in [c_cpu, c_watts, c_wake] {
+                            cell(pc, "\u{2026}", c, TEXT_DIM);
+                        }
+                    } else {
+                        cell(pc, &format!("{}%", p.cpu), c_cpu, cpu_fg);
+                        cell(pc, &format_watts(p.watts), c_watts, watt_fg);
+                        cell(pc, &format_wakeups(p.wakeups), c_wake, fg);
+                    }
 
                     // Kill button, in content space like the columns, and only
                     // on a process a plain `kill` can signal: another user's or
@@ -798,6 +823,7 @@ pub fn update(state: &mut ProcessesState, msg: ProcessesMessage) {
             state.loaded = new.loaded;
             state.processes = new.processes;
             state.power = new.power;
+            state.cpu_pending = new.cpu_pending;
             // The fetch arrives cpu-ordered; a non-default sort re-applies so
             // a refresh never silently flips the list back.
             if state.sort != ProcSort::Cpu {

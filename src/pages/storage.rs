@@ -132,16 +132,14 @@ pub fn read_backup_status() -> (String, String, Option<String>) {
 }
 
 pub async fn fetch_storage_state() -> StorageInfo {
-    let disk_output = tokio::process::Command::new("df")
-        .args(["-BG", "/"])
-        .output().await.ok()
+    let disk_output = crate::output_within(tokio::process::Command::new("df")
+        .args(["-BG", "/"]), crate::FETCH_TIMEOUT).await.ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
     let (disk_total, disk_used) = parse_disk(&disk_output);
 
-    let mem_output = tokio::process::Command::new("free")
-        .args(["-b"])
-        .output().await.ok()
+    let mem_output = crate::output_within(tokio::process::Command::new("free")
+        .args(["-b"]), crate::FETCH_TIMEOUT).await.ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
     let (ram_total, ram_used) = parse_mem(&mem_output);

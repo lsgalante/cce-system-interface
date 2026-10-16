@@ -252,7 +252,7 @@ fn parse_ip(out: &str) -> String {
 }
 
 async fn nmcli_stdout(args: &[&str]) -> Option<String> {
-    let out = tokio::process::Command::new("nmcli").args(args).output().await.ok()?;
+    let out = crate::output_within(tokio::process::Command::new("nmcli").args(args), crate::FETCH_TIMEOUT).await.ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 

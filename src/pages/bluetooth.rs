@@ -21,7 +21,19 @@ pub struct BluetoothState {
     pub devices: Vec<BluetoothDevice>,
     pub scanning: bool,
     pub toggle: Handle<Adapted<Toggle>>,
+    /// A power change asked for and not yet seen in a refresh, and when.
+    /// Until 2026-10-16 a refresh landing before bluetoothctl had acted put
+    /// the switch back, so it flicked to the old state and then again.
+    pub pending_power: Option<(bool, std::time::Instant)>,
+    /// When the running scan stops (`bt_scan` turns it off after
+    /// SCAN_SECS); a refresh used to clear `scanning` mid-scan.
+    pub scan_until: Option<std::time::Instant>,
 }
+
+/// How long a power change may take to show before the refresh is believed.
+const POWER_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long a scan runs (`bt_scan`).
+const SCAN_SECS: u64 = 5;
 
 impl Default for BluetoothState {
     fn default() -> Self {
@@ -33,6 +45,8 @@ impl Default for BluetoothState {
             devices: Vec::new(),
             scanning: false,
             toggle: Handle::none(),
+            pending_power: None,
+            scan_until: None,
         }
     }
 }
@@ -64,37 +78,33 @@ const TOGGLE_OFF: [f32; 4] = [0.15, 0.15, 0.20, 1.0];
 const BTN_HOVER: [f32; 4] = [0.25, 0.30, 0.26, 1.0];
 
 pub async fn fetch_bluetooth_page_state() -> BluetoothState {
-    let installed = tokio::process::Command::new("bluetoothctl")
-        .arg("--version")
-        .output()
+    let installed = crate::output_within(tokio::process::Command::new("bluetoothctl").arg("--version"), crate::FETCH_TIMEOUT)
         .await
         .is_ok();
     if !installed {
         return BluetoothState { loaded: true, ..Default::default() };
     }
 
-    let service_active = tokio::process::Command::new("systemctl")
-        .args(["is-active", "bluetooth"])
-        .output()
-        .await
+    let service_active = crate::output_within(tokio::process::Command::new("systemctl")
+        .args(["is-active", "bluetooth"]), crate::FETCH_TIMEOUT).await
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
         .unwrap_or(false);
     if !service_active {
         return BluetoothState { loaded: true, installed, ..Default::default() };
     }
 
-    let enabled = tokio::process::Command::new("bluetoothctl")
-        .args(["show"]).output().await.ok()
+    let enabled = crate::output_within(tokio::process::Command::new("bluetoothctl")
+        .args(["show"]), crate::FETCH_TIMEOUT).await.ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.contains("Powered: yes")))
         .unwrap_or(false);
 
     let devices = if enabled { fetch_devices().await } else { Vec::new() };
-    BluetoothState { loaded: true, installed, service_active, enabled, devices, scanning: false, toggle: Handle::none() }
+    BluetoothState { loaded: true, installed, service_active, enabled, devices, ..Default::default() }
 }
 
 async fn fetch_devices() -> Vec<BluetoothDevice> {
-    let out = match tokio::process::Command::new("bluetoothctl")
-        .args(["devices"]).output().await
+    let out = match crate::output_within(tokio::process::Command::new("bluetoothctl")
+        .args(["devices"]), crate::FETCH_TIMEOUT).await
     {
         Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(_) => return Vec::new(),
@@ -108,8 +118,8 @@ async fn fetch_devices() -> Vec<BluetoothDevice> {
         let mac = parts[0].to_string();
         let default_name = parts[1].to_string();
 
-        let info = tokio::process::Command::new("bluetoothctl")
-            .args(["info", &mac]).output().await.ok()
+        let info = crate::output_within(tokio::process::Command::new("bluetoothctl")
+            .args(["info", &mac]), crate::FETCH_TIMEOUT).await.ok()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
 
@@ -157,7 +167,7 @@ fn bt_scan() {
     cmd.args(["scan", "on"]);
     let _ = crate::spawn_awaited(cmd);
     let mut cmd = tokio::process::Command::new("sh");
-    cmd.args(["-c", "sleep 5 && bluetoothctl scan off"]);
+    cmd.args(["-c", &format!("sleep {SCAN_SECS} && bluetoothctl scan off")]);
     let _ = crate::spawn_awaited(cmd);
 }
 
@@ -185,12 +195,14 @@ pub fn view(state: &mut BluetoothState, cx: f32, cy: f32, cw: f32, ch: f32, sec_
             col.row(|r| form_button(r, label, btn_w, (TOGGLE_ON, BTN_HOVER, WHITE), AppAction::Bluetooth(msg)));
         } else {
             let bt_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 60.0 };
-            let scan_btn_w = if bt_sec_w < 200.0 { 40.0 } else { 52.0 };
+            // Wide enough for "Scanning...", so the button does not jump.
+            let scan_btn_w = crate::app::button_need("Scanning...");
             ctx[state.toggle].set_toggled(state.enabled);
             ctx[state.toggle].set_label(if state.enabled { "ON" } else { "OFF" });
             col.row(|r| {
                 r.widget_w_h(ctx, state.toggle, bt_btn_w, cce_ui::layout::toggle_height());
-                form_button(r, "Scan", scan_btn_w, (TOGGLE_OFF, BTN_HOVER, WHITE), AppAction::Bluetooth(BluetoothMessage::Scan));
+                let scan_label = if state.scanning { "Scanning..." } else { "Scan" };
+                form_button(r, scan_label, scan_btn_w, (TOGGLE_OFF, BTN_HOVER, WHITE), AppAction::Bluetooth(BluetoothMessage::Scan));
             });
 
             if state.devices.is_empty() {
@@ -253,16 +265,32 @@ pub fn update(state: &mut BluetoothState, msg: BluetoothMessage, _ctx: &mut UiCo
             state.installed = new.installed;
             state.service_active = new.service_active;
             state.enabled = new.enabled;
+            // A power change not yet visible keeps the switch where it was
+            // put, until the refresh agrees or the grace runs out.
+            if let Some((want, at)) = state.pending_power {
+                if new.enabled == want || at.elapsed() >= POWER_GRACE {
+                    state.pending_power = None;
+                } else {
+                    state.enabled = want;
+                }
+            }
             state.devices = new.devices;
-            state.scanning = new.scanning;
+            state.scanning = state.scan_until.is_some_and(|t| std::time::Instant::now() < t);
         }
         BluetoothMessage::Toggle => {
             state.enabled = !state.enabled;
+            state.pending_power = Some((state.enabled, std::time::Instant::now()));
             bt_toggle(state.enabled);
         }
         BluetoothMessage::Connect(mac) => { bt_connect(&mac); }
         BluetoothMessage::Disconnect(mac) => { bt_disconnect(&mac); }
-        BluetoothMessage::Scan => { bt_scan(); }
+        BluetoothMessage::Scan => {
+            if !state.scanning {
+                state.scanning = true;
+                state.scan_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(SCAN_SECS));
+                bt_scan();
+            }
+        }
         BluetoothMessage::InstallTools => {
             let mut cmd = tokio::process::Command::new("pkexec");
             cmd.args(["sh", "-c", "pacman -S --noconfirm bluez bluez-utils && systemctl enable --now bluetooth"]);
@@ -321,6 +349,33 @@ impl crate::pages::AppPage for BluetoothState {
 
 #[cfg(test)]
 mod tests {
+    /// A refresh that lands before bluetoothctl has acted keeps the switch
+    /// where it was put; one that agrees, or comes after the grace, ends it.
+    #[test]
+    fn a_refresh_does_not_flick_the_switch_back() {
+        use super::*;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let mut ui = UiContext::new();
+        let mut st = BluetoothState::new(&mut ui);
+        let on = BluetoothState { loaded: true, installed: true, service_active: true, enabled: true, ..Default::default() };
+        update(&mut st, BluetoothMessage::Refreshed(on.clone()), &mut ui);
+        update(&mut st, BluetoothMessage::Toggle, &mut ui);
+        assert!(!st.enabled);
+        update(&mut st, BluetoothMessage::Refreshed(on.clone()), &mut ui);
+        assert!(!st.enabled, "stale refresh ignored");
+        update(&mut st, BluetoothMessage::Refreshed(BluetoothState { enabled: false, ..on.clone() }), &mut ui);
+        assert!(st.pending_power.is_none());
+        update(&mut st, BluetoothMessage::Refreshed(on), &mut ui);
+        assert!(st.enabled, "after it settled, a refresh is believed again");
+
+        update(&mut st, BluetoothMessage::Scan, &mut ui);
+        assert!(st.scanning);
+        let again = BluetoothState { loaded: true, installed: true, service_active: true, enabled: true, ..Default::default() };
+        update(&mut st, BluetoothMessage::Refreshed(again), &mut ui);
+        assert!(st.scanning, "a refresh mid-scan keeps it");
+    }
+
     use super::*;
     use crate::pages::AppPage;
 

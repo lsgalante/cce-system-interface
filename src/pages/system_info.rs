@@ -214,9 +214,12 @@ async fn read_nvidia_gpu_temp() -> Option<f32> {
     if !crate::power_meter::dgpu_awake() {
         return None;
     }
-    let out = tokio::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"])
-        .output().await.ok()?;
+    let out = crate::output_within(
+        tokio::process::Command::new("nvidia-smi").args(["--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"]),
+        crate::FETCH_TIMEOUT,
+    )
+    .await
+    .ok()?;
     let val_str = String::from_utf8_lossy(&out.stdout);
     val_str.trim().parse::<f32>().ok()
 }

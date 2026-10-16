@@ -213,7 +213,7 @@ async fn fetch_installed_packages() -> Vec<PackageInfo> {
 }
 
 async fn pacman_stdout(args: &[&str]) -> String {
-    match command("pacman").args(args).output().await {
+    match crate::output_within(command("pacman").args(args), crate::FETCH_TIMEOUT).await {
         Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
         Err(_) => String::new(),
     }
@@ -243,13 +243,18 @@ pub fn parse_installed(all: &str, explicit: &str, orphans: &str, foreign: &str) 
     list
 }
 
+/// `checkupdates` downloads the sync databases; a minute is a slow mirror.
+const CHECKUPDATES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 async fn fetch_available_updates() -> Result<Vec<UpdateInfo>, String> {
-    let output = command("checkupdates")
-        .arg("--nocolor")
-        .output()
+    // It syncs a copy of the databases over the network: offline or behind
+    // a dead mirror it could wait for minutes, and "Checking for updates..."
+    // stood the whole time.
+    let output = crate::output_within(command("checkupdates").arg("--nocolor"), CHECKUPDATES_TIMEOUT)
         .await
         .map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => "checkupdates is not installed (pacman-contrib)".to_string(),
+            std::io::ErrorKind::TimedOut => "The update check did not finish in a minute (offline, or a slow mirror).".to_string(),
             _ => format!("Failed to run checkupdates: {e}"),
         })?;
     parse_checkupdates(output.status.code(), &String::from_utf8_lossy(&output.stdout), &String::from_utf8_lossy(&output.stderr))
@@ -606,10 +611,7 @@ pub async fn fetch_package_info(name: String, installed: bool) -> Result<String,
             cmd.arg("--dbpath").arg(db);
         }
     }
-    let output = cmd
-        .arg("--")
-        .arg(&name)
-        .output()
+    let output = crate::output_within(cmd.arg("--").arg(&name), crate::FETCH_TIMEOUT)
         .await
         .map_err(|e| format!("Failed to run pacman: {}", e))?;
         
@@ -620,11 +622,7 @@ pub async fn fetch_package_info(name: String, installed: bool) -> Result<String,
     
     let mut raw_info = String::from_utf8_lossy(&output.stdout).to_string();
     if installed {
-        if let Ok(ql_out) = command("pacman")
-            .args(["-Ql", &name])
-            .output()
-            .await
-        {
+        if let Ok(ql_out) = crate::output_within(command("pacman").args(["-Ql", &name]), crate::FETCH_TIMEOUT).await {
             let stdout = String::from_utf8_lossy(&ql_out.stdout);
             let mut binaries = Vec::new();
             for line in stdout.lines() {

@@ -289,41 +289,45 @@ fn scan_desktop_entries() -> HashMap<String, DesktopApp> {
 pub async fn fetch_default_apps() -> DefaultAppsInfo {
     let apps = tokio::task::spawn_blocking(scan_desktop_entries).await.unwrap_or_default();
 
-    let mut cats = Vec::with_capacity(CATEGORIES.len());
-    for &(_, kind) in CATEGORIES {
-        let info = match kind {
-            CategoryKind::Mime(mimes) => fetch_mime_category(&apps, mimes).await,
+    // Every type's default at once: one `xdg-mime query` each, ~17 ms apiece.
+    // Asked one after another they held the page for ~360 ms, every refresh.
+    let mimes: Vec<&str> = CATEGORIES
+        .iter()
+        .filter_map(|&(_, kind)| match kind {
+            CategoryKind::Mime(mimes) => Some(mimes.iter().copied()),
+            CategoryKind::Terminal => None,
+        })
+        .flatten()
+        .collect();
+    let answers = futures::future::join_all(mimes.iter().map(|m| query_default(m))).await;
+    let defaults: HashMap<&str, Option<String>> = mimes.into_iter().zip(answers).collect();
+
+    let cats = CATEGORIES
+        .iter()
+        .map(|&(_, kind)| match kind {
+            CategoryKind::Mime(mimes) => mime_category(&apps, mimes, &defaults),
             CategoryKind::Terminal => fetch_terminal_category(&apps),
-        };
-        cats.push(info);
-    }
+        })
+        .collect();
     DefaultAppsInfo(cats)
 }
 
 async fn query_default(mime: &str) -> Option<String> {
-    tokio::process::Command::new("xdg-mime")
-        .args(["query", "default", mime])
-        .output()
+    crate::output_within(tokio::process::Command::new("xdg-mime").args(["query", "default", mime]), crate::FETCH_TIMEOUT)
         .await
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
 }
 
-async fn fetch_mime_category(apps: &HashMap<String, DesktopApp>, mimes: &[&str]) -> CategoryInfo {
+fn mime_category(apps: &HashMap<String, DesktopApp>, mimes: &[&str], defaults: &HashMap<&str, Option<String>>) -> CategoryInfo {
     // The category's default is only real if EVERY type agrees — a partial
     // set (one type lost to the write race above, or set by hand) shows as
     // "not set" so re-picking repairs it, instead of reporting an app the
     // other types don't actually resolve to.
-    let mut current = query_default(mimes[0]).await;
-    for mime in &mimes[1..] {
-        if current.is_none() {
-            break;
-        }
-        if query_default(mime).await != current {
-            current = None;
-        }
-    }
+    let default_of = |m: &str| defaults.get(m).cloned().flatten();
+    let first = default_of(mimes[0]);
+    let current = first.filter(|f| mimes[1..].iter().all(|m| default_of(m).as_ref() == Some(f)));
 
     let mut candidates: Vec<(String, String)> = apps
         .iter()
