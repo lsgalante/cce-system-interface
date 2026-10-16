@@ -15,6 +15,9 @@ pub struct PackageInfo {
     /// `pacman -Qdt`: a dependency nothing installed requires or optionally
     /// requires any more — what `pacman -Rns $(pacman -Qdtq)` would sweep.
     pub orphan: bool,
+    /// `pacman -Qm`: in no configured repo (the AUR, a local build), so
+    /// `checkupdates` never sees a newer version of it.
+    pub foreign: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -182,27 +185,40 @@ pub async fn check_updates() -> PackagesMessage {
     PackagesMessage::UpdatesChecked(fetch_available_updates().await)
 }
 
+/// Every pacman and checkupdates run on this page, in a fixed locale: the
+/// details, removal errors and dependency breaks are parsed by their English
+/// keys and phrases (`Installed Size`, `required by`), which a translated
+/// pacman renames. pkexec keeps `LC_ALL` for the privileged runs, and C.UTF-8
+/// keeps descriptions' non-ASCII text intact.
+fn command(program: &str) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.env("LC_ALL", "C.UTF-8");
+    cmd
+}
+
 async fn fetch_installed_packages() -> Vec<PackageInfo> {
-    let (all, explicit, orphans) = tokio::join!(
+    let (all, explicit, orphans, foreign) = tokio::join!(
         pacman_stdout(&["-Q"]),
         pacman_stdout(&["-Qeq"]),
-        // Exits 1 when there are none; the empty stdout is the right answer.
+        // These two exit 1 when there are none; the empty stdout is the right answer.
         pacman_stdout(&["-Qdtq"]),
+        pacman_stdout(&["-Qmq"]),
     );
-    parse_installed(&all, &explicit, &orphans)
+    parse_installed(&all, &explicit, &orphans, &foreign)
 }
 
 async fn pacman_stdout(args: &[&str]) -> String {
-    match tokio::process::Command::new("pacman").args(args).output().await {
+    match command("pacman").args(args).output().await {
         Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
         Err(_) => String::new(),
     }
 }
 
-/// `pacman -Q` lines joined with the `-Qeq` and `-Qdtq` name lists.
-pub fn parse_installed(all: &str, explicit: &str, orphans: &str) -> Vec<PackageInfo> {
+/// `pacman -Q` lines joined with the `-Qeq`, `-Qdtq` and `-Qmq` name lists.
+pub fn parse_installed(all: &str, explicit: &str, orphans: &str, foreign: &str) -> Vec<PackageInfo> {
     let explicit: std::collections::HashSet<&str> = explicit.lines().map(str::trim).collect();
     let orphans: std::collections::HashSet<&str> = orphans.lines().map(str::trim).collect();
+    let foreign: std::collections::HashSet<&str> = foreign.lines().map(str::trim).collect();
     let mut list: Vec<PackageInfo> = all
         .lines()
         .filter_map(|line| {
@@ -214,6 +230,7 @@ pub fn parse_installed(all: &str, explicit: &str, orphans: &str) -> Vec<PackageI
                 version: version.to_string(),
                 explicit: explicit.contains(name),
                 orphan: orphans.contains(name),
+                foreign: foreign.contains(name),
             })
         })
         .collect();
@@ -222,7 +239,7 @@ pub fn parse_installed(all: &str, explicit: &str, orphans: &str) -> Vec<PackageI
 }
 
 async fn fetch_available_updates() -> Result<Vec<UpdateInfo>, String> {
-    let output = tokio::process::Command::new("checkupdates")
+    let output = command("checkupdates")
         .arg("--nocolor")
         .output()
         .await
@@ -284,7 +301,7 @@ pub fn checkupdates_db() -> Option<std::path::PathBuf> {
 }
 
 pub async fn run_update() -> Result<(), String> {
-    let output = tokio::process::Command::new("pkexec")
+    let output = command("pkexec")
         .args(["pacman", "-Syu", "--noconfirm"])
         .output()
         .await
@@ -368,7 +385,7 @@ pub fn summarize_pacman_failure(stderr: &str, stdout: &str) -> String {
 /// Runs unprivileged: `--print` resolves the transaction without locking or
 /// touching the database.
 pub async fn preview_removal(targets: Vec<String>) -> Result<Vec<(String, u64)>, String> {
-    let output = tokio::process::Command::new("pacman")
+    let output = command("pacman")
         .args(["-Rs", "--print", "--print-format", "%n %s", "--"])
         .args(&targets)
         .output()
@@ -397,7 +414,7 @@ pub fn parse_removal_preview(stdout: &str) -> Vec<(String, u64)> {
 /// it can go together. Removing them one call at a time fails on whichever
 /// comes first and silently leaves its dependencies behind as orphans.
 pub async fn run_uninstall(targets: Vec<String>) -> Result<(), String> {
-    let output = tokio::process::Command::new("pkexec")
+    let output = command("pkexec")
         .args(["pacman", "-Rs", "--noconfirm", "--"])
         .args(&targets)
         .output()
@@ -412,7 +429,7 @@ pub async fn run_uninstall(targets: Vec<String>) -> Result<(), String> {
 /// `pacman -D --asexplicit` / `--asdeps`: changes only the install reason.
 pub async fn run_set_install_reason(targets: Vec<String>, explicit: bool) -> Result<(), String> {
     let flag = if explicit { "--asexplicit" } else { "--asdeps" };
-    let output = tokio::process::Command::new("pkexec")
+    let output = command("pkexec")
         .args(["pacman", "-D", flag, "--"])
         .args(&targets)
         .output()
@@ -441,7 +458,7 @@ fn count_noun(n: usize) -> String {
 }
 
 pub async fn fetch_package_info(name: String, installed: bool) -> Result<String, String> {
-    let mut cmd = tokio::process::Command::new("pacman");
+    let mut cmd = command("pacman");
     if installed {
         cmd.arg("-Qi");
     } else {
@@ -464,7 +481,7 @@ pub async fn fetch_package_info(name: String, installed: bool) -> Result<String,
     
     let mut raw_info = String::from_utf8_lossy(&output.stdout).to_string();
     if installed {
-        if let Ok(ql_out) = tokio::process::Command::new("pacman")
+        if let Ok(ql_out) = command("pacman")
             .args(["-Ql", &name])
             .output()
             .await
@@ -647,7 +664,7 @@ pub fn view(
                 state.installed_items.push(ctx.insert(InteractiveListItem::new("")));
             }
         }
-        let filtered_updates: Vec<&UpdateInfo> = state.updates.iter().filter(|p| p.name.to_lowercase().contains(&query)).collect();
+        let filtered_updates: Vec<&UpdateInfo> = state.visible_updates(ctx).into_iter().map(|i| &state.updates[i]).collect();
         if state.updates_items.len() != filtered_updates.len() {
             for h in state.updates_items.drain(..) {
                 ctx.remove(h);
@@ -684,13 +701,24 @@ pub fn view(
         } else {
             (format!("{} updates available", state.updates.len()), ACCENT)
         };
-        let (btn_lbl, bg, hover) = if state.updating {
-            ("Updating...", [0.15, 0.15, 0.20, 1.0], [0.15, 0.15, 0.20, 1.0])
+        // checkupdates reads the repos only: say what it leaves out, so "up to
+        // date" is not read as covering AUR builds too.
+        let n_foreign = state.installed.iter().filter(|p| p.foreign).count();
+        let status_line = if n_foreign > 0 && state.updates_checked && state.updates_error.is_none() && !state.updating {
+            format!("{status_line}  ·  {n_foreign} AUR not checked")
         } else {
-            ("Update System", [0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0])
+            status_line
+        };
+        // Greyed while ANY transaction runs, like the remove and mark buttons:
+        // pacman holds one lock, so a click then does nothing.
+        let btn_lbl = if state.updating { "Updating..." } else { "Update System" };
+        let (bg, hover, fg) = if busy {
+            ([0.15, 0.15, 0.20, 1.0], [0.15, 0.15, 0.20, 1.0], TEXT_DIM)
+        } else {
+            ([0.13, 0.18, 0.14, 1.0], [0.25, 0.30, 0.26, 1.0], text_on)
         };
         col.row(|r| {
-            form_button(r, btn_lbl, button_need(btn_lbl), (bg, hover, text_on), AppAction::Packages(PackagesMessage::StartUpdate));
+            form_button(r, btn_lbl, button_need(btn_lbl), (bg, hover, fg), AppAction::Packages(PackagesMessage::StartUpdate));
             r.text_fill(status_line, 12.0, status_color);
         });
 
@@ -967,7 +995,11 @@ pub fn view(
                                 (false, true) => "orphan",
                                 (false, false) => "dependency",
                             };
-                            item.subtitle = Some(format!("{}  ·  {}", pkg.version, reason));
+                            item.subtitle = Some(if pkg.foreign {
+                                format!("{}  ·  {}  ·  AUR", pkg.version, reason)
+                            } else {
+                                format!("{}  ·  {}", pkg.version, reason)
+                            });
                             item.selected = if select_mode {
                                 checked.contains(&pkg.name)
                             } else {
@@ -1231,6 +1263,21 @@ impl PackagesState {
             .collect()
     }
 
+    /// Indices into `updates` of the rows the Updates tab shows: the search
+    /// against the name or either version, as the Installed tab matches its
+    /// name or version. Shared by the view and the click mapping.
+    pub fn visible_updates(&self, ctx: &UiContext) -> Vec<usize> {
+        let query = self.query(ctx);
+        self.updates
+            .iter()
+            .enumerate()
+            .filter(|(_, u)| {
+                [&u.name, &u.old_version, &u.new_version].iter().any(|f| f.to_lowercase().contains(&query))
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     pub fn select_and_scroll_to(&mut self, pkg_name: &str, ctx: &mut UiContext) {
         self.active_tab = PackageTab::Installed;
         // The scroll target below is an index into the whole list, so the
@@ -1331,17 +1378,10 @@ impl crate::pages::AppPage for PackagesState {
                 }
             }
             PackageTab::Updates => {
-                let query = if ctx[self.search_box].editing {
-                    ctx[self.search_box].edit_buffer.to_lowercase()
-                } else {
-                    ctx[self.search_box].text.to_lowercase()
-                };
-                let filtered: Vec<&UpdateInfo> = self.updates.iter()
-                    .filter(|p| p.name.to_lowercase().contains(&query))
-                    .collect();
+                let visible = self.visible_updates(ctx);
                 for idx in clicked {
-                    if let Some(pkg) = filtered.get(idx) {
-                        actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(pkg.name.clone()))));
+                    if let Some(&i) = visible.get(idx) {
+                        actions.push(AppAction::Packages(PackagesMessage::SelectPackage(Some(self.updates[i].name.clone()))));
                     }
                 }
             }
@@ -1439,7 +1479,7 @@ mod tests {
     }
 
     fn pkg(name: &str, explicit: bool, orphan: bool) -> PackageInfo {
-        PackageInfo { name: name.into(), version: "1".into(), explicit, orphan }
+        PackageInfo { name: name.into(), version: "1".into(), explicit, orphan, foreign: false }
     }
 
     fn loaded_state(ui: &mut UiContext) -> PackagesState {
@@ -1456,12 +1496,13 @@ mod tests {
 
     #[test]
     fn parse_installed_joins_reason_and_orphan_lists() {
-        let list = parse_installed("zed 1.0\nRust 2.0\ncmake 3.0\n", "zed\n", "cmake\n");
+        let list = parse_installed("zed 1.0\nRust 2.0\ncmake 3.0\n", "zed\n", "cmake\n", "Rust\n");
         let names: Vec<_> = list.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["cmake", "Rust", "zed"], "sorted case-insensitively");
         assert!(list[2].explicit && !list[2].orphan);
         assert!(!list[1].explicit && !list[1].orphan);
         assert!(!list[0].explicit && list[0].orphan);
+        assert!(list[1].foreign && !list[0].foreign && !list[2].foreign);
     }
 
     #[test]
@@ -1674,6 +1715,57 @@ mod tests {
         let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui).finish();
         let texts: Vec<String> = pc.texts().into_iter().map(|t| t.text).collect();
         assert!(texts.iter().any(|t| t.contains("was not found")), "{texts:?}");
+    }
+
+    /// The Updates tab searches versions too, and a click lands on the row
+    /// painted under the search.
+    #[test]
+    fn update_search_matches_versions_and_clicks_resolve() {
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        let ups = parse_checkupdates(Some(0), "alpha 1.0 -> 1.1\nbeta 2.0 -> 3.0\ngamma 4.0 -> 4.1\n", "").unwrap();
+        update(&mut st, PackagesMessage::UpdatesChecked(Ok(ups)), &mut ui);
+        update(&mut st, PackagesMessage::SetTab(PackageTab::Updates), &mut ui);
+        ui[st.search_box].text = "3.0".into();
+        assert_eq!(st.visible_updates(&ui), vec![1], "the new version matches");
+        ui[st.search_box].text = "4.0".into();
+        assert_eq!(st.visible_updates(&ui), vec![2], "the old version matches");
+        let mut layout = cce_ui::compose::PageFlow::new();
+        view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui);
+        ui[st.updates_items[0]].just_clicked = true;
+        let mut actions = Vec::new();
+        let events = ui.take_events();
+        crate::pages::AppPage::propagate_widget_changes(&mut st, &events, &mut actions, &mut ui);
+        assert!(matches!(actions.as_slice(), [AppAction::Packages(PackagesMessage::SelectPackage(Some(n)))] if n == "gamma"), "{actions:?}");
+    }
+
+    /// "Up to date" says what it does not cover, and the update button
+    /// greys while another transaction holds pacman's lock.
+    #[test]
+    fn status_names_unchecked_aur_and_greys_while_busy() {
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        st.installed[2].foreign = true;
+        update(&mut st, PackagesMessage::UpdatesChecked(Ok(Vec::new())), &mut ui);
+        let texts = |st: &mut PackagesState, ui: &mut UiContext| {
+            let mut layout = cce_ui::compose::PageFlow::new();
+            let pc = view(st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, ui).finish();
+            (pc.texts().into_iter().map(|t| (t.text, t.color)).collect::<Vec<_>>(), pc)
+        };
+        let (t, _) = texts(&mut st, &mut ui);
+        assert!(t.iter().any(|(s, _)| s == "System is up to date  ·  1 AUR not checked"), "{t:?}");
+        // A button's key is everything it was made from, its colours included.
+        let update_key = |st: &mut PackagesState, ui: &mut UiContext| {
+            let (_, pc) = texts(st, ui);
+            pc.buttons
+                .iter()
+                .find(|b| matches!(b.action, AppAction::Packages(PackagesMessage::StartUpdate)))
+                .map(|b| b.key.clone())
+                .expect("the Update System button")
+        };
+        let idle = update_key(&mut st, &mut ui);
+        update(&mut st, PackagesMessage::SetInstallReason(vec!["beta".into()], true), &mut ui);
+        assert_ne!(update_key(&mut st, &mut ui), idle, "greyed while marking");
     }
 
     #[test]
