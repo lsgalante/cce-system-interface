@@ -123,6 +123,12 @@ pub struct PowerFacts {
     /// `ccectl idle status`; None when no compositor answered.
     pub idle_display_off_secs: Option<u32>,
     pub idle_sleep_secs: Option<u32>,
+    /// What is holding the idle timers off, as `ccectl idle status` names
+    /// it (`inhibited_by`): app ids of windows with an idle-inhibit surface,
+    /// `layer:<ns>`, `window:<title>`, and `portal:<who>` for apps that
+    /// asked over D-Bus (cce-desktop-portal's leases). None when no
+    /// compositor answered.
+    pub idle_inhibitors: Option<Vec<String>>,
 }
 
 
@@ -403,6 +409,8 @@ pub async fn fetch_power_state() -> PowerFacts {
             let text = String::from_utf8_lossy(&out.stdout);
             f.idle_display_off_secs = idle_status_field(&text, "display_off");
             f.idle_sleep_secs = idle_status_field(&text, "sleep");
+            f.idle_inhibitors = idle_status_quoted(&text, "inhibited_by")
+                .map(|v| v.split(',').map(str::trim).filter(|n| !n.is_empty()).map(String::from).collect());
         }
     }
 
@@ -472,6 +480,61 @@ fn idle_status_field(status: &str, key: &str) -> Option<u32> {
         .find_map(|tok| tok.strip_prefix(key)?.strip_prefix('='))
         .and_then(|v| v.strip_suffix('s'))
         .and_then(|v| v.parse().ok())
+}
+
+/// One `<key>="…"` field of `ccectl idle status`: the compositor prints it
+/// with Rust's `{:?}`, so it is unquoted and its escapes undone here.
+fn idle_status_quoted(status: &str, key: &str) -> Option<String> {
+    let start = status.find(&format!("{key}=\""))? + key.len() + 2;
+    let mut out = String::new();
+    let mut chars = status[start..].chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(out),
+            '\\' => match chars.next()? {
+                'n' => out.push('\n'),
+                't' => out.push('\t'),
+                'u' => {
+                    // \u{hex}
+                    let hex: String = chars.by_ref().skip(1).take_while(|&c| c != '}').collect();
+                    out.extend(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32));
+                }
+                other => out.push(other),
+            },
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+/// An inhibitor name as the page shows it: who, and how it is holding on.
+/// Window holders are app ids, shown by their desktop entry's name when
+/// there is one. A comma in a window title splits it in the status line
+/// (the names are comma-joined), so such a title shows as two rows.
+fn describe_inhibitor(name: &str, app_name: impl Fn(&str) -> Option<String>) -> (String, &'static str) {
+    if let Some(who) = name.strip_prefix("portal:") {
+        let who = if who == "portal-app" { "An app".to_string() } else { app_name(who).unwrap_or_else(|| who.to_string()) };
+        return (who, "asked over D-Bus");
+    }
+    if let Some(ns) = name.strip_prefix("layer:") {
+        return (ns.to_string(), "layer surface");
+    }
+    if let Some(title) = name.strip_prefix("window:") {
+        return (title.to_string(), "window");
+    }
+    match name {
+        "window" => ("A window".to_string(), "window"),
+        "layer" => ("A layer surface".to_string(), "layer surface"),
+        id => (app_name(id).unwrap_or_else(|| id.to_string()), "window"),
+    }
+}
+
+/// `Name=` of `<app_id>.desktop`, the first data dir that has one.
+fn desktop_name(app_id: &str) -> Option<String> {
+    cce_ui::desktop_entry::applications_dirs().into_iter().find_map(|dir| {
+        let entry = cce_ui::desktop_entry::DesktopEntry::read(&dir.join(format!("{app_id}.desktop")))?;
+        entry.get("Name").map(String::from)
+    })
 }
 
 /// The idle timeouts a mode may pick, in seconds. Fixed rungs rather than a
@@ -752,7 +815,7 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
     let sources = sources_shown(facts);
     let show_assign = assignment_shown(facts);
     let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w)
-        .with_section_count(if show_assign { 3 } else { 2 });
+        .with_section_count(if show_assign { 4 } else { 3 });
     let menu_h = cce_ui::layout::dropdown_height();
 
     // ── Battery: facts, the charge limit, and whether switching is wired up ──
@@ -873,6 +936,38 @@ pub fn view(state: &mut PowerState, cx: f32, cy: f32, cw: f32, ch: f32, _root_fo
             for (i, &dd) in dd_assign.iter().enumerate() {
                 if wanted.contains(&i) {
                     col.widget_h(ctx, dd, menu_h);
+                }
+            }
+            sec.place(form, ctx);
+        });
+    }
+
+    // ── What is holding the display awake ──
+    // The idle timers above never fire while anything holds an inhibitor,
+    // so "why did the screen not turn off" is answered here.
+    {
+        let f = &*facts;
+        let index = if show_assign { 3 } else { 2 };
+        builder.add_section(&mut final_pc, "Keeping Awake", focused(index), |sec| {
+            let mut form = sec.form();
+            let mut col = form.column();
+            match f.idle_inhibitors.as_deref() {
+                None => {
+                    col.text("No compositor answered.", 11.0, TEXT_DIM);
+                }
+                Some([]) => {
+                    col.text("Nothing is holding the display awake.", 11.0, TEXT_DIM);
+                }
+                Some(names) => {
+                    col.text("Display off and sleep wait for:", 11.0, TEXT_FG);
+                    let pairs = names
+                        .iter()
+                        .map(|n| {
+                            let (who, how) = describe_inhibitor(n, desktop_name);
+                            (who, TEXT_FG, how.to_string(), TEXT_DIM)
+                        })
+                        .collect();
+                    crate::app::form_pairs(&mut col, 11.0, pairs);
                 }
             }
             sec.place(form, ctx);
@@ -1004,7 +1099,7 @@ pub fn update(state: &mut PowerState, msg: PowerMessage, ctx: &mut UiContext) {
 }
 
 impl crate::pages::AppPage for PowerState {
-    // Sections: [Battery, Power Mode, Mode Assignment] — ids mirror the
+    // Sections: [Battery, Power Mode, Mode Assignment, Keeping Awake] — ids mirror the
     // view's load gate AND its per-interface presence gates (the d13a901
     // lesson: never report a widget the view didn't paint).
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
@@ -1031,6 +1126,8 @@ impl crate::pages::AppPage for PowerState {
                 .collect();
             out.push(ids);
         }
+        // Keeping Awake: text only.
+        out.push(Vec::new());
         out
     }
 
@@ -1122,6 +1219,7 @@ mod tests {
             animations: true,
             idle_display_off_secs: Some(600),
             idle_sleep_secs: Some(1800),
+            idle_inhibitors: Some(Vec::new()),
         }
     }
 
@@ -1334,19 +1432,19 @@ mod tests {
         let counts = |st: &mut PowerState| st.section_widgets().iter().map(Vec::len).collect::<Vec<_>>();
         // Every interface present: the charge limit, the mode picker plus all
         // eleven levers, and one assignment per adapter state.
-        assert_eq!(counts(&mut st), [1, 12, 2]);
+        assert_eq!(counts(&mut st), [1, 12, 2, 0]);
         // A host without a charge-limit knob or turbo file reports fewer.
         st.facts.charge_limit = None;
         st.facts.turbo = None;
         rebuild_options(&mut st, &mut ui);
-        assert_eq!(counts(&mut st), [0, 11, 2]);
+        assert_eq!(counts(&mut st), [0, 11, 2, 0]);
         // No cpufreq governors and no NVIDIA driver: both drop out too.
         st.facts.governors.clear();
         st.facts.gpu_limit_w = None;
         st.facts.gpu_default_w = None;
         st.facts.gpu_min_w = None;
         rebuild_options(&mut st, &mut ui);
-        assert_eq!(counts(&mut st), [0, 9, 2]);
+        assert_eq!(counts(&mut st), [0, 9, 2, 0]);
         // No Intel render clocks, an ASPM-less kernel and no snd_hda_intel is
         // down to profile, epp, animations and the two idle timeouts — which
         // no host lacks.
@@ -1355,11 +1453,11 @@ mod tests {
         st.facts.aspm_policies.clear();
         st.facts.hda_idle_secs = None;
         rebuild_options(&mut st, &mut ui);
-        assert_eq!(counts(&mut st), [0, 6, 2]);
+        assert_eq!(counts(&mut st), [0, 6, 2, 0]);
         // A desktop: one adapter state, so there is nothing to assign.
         st.facts.battery_present = false;
         rebuild_options(&mut st, &mut ui);
-        assert_eq!(counts(&mut st), [0, 6]);
+        assert_eq!(counts(&mut st), [0, 6, 0]);
     }
 
     #[test]
@@ -1524,5 +1622,30 @@ mod tests {
         let f = facts();
         assert_eq!(choices(Lever::IdleDisplayOffSecs, &f).len(), IDLE_DISPLAY_OFF_CHOICES.len());
         assert_eq!(live(Lever::IdleSleepSecs, &f), Some("1800".to_string()));
+    }
+
+    /// The holders come from `inhibited_by`, which the compositor prints
+    /// with `{:?}`: unquoted, unescaped, comma-split.
+    #[test]
+    fn inhibitors_read_the_quoted_status_field() {
+        let line = "display_off=1800s sleep=7200s command=\"systemctl suspend\" idle=5s inhibited=true inhibited_by=\"com.anthropic.Claude,window:Say \\\"hi\\\",portal:org.mozilla.firefox\" displays_off=false\n";
+        let v = idle_status_quoted(line, "inhibited_by").unwrap();
+        assert_eq!(v, "com.anthropic.Claude,window:Say \"hi\",portal:org.mozilla.firefox");
+        assert_eq!(idle_status_quoted("inhibited_by=\"\"", "inhibited_by").as_deref(), Some(""));
+        assert_eq!(idle_status_quoted("inhibited_by=\"caf\\u{e9}\"", "inhibited_by").as_deref(), Some("caf\u{e9}"));
+        assert_eq!(idle_status_quoted("inhibited=false", "inhibited_by"), None);
+        assert_eq!(idle_status_quoted("inhibited_by=\"cut", "inhibited_by"), None, "unterminated");
+    }
+
+    #[test]
+    fn inhibitors_read_as_who_and_how() {
+        let names = |id: &str| (id == "com.anthropic.Claude").then(|| "Claude".to_string());
+        assert_eq!(describe_inhibitor("com.anthropic.Claude", names), ("Claude".to_string(), "window"));
+        assert_eq!(describe_inhibitor("mpv", names), ("mpv".to_string(), "window"));
+        assert_eq!(describe_inhibitor("window:Big Buck Bunny", names), ("Big Buck Bunny".to_string(), "window"));
+        assert_eq!(describe_inhibitor("layer:cce-lock", names), ("cce-lock".to_string(), "layer surface"));
+        assert_eq!(describe_inhibitor("portal:com.anthropic.Claude", names), ("Claude".to_string(), "asked over D-Bus"));
+        assert_eq!(describe_inhibitor("portal:portal-app", names), ("An app".to_string(), "asked over D-Bus"));
+        assert_eq!(describe_inhibitor("window", names).0, "A window");
     }
 }
