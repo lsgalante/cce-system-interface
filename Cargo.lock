@@ -385,6 +385,7 @@ dependencies = [
  "calloop",
  "calloop-wayland-source",
  "cce-ui",
+ "cce-window-manager",
  "env_logger",
  "futures",
  "kdl",
@@ -443,6 +444,16 @@ dependencies = [
  "web-sys",
  "web-time",
  "xkeysym",
+]
+
+[[package]]
+name = "cce-window-manager"
+version = "0.1.0"
+source = "git+https://github.com/lsgalante/cce-window-manager.git?rev=0f2c9a14cb359ab57a7b5fcb31dc2c7be7f5260a#0f2c9a14cb359ab57a7b5fcb31dc2c7be7f5260a"
+dependencies = [
+ "cce-core",
+ "log",
+ "serde",
 ]
 
 [[package]]

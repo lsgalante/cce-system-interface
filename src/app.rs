@@ -6,6 +6,7 @@ use crate::pages::audio;
 use crate::pages::bluetooth;
 use crate::pages::power;
 use crate::pages::default_apps;
+use crate::pages::keyboard;
 use crate::pages::network;
 use crate::pages::processes;
 use crate::pages::services;
@@ -26,6 +27,7 @@ pub struct AppState {
     pub power: power::PowerState,
     pub browser: browser::BrowserState,
     pub default_apps: default_apps::DefaultAppsState,
+    pub keyboard: keyboard::KeyboardState,
     pub network: network::NetworkState,
     pub processes: processes::ProcessesState,
     pub services: services::ServicesState,
@@ -48,6 +50,7 @@ impl AppState {
             power: power::PowerState::new(ctx),
             browser: browser::BrowserState::new(ctx),
             default_apps: default_apps::DefaultAppsState::new(ctx),
+            keyboard: keyboard::KeyboardState::default(),
             network: network::NetworkState::new(ctx),
             processes: processes::ProcessesState::new(ctx),
             services: services::ServicesState::new(ctx),
@@ -71,6 +74,7 @@ impl AppState {
             Page::Power => &self.power,
             Page::Browser => &self.browser,
             Page::DefaultApps => &self.default_apps,
+            Page::Keyboard => &self.keyboard,
             Page::Packages => &self.packages,
             Page::Processes => &self.processes,
             Page::Services => &self.services,
@@ -91,6 +95,7 @@ impl AppState {
             Page::Power => &mut self.power,
             Page::Browser => &mut self.browser,
             Page::DefaultApps => &mut self.default_apps,
+            Page::Keyboard => &mut self.keyboard,
             Page::Packages => &mut self.packages,
             Page::Processes => &mut self.processes,
             Page::Services => &mut self.services,
@@ -121,6 +126,7 @@ pub enum AppAction {
     Audio(audio::AudioMessage),
     Browser(browser::BrowserMessage),
     DefaultApps(default_apps::DefaultAppsMessage),
+    Keyboard(keyboard::KeyboardMessage),
     Network(network::NetworkMessage),
     Bluetooth(bluetooth::BluetoothMessage),
     Power(power::PowerMessage),

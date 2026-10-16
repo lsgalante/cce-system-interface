@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::pages::{Page, appearance, audio, bluetooth, browser, default_apps, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
+use crate::pages::{Page, appearance, audio, bluetooth, browser, default_apps, keyboard, network, processes, services, system_info, storage, packages, accounts, notifications, timers, power};
 
 /// The page on screen, published by the UI (`watch::Sender::send_replace`)
 /// to every page worker.
@@ -22,6 +22,7 @@ pub struct Watchers {
     pub rx_notifications: Receiver<notifications::NotificationsConfig>,
     pub rx_browser: Receiver<browser::BrowserConfig>,
     pub rx_appearance: Receiver<appearance::AppearanceConfig>,
+    pub rx_keyboard: Receiver<keyboard::KeyboardSnapshot>,
     pub rx_services: Receiver<Vec<services::ServiceInfo>>,
     pub rx_default_apps: Receiver<default_apps::DefaultAppsInfo>,
     pub rx_timers: Receiver<Vec<timers::TimerInfo>>,
@@ -143,6 +144,8 @@ pub fn spawn_all(
     let (p, k) = w(); let rx_browser = spawn_bg_blocking(p, Page::Browser, 5, k, browser::read_browser_config);
     // The shared config's style block, for edits made elsewhere (cce-data-editor, by hand).
     let (p, k) = w(); let rx_appearance = spawn_bg_blocking(p, Page::Appearance, 5, k, appearance::read_appearance_config);
+    // input.kdl, for edits made in cce-data-editor or by hand.
+    let (p, k) = w(); let rx_keyboard = spawn_bg_blocking(p, Page::Keyboard, 5, k, keyboard::read_keyboard_snapshot);
 
     let (p, k) = w(); let rx_services = spawn_bg_active(p, Page::Services, 3, k, services::fetch_services);
     let (p, k) = w(); let rx_default_apps = spawn_bg_active(p, Page::DefaultApps, 10, k, default_apps::fetch_default_apps);
@@ -166,6 +169,7 @@ pub fn spawn_all(
             rx_notifications,
             rx_browser,
             rx_appearance,
+            rx_keyboard,
             rx_services,
             rx_default_apps,
             rx_timers,

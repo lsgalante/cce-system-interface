@@ -17,15 +17,16 @@ struct SettingsKeys {
 fn settings_keys() -> &'static SettingsKeys {
     static KEYS: std::sync::OnceLock<SettingsKeys> = std::sync::OnceLock::new();
     KEYS.get_or_init(|| {
-        let get = cce_ui::input::app_chord;
+        // Defaults from the Keyboard page's table, so the page lists what is used.
+        let get = |name: &str| cce_ui::input::app_chord(name, cce_settings::pages::keyboard::default_chord(name));
         SettingsKeys {
-            open_search: get("open_search", "/"),
-            focus_next: get("focus_next", "ctrl+j"),
-            focus_prev: get("focus_prev", "ctrl+k"),
-            focus_ascend: get("focus_ascend", "ctrl+u"),
-            focus_descend: get("focus_descend", "ctrl+i"),
-            page_next: get("page_next", "pagedown"),
-            page_prev: get("page_prev", "pageup"),
+            open_search: get("open_search"),
+            focus_next: get("focus_next"),
+            focus_prev: get("focus_prev"),
+            focus_ascend: get("focus_ascend"),
+            focus_descend: get("focus_descend"),
+            page_next: get("page_next"),
+            page_prev: get("page_prev"),
         }
     })
 }
