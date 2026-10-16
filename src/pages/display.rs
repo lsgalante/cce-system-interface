@@ -11,6 +11,11 @@
 //! Brightness is the kernel backlight (`/sys/class/backlight`), set through
 //! `brightnessctl`, the same tool the brightness keys run.
 //!
+//! The touchscreen switch is the compositor's too: `touchscreen on|off` over
+//! the control socket turns every touchscreen's input on or off live, and
+//! `config.kdl`'s `window_manager { touchscreen }` keeps it across a reload,
+//! the same split as night light.
+//!
 //! A slider reports every step of a drag, so both are debounced: the value
 //! goes out once the drag pauses, and the config write once it stops.
 
@@ -21,7 +26,7 @@ use std::time::{Duration, Instant};
 use cce_ui::compose::{PageFlow, PageLayoutBuilder};
 use cce_ui::context::UiContext;
 use cce_ui::widget::input::Dropdown;
-use cce_ui::widget::{Adapted, Handle, Slider};
+use cce_ui::widget::{Adapted, Handle, Slider, Toggle};
 
 use crate::app::{button_need, form_button, form_divider, form_pairs, wrap_to_width, AppAction, PageCanvas};
 use crate::pages::AppPage;
@@ -94,12 +99,23 @@ pub struct OutputInfo {
     pub ppi: f64,
 }
 
+/// `ccectl touchscreen`, parsed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Touchscreen {
+    pub on: bool,
+    /// Touchscreens connected now. The switch also holds for one plugged in
+    /// later, so it is offered with none.
+    pub devices: usize,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DisplaySnapshot {
     /// The compositor answered on its control socket.
     pub compositor: bool,
     /// None: config.kdl has no `night_light { }` block.
     pub night: Option<NightLight>,
+    /// None: a compositor too old to know the `touchscreen` command.
+    pub touch: Option<Touchscreen>,
     pub outputs: Vec<OutputInfo>,
     pub backlights: Vec<Backlight>,
 }
@@ -111,6 +127,7 @@ pub struct DisplayState {
     pub night_slider: Handle<Adapted<Slider>>,
     /// One per backlight, index-aligned with `snap.backlights`.
     pub brightness_sliders: Vec<Handle<Adapted<Slider>>>,
+    pub touch_toggle: Handle<Adapted<Toggle>>,
     /// The last slider change, so a refresh landing mid-drag does not pull
     /// the knob back to what the system said a moment before.
     pub last_user_change: Option<Instant>,
@@ -133,6 +150,9 @@ impl DisplayState {
             mode_menu: ctx.insert(Dropdown::new(MODES.iter().map(|(_, l)| l.to_string()).collect(), 0).with_label("Mode")),
             night_slider: ctx.insert(named_slider(NIGHT_MIN_K as f32, NIGHT_MAX_K as f32, "Night temperature")),
             brightness_sliders: Vec::new(),
+            // Left-aligned: centred, the label straddled the seam at the
+            // toggle's midpoint (see the Browser page's toggles).
+            touch_toggle: ctx.insert(Toggle::new().with_label("Touchscreen").with_left_align(true)),
             last_user_change: None,
             error: None,
             night_gen: Arc::new(AtomicU64::new(0)),
@@ -144,6 +164,10 @@ impl DisplayState {
 
     fn night_visible(&self) -> bool {
         self.loaded && self.snap.compositor && self.snap.night.is_some()
+    }
+
+    fn touch_visible(&self) -> bool {
+        self.loaded && self.snap.compositor && self.snap.touch.is_some()
     }
 
     /// A slider was moved within the last two seconds.
@@ -169,6 +193,8 @@ pub enum DisplayMessage {
     SetNightTemperature(u32),
     /// Backlight `i` moved to this percent.
     SetBrightness(usize, u32),
+    /// Touchscreen input on or off.
+    SetTouchscreen(bool),
     Failed(String),
     DismissError,
 }
@@ -214,6 +240,18 @@ pub fn parse_night_status(line: &str) -> Option<NightLight> {
         transition_min: get("transition").and_then(|v| v.parse().ok()).unwrap_or(0.0),
         outputs,
     })
+}
+
+/// `touchscreen=on devices=1`.
+pub fn parse_touch_status(line: &str) -> Option<Touchscreen> {
+    let f = fields(line.trim());
+    let get = |k: &str| f.iter().find(|(key, _)| *key == k).map(|(_, v)| *v);
+    let on = match get("touchscreen")? {
+        "on" => true,
+        "off" => false,
+        _ => return None,
+    };
+    Some(Touchscreen { on, devices: get("devices").and_then(|v| v.parse().ok()).unwrap_or(0) })
 }
 
 pub fn parse_outputs(json_lines: &str) -> Vec<OutputInfo> {
@@ -273,6 +311,7 @@ pub fn read_display_snapshot() -> DisplaySnapshot {
     DisplaySnapshot {
         compositor,
         night: status.ok().and_then(|s| parse_night_status(&s)),
+        touch: if compositor { ctl("touchscreen").ok().and_then(|s| parse_touch_status(&s)) } else { None },
         outputs: if compositor { ctl("outputs --json").map(|s| parse_outputs(&s)).unwrap_or_default() } else { Vec::new() },
         backlights: read_backlights(),
     }
@@ -303,16 +342,16 @@ fn debounced(
     });
 }
 
-/// Write one key of `night_light { }`. An unparseable config.kdl is left
-/// alone — `write_config_value` would start from an empty document and
-/// write back a file holding only this key.
-fn persist_night(key: &str, value: &str) -> Result<(), String> {
+/// Write one key of a config.kdl block (`night_light.mode`). An
+/// unparseable config.kdl is left alone — `write_config_value` would start
+/// from an empty document and write back a file holding only this key.
+fn persist(section: &str, key: &str, value: &str) -> Result<(), String> {
     let path = cce_ui::config::get_config_path();
     let content = std::fs::read_to_string(&path).unwrap_or_default();
     if content.parse::<kdl::KdlDocument>().is_err() {
         return Err("config.kdl does not parse, so the change was not saved (it holds until the next reload).".to_string());
     }
-    if cce_ui::config::write_config_value(&path.to_string_lossy(), &format!("night_light.{key}"), value, "night_light") {
+    if cce_ui::config::write_config_value(&path.to_string_lossy(), &format!("{section}.{key}"), value, section) {
         Ok(())
     } else {
         Err("Could not write config.kdl; the change holds until the next reload.".to_string())
@@ -389,6 +428,9 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage, ctx: &mut UiContext
             if let Some(n) = &new.night {
                 ctx[state.mode_menu].selected = mode_index(&n.mode);
             }
+            if let Some(t) = &new.touch {
+                ctx[state.touch_toggle].set_toggled(t.on);
+            }
             state.snap = new;
             state.loaded = true;
         }
@@ -400,7 +442,7 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage, ctx: &mut UiContext
             // Live first; saved only if the compositor took it.
             let sender = state.sender.clone();
             tokio::task::spawn_blocking(move || {
-                let res = ctl(&format!("night-light {mode}")).and_then(|_| persist_night("mode", &mode));
+                let res = ctl(&format!("night-light {mode}")).and_then(|_| persist("night_light", "mode", &mode));
                 if let (Err(e), Some(tx)) = (res, sender) {
                     let _ = tx.send(AppAction::Display(DisplayMessage::Failed(e)));
                 }
@@ -416,7 +458,7 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage, ctx: &mut UiContext
                 ctl(&format!("night-light temperature {k}")).map(|_| ())
             });
             debounced(&state.persist_gen, Duration::from_millis(900), state.sender.clone(), move || {
-                persist_night("temperature", &k.to_string())
+                persist("night_light", "temperature", &k.to_string())
             });
         }
         DisplayMessage::SetBrightness(i, pct) => {
@@ -426,6 +468,22 @@ pub fn update(state: &mut DisplayState, msg: DisplayMessage, ctx: &mut UiContext
             b.percent = pct;
             let device = b.device.clone();
             debounced(&state.brightness_gen, Duration::from_millis(60), state.sender.clone(), move || set_brightness(&device, pct));
+        }
+        DisplayMessage::SetTouchscreen(on) => {
+            state.error = None;
+            if let Some(t) = state.snap.touch.as_mut() {
+                t.on = on;
+            }
+            ctx[state.touch_toggle].set_toggled(on);
+            // Live first; saved only if the compositor took it.
+            let sender = state.sender.clone();
+            tokio::task::spawn_blocking(move || {
+                let word = if on { "on" } else { "off" };
+                let res = ctl(&format!("touchscreen {word}")).and_then(|_| persist("window_manager", "touchscreen", &on.to_string()));
+                if let (Err(e), Some(tx)) = (res, sender) {
+                    let _ = tx.send(AppAction::Display(DisplayMessage::Failed(e)));
+                }
+            });
         }
         DisplayMessage::Failed(e) => state.error = Some(e),
         DisplayMessage::DismissError => state.error = None,
@@ -479,7 +537,7 @@ fn schedule_lines(n: &NightLight) -> Vec<String> {
 pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focused: &[bool], layout: &mut PageFlow, ctx: &mut UiContext) -> PageCanvas {
     let mut final_pc = PageCanvas::new();
     let sec_w = 320.0f32;
-    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(3);
+    let mut builder = PageLayoutBuilder::new(layout, cx, cy, cw, ch, sec_w).with_section_count(4);
     let focus = |i: usize| focused.get(i).copied().unwrap_or(false);
     let snap = state.snap.clone();
 
@@ -590,16 +648,38 @@ pub fn view(state: &mut DisplayState, cx: f32, cy: f32, cw: f32, ch: f32, focuse
         sec.place(form, ctx);
     });
 
+    builder.add_section(&mut final_pc, "Touchscreen", focus(3), |sec| {
+        let mut form = sec.form();
+        let mut col = form.column();
+        if state.loaded && snap.compositor {
+            if let Some(t) = snap.touch {
+                col.widget_h(ctx, state.touch_toggle, cce_ui::layout::toggle_height());
+                let note = match (t.on, t.devices) {
+                    (_, 0) => "No touchscreen is connected. The setting holds for one plugged in later.".to_string(),
+                    (true, _) => "Touch input is on.".to_string(),
+                    (false, 1) => "The touchscreen ignores touch until this is turned back on.".to_string(),
+                    (false, n) => format!("All {n} touchscreens ignore touch until this is turned back on."),
+                };
+                wrapped(&mut col, &note, crate::app::text_small(), TEXT_DIM);
+            } else {
+                wrapped(&mut col, "This compositor cannot switch the touchscreen off; it needs a newer build.", crate::app::text_small(), TEXT_DIM);
+            }
+        }
+        sec.place(form, ctx);
+    });
+
     final_pc
 }
 
 impl AppPage for DisplayState {
-    // Sections: [Night Light, Brightness, Displays]. Mirrors the view's
-    // gates: the night controls only once a night_light block answered.
+    // Sections: [Night Light, Brightness, Displays, Touchscreen]. Mirrors the
+    // view's gates: the night controls only once a night_light block
+    // answered, the touch toggle only once the compositor reported it.
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         let night = if self.night_visible() { vec![self.mode_menu.id(), self.night_slider.id()] } else { Vec::new() };
         let bright = if self.loaded { self.brightness_sliders.iter().take(self.snap.backlights.len()).map(|h| h.id()).collect() } else { Vec::new() };
-        vec![night, bright, Vec::new()]
+        let touch = if self.touch_visible() { vec![self.touch_toggle.id()] } else { Vec::new() };
+        vec![night, bright, Vec::new(), touch]
     }
 
     fn view(
@@ -637,6 +717,11 @@ impl AppPage for DisplayState {
                 let k = round_k(ctx[self.night_slider].get_scaled_value());
                 if self.snap.night.as_ref().is_some_and(|n| n.night_k != k) {
                     actions.push(AppAction::Display(DisplayMessage::SetNightTemperature(k)));
+                }
+            } else if id == self.touch_toggle.id() {
+                let on = ctx[self.touch_toggle].toggled();
+                if self.snap.touch.is_some_and(|t| t.on != on) {
+                    actions.push(AppAction::Display(DisplayMessage::SetTouchscreen(on)));
                 }
             } else if let Some(i) = self.brightness_sliders.iter().position(|h| h.id() == id) {
                 let pct = clamp_pct(ctx[self.brightness_sliders[i]].get_scaled_value());
@@ -685,6 +770,30 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_touchscreen_status() {
+        assert_eq!(parse_touch_status("touchscreen=off devices=2\n"), Some(Touchscreen { on: false, devices: 2 }));
+        assert_eq!(parse_touch_status("touchscreen=on devices=0"), Some(Touchscreen { on: true, devices: 0 }));
+        assert_eq!(parse_touch_status("error: unknown command touchscreen"), None, "an older compositor");
+    }
+
+    /// The toggle sends only a real change, and the page shows it at once.
+    #[test]
+    fn the_touch_toggle_turns_touch_off() {
+        let mut ui = UiContext::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let mut st = loaded(&mut ui);
+        assert!(ui[st.touch_toggle].toggled());
+        let id = st.touch_toggle.id();
+        let mut actions = Vec::new();
+        st.propagate_widget_changes(&[(id, cce_ui::widget::WidgetEvent::Changed)], &mut actions, &mut ui);
+        assert!(actions.is_empty(), "unchanged: nothing sent");
+        ui[st.touch_toggle].set_toggled(false);
+        st.propagate_widget_changes(&[(id, cce_ui::widget::WidgetEvent::Changed)], &mut actions, &mut ui);
+        assert!(matches!(actions.as_slice(), [AppAction::Display(DisplayMessage::SetTouchscreen(false))]));
+    }
+
+    #[test]
     fn slider_values_round_trip() {
         let mut ui = UiContext::new();
         let st = DisplayState::new(&mut ui);
@@ -702,6 +811,7 @@ mod tests {
         let snap = DisplaySnapshot {
             compositor: true,
             night: parse_night_status(STATUS),
+            touch: parse_touch_status("touchscreen=on devices=1\n"),
             outputs: Vec::new(),
             backlights: vec![Backlight { device: "intel_backlight".into(), percent: 40 }],
         };
@@ -731,11 +841,12 @@ mod tests {
     fn section_widgets_mirror_the_view() {
         let mut ui = UiContext::new();
         let mut st = DisplayState::new(&mut ui);
-        assert_eq!(st.section_widgets(), vec![Vec::new(), Vec::new(), Vec::new()]);
+        assert_eq!(st.section_widgets(), vec![Vec::new(), Vec::new(), Vec::new(), Vec::new()]);
         let mut st2 = loaded(&mut ui);
         let w = st2.section_widgets();
         assert_eq!(w[0].len(), 2);
         assert_eq!(w[1].len(), 1);
+        assert_eq!(w[3].len(), 1, "touch toggle once the compositor reported it");
         st.loaded = true;
         st.snap.compositor = true;
         assert!(st.section_widgets()[0].is_empty(), "no night_light block: no night controls");
@@ -745,7 +856,7 @@ mod tests {
     fn every_state_renders() {
         let render = |st: &mut DisplayState, ui: &mut UiContext| {
             let mut layout = PageFlow::new();
-            view(st, 0.0, 0.0, 800.0, 600.0, &[false; 3], &mut layout, ui).finish()
+            view(st, 0.0, 0.0, 800.0, 600.0, &[false; 4], &mut layout, ui).finish()
         };
         let mut ui = UiContext::new();
         let mut st = DisplayState::new(&mut ui);
@@ -756,7 +867,11 @@ mod tests {
         st.snap.compositor = true;
         let pc = render(&mut st, &mut ui);
         assert!(pc.texts().iter().any(|t| t.text.contains("not set up")));
+        assert!(pc.texts().iter().any(|t| t.text.contains("cannot switch")), "no touchscreen command");
         let mut st = loaded(&mut ui);
+        st.snap.touch = Some(Touchscreen { on: false, devices: 1 });
+        let pc = render(&mut st, &mut ui);
+        assert!(pc.texts().iter().any(|t| t.text.contains("ignores touch")));
         st.error = Some("brightnessctl: no permission".into());
         let pc = render(&mut st, &mut ui);
         let texts: Vec<String> = pc.texts().into_iter().map(|t| t.text).collect();
