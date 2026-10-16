@@ -353,6 +353,9 @@ impl SystemInterface {
             
 
 
+            // The gesture's bookkeeping, before anything asks who owns it
+            // (a page with no controls and no lists routes nothing that would).
+            self.ui_context.note_scroll_event();
             let event = cce_ui::widget::Event::MouseWheel { delta: *delta, x: lx, y: ly, local_x: lx, local_y: ly };
             // Page dissolved (6u): one dispatch path for every page — scrollbar, then
             // sections, then the dissolved inner lists (the app-owned ScrollRegions,
@@ -360,7 +363,7 @@ impl SystemInterface {
             // below as the fallback, exactly as the non-System pages worked.
             let mut handled = self.dispatch_page_event(&event);
             if !handled {
-                handled = self.app.get_current_page_mut().handle_mouse_wheel(delta, lx, ly);
+                handled = self.app.get_current_page_mut().handle_mouse_wheel(delta, lx, ly, &mut self.ui_context);
             }
 
             let mut actions = Vec::new();
@@ -380,10 +383,18 @@ impl SystemInterface {
             // The whole-page scroll: a wheel notch moves the motion's target
             // and `tick_page_scroll` glides the page there; a trackpad finger
             // moves it now. Either way the bar raises in the same frame.
+            // It takes part in the scroll-gesture rule as the lists do: a
+            // gesture a control or a list took leaves the page put, and one
+            // the page moves is the page's, so the controls its scroll
+            // carries under the pointer decline the rest of it.
             use cce_ui::widget::{Bounds, LINE_PX};
+            if !self.ui_context.may_take_wheel(self.page_gesture_id) {
+                return false;
+            }
             self.page_scroll_motion.reconcile(0.0, self.scroll_y);
             let moved = self.page_scroll_motion.apply(delta, (LINE_PX, LINE_PX), Bounds::max(0.0), Bounds::max(self.max_scroll_y));
             if moved {
+                self.ui_context.claim_scroll_gesture(self.page_gesture_id);
                 self.shift_page_to(self.page_scroll_motion.y.pos());
                 self.ui_context[self.page_scroll_bar].on_scroll();
                 return true;

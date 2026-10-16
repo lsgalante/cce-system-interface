@@ -1126,8 +1126,8 @@ impl crate::pages::AppPage for TimersState {
         self.list.release()
     }
 
-    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32) -> bool {
-        self.loaded && self.list.wheel(delta, lx, ly)
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32, ui: &mut cce_ui::context::UiContext) -> bool {
+        self.loaded && self.list.wheel_in(delta, lx, ly, ui)
     }
 
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {

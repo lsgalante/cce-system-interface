@@ -94,6 +94,9 @@ struct SystemInterface {
     /// keyboard, search jump, clamp) are adopted by the motion on its next step.
     scroll_y: f32,
     page_scroll_motion: cce_ui::widget::ScrollMotion,
+    /// Who the whole-page scroll is to the scroll-gesture rule: it claims the
+    /// gesture it moves, and stays put under one a widget or a list owns.
+    page_gesture_id: cce_ui::widget::WidgetId,
     max_scroll_y: f32,
     // SectionContainer DISSOLVED (Phase 6w): section-level keyboard focus is this index
     // (single-slot with the global widget focus — descending clears it); the per-section
@@ -229,6 +232,7 @@ impl cce_ui::engine::Application for SystemInterface {
             needs_rebuild: true,
             scroll_y: 0.0,
             page_scroll_motion: cce_ui::widget::ScrollMotion::new(),
+            page_gesture_id: cce_ui::widget::Widget::new().id(),
             max_scroll_y: 0.0,
             focused_section: None,
             laid_out_page: None,

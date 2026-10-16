@@ -155,10 +155,17 @@ pub trait AppPage {
     /// liveness contract the pointer-rooted dispatch had. Default no-op.
     fn register_extra_dispatch_roots(&mut self, _ctx: &mut cce_ui::context::UiContext) {}
 
-    /// The dissolved inner lists' wheel (`ScrollBox::mouse_wheel`, hit-scoped). Runs after
-    /// the widget dispatch and before the manual whole-page scroll fallback — the legacy
-    /// "inner ScrollBoxes take the wheel first" order.
-    fn handle_mouse_wheel(&mut self, _delta: &cce_ui::widget::MouseScrollDelta, _lx: f32, _ly: f32) -> bool {
+    /// The dissolved inner lists' wheel (`ScrollRegion::wheel_in`, hit-scoped and in the
+    /// scroll-gesture rule: a list that moves claims the gesture, and one another owns
+    /// leaves it be). Runs after the widget dispatch and before the manual whole-page
+    /// scroll fallback — the legacy "inner ScrollBoxes take the wheel first" order.
+    fn handle_mouse_wheel(
+        &mut self,
+        _delta: &cce_ui::widget::MouseScrollDelta,
+        _lx: f32,
+        _ly: f32,
+        _ui: &mut cce_ui::context::UiContext,
+    ) -> bool {
         false
     }
 

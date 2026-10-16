@@ -835,8 +835,8 @@ impl crate::pages::AppPage for NetworkState {
         self.wifi_list.release()
     }
 
-    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32) -> bool {
-        self.wifi_list_visible() && self.wifi_list.wheel(delta, lx, ly)
+    fn handle_mouse_wheel(&mut self, delta: &cce_ui::widget::MouseScrollDelta, lx: f32, ly: f32, ui: &mut cce_ui::context::UiContext) -> bool {
+        self.wifi_list_visible() && self.wifi_list.wheel_in(delta, lx, ly, ui)
     }
 
     fn handle_key_input(&mut self, event: &cce_ui::widget::KeyEvent) -> bool {
