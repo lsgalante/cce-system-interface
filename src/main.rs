@@ -77,6 +77,7 @@ struct SystemInterface {
     tx_backup: std::sync::mpsc::Sender<pages::storage::StorageMessage>,
     rx_backup: std::sync::mpsc::Receiver<pages::storage::StorageMessage>,
     rx_packages: std::sync::mpsc::Receiver<pages::packages::PackagesState>,
+    rx_updates_check: std::sync::mpsc::Receiver<pages::packages::PackagesMessage>,
     tx_update: std::sync::mpsc::Sender<pages::packages::PackagesMessage>,
     rx_update: std::sync::mpsc::Receiver<pages::packages::PackagesMessage>,
 
@@ -213,6 +214,7 @@ impl cce_ui::engine::Application for SystemInterface {
             tx_backup,
             rx_backup,
             rx_packages: watchers.rx_packages,
+            rx_updates_check: watchers.rx_updates_check,
             tx_update,
             rx_update,
 
@@ -726,6 +728,15 @@ impl SystemInterface {
                 self.needs_rebuild = true;
             }
         }
+        while let Ok(m) = self.rx_updates_check.try_recv() {
+            if !self.fresh_snapshot("package_updates", &m) {
+                continue;
+            }
+            pages::packages::update(&mut self.app.packages, m, &mut self.ui_context);
+            if self.app.current_page == Page::Packages {
+                self.needs_rebuild = true;
+            }
+        }
         while let Ok(m) = self.rx_update.try_recv() {
             self.handle_action(&AppAction::Packages(m));
             if self.app.current_page == Page::Packages {
@@ -812,17 +823,18 @@ impl SystemInterface {
                         let _ = wake.send(AppAction::Wake);
                     });
                 }
-                pages::packages::PackagesMessage::UpdateFinished(res) => {
+                // Both outcomes refresh both lists: a failed -Syu may still
+                // have synced the databases, or failed after its sync.
+                pages::packages::PackagesMessage::UpdateFinished(_) => {
                     pages::packages::update(&mut self.app.packages, m.clone(), &mut self.ui_context);
-                    if res.is_ok() {
-                        let tx = self.tx_update.clone();
-                        let wake = self.sender.clone();
-                        tokio::spawn(async move {
-                            let new_state = pages::packages::fetch_packages_state().await;
-                            let _ = tx.send(pages::packages::PackagesMessage::Refreshed(Box::new(new_state)));
-                            let _ = wake.send(AppAction::Wake);
-                        });
-                    }
+                    let tx = self.tx_update.clone();
+                    let wake = self.sender.clone();
+                    tokio::spawn(async move {
+                        let new_state = pages::packages::fetch_packages_state().await;
+                        let _ = tx.send(pages::packages::PackagesMessage::Refreshed(Box::new(new_state)));
+                        let _ = tx.send(pages::packages::check_updates().await);
+                        let _ = wake.send(AppAction::Wake);
+                    });
                 }
                 pages::packages::PackagesMessage::SelectPackage(Some(ref name)) => {
                     let name_clone = name.clone();

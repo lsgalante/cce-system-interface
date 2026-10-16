@@ -64,6 +64,12 @@ pub struct PackagesState {
     pub loaded: bool,
     pub installed: Vec<PackageInfo>,
     pub updates: Vec<UpdateInfo>,
+    /// Whether an update check has answered yet: until then the page says
+    /// it is checking rather than that the system is up to date.
+    pub updates_checked: bool,
+    /// Why the last update check failed (offline, a mirror error). The list
+    /// keeps the last good answer under it.
+    pub updates_error: Option<String>,
     pub active_tab: PackageTab,
     pub search_box: Handle<cce_ui::widget::Adapted<TextBox>>,
     pub installed_list: ScrollRegion,
@@ -73,7 +79,8 @@ pub struct PackagesState {
     pub updating: bool,
     pub last_update_res: Option<Result<(), String>>,
     pub selected_package: Option<String>,
-    pub selected_package_info: Option<String>,
+    /// `pacman -Qi`/`-Si` for the selected package, or why it failed.
+    pub selected_package_info: Option<Result<String, String>>,
     pub loading_info: bool,
     pub uninstalling: bool,
     pub filter: InstalledFilter,
@@ -94,6 +101,8 @@ impl Default for PackagesState {
             loaded: false,
             installed: Vec::new(),
             updates: Vec::new(),
+            updates_checked: false,
+            updates_error: None,
             active_tab: PackageTab::Installed,
             search_box: Handle::none(),
             installed_list: ScrollRegion::new(32.0, 4.0).with_frame(false).with_sink_behind(true),
@@ -129,7 +138,10 @@ impl PackagesState {
 
 #[derive(Debug, Clone)]
 pub enum PackagesMessage {
+    /// The installed list (`fetch_packages_state`); updates come separately.
     Refreshed(Box<PackagesState>),
+    /// An update check answered (`check_updates`).
+    UpdatesChecked(Result<Vec<UpdateInfo>, String>),
     SetTab(PackageTab),
     StartUpdate,
     UpdateFinished(Result<(), String>),
@@ -153,17 +165,21 @@ pub enum PackagesMessage {
     InstallReasonSet(Vec<String>, bool, Result<(), String>),
 }
 
+/// How often the Packages page asks `checkupdates` while it is open — and
+/// on opening, when the last answer is at least this old. Each check syncs a
+/// private copy of the repo databases from the mirror (a full re-download,
+/// 8.7 MB here, whenever the mirror has published new ones); the installed
+/// list is local and keeps its own 30 s poll.
+pub const UPDATE_CHECK_SECS: u64 = 20 * 60;
+
+/// The installed list. The update check is [`check_updates`], on its own
+/// slower clock.
 pub async fn fetch_packages_state() -> PackagesState {
-    let installed = fetch_installed_packages().await;
-    let updates = fetch_available_updates().await;
-    PackagesState {
-        loaded: true,
-        installed,
-        updates,
-        updating: false,
-        last_update_res: None,
-        ..Default::default()
-    }
+    PackagesState { loaded: true, installed: fetch_installed_packages().await, ..Default::default() }
+}
+
+pub async fn check_updates() -> PackagesMessage {
+    PackagesMessage::UpdatesChecked(fetch_available_updates().await)
 }
 
 async fn fetch_installed_packages() -> Vec<PackageInfo> {
@@ -205,26 +221,66 @@ pub fn parse_installed(all: &str, explicit: &str, orphans: &str) -> Vec<PackageI
     list
 }
 
-async fn fetch_available_updates() -> Vec<UpdateInfo> {
-    let mut list = Vec::new();
-    if let Ok(output) = tokio::process::Command::new("checkupdates")
+async fn fetch_available_updates() -> Result<Vec<UpdateInfo>, String> {
+    let output = tokio::process::Command::new("checkupdates")
+        .arg("--nocolor")
         .output()
         .await
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 && parts[2] == "->" {
-                list.push(UpdateInfo {
-                    name: parts[0].to_string(),
-                    old_version: parts[1].to_string(),
-                    new_version: parts[3].to_string(),
-                });
-            }
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => "checkupdates is not installed (pacman-contrib)".to_string(),
+            _ => format!("Failed to run checkupdates: {e}"),
+        })?;
+    parse_checkupdates(output.status.code(), &String::from_utf8_lossy(&output.stdout), &String::from_utf8_lossy(&output.stderr))
+}
+
+/// `checkupdates` exits 0 with updates, 2 with none, and 1 when it could not
+/// tell (offline, a mirror error) — an empty stdout then is NOT "up to date".
+pub fn parse_checkupdates(code: Option<i32>, stdout: &str, stderr: &str) -> Result<Vec<UpdateInfo>, String> {
+    match code {
+        Some(0) | Some(2) => {}
+        _ => {
+            let reason: Vec<&str> = stderr
+                .lines()
+                .map(|l| l.trim().trim_start_matches("==> ERROR:").trim())
+                .filter(|l| !l.is_empty())
+                .collect();
+            return Err(if reason.is_empty() {
+                match code {
+                    Some(c) => format!("checkupdates exited with {c}"),
+                    None => "checkupdates was killed".to_string(),
+                }
+            } else {
+                reason.join("\n")
+            });
         }
     }
+    let mut list: Vec<UpdateInfo> = stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            (parts.len() >= 4 && parts[2] == "->").then(|| UpdateInfo {
+                name: parts[0].to_string(),
+                old_version: parts[1].to_string(),
+                new_version: parts[3].to_string(),
+            })
+        })
+        .collect();
     list.sort_by_key(|a| a.name.to_lowercase());
-    list
+    Ok(list)
+}
+
+/// The private database `checkupdates` syncs (`$CHECKUPDATES_DB`, else
+/// `${TMPDIR:-/tmp}/checkup-db-$UID`), when it has one. The system's own
+/// sync database is only as new as the last `pacman -Sy`, so `-Si` against
+/// it describes the version a listed update would REPLACE.
+pub fn checkupdates_db() -> Option<std::path::PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let nonempty = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    let db = nonempty("CHECKUPDATES_DB").unwrap_or_else(|| {
+        let uid = std::fs::metadata("/proc/self").map(|m| m.uid()).unwrap_or(0);
+        nonempty("TMPDIR").unwrap_or_else(|| "/tmp".into()).join(format!("checkup-db-{uid}"))
+    });
+    db.join("sync").is_dir().then_some(db)
 }
 
 pub async fn run_update() -> Result<(), String> {
@@ -233,13 +289,20 @@ pub async fn run_update() -> Result<(), String> {
         .output()
         .await
         .map_err(|e| format!("Failed to run update: {}", e))?;
-        
     if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!("Update process failed: {}", err));
+        return Err(drop_warnings_beside_errors(&pacman_error(&output)));
     }
-    
     Ok(())
+}
+
+/// A failed upgrade's stderr opens with every `warning:` the run printed
+/// (`.pacnew` files, skipped packages); under a length cap they would crowd
+/// out the `error:` that stopped it. Warnings stay when there is no error.
+pub fn drop_warnings_beside_errors(text: &str) -> String {
+    if !text.lines().any(|l| l.starts_with("error:")) {
+        return text.to_string();
+    }
+    text.lines().filter(|l| !l.starts_with("warning:")).collect::<Vec<_>>().join("\n")
 }
 
 /// pacman's own explanation of a failure. It writes the reason to stderr,
@@ -378,9 +441,18 @@ fn count_noun(n: usize) -> String {
 }
 
 pub async fn fetch_package_info(name: String, installed: bool) -> Result<String, String> {
-    let arg = if installed { "-Qi" } else { "-Si" };
-    let output = tokio::process::Command::new("pacman")
-        .args([arg, &name])
+    let mut cmd = tokio::process::Command::new("pacman");
+    if installed {
+        cmd.arg("-Qi");
+    } else {
+        cmd.arg("-Si");
+        if let Some(db) = checkupdates_db() {
+            cmd.arg("--dbpath").arg(db);
+        }
+    }
+    let output = cmd
+        .arg("--")
+        .arg(&name)
         .output()
         .await
         .map_err(|e| format!("Failed to run pacman: {}", e))?;
@@ -589,7 +661,7 @@ pub fn view(
 
         // ── Tabs (with counts) ──
         let label1 = format!("Installed ({})", state.installed.len());
-        let label2 = format!("Updates ({})", state.updates.len());
+        let label2 = if state.updates_checked { format!("Updates ({})", state.updates.len()) } else { "Updates (…)".to_string() };
         let tab = state.active_tab;
         col.row(|r| {
             form_button(r, label1, 0.0, (if tab == PackageTab::Installed { active_bg } else { inactive_bg }, hover_bg, text_on),
@@ -601,14 +673,17 @@ pub fn view(
         col.widget_h(ctx, state.search_box, cce_ui::layout::textbox_height());
 
         // ── Update System: a button as wide as its label, its status beside it ──
-        let status_line = if state.updating {
-            "Updating system...".to_string()
+        let (status_line, status_color) = if state.updating {
+            ("Updating system...".to_string(), ACCENT)
+        } else if !state.updates_checked {
+            ("Checking for updates...".to_string(), TEXT_DIM)
+        } else if state.updates_error.is_some() {
+            ("Couldn't check for updates".to_string(), RED)
         } else if state.updates.is_empty() {
-            "System is up to date".to_string()
+            ("System is up to date".to_string(), TEXT_DIM)
         } else {
-            format!("{} updates available", state.updates.len())
+            (format!("{} updates available", state.updates.len()), ACCENT)
         };
-        let status_color = if state.updating || !state.updates.is_empty() { ACCENT } else { TEXT_DIM };
         let (btn_lbl, bg, hover) = if state.updating {
             ("Updating...", [0.15, 0.15, 0.20, 1.0], [0.15, 0.15, 0.20, 1.0])
         } else {
@@ -619,6 +694,11 @@ pub fn view(
             r.text_fill(status_line, 12.0, status_color);
         });
 
+        if let (Some(err), false) = (&state.updates_error, state.updating) {
+            let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(3).collect();
+            col.lines(lines, 11.0, RED);
+        }
+
         if let Some(ref res) = state.last_update_res {
             match res {
                 Ok(_) => {
@@ -627,7 +707,7 @@ pub fn view(
                 Err(err) => {
                     col.block(|b| {
                         b.text("Last update failed:", 12.0, RED);
-                        b.lines(wrap_to_width(err, wrap_w, 11.0), 11.0, RED);
+                        b.lines(err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect(), 11.0, RED);
                     });
                 }
             }
@@ -758,7 +838,14 @@ pub fn view(
         } else if state.loading_info {
             col.text("Loading package details...", 12.0, TEXT_DIM);
         } else if let Some(pkg_name) = state.selected_package.clone() {
-            if let Some(info_raw) = state.selected_package_info.clone() {
+            if let Some(Err(err)) = state.selected_package_info.clone() {
+                let lines: Vec<String> = err.lines().flat_map(|l| wrap_to_width(l, wrap_w, 11.0)).take(8).collect();
+                col.block(|b| {
+                    b.text(pkg_name.clone(), 14.0, [0.35, 0.65, 0.90, 1.0]);
+                    b.text("Couldn't load the details:", 12.0, RED);
+                    b.lines(lines, 11.0, RED);
+                });
+            } else if let Some(Ok(info_raw)) = state.selected_package_info.clone() {
                 let mut parsed = parse_package_info(&info_raw);
                 if parsed.name.is_empty() {
                     parsed.name = pkg_name.clone();
@@ -848,6 +935,8 @@ pub fn view(
         } else {
             "No packages match the query"
         };
+        let (updates_checked, updates_failed, updates_empty) =
+            (state.updates_checked, state.updates_error.is_some(), state.updates.is_empty());
         let select_mode = state.select_mode;
         let checked = &state.checked;
         let selected = state.selected_package.clone();
@@ -919,7 +1008,16 @@ pub fn view(
                     // The scrollbar's fore copy, over the rows at the raise's fade.
                     updates_list.push_scrollbar_fore(pc.as_mut());
                     if filtered_updates.is_empty() {
-                        pc.text("No updates match the query", list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
+                        let msg = if !updates_checked {
+                            "Checking for updates..."
+                        } else if updates_failed && updates_empty {
+                            "Couldn't check for updates"
+                        } else if updates_empty {
+                            "No updates available"
+                        } else {
+                            "No updates match the query"
+                        };
+                        pc.text(msg, list_box_x + inset, list_box_y + inset, 12.0, crate::app::rgb(TEXT_DIM));
                     }
                 }
             }
@@ -935,7 +1033,10 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage, ctx: &mut UiConte
         PackagesMessage::Refreshed(new) => {
             state.loaded = new.loaded;
             state.installed = new.installed;
-            state.updates = new.updates;
+            // The update list is the update check's, on its own clock; only
+            // drop entries for packages no longer installed (removed here).
+            let installed = &state.installed;
+            state.updates.retain(|u| installed.iter().any(|p| p.name == u.name));
             // Selection, fetched info, and in-flight update/uninstall flags are
             // LOCAL state — the periodic background refresh must not clear them.
             // Only drop a selection whose package no longer exists anywhere.
@@ -949,6 +1050,16 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage, ctx: &mut UiConte
                     state.selected_package_info = None;
                     state.loading_info = false;
                 }
+            }
+        }
+        PackagesMessage::UpdatesChecked(res) => {
+            state.updates_checked = true;
+            match res {
+                Ok(list) => {
+                    state.updates = list;
+                    state.updates_error = None;
+                }
+                Err(e) => state.updates_error = Some(e),
             }
         }
         PackagesMessage::SetTab(tab) => {
@@ -983,14 +1094,7 @@ pub fn update(state: &mut PackagesState, msg: PackagesMessage, ctx: &mut UiConte
         PackagesMessage::InfoFetched(name, res) => {
             if state.selected_package.as_ref() == Some(&name) {
                 state.loading_info = false;
-                match res {
-                    Ok(info) => {
-                        state.selected_package_info = Some(info);
-                    }
-                    Err(err) => {
-                        state.selected_package_info = Some(format!("Error loading package info: {}", err));
-                    }
-                }
+                state.selected_package_info = Some(res);
             }
         }
         PackagesMessage::SetFilter(filter) => {
@@ -1314,7 +1418,7 @@ mod tests {
         st.loaded = true;
         st.installed = vec![PackageInfo { name: "foo".into(), version: "1".into(), ..Default::default() }];
         st.selected_package = Some("foo".into());
-        st.selected_package_info = Some("info".into());
+        st.selected_package_info = Some(Ok("info".into()));
         st.updating = true;
 
         let fresh = PackagesState {
@@ -1517,6 +1621,66 @@ mod tests {
         assert_eq!(parse_removal_preview("a 10\nb x\n\n"), vec![("a".to_string(), 10), ("b".to_string(), 0)]);
         assert_eq!(human_size(2048), "2 KiB");
         assert_eq!(human_size(5 * 1024 * 1024), "5.0 MiB");
+    }
+
+    /// checkupdates' exit codes: 0 = updates, 2 = none, 1 = could not tell.
+    /// The last used to read as "System is up to date".
+    #[test]
+    fn checkupdates_exit_codes() {
+        let out = "zed 1.0-1 -> 1.1-1\nabc 2-1 -> 3-1\n";
+        let list = parse_checkupdates(Some(0), out, "").unwrap();
+        assert_eq!(list.iter().map(|u| u.name.as_str()).collect::<Vec<_>>(), ["abc", "zed"]);
+        assert_eq!(list[1].new_version, "1.1-1");
+        assert!(parse_checkupdates(Some(2), "", "").unwrap().is_empty());
+        assert_eq!(parse_checkupdates(Some(1), "", "==> ERROR: Cannot fetch updates\n").unwrap_err(), "Cannot fetch updates");
+        assert_eq!(parse_checkupdates(Some(1), "", "").unwrap_err(), "checkupdates exited with 1");
+        assert!(parse_checkupdates(None, "", "").is_err(), "killed by a signal");
+    }
+
+    /// A failed check keeps the last good list under its error; a good one
+    /// clears the error. A refresh drops updates for packages since removed.
+    #[test]
+    fn update_checks_and_refreshes_compose() {
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        assert!(!st.updates_checked);
+        let ups = parse_checkupdates(Some(0), "alpha 1 -> 2\nbeta 1 -> 2\n", "").unwrap();
+        update(&mut st, PackagesMessage::UpdatesChecked(Ok(ups)), &mut ui);
+        update(&mut st, PackagesMessage::UpdatesChecked(Err("offline".into())), &mut ui);
+        assert_eq!((st.updates.len(), st.updates_error.as_deref()), (2, Some("offline")));
+        let fresh = PackagesState { loaded: true, installed: vec![pkg("alpha", true, false)], ..Default::default() };
+        update(&mut st, PackagesMessage::Refreshed(Box::new(fresh)), &mut ui);
+        assert_eq!(st.updates.iter().map(|u| u.name.as_str()).collect::<Vec<_>>(), ["alpha"]);
+        assert_eq!(st.updates_error.as_deref(), Some("offline"), "a refresh is not an update check");
+        update(&mut st, PackagesMessage::UpdatesChecked(Ok(Vec::new())), &mut ui);
+        assert!(st.updates_error.is_none());
+
+        let mut layout = cce_ui::compose::PageFlow::new();
+        update(&mut st, PackagesMessage::UpdatesChecked(Err("Cannot fetch updates".into())), &mut ui);
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui).finish();
+        let texts: Vec<String> = pc.texts().into_iter().map(|t| t.text).collect();
+        assert!(texts.iter().any(|t| t == "Couldn't check for updates"), "{texts:?}");
+        assert!(!texts.iter().any(|t| t == "System is up to date"), "{texts:?}");
+    }
+
+    /// A details lookup that fails says so, instead of an empty pane.
+    #[test]
+    fn a_failed_details_lookup_is_shown() {
+        let mut ui = cce_ui::context::UiContext::new();
+        let mut st = loaded_state(&mut ui);
+        update(&mut st, PackagesMessage::SelectPackage(Some("alpha".into())), &mut ui);
+        update(&mut st, PackagesMessage::InfoFetched("alpha".into(), Err("error: package 'alpha' was not found".into())), &mut ui);
+        let mut layout = cce_ui::compose::PageFlow::new();
+        let pc = view(&mut st, 10.0, 20.0, 800.0, 600.0, &[false], &mut layout, &mut ui).finish();
+        let texts: Vec<String> = pc.texts().into_iter().map(|t| t.text).collect();
+        assert!(texts.iter().any(|t| t.contains("was not found")), "{texts:?}");
+    }
+
+    #[test]
+    fn upgrade_errors_outrank_warnings() {
+        let text = "warning: a.conf installed as a.conf.pacnew\nwarning: b: local is newer\nerror: failed to commit transaction (conflicting files)";
+        assert_eq!(drop_warnings_beside_errors(text), "error: failed to commit transaction (conflicting files)");
+        assert_eq!(drop_warnings_beside_errors("warning: only this"), "warning: only this");
     }
 
     #[test]

@@ -27,6 +27,8 @@ pub struct Watchers {
     pub rx_timers: Receiver<Vec<timers::TimerInfo>>,
     pub rx_accounts: Receiver<accounts::AccountsSnapshot>,
     pub rx_packages: Receiver<packages::PackagesState>,
+    /// `checkupdates`, on a slower clock than the installed list.
+    pub rx_updates_check: Receiver<packages::PackagesMessage>,
 }
 
 /// One page's worker: while `target_page` is on screen, fetch every
@@ -149,6 +151,7 @@ pub fn spawn_all(
 
     let (tx_backup, rx_backup) = channel();
     let (p, k) = w(); let rx_packages = spawn_bg_active(p, Page::Packages, 30, k, packages::fetch_packages_state);
+    let (p, k) = w(); let rx_updates_check = spawn_bg_active(p, Page::Packages, packages::UPDATE_CHECK_SECS, k, packages::check_updates);
     let (tx_update, rx_update) = channel();
 
     (
@@ -168,6 +171,7 @@ pub fn spawn_all(
             rx_timers,
             rx_accounts,
             rx_packages,
+            rx_updates_check,
         },
         tx_backup,
         rx_backup,
