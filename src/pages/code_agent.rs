@@ -1,6 +1,6 @@
 //! Code Agent (cce-code-agent) settings: what a new session starts on
 //! (model, effort, permission mode), the features the app turns on in the
-//! CLI (prompt suggestions, suggested tasks, Claude's own next steps), the sidebar at startup and
+//! CLI (prompt suggestions, suggested tasks, Claude's own next steps), desktop notifications, the sidebar at startup and
 //! the `claude` binary to run. Edits the app's own config
 //! (`~/.config/cce/cce-code-agent/config.kdl`, section "code-agent"), which
 //! cce-code-agent reads at every CLI launch (its `src/settings.rs`), so a
@@ -61,6 +61,9 @@ pub struct CodeAgentConfig {
     pub suggested_tasks: bool,
     /// Claude suggests the next prompt itself (`suggest_next_prompt`).
     pub next_steps: bool,
+    /// Desktop notifications when a turn ends, or a permission prompt
+    /// waits, where the user is not looking.
+    pub notifications: bool,
     pub sidebar: bool,
     /// The `claude` binary; empty is `claude` on PATH.
     pub cli: String,
@@ -76,6 +79,7 @@ impl Default for CodeAgentConfig {
             prompt_suggestions: true,
             suggested_tasks: true,
             next_steps: true,
+            notifications: true,
             sidebar: true,
             cli: String::new(),
         }
@@ -91,6 +95,7 @@ pub struct CodeAgentState {
     pub suggestions_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
     pub tasks_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
     pub next_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
+    pub notify_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
     pub sidebar_toggle: Handle<cce_ui::widget::Adapted<Toggle>>,
     pub cli_box: Handle<cce_ui::widget::Adapted<TextBox>>,
 }
@@ -115,6 +120,7 @@ impl CodeAgentState {
             suggestions_toggle: ctx.insert(Toggle::new().with_label("Prompt Suggestions").with_left_align(true)),
             tasks_toggle: ctx.insert(Toggle::new().with_label("Suggested Tasks").with_left_align(true)),
             next_toggle: ctx.insert(Toggle::new().with_label("Suggest Next Steps").with_left_align(true)),
+            notify_toggle: ctx.insert(Toggle::new().with_label("Notifications").with_left_align(true)),
             sidebar_toggle: ctx.insert(Toggle::new().with_label("Sidebar at Start").with_left_align(true)),
             cli_box: ctx.insert(cli_box),
             config,
@@ -148,6 +154,7 @@ pub enum CodeAgentMessage {
     ToggleSuggestions,
     ToggleTasks,
     ToggleNextSteps,
+    ToggleNotifications,
     ToggleSidebar,
     /// Commit the CLI field.
     Apply,
@@ -186,6 +193,10 @@ pub fn update(state: &mut CodeAgentState, msg: CodeAgentMessage, ctx: &mut UiCon
         CodeAgentMessage::ToggleNextSteps => {
             c.next_steps = !c.next_steps;
             write_config_value("next-steps", &c.next_steps.to_string());
+        }
+        CodeAgentMessage::ToggleNotifications => {
+            c.notifications = !c.notifications;
+            write_config_value("notifications", &c.notifications.to_string());
         }
         CodeAgentMessage::ToggleSidebar => {
             c.sidebar = !c.sidebar;
@@ -234,6 +245,7 @@ fn parse(content: &str) -> CodeAgentConfig {
         prompt_suggestions: flag("prompt-suggestions", d.prompt_suggestions),
         suggested_tasks: flag("suggested-tasks", d.suggested_tasks),
         next_steps: flag("next-steps", d.next_steps),
+        notifications: flag("notifications", d.notifications),
         sidebar: flag("sidebar", d.sidebar),
         cli: text("cli", ""),
     }
@@ -260,7 +272,7 @@ impl AppPage for CodeAgentState {
     fn section_widgets(&mut self) -> Vec<Vec<cce_ui::widget::WidgetId>> {
         vec![
             vec![self.model_menu.id(), self.effort_menu.id(), self.mode_menu.id()],
-            vec![self.suggestions_toggle.id(), self.tasks_toggle.id(), self.next_toggle.id(), self.sidebar_toggle.id(), self.cli_box.id()],
+            vec![self.suggestions_toggle.id(), self.tasks_toggle.id(), self.next_toggle.id(), self.notify_toggle.id(), self.sidebar_toggle.id(), self.cli_box.id()],
         ]
     }
 
@@ -305,12 +317,14 @@ impl AppPage for CodeAgentState {
             ctx[self.suggestions_toggle].set_toggled(c.prompt_suggestions);
             ctx[self.tasks_toggle].set_toggled(c.suggested_tasks);
             ctx[self.next_toggle].set_toggled(c.next_steps);
+            ctx[self.notify_toggle].set_toggled(c.notifications);
             ctx[self.sidebar_toggle].set_toggled(c.sidebar);
             let mut form = sec.form();
             let mut col = form.column();
             col.widget_h(ctx, self.suggestions_toggle, toggle_h)
                 .widget_h(ctx, self.tasks_toggle, toggle_h)
                 .widget_h(ctx, self.next_toggle, toggle_h)
+                .widget_h(ctx, self.notify_toggle, toggle_h)
                 .widget_h(ctx, self.sidebar_toggle, toggle_h)
                 .widget_h(ctx, self.cli_box, field_h)
                 .draw(0.0, cce_ui::layout::button_height(), false, |pc, r, _| {
@@ -355,6 +369,8 @@ impl AppPage for CodeAgentState {
                 CodeAgentMessage::ToggleTasks
             } else if id == self.next_toggle.id() {
                 CodeAgentMessage::ToggleNextSteps
+            } else if id == self.notify_toggle.id() {
+                CodeAgentMessage::ToggleNotifications
             } else if id == self.sidebar_toggle.id() {
                 CodeAgentMessage::ToggleSidebar
             } else if id == self.cli_box.id() {
@@ -381,7 +397,7 @@ mod tests {
     #[test]
     fn reads_what_the_agent_reads() {
         let c = parse(
-            "code-agent {\n  model \"opus\"\n  effort \"xhigh\"\n  permission-mode \"plan\"\n  prompt-suggestions (bool)false\n  suggested-tasks (bool)false\n  next-steps (bool)false\n  sidebar (bool)false\n  cli \"/opt/claude\"\n}\n",
+            "code-agent {\n  model \"opus\"\n  effort \"xhigh\"\n  permission-mode \"plan\"\n  prompt-suggestions (bool)false\n  suggested-tasks (bool)false\n  next-steps (bool)false\n  notifications (bool)false\n  sidebar (bool)false\n  cli \"/opt/claude\"\n}\n",
         );
         assert_eq!(
             c,
@@ -392,6 +408,7 @@ mod tests {
                 prompt_suggestions: false,
                 suggested_tasks: false,
                 next_steps: false,
+                notifications: false,
                 sidebar: false,
                 cli: "/opt/claude".into(),
             }
@@ -405,7 +422,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cce-code-agent-page-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.kdl").to_string_lossy().into_owned();
-        for (k, v) in [("model", "sonnet"), ("effort", "max"), ("permission-mode", "acceptEdits"), ("sidebar", "false"), ("suggested-tasks", "false")] {
+        for (k, v) in [("model", "sonnet"), ("effort", "max"), ("permission-mode", "acceptEdits"), ("sidebar", "false"), ("suggested-tasks", "false"), ("notifications", "false")] {
             assert!(cce_ui::config::write_config_value(&path, &format!("{SECTION}.{k}"), v, SECTION));
         }
         let c = parse(&fs::read_to_string(&path).unwrap());
@@ -418,6 +435,7 @@ mod tests {
                 mode: "acceptEdits".into(),
                 sidebar: false,
                 suggested_tasks: false,
+                notifications: false,
                 ..CodeAgentConfig::default()
             }
         );
